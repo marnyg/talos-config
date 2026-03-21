@@ -36,12 +36,14 @@ Patches are applied in order via `talosctl machineconfig patch`, matching the st
 
 ## machines.json
 
-Maps MAC addresses to a base config and an ordered list of patches:
+Maps MAC addresses to a base config, IP, cluster, and an ordered list of patches:
 
 ```json
 {
   "b0:41:6f:15:3b:8f": {
+    "ip": "192.168.2.177",
     "config": "base/controlplane.yaml",
+    "cluster": "homelab",
     "patches": [
       "clusters/homelab/cluster.yaml",
       "clusters/homelab/secrets.yaml",
@@ -51,6 +53,8 @@ Maps MAC addresses to a base config and an ordered list of patches:
   }
 }
 ```
+
+This file is the single source of truth — the `tc` wrapper and `apply` command derive IPs, talosconfig paths, and patch chains from it.
 
 ## Usage
 
@@ -84,13 +88,46 @@ Machines PXE boot, fetch their composed config by MAC address, and install to di
 
 ```bash
 # Bootstrap etcd on the first controlplane node
-talosctl bootstrap -n <node-ip> -e <node-ip> \
-  --talosconfig clusters/homelab/talosconfig
+tc bootstrap
 
 # Get kubeconfig
-talosctl kubeconfig -n <node-ip> -e <node-ip> \
-  --talosconfig clusters/homelab/talosconfig
+tc kubeconfig
 ```
+
+### Day-to-day management
+
+The `tc` command wraps `talosctl` with automatic machine resolution from `machines.json`. With a single machine, the MAC is auto-selected:
+
+```bash
+tc dashboard         # TUI dashboard
+tc service           # list services
+tc dmesg             # kernel logs
+tc logs kubelet      # service logs
+tc health            # cluster health check
+tc kubeconfig        # fetch kubeconfig
+tc reboot            # reboot node
+```
+
+With multiple machines, specify the MAC:
+
+```bash
+tc b0:41:6f:15:3b:8f dmesg
+tc aa:bb:cc:dd:ee:ff logs kubelet
+```
+
+### Applying config changes
+
+Edit patches, then push to machines:
+
+```bash
+# Apply to all machines
+nix run .#apply
+
+# Apply to a specific machine
+nix run .#apply -- "b0:41:6f:15:3b:8f"
+```
+
+This composes `base + patches` via `talosctl machineconfig patch` and pushes with `talosctl apply-config`.
 
 ### Adding a new machine
 
@@ -113,7 +150,9 @@ talosctl kubeconfig -n <node-ip> -e <node-ip> \
 3. Add the MAC to `machines.json`:
    ```json
    "aa:bb:cc:dd:ee:ff": {
+     "ip": "192.168.2.x",
      "config": "base/worker.yaml",
+     "cluster": "homelab",
      "patches": [
        "clusters/homelab/cluster.yaml",
        "clusters/homelab/secrets.yaml",
@@ -122,7 +161,7 @@ talosctl kubeconfig -n <node-ip> -e <node-ip> \
    }
    ```
 
-4. PXE boot the machine.
+4. PXE boot the machine, then `nix run .#apply` to push updates.
 
 ## Secret management
 
