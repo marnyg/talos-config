@@ -1,0 +1,7 @@
+.devenv/
+.direnv/
+
+# Decrypted secrets — tracked as .age files
+secrets/*.yaml
+systems/**/talosconfig
+systems/**/talosconfigh
