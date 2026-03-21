@@ -93,6 +93,55 @@
             '');
           };
 
+          # nix run .#apply [-- <mac>] — build and apply config to machines
+          apps.apply = {
+            type = "app";
+            program = toString (pkgs.writeShellScript "apply" ''
+              set -euo pipefail
+              cd "$(git rev-parse --show-toplevel)"
+
+              MACHINES_FILE="machines.json"
+              FILTER="''${1:-}"
+
+              apply_machine() {
+                local mac="$1"
+                local ip config cluster patches talosconfig
+
+                ip=$(${pkgs.jq}/bin/jq -r ".\"$mac\".ip" "$MACHINES_FILE")
+                config=$(${pkgs.jq}/bin/jq -r ".\"$mac\".config" "$MACHINES_FILE")
+                cluster=$(${pkgs.jq}/bin/jq -r ".\"$mac\".cluster" "$MACHINES_FILE")
+                talosconfig="clusters/$cluster/talosconfig"
+
+                # Build patch args
+                patches=""
+                while IFS= read -r p; do
+                  patches="$patches --patch @$p"
+                done < <(${pkgs.jq}/bin/jq -r ".\"$mac\".patches[]" "$MACHINES_FILE")
+
+                echo "Applying config to $mac ($ip)..."
+                echo "  role: $config"
+                echo "  cluster: $cluster"
+
+                composed=$(${pkgs.talosctl}/bin/talosctl machineconfig patch "$config" $patches -o /dev/stdout)
+
+                ${pkgs.talosctl}/bin/talosctl \
+                  -n "$ip" -e "$ip" \
+                  --talosconfig "$talosconfig" \
+                  apply-config --file <(echo "$composed")
+
+                echo "Applied to $ip."
+              }
+
+              if [ -n "$FILTER" ]; then
+                apply_machine "$FILTER"
+              else
+                for mac in $(${pkgs.jq}/bin/jq -r 'keys[]' "$MACHINES_FILE"); do
+                  apply_machine "$mac"
+                done
+              fi
+            '');
+          };
+
           devenv.shells.default = {
             name = "talos-config";
             imports = [ ];
@@ -104,7 +153,7 @@
               age
             ];
             enterShell = ''
-              for f in $(find systems -name '*.age' 2>/dev/null); do
+              for f in $(find clusters -name '*.age' 2>/dev/null); do
                 out="''${f%.age}"
                 if [ ! -f "$out" ] || [ "$f" -nt "$out" ]; then
                   age -d -i "${sshKey}" -o "$out" "$f"
