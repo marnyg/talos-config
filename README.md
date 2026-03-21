@@ -54,7 +54,7 @@ Maps MAC addresses to a base config, IP, cluster, and an ordered list of patches
 }
 ```
 
-This file is the single source of truth — the `tc` wrapper and `apply` command derive IPs, talosconfig paths, and patch chains from it.
+The `apply` command reads this file to compose and push configs.
 
 ## Usage
 
@@ -88,32 +88,27 @@ Machines PXE boot, fetch their composed config by MAC address, and install to di
 
 ```bash
 # Bootstrap etcd on the first controlplane node
-tc bootstrap
+talosctl bootstrap
 
 # Get kubeconfig
-tc kubeconfig
+talosctl kubeconfig
 ```
 
 ### Day-to-day management
 
-The `tc` command wraps `talosctl` with automatic machine resolution from `machines.json`. With a single machine, the MAC is auto-selected:
+The devshell sets `TALOSCONFIG` automatically, so `talosctl` works with full shell completions and no extra flags:
 
 ```bash
-tc dashboard         # TUI dashboard
-tc service           # list services
-tc dmesg             # kernel logs
-tc logs kubelet      # service logs
-tc health            # cluster health check
-tc kubeconfig        # fetch kubeconfig
-tc reboot            # reboot node
+talosctl dashboard       # TUI dashboard
+talosctl service         # list services
+talosctl dmesg           # kernel logs
+talosctl logs kubelet    # service logs
+talosctl health          # cluster health check
+talosctl kubeconfig      # fetch kubeconfig
+talosctl reboot          # reboot node
 ```
 
-With multiple machines, specify the MAC:
-
-```bash
-tc b0:41:6f:15:3b:8f dmesg
-tc aa:bb:cc:dd:ee:ff logs kubelet
-```
+Endpoints and nodes are configured in the talosconfig file (`clusters/homelab/talosconfig`).
 
 ### Applying config changes
 

@@ -10,9 +10,8 @@ Declarative Talos Linux Kubernetes cluster configuration. Machines are provision
 
 ```bash
 nix develop                  # Enter devshell (or use direnv)
-tc service                   # talosctl wrapper — auto-resolves IP/talosconfig from machines.json
-tc dmesg                     # With one machine, MAC is auto-selected
-tc b0:41:6f:15:3b:8f logs kubelet  # With multiple machines, specify MAC
+talosctl service             # TALOSCONFIG is set automatically, full completions
+talosctl dashboard           # Endpoints/nodes configured in talosconfig
 nix run .#apply              # Compose and push config to all machines
 nix run .#apply -- "<mac>"   # Push to specific machine
 nix run .#config-server      # HTTP server for PXE boot config delivery
@@ -40,7 +39,7 @@ Patches are standard Talos strategic merge patches — the same format used by `
 
 ## machines.json
 
-Single source of truth mapping MAC addresses to their config composition. The `tc` wrapper, `apply` command, and `config-server` all read from this file.
+Maps MAC addresses to their config composition. The `apply` command and `config-server` read from this file.
 
 ```json
 {
