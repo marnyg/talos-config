@@ -1,0 +1,7 @@
+cluster:
+  clusterName: homelab
+  controlPlane:
+    endpoint: https://192.168.2.177:6443
+  apiServer:
+    certSANs:
+      - 192.168.2.177

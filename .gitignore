@@ -2,6 +2,5 @@
 .direnv/
 
 # Decrypted secrets — tracked as .age files
-systems/**/secrets.yaml
-systems/**/talosconfig
-systems/**/talosconfigh
+clusters/**/secrets.yaml
+clusters/**/talosconfig

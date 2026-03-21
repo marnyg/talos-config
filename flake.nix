@@ -46,7 +46,7 @@
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)"
               # Encrypt secrets and talosconfig files
-              find systems -type f \( -name '*-secrets.yaml' -o -name 'talosconfig' -o -name 'talosconfigh' \) | while IFS= read -r f; do
+              find clusters -type f \( -name 'secrets.yaml' -o -name 'talosconfig' \) | while IFS= read -r f; do
                 ${pkgs.age}/bin/age -R "${sshKey}.pub" -o "$f.age" "$f"
                 echo "Encrypted $f"
               done
@@ -59,7 +59,7 @@
             program = toString (pkgs.writeShellScript "decrypt-secrets" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)"
-              find systems -type f -name '*.age' | while IFS= read -r f; do
+              find clusters -type f -name '*.age' | while IFS= read -r f; do
                 out="''${f%.age}"
                 ${pkgs.age}/bin/age -d -i "${sshKey}" -o "$out" "$f"
                 echo "Decrypted $out"

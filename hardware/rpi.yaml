@@ -1,0 +1,7 @@
+machine:
+  install:
+    disk: /dev/mmcblk0
+  network:
+    interfaces:
+      - interface: end0
+        dhcp: true
