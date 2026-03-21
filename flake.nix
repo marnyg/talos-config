@@ -45,13 +45,8 @@
             program = toString (pkgs.writeShellScript "encrypt-secrets" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)"
-              # Encrypt secrets patches
-              find secrets -type f -name '*.yaml' | while IFS= read -r f; do
-                ${pkgs.age}/bin/age -R "${sshKey}.pub" -o "$f.age" "$f"
-                echo "Encrypted $f"
-              done
-              # Encrypt talosconfig files
-              find systems -type f \( -name 'talosconfig' -o -name 'talosconfigh' \) | while IFS= read -r f; do
+              # Encrypt secrets and talosconfig files
+              find systems -type f \( -name '*-secrets.yaml' -o -name 'talosconfig' -o -name 'talosconfigh' \) | while IFS= read -r f; do
                 ${pkgs.age}/bin/age -R "${sshKey}.pub" -o "$f.age" "$f"
                 echo "Encrypted $f"
               done
@@ -64,7 +59,7 @@
             program = toString (pkgs.writeShellScript "decrypt-secrets" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)"
-              find secrets systems -type f -name '*.age' | while IFS= read -r f; do
+              find systems -type f -name '*.age' | while IFS= read -r f; do
                 out="''${f%.age}"
                 ${pkgs.age}/bin/age -d -i "${sshKey}" -o "$out" "$f"
                 echo "Decrypted $out"
@@ -109,7 +104,7 @@
               age
             ];
             enterShell = ''
-              for f in $(find secrets systems -name '*.age' 2>/dev/null); do
+              for f in $(find systems -name '*.age' 2>/dev/null); do
                 out="''${f%.age}"
                 if [ ! -f "$out" ] || [ "$f" -nt "$out" ]; then
                   age -d -i "${sshKey}" -o "$out" "$f"
