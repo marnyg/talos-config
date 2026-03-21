@@ -1,0 +1,6 @@
+ip: 192.168.2.177
+config: base/controlplane.yaml
+patches:
+  - clusters/homelab/cluster.yaml
+  - clusters/homelab/secrets.yaml
+  - hardware/minipc.yaml

@@ -33,7 +33,7 @@
 
           packages.config-server = pkgs.writeShellApplication {
             name = "config-server";
-            runtimeInputs = [ pkgs.python3 self'.packages.talosctl ];
+            runtimeInputs = [ (pkgs.python3.withPackages (ps: [ ps.pyyaml ])) self'.packages.talosctl ];
             text = ''
               exec python3 ${./serve-config.py} "$@"
             '';
@@ -106,21 +106,28 @@
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)"
 
-              MACHINES_FILE="machines.json"
+              YQ="${pkgs.yq-go}/bin/yq"
               FILTER="''${1:-}"
 
               apply_machine() {
-                local mac="$1"
-                local ip config
+                local mac_dir="$1"
+                local mac meta ip config
 
-                ip=$(${pkgs.jq}/bin/jq -r ".\"$mac\".ip" "$MACHINES_FILE")
-                config=$(${pkgs.jq}/bin/jq -r ".\"$mac\".config" "$MACHINES_FILE")
+                mac=$(basename "$mac_dir")
+                meta="$mac_dir/meta.yaml"
+                ip=$($YQ '.ip' "$meta")
+                config=$($YQ '.config' "$meta")
 
-                # Build patch args
+                # Build patch args from meta.yaml patches list
                 local patches=""
                 while IFS= read -r p; do
-                  patches="$patches --patch @$p"
-                done < <(${pkgs.jq}/bin/jq -r ".\"$mac\".patches[]" "$MACHINES_FILE")
+                  [ -n "$p" ] && patches="$patches --patch @$p"
+                done < <($YQ '.patches[]' "$meta")
+
+                # Add machine-specific patch if it exists
+                if [ -f "$mac_dir/patch.yaml" ]; then
+                  patches="$patches --patch @$mac_dir/patch.yaml"
+                fi
 
                 echo "Applying to $mac ($ip) — $config"
 
@@ -133,10 +140,11 @@
               }
 
               if [ -n "$FILTER" ]; then
-                apply_machine "$FILTER"
+                mac_normalized=$(echo "$FILTER" | tr ':' '-')
+                apply_machine "machines/$mac_normalized"
               else
-                for mac in $(${pkgs.jq}/bin/jq -r 'keys[]' "$MACHINES_FILE"); do
-                  apply_machine "$mac"
+                for d in machines/*/; do
+                  [ -f "$d/meta.yaml" ] && apply_machine "''${d%/}"
                 done
               fi
             '');

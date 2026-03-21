@@ -17,10 +17,11 @@ clusters/<name>/                 # Cluster identity + secrets
 
 hardware/<type>.yaml             # Hardware-specific config (disk, NIC, installer image)
 
-machines/<mac>.yaml              # Per-machine overrides (optional)
+machines/<mac>/                  # Per-machine config
+  meta.yaml                      #   ip, base config, patch list
+  patch.yaml                     #   machine-specific overrides (optional)
 
 talosconfig.age                  # Encrypted talosctl admin credentials (all clusters)
-machines.json                    # Maps MAC address → role + patches
 ```
 
 Each machine is defined by a MAC address mapped to a composition of these four layers:
@@ -34,24 +35,27 @@ Each machine is defined by a MAC address mapped to a composition of these four l
 
 Patches are applied in order via `talosctl machineconfig patch`, matching the standard Talos strategic merge patch format.
 
-## machines.json
+## machines/
 
-Maps MAC addresses to a base config, IP, cluster, and an ordered list of patches:
+Each machine gets a directory named by MAC address (dashes for colons):
 
-```json
-{
-  "b0:41:6f:15:3b:8f": {
-    "ip": "192.168.2.177",
-    "config": "base/controlplane.yaml",
-    "patches": [
-      "clusters/homelab/cluster.yaml",
-      "clusters/homelab/secrets.yaml",
-      "hardware/minipc.yaml",
-      "machines/b0-41-6f-15-3b-8f.yaml"
-    ]
-  }
-}
 ```
+machines/b0-41-6f-15-3b-8f/
+  meta.yaml       # metadata: ip, base config, patch list
+  patch.yaml      # machine-specific Talos patch (optional)
+```
+
+`meta.yaml`:
+```yaml
+ip: 192.168.2.177
+config: base/controlplane.yaml
+patches:
+  - clusters/homelab/cluster.yaml
+  - clusters/homelab/secrets.yaml
+  - hardware/minipc.yaml
+```
+
+`patch.yaml` is a standard Talos strategic merge patch — usable directly with `talosctl machineconfig patch`.
 
 ## Usage
 
@@ -131,28 +135,31 @@ This composes `base + patches` via `talosctl machineconfig patch` and pushes wit
        disk: /dev/sda
    ```
 
-2. Optionally create a machine override:
+2. Create the machine directory:
+   ```bash
+   mkdir machines/aa-bb-cc-dd-ee-ff
+   ```
+
+3. Create `meta.yaml`:
    ```yaml
-   # machines/aa-bb-cc-dd-ee-ff.yaml
+   # machines/aa-bb-cc-dd-ee-ff/meta.yaml
+   ip: 192.168.2.x
+   config: base/worker.yaml
+   patches:
+     - clusters/homelab/cluster.yaml
+     - clusters/homelab/secrets.yaml
+     - hardware/new-hw.yaml
+   ```
+
+4. Optionally create `patch.yaml` for machine-specific overrides:
+   ```yaml
+   # machines/aa-bb-cc-dd-ee-ff/patch.yaml
    machine:
      network:
        hostname: worker-1
    ```
 
-3. Add the MAC to `machines.json`:
-   ```json
-   "aa:bb:cc:dd:ee:ff": {
-     "ip": "192.168.2.x",
-     "config": "base/worker.yaml",
-     "patches": [
-       "clusters/homelab/cluster.yaml",
-       "clusters/homelab/secrets.yaml",
-       "hardware/new-hw.yaml"
-     ]
-   }
-   ```
-
-4. PXE boot the machine, then `nix run .#apply` to push updates.
+5. PXE boot the machine, then `nix run .#apply` to push updates.
 
 ## Secret management
 

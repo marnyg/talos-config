@@ -37,19 +37,13 @@ base role  →  cluster  →  hardware  →  machine override
 
 Patches are standard Talos strategic merge patches — the same format used by `talosctl machineconfig patch` and `talosctl gen config --config-patch`.
 
-## machines.json
+## machines/<mac>/
 
-Maps MAC addresses to their config composition. The `apply` command and `config-server` read from this file.
+Each machine is a directory named by MAC address (dashes instead of colons) containing:
+- `meta.yaml` — ip, base config, ordered patch list
+- `patch.yaml` — optional machine-specific Talos strategic merge patch (valid for direct use with `talosctl machineconfig patch`)
 
-```json
-{
-  "b0:41:6f:15:3b:8f": {
-    "ip": "192.168.2.177",
-    "config": "base/controlplane.yaml",
-    "patches": ["clusters/homelab/cluster.yaml", "clusters/homelab/secrets.yaml", "hardware/minipc.yaml", "machines/b0-41-6f-15-3b-8f.yaml"]
-  }
-}
-```
+The `apply` command and `config-server` scan `machines/` to discover all machines.
 
 ## Secrets
 

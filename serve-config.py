@@ -1,28 +1,50 @@
 #!/usr/bin/env python3
 """Talos machine config server.
 
-Maps MAC addresses to config files + patches, merges them using
-talosctl machineconfig patch, and serves the result.
+Scans machines/<mac>/ directories for meta.yaml (ip, config, patches)
+and optional patch.yaml, then serves composed configs via
+talosctl machineconfig patch.
 """
 
-import json
 import http.server
 import subprocess
 import tempfile
 import urllib.parse
 from pathlib import Path
 
+import yaml
+
 ROOT = Path.cwd()
-MACHINES_FILE = ROOT / "machines.json"
+MACHINES_DIR = ROOT / "machines"
 
 
 def load_machines():
-    data = json.loads(MACHINES_FILE.read_text())
-    return {k.lower().replace("-", ":"): v for k, v in data.items()}
+    """Scan machines/ for directories, return MAC → meta dict."""
+    machines = {}
+    for d in MACHINES_DIR.iterdir():
+        if not d.is_dir():
+            continue
+        meta_file = d / "meta.yaml"
+        if not meta_file.exists():
+            continue
+        mac = d.name.replace("-", ":")
+        with open(meta_file) as f:
+            meta = yaml.safe_load(f)
+        meta["_dir"] = str(d)
+        machines[mac] = meta
+    return machines
 
 
-def apply_patches(config_path, patch_paths):
-    """Merge config + patches using talosctl machineconfig patch."""
+def build_config(meta):
+    """Compose base config + patches using talosctl machineconfig patch."""
+    config_path = ROOT / meta["config"]
+    patch_paths = [ROOT / p for p in meta.get("patches", [])]
+
+    # Include machine-specific patch if it exists
+    machine_patch = Path(meta["_dir"]) / "patch.yaml"
+    if machine_patch.exists():
+        patch_paths.append(machine_patch)
+
     cmd = ["talosctl", "machineconfig", "patch", str(config_path)]
     for patch in patch_paths:
         cmd.extend(["--patch", f"@{patch}"])
@@ -53,29 +75,13 @@ class ConfigHandler(http.server.BaseHTTPRequestHandler):
 
         mac = mac.lower().replace("-", ":")
         machines = load_machines()
-        entry = machines.get(mac)
 
-        if not entry:
+        if mac not in machines:
             self.send_error(404, f"No config for MAC {mac}")
             return
 
-        config_path = ROOT / entry["config"]
-        patch_paths = [ROOT / p for p in entry.get("patches", [])]
-
-        if not config_path.exists():
-            self.send_error(500, f"Config file not found: {entry['config']}")
-            return
-
-        for p in patch_paths:
-            if not p.exists():
-                self.send_error(500, f"Patch file not found: {p}")
-                return
-
         try:
-            if patch_paths:
-                body = apply_patches(config_path, patch_paths).encode()
-            else:
-                body = config_path.read_bytes()
+            body = build_config(machines[mac]).encode()
         except RuntimeError as e:
             self.send_error(500, str(e))
             return
@@ -95,7 +101,9 @@ if __name__ == "__main__":
     parser.add_argument("--bind", default="0.0.0.0")
     args = parser.parse_args()
 
+    machines = load_machines()
     server = http.server.HTTPServer((args.bind, args.port), ConfigHandler)
     print(f"Serving configs on {args.bind}:{args.port}")
-    print(f"Machines: {json.dumps(load_machines(), indent=2)}")
+    for mac, meta in machines.items():
+        print(f"  {mac} -> {meta['config']}")
     server.serve_forever()
