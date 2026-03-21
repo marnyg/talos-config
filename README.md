@@ -14,12 +14,12 @@ base/                            # Role templates (shared boilerplate)
 clusters/<name>/                 # Cluster identity + secrets
   cluster.yaml                   #   name, endpoint, certSANs
   secrets.yaml.age               #   encrypted cluster crypto material
-  talosconfig.age                #   encrypted talosctl admin credentials
 
 hardware/<type>.yaml             # Hardware-specific config (disk, NIC, installer image)
 
 machines/<mac>.yaml              # Per-machine overrides (optional)
 
+talosconfig.age                  # Encrypted talosctl admin credentials (all clusters)
 machines.json                    # Maps MAC address → role + patches
 ```
 
@@ -43,7 +43,6 @@ Maps MAC addresses to a base config, IP, cluster, and an ordered list of patches
   "b0:41:6f:15:3b:8f": {
     "ip": "192.168.2.177",
     "config": "base/controlplane.yaml",
-    "cluster": "homelab",
     "patches": [
       "clusters/homelab/cluster.yaml",
       "clusters/homelab/secrets.yaml",
@@ -53,8 +52,6 @@ Maps MAC addresses to a base config, IP, cluster, and an ordered list of patches
   }
 }
 ```
-
-The `apply` command reads this file to compose and push configs.
 
 ## Usage
 
@@ -147,7 +144,6 @@ This composes `base + patches` via `talosctl machineconfig patch` and pushes wit
    "aa:bb:cc:dd:ee:ff": {
      "ip": "192.168.2.x",
      "config": "base/worker.yaml",
-     "cluster": "homelab",
      "patches": [
        "clusters/homelab/cluster.yaml",
        "clusters/homelab/secrets.yaml",

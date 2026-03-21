@@ -45,8 +45,13 @@
             program = toString (pkgs.writeShellScript "encrypt-secrets" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)"
-              # Encrypt secrets and talosconfig files
-              find clusters -type f \( -name 'secrets.yaml' -o -name 'talosconfig' \) | while IFS= read -r f; do
+              # Encrypt talosconfig
+              if [ -f talosconfig ]; then
+                ${pkgs.age}/bin/age -R "${sshKey}.pub" -o talosconfig.age talosconfig
+                echo "Encrypted talosconfig"
+              fi
+              # Encrypt cluster secrets
+              find clusters -type f -name 'secrets.yaml' | while IFS= read -r f; do
                 ${pkgs.age}/bin/age -R "${sshKey}.pub" -o "$f.age" "$f"
                 echo "Encrypted $f"
               done
@@ -59,7 +64,8 @@
             program = toString (pkgs.writeShellScript "decrypt-secrets" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)"
-              find clusters -type f -name '*.age' | while IFS= read -r f; do
+              for f in talosconfig.age $(find clusters -type f -name '*.age'); do
+                [ -f "$f" ] || continue
                 out="''${f%.age}"
                 ${pkgs.age}/bin/age -d -i "${sshKey}" -o "$out" "$f"
                 echo "Decrypted $out"
@@ -105,12 +111,10 @@
 
               apply_machine() {
                 local mac="$1"
-                local ip config cluster talosconfig
+                local ip config
 
                 ip=$(${pkgs.jq}/bin/jq -r ".\"$mac\".ip" "$MACHINES_FILE")
                 config=$(${pkgs.jq}/bin/jq -r ".\"$mac\".config" "$MACHINES_FILE")
-                cluster=$(${pkgs.jq}/bin/jq -r ".\"$mac\".cluster" "$MACHINES_FILE")
-                talosconfig="clusters/$cluster/talosconfig"
 
                 # Build patch args
                 local patches=""
@@ -118,13 +122,13 @@
                   patches="$patches --patch @$p"
                 done < <(${pkgs.jq}/bin/jq -r ".\"$mac\".patches[]" "$MACHINES_FILE")
 
-                echo "Applying to $mac ($ip) — $config @ $cluster"
+                echo "Applying to $mac ($ip) — $config"
 
                 composed=$(${pkgs.talosctl}/bin/talosctl machineconfig patch "$config" $patches -o /dev/stdout)
 
                 ${pkgs.talosctl}/bin/talosctl \
                   -n "$ip" -e "$ip" \
-                  --talosconfig "$talosconfig" \
+                  --talosconfig talosconfig \
                   apply-config --file <(echo "$composed")
               }
 
@@ -150,7 +154,8 @@
               jq
             ];
             enterShell = ''
-              for f in $(find clusters -name '*.age' 2>/dev/null); do
+              for f in talosconfig.age $(find clusters -name '*.age' 2>/dev/null); do
+                [ -f "$f" ] || continue
                 out="''${f%.age}"
                 if [ ! -f "$out" ] || [ "$f" -nt "$out" ]; then
                   age -d -i "${sshKey}" -o "$out" "$f"
@@ -158,7 +163,7 @@
                 fi
               done
 
-              export TALOSCONFIG="$(pwd)/clusters/homelab/talosconfig"
+              export TALOSCONFIG="$(pwd)/talosconfig"
             '';
           };
         };

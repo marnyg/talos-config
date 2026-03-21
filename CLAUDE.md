@@ -31,7 +31,7 @@ base role  →  cluster  →  hardware  →  machine override
 | Layer | Path | Purpose |
 |-------|------|---------|
 | Role | `base/controlplane.yaml`, `base/worker.yaml` | Full Talos config templates with shared boilerplate, secrets stripped to `""` |
-| Cluster | `clusters/<name>/cluster.yaml` | Cluster identity: name, endpoint, certSANs |
+| Cluster | `clusters/<name>/cluster.yaml` + `secrets.yaml` | Cluster identity, endpoint, certSANs, crypto material |
 | Hardware | `hardware/<type>.yaml` | Disk, installer image, NIC config |
 | Machine | `machines/<mac>.yaml` | Per-machine overrides (optional) |
 
@@ -46,7 +46,6 @@ Maps MAC addresses to their config composition. The `apply` command and `config-
   "b0:41:6f:15:3b:8f": {
     "ip": "192.168.2.177",
     "config": "base/controlplane.yaml",
-    "cluster": "homelab",
     "patches": ["clusters/homelab/cluster.yaml", "clusters/homelab/secrets.yaml", "hardware/minipc.yaml", "machines/b0-41-6f-15-3b-8f.yaml"]
   }
 }
@@ -54,7 +53,7 @@ Maps MAC addresses to their config composition. The `apply` command and `config-
 
 ## Secrets
 
-Cluster secrets (CAs, tokens, keys) are extracted from configs into `clusters/<name>/secrets.yaml`, encrypted with age using `~/.ssh/id_ed25519`. Only `.age` files are committed. The devshell auto-decrypts on entry. Talosconfig files (admin credentials) follow the same pattern.
+Cluster secrets (CAs, tokens, keys) are in `clusters/<name>/secrets.yaml`, encrypted with age using `~/.ssh/id_ed25519`. Admin credentials are in `talosconfig` at the repo root (supports multiple contexts for multiple clusters). Only `.age` files are committed. The devshell auto-decrypts on entry and sets `TALOSCONFIG`.
 
 ## Config Server (serve-config.py)
 
