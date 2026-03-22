@@ -127,40 +127,5 @@ data:
       }' "$RADARR_URL/api/v3/indexer" || echo "WARN: NZBgeek indexer failed"
     fi
 
-    # Configure Trakt import list (watchlist)
-    existing_lists=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/importlist")
-    if [ -n "$TRAKT_ACCESS_TOKEN" ] && ! echo "$existing_lists" | grep -q "Trakt"; then
-      echo "Adding Trakt watchlist import list..."
-      qp_id=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/qualityprofile" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
-      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
-        "enabled": true,
-        "enableAutomaticAdd": true,
-        "searchForMissingMovies": true,
-        "shouldMonitor": true,
-        "minimumAvailability": "announced",
-        "rootFolderPath": "/movies",
-        "qualityProfileId": '"$qp_id"',
-        "name": "Trakt Watchlist",
-        "implementation": "TraktListImport",
-        "configContract": "TraktListSettings",
-        "fields": [
-          {"name": "accessToken", "value": "'"$TRAKT_ACCESS_TOKEN"'"},
-          {"name": "refreshToken", "value": "'"$TRAKT_REFRESH_TOKEN"'"},
-          {"name": "expires", "value": ""},
-          {"name": "authUser", "value": ""},
-          {"name": "traktListType", "value": 0},
-          {"name": "username", "value": ""},
-          {"name": "listname", "value": ""},
-          {"name": "rating", "value": "0-100"},
-          {"name": "certification", "value": "NR,G,PG,PG-13,R,NC-17"},
-          {"name": "genres", "value": ""},
-          {"name": "years", "value": ""},
-          {"name": "limit", "value": 100},
-          {"name": "traktAdditionalParameters", "value": ""},
-          {"name": "signIn", "value": "startOAuth"}
-        ]
-      }' "$RADARR_URL/api/v3/importlist" > /dev/null && echo "  OK" || echo "  WARN: Trakt import list failed"
-    fi
-
     echo "Radarr configuration complete!"
     sleep infinity
