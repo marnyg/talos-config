@@ -14,7 +14,10 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path.cwd()
+ROOT = Path(subprocess.run(
+    ["git", "rev-parse", "--show-toplevel"],
+    capture_output=True, text=True, check=True
+).stdout.strip()) / "talos"
 MACHINES_DIR = ROOT / "machines"
 
 
