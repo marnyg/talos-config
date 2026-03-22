@@ -53,8 +53,7 @@ spec:
             - name: downloads
               mountPath: /downloads
           readinessProbe:
-            httpGet:
-              path: /
+            tcpSocket:
               port: 6789
             initialDelaySeconds: 10
             periodSeconds: 10

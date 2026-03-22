@@ -13,6 +13,23 @@ spec:
       labels:
         app: radarr
     spec:
+      initContainers:
+        - name: config
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              cat > /config/config.xml << 'XMLEOF'
+              <Config>
+                <Port>7878</Port>
+                <BindAddress>*</BindAddress>
+                <AuthenticationMethod>External</AuthenticationMethod>
+                <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
+              </Config>
+              XMLEOF
+          volumeMounts:
+            - name: config
+              mountPath: /config
       containers:
         - name: radarr
           image: lscr.io/linuxserver/radarr:6.0.4

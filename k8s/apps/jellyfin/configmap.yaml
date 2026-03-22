@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jellyfin-configurator
+  namespace: media
+data:
+  configure.sh: |
+    #!/bin/sh
+    set -e
+
+    JELLYFIN_URL="http://localhost:8096"
+
+    echo "Waiting for Jellyfin to start..."
+    until curl -sf "$JELLYFIN_URL/health" > /dev/null 2>&1; do
+      sleep 5
+    done
+
+    # Check if startup wizard is already completed
+    wizard_done=$(curl -sf "$JELLYFIN_URL/System/Info/Public" | grep -o '"StartupWizardCompleted":[a-z]*' | cut -d: -f2)
+    if [ "$wizard_done" = "true" ]; then
+      echo "Startup wizard already completed."
+      sleep infinity
+    fi
+
+    echo "Completing startup wizard..."
+
+    # Set language and region
+    curl -sf -X POST "$JELLYFIN_URL/Startup/Configuration" \
+      -H "Content-Type: application/json" \
+      -d '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}' || echo "WARN: startup config failed"
+
+    # Create admin user (no password — access is via Tailscale)
+    curl -sf -X POST "$JELLYFIN_URL/Startup/User" \
+      -H "Content-Type: application/json" \
+      -d '{"Name":"admin","Password":""}' || echo "WARN: startup user failed"
+
+    # Complete the wizard
+    curl -sf -X POST "$JELLYFIN_URL/Startup/Complete" || echo "WARN: startup complete failed"
+
+    echo "Startup wizard completed!"
+
+    # Get API key for library setup
+    # Authenticate (empty password)
+    auth_result=$(curl -sf -X POST "$JELLYFIN_URL/Users/AuthenticateByName" \
+      -H "Content-Type: application/json" \
+      -H 'X-Emby-Authorization: MediaBrowser Client="configure", Device="k8s", DeviceId="init", Version="1.0"' \
+      -d '{"Username":"admin","Pw":""}')
+
+    token=$(echo "$auth_result" | grep -o '"AccessToken":"[^"]*"' | cut -d'"' -f4)
+    if [ -z "$token" ]; then
+      echo "WARN: Could not get auth token, skipping library setup"
+      sleep infinity
+    fi
+
+    AUTH="X-Emby-Token: $token"
+
+    # Add TV library if not exists
+    existing=$(curl -sf -H "$AUTH" "$JELLYFIN_URL/Library/VirtualFolders")
+    if ! echo "$existing" | grep -q "TV Shows"; then
+      echo "Adding TV Shows library..."
+      curl -sf -X POST "$JELLYFIN_URL/Library/VirtualFolders?name=TV%20Shows&collectionType=tvshows&refreshLibrary=false" \
+        -H "$AUTH" -H "Content-Type: application/json" \
+        -d '{"LibraryOptions":{"PathInfos":[{"Path":"/data/tv"}],"EnableRealtimeMonitor":true}}' || echo "WARN: TV library failed"
+    fi
+
+    # Add Movies library if not exists
+    if ! echo "$existing" | grep -q "Movies"; then
+      echo "Adding Movies library..."
+      curl -sf -X POST "$JELLYFIN_URL/Library/VirtualFolders?name=Movies&collectionType=movies&refreshLibrary=false" \
+        -H "$AUTH" -H "Content-Type: application/json" \
+        -d '{"LibraryOptions":{"PathInfos":[{"Path":"/data/movies"}],"EnableRealtimeMonitor":true}}' || echo "WARN: Movies library failed"
+    fi
+
+    echo "Jellyfin configuration complete!"
+    sleep infinity

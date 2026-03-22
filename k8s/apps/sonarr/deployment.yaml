@@ -13,6 +13,23 @@ spec:
       labels:
         app: sonarr
     spec:
+      initContainers:
+        - name: config
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              cat > /config/config.xml << 'XMLEOF'
+              <Config>
+                <Port>8989</Port>
+                <BindAddress>*</BindAddress>
+                <AuthenticationMethod>External</AuthenticationMethod>
+                <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
+              </Config>
+              XMLEOF
+          volumeMounts:
+            - name: config
+              mountPath: /config
       containers:
         - name: sonarr
           image: ghcr.io/linuxserver/sonarr:4.0.17

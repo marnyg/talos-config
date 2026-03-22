@@ -42,8 +42,7 @@ spec:
             - name: config
               mountPath: /config
           readinessProbe:
-            httpGet:
-              path: /UI/Dashboard
+            tcpSocket:
               port: 9117
             initialDelaySeconds: 15
             periodSeconds: 10

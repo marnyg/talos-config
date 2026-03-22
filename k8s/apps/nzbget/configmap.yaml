@@ -9,6 +9,10 @@ data:
     DestDir=${MainDir}/completed
     InterDir=${MainDir}/intermediate
     TempDir=${MainDir}/tmp
+    QueueDir=${MainDir}/queue
+    NzbDir=${MainDir}/nzb
+    ScriptDir=${MainDir}/scripts
+    LogFile=${MainDir}/nzbget.log
     WebDir=${AppDir}/webui
 
     Server1.Active=yes
@@ -27,8 +31,7 @@ data:
     ControlPort=6789
     ControlUsername=nzbget
     ControlPassword=tegbzn6789
-    DaemonUsername=root
-    AuthorizedIP=
+    AuthorizedIP=127.0.0.1
 
     Category1.Name=Series
     Category1.DestDir=

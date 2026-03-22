@@ -38,9 +38,22 @@ spec:
               port: 8096
             initialDelaySeconds: 15
             periodSeconds: 10
+        - name: configurator
+          image: alpine:3.21
+          command: ["/bin/sh", "-c"]
+          args:
+            - apk add --no-cache curl > /dev/null 2>&1 && sh /scripts/configure.sh
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: scripts
+              mountPath: /scripts
       volumes:
         - name: config
           emptyDir: {}
+        - name: scripts
+          configMap:
+            name: jellyfin-configurator
         - name: tv
           persistentVolumeClaim:
             claimName: media-tv
