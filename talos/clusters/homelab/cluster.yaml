@@ -5,3 +5,28 @@ cluster:
   apiServer:
     certSANs:
       - 192.168.2.177
+  extraManifests:
+    - https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+  inlineManifests:
+    - name: argocd-apps
+      contents: |
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata:
+          name: apps
+          namespace: argocd
+        spec:
+          project: default
+          source:
+            repoURL: https://github.com/marnyg/talos-config.git
+            targetRevision: main
+            path: k8s/apps
+            directory:
+              recurse: true
+          destination:
+            server: https://kubernetes.default.svc
+            namespace: default
+          syncPolicy:
+            automated:
+              prune: true
+              selfHeal: true
