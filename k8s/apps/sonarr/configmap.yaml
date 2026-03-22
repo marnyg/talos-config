@@ -127,5 +127,33 @@ data:
       }' "$SONARR_URL/api/v3/indexer" || echo "WARN: NZBgeek indexer failed"
     fi
 
+    # Seed watchlist from ConfigMap
+    if [ -f /watchlist/series.json ]; then
+      echo "Seeding series watchlist..."
+      existing_series=$(curl -sf -H "$AUTH" "$SONARR_URL/api/v3/series")
+      # Get first quality profile ID
+      qp_id=$(curl -sf -H "$AUTH" "$SONARR_URL/api/v3/qualityprofile" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+      # Parse JSON array manually (no jq available)
+      grep -o '"tvdbId":[0-9]*' /watchlist/series.json | cut -d: -f2 | while read -r tvdb_id; do
+        if echo "$existing_series" | grep -q "\"tvdbId\":$tvdb_id"; then
+          continue
+        fi
+        echo "  Adding tvdbId $tvdb_id..."
+        lookup=$(curl -sf -H "$AUTH" "$SONARR_URL/api/v3/series/lookup?term=tvdb:$tvdb_id")
+        if [ -z "$lookup" ] || [ "$lookup" = "[]" ]; then
+          echo "  WARN: lookup failed for tvdbId $tvdb_id"
+          continue
+        fi
+        # Extract first result and add required fields
+        # The lookup returns an array, take first element
+        series_data=$(echo "$lookup" | sed 's/^\[//;s/\]$//' | sed 's/},{/}\n{/g' | head -1)
+        # Inject rootFolderPath, qualityProfileId, monitored
+        series_data=$(echo "$series_data" | sed 's/}$/,"rootFolderPath":"\/tv","qualityProfileId":'"$qp_id"',"monitored":true,"addOptions":{"searchForMissingEpisodes":true}}/')
+        curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$series_data" "$SONARR_URL/api/v3/series" > /dev/null && echo "  OK" || echo "  WARN: failed"
+        sleep 1
+      done
+    fi
+
     echo "Sonarr configuration complete!"
     sleep infinity

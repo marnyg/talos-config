@@ -127,5 +127,28 @@ data:
       }' "$RADARR_URL/api/v3/indexer" || echo "WARN: NZBgeek indexer failed"
     fi
 
+    # Seed watchlist from ConfigMap
+    if [ -f /watchlist/movies.json ]; then
+      echo "Seeding movie watchlist..."
+      existing_movies=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/movie")
+      qp_id=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/qualityprofile" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+      grep -o '"tmdbId":[0-9]*' /watchlist/movies.json | cut -d: -f2 | while read -r tmdb_id; do
+        if echo "$existing_movies" | grep -q "\"tmdbId\":$tmdb_id"; then
+          continue
+        fi
+        echo "  Adding tmdbId $tmdb_id..."
+        lookup=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/movie/lookup?term=tmdb:$tmdb_id")
+        if [ -z "$lookup" ] || [ "$lookup" = "[]" ]; then
+          echo "  WARN: lookup failed for tmdbId $tmdb_id"
+          continue
+        fi
+        movie_data=$(echo "$lookup" | sed 's/^\[//;s/\]$//' | sed 's/},{/}\n{/g' | head -1)
+        movie_data=$(echo "$movie_data" | sed 's/}$/,"rootFolderPath":"\/movies","qualityProfileId":'"$qp_id"',"monitored":true,"addOptions":{"searchForMovie":true}}/')
+        curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$movie_data" "$RADARR_URL/api/v3/movie" > /dev/null && echo "  OK" || echo "  WARN: failed"
+        sleep 1
+      done
+    fi
+
     echo "Radarr configuration complete!"
     sleep infinity
