@@ -88,7 +88,7 @@ data:
     if ! echo "$existing" | grep -q "Jackett"; then
       echo "Adding Jackett indexer..."
       curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
-        "enableRss": true,
+        "enableRss": false,
         "enableAutomaticSearch": true,
         "enableInteractiveSearch": true,
         "protocol": "torrent",
