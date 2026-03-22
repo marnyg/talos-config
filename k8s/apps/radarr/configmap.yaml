@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: radarr-configurator
+  namespace: media
+data:
+  configure.sh: |
+    #!/bin/sh
+    set -e
+
+    RADARR_URL="http://localhost:7878"
+    JACKETT_API_KEY="d47e09ac8e5d4c7f85b13a2f6e9c3d1a"
+
+    echo "Waiting for Radarr to start..."
+    until curl -sf "$RADARR_URL/ping" > /dev/null 2>&1; do
+      sleep 5
+    done
+
+    # Wait for config.xml to have an API key
+    while [ ! -f /config/config.xml ] || ! grep -q '<ApiKey>' /config/config.xml; do
+      sleep 2
+    done
+
+    API_KEY=$(sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml)
+    echo "Radarr API key: $API_KEY"
+    AUTH="X-Api-Key: $API_KEY"
+
+    # Wait for dependency services
+    echo "Waiting for NZBget..."
+    until curl -sf "http://nzbget:6789" > /dev/null 2>&1; do sleep 5; done
+
+    echo "Waiting for Transmission..."
+    until curl -sf "http://transmission:9091/transmission/web/" > /dev/null 2>&1; do sleep 5; done
+
+    echo "Waiting for Jackett..."
+    until curl -sf "http://jackett:9117" > /dev/null 2>&1; do sleep 5; done
+
+    # Add root folder /movies
+    existing=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/rootfolder")
+    if ! echo "$existing" | grep -q "/movies"; then
+      echo "Adding root folder /movies..."
+      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+        -d '{"path":"/movies"}' "$RADARR_URL/api/v3/rootfolder" || echo "WARN: root folder failed"
+    fi
+
+    # Add NZBget download client
+    existing=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/downloadclient")
+    if ! echo "$existing" | grep -q "NZBget"; then
+      echo "Adding NZBget download client..."
+      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enable": true,
+        "protocol": "usenet",
+        "priority": 1,
+        "name": "NZBget",
+        "implementation": "Nzbget",
+        "configContract": "NzbgetSettings",
+        "fields": [
+          {"name": "host", "value": "nzbget"},
+          {"name": "port", "value": 6789},
+          {"name": "username", "value": "nzbget"},
+          {"name": "password", "value": "tegbzn6789"},
+          {"name": "movieCategory", "value": "Movies"},
+          {"name": "useSsl", "value": false}
+        ]
+      }' "$RADARR_URL/api/v3/downloadclient" || echo "WARN: NZBget client failed"
+    fi
+
+    # Add Transmission download client
+    if ! echo "$existing" | grep -q "Transmission"; then
+      echo "Adding Transmission download client..."
+      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enable": true,
+        "protocol": "torrent",
+        "priority": 1,
+        "name": "Transmission",
+        "implementation": "Transmission",
+        "configContract": "TransmissionSettings",
+        "fields": [
+          {"name": "host", "value": "transmission"},
+          {"name": "port", "value": 9091},
+          {"name": "useSsl", "value": false}
+        ]
+      }' "$RADARR_URL/api/v3/downloadclient" || echo "WARN: Transmission client failed"
+    fi
+
+    # Add Jackett indexer (Torznab)
+    existing=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/indexer")
+    if ! echo "$existing" | grep -q "Jackett"; then
+      echo "Adding Jackett indexer..."
+      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enable": true,
+        "protocol": "torrent",
+        "priority": 25,
+        "name": "Jackett",
+        "implementation": "Torznab",
+        "configContract": "TorznabSettings",
+        "fields": [
+          {"name": "baseUrl", "value": "http://jackett:9117/api/v2.0/indexers/all/results/torznab/"},
+          {"name": "apiPath", "value": "/api"},
+          {"name": "apiKey", "value": "'"$JACKETT_API_KEY"'"},
+          {"name": "minimumSeeders", "value": 1}
+        ]
+      }' "$RADARR_URL/api/v3/indexer" || echo "WARN: Jackett indexer failed"
+    fi
+
+    echo "Radarr configuration complete!"
+    sleep infinity

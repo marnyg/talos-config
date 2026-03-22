@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jackett-config
+  namespace: media
+data:
+  ServerConfig.json: |
+    {
+      "Port": 9117,
+      "AllowExternal": true,
+      "APIKey": "d47e09ac8e5d4c7f85b13a2f6e9c3d1a",
+      "AdminPassword": "",
+      "BasePathOverride": "",
+      "BlackholeDir": "",
+      "UpdateDisabled": true
+    }

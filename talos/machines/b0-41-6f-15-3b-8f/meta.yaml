@@ -3,4 +3,5 @@ config: base/controlplane.yaml
 patches:
   - clusters/homelab/cluster.yaml
   - clusters/homelab/secrets.yaml
+  - clusters/homelab/sealed-secrets.yaml
   - hardware/minipc.yaml

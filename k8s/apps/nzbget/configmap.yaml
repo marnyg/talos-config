@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nzbget-config
+  namespace: media
+data:
+  nzbget.conf: |
+    MainDir=/downloads
+    DestDir=${MainDir}/completed
+    InterDir=${MainDir}/intermediate
+    TempDir=${MainDir}/tmp
+    WebDir=${AppDir}/webui
+
+    Server1.Active=yes
+    Server1.Name=Newshosting
+    Server1.Host=news.newshosting.com
+    Server1.Port=119
+    Server1.Username=PLACEHOLDER_USER
+    Server1.Password=PLACEHOLDER_PASS
+    Server1.JoinGroup=no
+    Server1.Encryption=no
+    Server1.Connections=10
+    Server1.Level=0
+    Server1.Group=0
+
+    ControlIP=0.0.0.0
+    ControlPort=6789
+    ControlUsername=nzbget
+    ControlPassword=tegbzn6789
+    DaemonUsername=root
+    AuthorizedIP=
+
+    Category1.Name=Series
+    Category1.DestDir=
+    Category2.Name=Movies
+    Category2.DestDir=

@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nzbget
+  namespace: media
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nzbget
+  template:
+    metadata:
+      labels:
+        app: nzbget
+    spec:
+      initContainers:
+        - name: config
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - |
+              sed "s/PLACEHOLDER_USER/$NNTP_USER/g; s/PLACEHOLDER_PASS/$NNTP_PASS/g" \
+                /template/nzbget.conf > /config/nzbget.conf
+          env:
+            - name: NNTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: newshosting
+                  key: username
+            - name: NNTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: newshosting
+                  key: password
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-template
+              mountPath: /template
+      containers:
+        - name: nzbget
+          image: ghcr.io/linuxserver/nzbget:24.12
+          ports:
+            - containerPort: 6789
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: downloads
+              mountPath: /downloads
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 6789
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          emptyDir: {}
+        - name: config-template
+          configMap:
+            name: nzbget-config
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: media-downloads
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nzbget
+  namespace: media
+spec:
+  selector:
+    app: nzbget
+  ports:
+    - port: 6789
+      targetPort: 6789

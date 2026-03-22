@@ -4,3 +4,4 @@
 # Decrypted secrets — tracked as .age files
 talos/talosconfig
 talos/clusters/**/secrets.yaml
+talos/clusters/**/sealed-secrets.yaml

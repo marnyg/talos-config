@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-tv
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /var/media/tv
+    type: DirectoryOrCreate
+  claimRef:
+    name: media-tv
+    namespace: media
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-movies
+spec:
+  capacity:
+    storage: 200Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /var/media/movies
+    type: DirectoryOrCreate
+  claimRef:
+    name: media-movies
+    namespace: media
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-downloads
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  hostPath:
+    path: /var/media/downloads
+    type: DirectoryOrCreate
+  claimRef:
+    name: media-downloads
+    namespace: media

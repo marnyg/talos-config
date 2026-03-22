@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  namespace: media
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jellyfin
+  template:
+    metadata:
+      labels:
+        app: jellyfin
+    spec:
+      containers:
+        - name: jellyfin
+          image: lscr.io/linuxserver/jellyfin:10.11.6
+          ports:
+            - containerPort: 8096
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: tv
+              mountPath: /data/tv
+              readOnly: true
+            - name: movies
+              mountPath: /data/movies
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8096
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: config
+          emptyDir: {}
+        - name: tv
+          persistentVolumeClaim:
+            claimName: media-tv
+        - name: movies
+          persistentVolumeClaim:
+            claimName: media-movies
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyfin
+  namespace: media
+spec:
+  type: NodePort
+  selector:
+    app: jellyfin
+  ports:
+    - port: 8096
+      targetPort: 8096
+      nodePort: 30096

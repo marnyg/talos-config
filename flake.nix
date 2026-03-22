@@ -52,7 +52,7 @@
                 echo "Encrypted talosconfig"
               fi
               # Encrypt cluster secrets
-              find clusters -type f -name 'secrets.yaml' | while IFS= read -r f; do
+              find clusters -type f \( -name 'secrets.yaml' -o -name 'sealed-secrets.yaml' \) | while IFS= read -r f; do
                 ${pkgs.age}/bin/age -R "${sshKey}.pub" -o "$f.age" "$f"
                 echo "Encrypted $f"
               done
@@ -161,6 +161,7 @@
               k9s
               age
               jq
+              kubeseal
             ];
             enterShell = ''
               cd_talos="$(git rev-parse --show-toplevel)/talos"

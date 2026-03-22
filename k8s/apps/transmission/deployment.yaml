@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transmission
+  namespace: media
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: transmission
+  template:
+    metadata:
+      labels:
+        app: transmission
+    spec:
+      initContainers:
+        - name: config
+          image: busybox:1.37
+          command: ["sh", "-c"]
+          args:
+            - cp /template/settings.json /config/settings.json
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: config-template
+              mountPath: /template
+      containers:
+        - name: transmission
+          image: ghcr.io/linuxserver/transmission:4.1.1
+          ports:
+            - containerPort: 9091
+              name: rpc
+            - containerPort: 51413
+              name: peer-tcp
+              protocol: TCP
+            - containerPort: 51413
+              name: peer-udp
+              protocol: UDP
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: downloads
+              mountPath: /downloads
+          readinessProbe:
+            httpGet:
+              path: /transmission/web/
+              port: 9091
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          emptyDir: {}
+        - name: config-template
+          configMap:
+            name: transmission-config
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: media-downloads
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transmission
+  namespace: media
+spec:
+  selector:
+    app: transmission
+  ports:
+    - port: 9091
+      targetPort: 9091
+      name: rpc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transmission-peer
+  namespace: media
+spec:
+  type: NodePort
+  selector:
+    app: transmission
+  ports:
+    - port: 51413
+      targetPort: 51413
+      nodePort: 31413
+      name: peer-tcp
+      protocol: TCP
+    - port: 51414
+      targetPort: 51413
+      nodePort: 31414
+      name: peer-udp
+      protocol: UDP
