@@ -71,6 +71,8 @@ cluster:
                       automated:
                         prune: true
                         selfHeal: true
+                      syncOptions:
+                        - SkipDryRunOnMissingResource=true
                   EOF
               restartPolicy: OnFailure
           backoffLimit: 3
