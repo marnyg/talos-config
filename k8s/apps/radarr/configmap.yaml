@@ -105,5 +105,27 @@ data:
       }' "$RADARR_URL/api/v3/indexer" || echo "WARN: Jackett indexer failed"
     fi
 
+    # Add NZBgeek indexer (Newznab/usenet)
+    if [ -n "$NZBGEEK_API_KEY" ] && ! echo "$existing" | grep -q "NZBgeek"; then
+      echo "Adding NZBgeek indexer..."
+      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enableRss": true,
+        "enableAutomaticSearch": true,
+        "enableInteractiveSearch": true,
+        "protocol": "usenet",
+        "priority": 10,
+        "name": "NZBgeek",
+        "implementation": "Newznab",
+        "configContract": "NewznabSettings",
+        "fields": [
+          {"name": "baseUrl", "value": "https://api.nzbgeek.info"},
+          {"name": "apiPath", "value": "/api"},
+          {"name": "apiKey", "value": "'"$NZBGEEK_API_KEY"'"},
+          {"name": "categories", "value": [2000, 2010, 2020, 2030, 2040, 2050]},
+          {"name": "animeCategories", "value": []}
+        ]
+      }' "$RADARR_URL/api/v3/indexer" || echo "WARN: NZBgeek indexer failed"
+    fi
+
     echo "Radarr configuration complete!"
     sleep infinity

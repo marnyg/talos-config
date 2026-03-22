@@ -63,6 +63,12 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - apk add --no-cache curl > /dev/null 2>&1 && sh /scripts/configure.sh
+          env:
+            - name: NZBGEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nzbgeek
+                  key: apiKey
           volumeMounts:
             - name: config
               mountPath: /config
