@@ -6,7 +6,6 @@ metadata:
 data:
   configure.sh: |
     #!/bin/sh
-    set -e
 
     JELLYFIN_URL="http://localhost:8096"
 
@@ -15,59 +14,58 @@ data:
       sleep 5
     done
 
-    # Always attempt wizard setup — the /System/Info/Public check is unreliable
-    echo "Running startup wizard..."
+    echo "Checking Jellyfin state..."
+    curl -s "$JELLYFIN_URL/System/Info/Public" 2>&1
+    echo ""
 
-    # Set language and region
-    curl -sf -X POST "$JELLYFIN_URL/Startup/Configuration" \
+    # Try startup wizard endpoints (they 404 if wizard is already done)
+    echo "Attempting startup wizard..."
+    curl -s -X POST "$JELLYFIN_URL/Startup/Configuration" \
       -H "Content-Type: application/json" \
-      -d '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}' && echo "OK: startup config" || echo "SKIP: startup config"
+      -d '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}' && echo "" && echo "OK: startup config" || echo "SKIP: startup config"
 
-    # Create admin user (no password — access is via Tailscale)
-    curl -sf -X POST "$JELLYFIN_URL/Startup/User" \
+    curl -s -X POST "$JELLYFIN_URL/Startup/User" \
       -H "Content-Type: application/json" \
-      -d '{"Name":"admin","Password":""}' && echo "OK: startup user" || echo "SKIP: startup user"
+      -d '{"Name":"admin","Password":""}' && echo "" && echo "OK: startup user" || echo "SKIP: startup user"
 
-    # Complete the wizard
-    curl -sf -X POST "$JELLYFIN_URL/Startup/Complete" && echo "OK: wizard complete" || echo "SKIP: wizard complete"
+    curl -s -X POST "$JELLYFIN_URL/Startup/Complete" && echo "" && echo "OK: wizard complete" || echo "SKIP: wizard complete"
 
-    # Wait a moment for Jellyfin to apply changes
     sleep 3
 
-    # Try to authenticate as admin
-    auth_result=$(curl -sf -X POST "$JELLYFIN_URL/Users/AuthenticateByName" \
+    # Check what users exist
+    echo "Public users:"
+    curl -s "$JELLYFIN_URL/Users/Public" 2>&1
+    echo ""
+
+    # Try to authenticate
+    echo "Attempting auth as admin..."
+    auth_result=$(curl -s -X POST "$JELLYFIN_URL/Users/AuthenticateByName" \
       -H "Content-Type: application/json" \
       -H 'X-Emby-Authorization: MediaBrowser Client="configure", Device="k8s", DeviceId="init", Version="1.0"' \
-      -d '{"Username":"admin","Pw":""}')
+      -d '{"Username":"admin","Pw":""}' 2>&1)
+    echo "Auth result: $auth_result"
 
     token=$(echo "$auth_result" | grep -o '"AccessToken":"[^"]*"' | cut -d'"' -f4)
     if [ -z "$token" ]; then
-      # If wizard was already done, find existing user and try without password
-      echo "Direct auth failed, checking for existing users..."
-      # List users (public endpoint on fresh installs)
-      users=$(curl -sf "$JELLYFIN_URL/Users/Public")
-      echo "Public users: $users"
-      echo "WARN: Could not authenticate, skipping library setup. Log in manually and libraries can be added via UI."
+      echo "Could not authenticate. Manual setup may be needed."
       sleep infinity
     fi
 
     AUTH="X-Emby-Token: $token"
 
-    # Add TV library if not exists
-    existing=$(curl -sf -H "$AUTH" "$JELLYFIN_URL/Library/VirtualFolders")
+    # Add libraries
+    existing=$(curl -s -H "$AUTH" "$JELLYFIN_URL/Library/VirtualFolders" 2>&1)
     if ! echo "$existing" | grep -q "TV Shows"; then
       echo "Adding TV Shows library..."
-      curl -sf -X POST "$JELLYFIN_URL/Library/VirtualFolders?name=TV%20Shows&collectionType=tvshows&refreshLibrary=false" \
+      curl -s -X POST "$JELLYFIN_URL/Library/VirtualFolders?name=TV%20Shows&collectionType=tvshows&refreshLibrary=false" \
         -H "$AUTH" -H "Content-Type: application/json" \
-        -d '{"LibraryOptions":{"PathInfos":[{"Path":"/data/tv"}],"EnableRealtimeMonitor":true}}' || echo "WARN: TV library failed"
+        -d '{"LibraryOptions":{"PathInfos":[{"Path":"/data/tv"}],"EnableRealtimeMonitor":true}}' || true
     fi
-
-    # Add Movies library if not exists
     if ! echo "$existing" | grep -q "Movies"; then
       echo "Adding Movies library..."
-      curl -sf -X POST "$JELLYFIN_URL/Library/VirtualFolders?name=Movies&collectionType=movies&refreshLibrary=false" \
+      curl -s -X POST "$JELLYFIN_URL/Library/VirtualFolders?name=Movies&collectionType=movies&refreshLibrary=false" \
         -H "$AUTH" -H "Content-Type: application/json" \
-        -d '{"LibraryOptions":{"PathInfos":[{"Path":"/data/movies"}],"EnableRealtimeMonitor":true}}' || echo "WARN: Movies library failed"
+        -d '{"LibraryOptions":{"PathInfos":[{"Path":"/data/movies"}],"EnableRealtimeMonitor":true}}' || true
     fi
 
     echo "Jellyfin configuration complete!"
