@@ -5,28 +5,72 @@ cluster:
   apiServer:
     certSANs:
       - 192.168.2.177
-  extraManifests:
-    - https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
   inlineManifests:
-    - name: argocd-apps
+    - name: argocd-namespace
       contents: |
-        apiVersion: argoproj.io/v1alpha1
-        kind: Application
+        apiVersion: v1
+        kind: Namespace
         metadata:
-          name: apps
-          namespace: argocd
+          name: argocd
+    - name: argocd-installer
+      contents: |
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: argocd-installer
+          namespace: kube-system
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: argocd-installer
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: cluster-admin
+        subjects:
+        - kind: ServiceAccount
+          name: argocd-installer
+          namespace: kube-system
+        ---
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: argocd-installer
+          namespace: kube-system
         spec:
-          project: default
-          source:
-            repoURL: https://github.com/marnyg/talos-config.git
-            targetRevision: main
-            path: k8s/apps
-            directory:
-              recurse: true
-          destination:
-            server: https://kubernetes.default.svc
-            namespace: default
-          syncPolicy:
-            automated:
-              prune: true
-              selfHeal: true
+          template:
+            spec:
+              serviceAccountName: argocd-installer
+              containers:
+              - name: installer
+                image: alpine/kubectl:latest
+                command:
+                - /bin/sh
+                - -c
+                - |
+                  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+                  kubectl apply -f - <<'EOF'
+                  apiVersion: argoproj.io/v1alpha1
+                  kind: Application
+                  metadata:
+                    name: apps
+                    namespace: argocd
+                  spec:
+                    project: default
+                    source:
+                      repoURL: https://github.com/marnyg/talos-config.git
+                      targetRevision: main
+                      path: k8s/apps
+                      directory:
+                        recurse: true
+                    destination:
+                      server: https://kubernetes.default.svc
+                      namespace: default
+                    syncPolicy:
+                      automated:
+                        prune: true
+                        selfHeal: true
+                  EOF
+              restartPolicy: OnFailure
+          backoffLimit: 3
