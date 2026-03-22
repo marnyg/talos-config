@@ -69,22 +69,27 @@ spec:
                 secretKeyRef:
                   name: nzbgeek
                   key: apiKey
+            - name: TRAKT_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: trakt
+                  key: accessToken
+            - name: TRAKT_REFRESH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: trakt
+                  key: refreshToken
           volumeMounts:
             - name: config
               mountPath: /config
             - name: scripts
               mountPath: /scripts
-            - name: watchlist
-              mountPath: /watchlist
       volumes:
         - name: config
           emptyDir: {}
         - name: scripts
           configMap:
             name: sonarr-configurator
-        - name: watchlist
-          configMap:
-            name: sonarr-watchlist
         - name: tv
           persistentVolumeClaim:
             claimName: media-tv

@@ -127,27 +127,39 @@ data:
       }' "$RADARR_URL/api/v3/indexer" || echo "WARN: NZBgeek indexer failed"
     fi
 
-    # Seed watchlist from ConfigMap
-    if [ -f /watchlist/movies.json ]; then
-      echo "Seeding movie watchlist..."
-      existing_movies=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/movie")
+    # Configure Trakt import list (watchlist)
+    existing_lists=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/importlist")
+    if [ -n "$TRAKT_ACCESS_TOKEN" ] && ! echo "$existing_lists" | grep -q "Trakt"; then
+      echo "Adding Trakt watchlist import list..."
       qp_id=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/qualityprofile" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
-      grep -o '"tmdbId":[0-9]*' /watchlist/movies.json | cut -d: -f2 | while read -r tmdb_id; do
-        if echo "$existing_movies" | grep -q "\"tmdbId\":$tmdb_id"; then
-          continue
-        fi
-        echo "  Adding tmdbId $tmdb_id..."
-        lookup=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/movie/lookup?term=tmdb:$tmdb_id")
-        if [ -z "$lookup" ] || [ "$lookup" = "[]" ]; then
-          echo "  WARN: lookup failed for tmdbId $tmdb_id"
-          continue
-        fi
-        movie_data=$(echo "$lookup" | sed 's/^\[//;s/\]$//' | sed 's/},{/}\n{/g' | head -1)
-        movie_data=$(echo "$movie_data" | sed 's/}$/,"rootFolderPath":"\/movies","qualityProfileId":'"$qp_id"',"monitored":true,"addOptions":{"searchForMovie":true}}/')
-        curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
-          -d "$movie_data" "$RADARR_URL/api/v3/movie" > /dev/null && echo "  OK" || echo "  WARN: failed"
-        sleep 1
-      done
+      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enabled": true,
+        "enableAutomaticAdd": true,
+        "searchForMissingMovies": true,
+        "shouldMonitor": true,
+        "minimumAvailability": "announced",
+        "rootFolderPath": "/movies",
+        "qualityProfileId": '"$qp_id"',
+        "name": "Trakt Watchlist",
+        "implementation": "TraktListImport",
+        "configContract": "TraktListSettings",
+        "fields": [
+          {"name": "accessToken", "value": "'"$TRAKT_ACCESS_TOKEN"'"},
+          {"name": "refreshToken", "value": "'"$TRAKT_REFRESH_TOKEN"'"},
+          {"name": "expires", "value": ""},
+          {"name": "authUser", "value": ""},
+          {"name": "traktListType", "value": 0},
+          {"name": "username", "value": ""},
+          {"name": "listname", "value": ""},
+          {"name": "rating", "value": "0-100"},
+          {"name": "certification", "value": "NR,G,PG,PG-13,R,NC-17"},
+          {"name": "genres", "value": ""},
+          {"name": "years", "value": ""},
+          {"name": "limit", "value": 100},
+          {"name": "traktAdditionalParameters", "value": ""},
+          {"name": "signIn", "value": "startOAuth"}
+        ]
+      }' "$RADARR_URL/api/v3/importlist" > /dev/null && echo "  OK" || echo "  WARN: Trakt import list failed"
     fi
 
     echo "Radarr configuration complete!"
