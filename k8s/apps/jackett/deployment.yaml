@@ -28,7 +28,7 @@ spec:
               mountPath: /template
       containers:
         - name: jackett
-          image: ghcr.io/linuxserver/jackett:0.24.1
+          image: ghcr.io/linuxserver/jackett:0.24.1431
           ports:
             - containerPort: 9117
           env:
