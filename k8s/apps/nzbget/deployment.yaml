@@ -20,6 +20,8 @@ spec:
           args:
             - |
               chown 1000:1000 /downloads
+              mkdir -p /downloads/completed/Series /downloads/completed/Movies /downloads/intermediate /downloads/tmp /downloads/queue /downloads/nzb
+              chown -R 1000:1000 /downloads
               sed "s/PLACEHOLDER_USER/$NNTP_USER/g; s/PLACEHOLDER_PASS/$NNTP_PASS/g" \
                 /template/nzbget.conf > /config/nzbget.conf
           env:
