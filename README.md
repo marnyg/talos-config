@@ -7,21 +7,21 @@ Machines PXE boot via [siderolabs/booter](https://github.com/siderolabs/booter) 
 ## Structure
 
 ```
-base/                            # Role templates (shared boilerplate)
-  controlplane.yaml
-  worker.yaml
+talos/                           # Talos cluster configuration
+  base/                          #   Role templates (shared boilerplate)
+    controlplane.yaml
+    worker.yaml
+  clusters/<name>/               #   Cluster identity + secrets
+    cluster.yaml                 #     name, endpoint, certSANs
+    secrets.yaml.age             #     encrypted cluster crypto material
+  hardware/<type>.yaml           #   Hardware-specific config (disk, NIC, installer image)
+  machines/<mac>/                #   Per-machine config
+    meta.yaml                    #     ip, base config, patch list
+    patch.yaml                   #     machine-specific overrides (optional)
+  talosconfig.age                #   Encrypted talosctl admin credentials (all clusters)
+  serve-config.py                #   PXE boot config server
 
-clusters/<name>/                 # Cluster identity + secrets
-  cluster.yaml                   #   name, endpoint, certSANs
-  secrets.yaml.age               #   encrypted cluster crypto material
-
-hardware/<type>.yaml             # Hardware-specific config (disk, NIC, installer image)
-
-machines/<mac>/                  # Per-machine config
-  meta.yaml                      #   ip, base config, patch list
-  patch.yaml                     #   machine-specific overrides (optional)
-
-talosconfig.age                  # Encrypted talosctl admin credentials (all clusters)
+k8s/                             # Kubernetes manifests (TODO)
 ```
 
 Each machine is defined by a MAC address mapped to a composition of these four layers:
@@ -109,7 +109,7 @@ talosctl kubeconfig      # fetch kubeconfig
 talosctl reboot          # reboot node
 ```
 
-Endpoints and nodes are configured in the talosconfig file (`clusters/homelab/talosconfig`).
+Endpoints and nodes are configured in the talosconfig file (`talos/talosconfig`).
 
 ### Applying config changes
 

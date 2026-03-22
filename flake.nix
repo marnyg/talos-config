@@ -1,5 +1,5 @@
 {
-  description = "Talos Kubernetes cluster configuration";
+  description = "Homelab Kubernetes cluster configuration";
 
   inputs = {
     treefmt-nix.url = "github:numtide/treefmt-nix";
@@ -35,7 +35,8 @@
             name = "config-server";
             runtimeInputs = [ (pkgs.python3.withPackages (ps: [ ps.pyyaml ])) self'.packages.talosctl ];
             text = ''
-              exec python3 ${./serve-config.py} "$@"
+              cd "$(git rev-parse --show-toplevel)/talos"
+              exec python3 ${./talos/serve-config.py} "$@"
             '';
           };
 
@@ -44,7 +45,7 @@
             type = "app";
             program = toString (pkgs.writeShellScript "encrypt-secrets" ''
               set -euo pipefail
-              cd "$(git rev-parse --show-toplevel)"
+              cd "$(git rev-parse --show-toplevel)/talos"
               # Encrypt talosconfig
               if [ -f talosconfig ]; then
                 ${pkgs.age}/bin/age -R "${sshKey}.pub" -o talosconfig.age talosconfig
@@ -63,7 +64,7 @@
             type = "app";
             program = toString (pkgs.writeShellScript "decrypt-secrets" ''
               set -euo pipefail
-              cd "$(git rev-parse --show-toplevel)"
+              cd "$(git rev-parse --show-toplevel)/talos"
               for f in talosconfig.age $(find clusters -type f -name '*.age'); do
                 [ -f "$f" ] || continue
                 out="''${f%.age}"
@@ -104,7 +105,7 @@
             type = "app";
             program = toString (pkgs.writeShellScript "apply" ''
               set -euo pipefail
-              cd "$(git rev-parse --show-toplevel)"
+              cd "$(git rev-parse --show-toplevel)/talos"
 
               YQ="${pkgs.yq-go}/bin/yq"
               FILTER="''${1:-}"
@@ -162,7 +163,8 @@
               jq
             ];
             enterShell = ''
-              for f in talosconfig.age $(find clusters -name '*.age' 2>/dev/null); do
+              cd_talos="$(git rev-parse --show-toplevel)/talos"
+              for f in "$cd_talos"/talosconfig.age $(find "$cd_talos/clusters" -name '*.age' 2>/dev/null); do
                 [ -f "$f" ] || continue
                 out="''${f%.age}"
                 if [ ! -f "$out" ] || [ "$f" -nt "$out" ]; then
@@ -171,7 +173,7 @@
                 fi
               done
 
-              export TALOSCONFIG="$(pwd)/talosconfig"
+              export TALOSCONFIG="$cd_talos/talosconfig"
             '';
           };
         };
