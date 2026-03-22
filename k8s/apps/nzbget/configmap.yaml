@@ -29,9 +29,9 @@ data:
 
     ControlIP=0.0.0.0
     ControlPort=6789
-    ControlUsername=nzbget
-    ControlPassword=tegbzn6789
-    AuthorizedIP=127.0.0.1
+    ControlUsername=
+    ControlPassword=
+    AuthorizedIP=
 
     Category1.Name=Series
     Category1.DestDir=

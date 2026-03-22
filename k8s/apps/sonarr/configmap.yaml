@@ -57,8 +57,8 @@ data:
         "fields": [
           {"name": "host", "value": "nzbget"},
           {"name": "port", "value": 6789},
-          {"name": "username", "value": "nzbget"},
-          {"name": "password", "value": "tegbzn6789"},
+          {"name": "username", "value": ""},
+          {"name": "password", "value": ""},
           {"name": "tvCategory", "value": "Series"},
           {"name": "useSsl", "value": false}
         ]
