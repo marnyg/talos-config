@@ -49,7 +49,7 @@ cluster:
                 - /bin/sh
                 - -c
                 - |
-                  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+                  kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
                   kubectl apply -f - <<'EOF'
                   apiVersion: argoproj.io/v1alpha1
                   kind: Application
