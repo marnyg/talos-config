@@ -19,6 +19,7 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
+              chown 1000:1000 /downloads
               sed "s/PLACEHOLDER_USER/$NNTP_USER/g; s/PLACEHOLDER_PASS/$NNTP_PASS/g" \
                 /template/nzbget.conf > /config/nzbget.conf
           env:
@@ -37,6 +38,8 @@ spec:
               mountPath: /config
             - name: config-template
               mountPath: /template
+            - name: downloads
+              mountPath: /downloads
       containers:
         - name: nzbget
           image: ghcr.io/linuxserver/nzbget:26.0.20260320

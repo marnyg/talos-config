@@ -18,12 +18,16 @@ spec:
           image: busybox:1.37
           command: ["sh", "-c"]
           args:
-            - cp /template/settings.json /config/settings.json
+            - |
+              chown 1000:1000 /downloads
+              cp /template/settings.json /config/settings.json
           volumeMounts:
             - name: config
               mountPath: /config
             - name: config-template
               mountPath: /template
+            - name: downloads
+              mountPath: /downloads
       containers:
         - name: transmission
           image: ghcr.io/linuxserver/transmission:4.1.1

@@ -19,6 +19,7 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
+              chown 1000:1000 /tv /downloads
               cat > /config/config.xml << 'XMLEOF'
               <Config>
                 <Port>8989</Port>
@@ -30,6 +31,10 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: tv
+              mountPath: /tv
+            - name: downloads
+              mountPath: /downloads
       containers:
         - name: sonarr
           image: ghcr.io/linuxserver/sonarr:4.0.17

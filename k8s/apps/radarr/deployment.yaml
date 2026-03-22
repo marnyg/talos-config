@@ -19,6 +19,7 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
+              chown 1000:1000 /movies /downloads
               cat > /config/config.xml << 'XMLEOF'
               <Config>
                 <Port>7878</Port>
@@ -30,6 +31,10 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: movies
+              mountPath: /movies
+            - name: downloads
+              mountPath: /downloads
       containers:
         - name: radarr
           image: lscr.io/linuxserver/radarr:6.0.4
