@@ -1,10 +1,13 @@
 cluster:
   clusterName: homelab
   controlPlane:
-    endpoint: https://10.0.0.20:6443
+    # Node's own derived tunnel IP (HKDF from MAC) — loopback-local on
+    # the node, independent of DHCP/router state. See decision in
+    # taskwarrior; laptop access rides task 27 (admin over tunnel).
+    endpoint: https://10.99.0.54:6443
   apiServer:
     certSANs:
-      - 10.0.0.20
+      - 10.99.0.54
   inlineManifests:
     - name: argocd-namespace
       contents: |
