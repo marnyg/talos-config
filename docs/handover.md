@@ -1,6 +1,6 @@
 # Handover — next session
 
-_Last updated: 2026-07-24 (night). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
+_Last updated: 2026-07-24 (late night). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
 
 ## Where things stand
 
@@ -18,6 +18,7 @@ _Last updated: 2026-07-24 (night). Read alongside `docs/vision.md` (why) — thi
 | Config composition | `main.go` | machinery `configpatcher` v1.12.6 (keep in lockstep with cluster) |
 | Device flow (RFC 8628) | `deviceflow.go`, `oauth.go` | in-memory, single-use MAC-bound tokens |
 | Wallet approval | `siwe.go` | EIP-191 recovery vs allowlist |
+| **SIWE status page** | `status.go`, `session.go` | single-use login nonce → 12h HttpOnly cookie; zero-leak logged out |
 | **WG key derivation** | `wgderive/` | HKDF from one master; **frozen v1 contract**, stability tests pin vectors — breaking them re-keys the fleet |
 | **WG injection** | `wgkeys.go` | `wg0` patch composed at serve time only; byte-identical output when WG off (verified vs pre-slice binary) |
 | **Sealed unseal** | `wgseal.go` | wallet sig over `talos-config/wg/master/v1` → master in memory only |
@@ -45,6 +46,34 @@ admin wallet 0xf568...9406 (EOA, RFC 6979 deterministic)
 - Dedicated IPv4 **213.188.219.215** (UDP :51820). Deployed 2026-07-24, unsealed by admin wallet, pin validated.
 - Sealed-state monitoring: `.github/workflows/sealed-check.yml` probes `GET /sealed` every 15 min.
 
+## Status page — SHIPPED & validated live (2026-07-24 late night)
+
+`/status` (read-only) behind SIWE session login. Login signs
+`talos config-server status login\nnonce: <n>` — an ordinary auth
+message, distinct prefix from both the approval and master messages; a
+captured login signature grants nothing but a 12h session. Logged out
+the page is only the sign-in prompt; without `--admin-address` it 404s.
+
+Shows per machine: WG last handshake / rx / tx / observed WAN endpoint
+(parsed from the device UAPI, `parsePeerStats`), last config fetch per
+MAC, plus the auto-bootstrap loop snapshot (`bootSnapshot` — including
+`multi-cp-refused`, which was previously invisible), seal state, and
+the deployed `FLY_IMAGE_REF`. Auto-refreshes every 30s.
+
+Also in this batch: `controlPlanes` now parses `machine.type` from the
+base config instead of matching "controlplane" in the filename (the
+single-CP guard no longer trusts file names), and the HTTP route mux
+moved out of the test file into `main.go` so tests exercise the real
+routing.
+
+Live validation: deployed `deployment-01KYA6J6MS` (git `417114d`),
+unsealed, first status login recorded, node re-handshaked ~50s after
+unseal, auto-bootstrap re-observed `etcd-running → idle`. During the
+sealed→reconnect window the server logs
+`Failed to send handshake initiation: no known endpoint for peer`
+every ~5s — known-benign wireguard-go retry noise; stops the moment
+the node dials in.
+
 ## Auto-bootstrap — SHIPPED & validated live (2026-07-24 night)
 
 `config-server/bootstrap.go`: 30s poll loop, dials apid at the derived
@@ -68,15 +97,22 @@ address discovery skips it) — mutual TLS failed as a bare
 certSANs for future machines (append semantics test-covered). RPC
 errors now logged on change (not swallowed).
 
-⚠️ `40ea519` (certSAN injection + RPC logging) is committed/pushed but
-**NOT deployed** — ride it with the next deploy to save an unseal
-ceremony. Deployed fly image = `5067832`.
+`40ea519` (certSAN injection + RPC logging) went live with the
+`01KYA6J6MS` deploy — nothing is waiting on a deploy anymore.
 
 ## Next session (sketch `c8fa867d`)
 
-1. Status page behind SIWE session login (tunnel liveness, last fetch,
-   bootstrap state — bootstrapper state is ready to surface).
-2. KMS unseal over tunnel (passphrase break-glass slot mandatory).
+1. **KMS disk unseal** — the last major slice. Per-boot disk keys via
+   the siderolabs KMS protocol, passphrase break-glass slot mandatory
+   (recorded decision — TPM would void revocation). Open design
+   question to settle FIRST: whether STATE-partition unlock can reach
+   a KMS over wg0 at all (wg0 comes from machine config, which lives
+   on STATE — possible chicken-and-egg; Omni avoids it because
+   SideroLink is kernel-arg-configured). May force WAN-exposed KMS
+   gRPC with UUID-keyed derived seals instead of tunnel-only.
+2. Parked nearby: task 29 (derive age identity from the unseal
+   signature — retires AGE_KEY, the last fly secret), task 28 (admin
+   access over tunnel), thread 9b5b204d (endpoint DNS/VIP).
 
 Gotchas learned this session: `talosctl pcap --bpf-filter` takes
 `tcpdump -ddd`-style instruction lists but silently didn't filter
@@ -99,13 +135,14 @@ files.
 ## Loose ends
 
 - [x] ~~Uptime pinger on `/sealed`~~ — GitHub Actions `sealed-check` every 15 min (fails → email). Deliberately NOT a fly health check: fly restarting a sealed machine = unrecoverable seal loop.
-- [ ] `40ea519` awaiting next fly deploy (see above)
+- [x] ~~`40ea519` awaiting deploy~~ — live in `01KYA6J6MS`
+- [x] ~~`wgbind.go` DNS timeout~~ — was already fixed (2s bounded lookup); stale task 27 closed
 - [ ] DHCP reservation for 10.0.0.20 — user deferred, IP confirmed correct for now
 - [ ] `k8s/MIGRATION.md` untracked — user said leave it
-- [ ] `wgbind.go` DNS timeout broken window — not yet filed as +debt
 - [ ] `.claude/` untracked in repo root — gitignore?
 - [ ] User's default kubeconfig context is stale (dead zitadel OIDC) — repoint or prune
+- [ ] Handshake-initiation log spam while a peer is away — known-benign, not filed
 
 ## Taskwarrior map
 
-`task +repo_5efa11ff status:pending list` — sketch `c8fa867d` carries the slice-by-slice history as annotations. Decisions closed: build-not-Omni; no OIDC/chain RPC; fly per-boot dependency accepted; **wallet-rooted sealed-server unseal** (new).
+`task +repo_5efa11ff status:pending list` — sketch `c8fa867d` carries the slice-by-slice history as annotations. Decisions closed: build-not-Omni; no OIDC/chain RPC; fly per-boot dependency accepted; wallet-rooted sealed-server unseal. New since last update: task 28 (+thread, admin access over tunnel), task 29 (+idea, wallet-derived age key), stale task 27 closed.
