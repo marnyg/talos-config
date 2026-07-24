@@ -8,6 +8,7 @@
 //	wgping -sig <hex>              # unseal signature → print server pubkey (for pinning)
 //	wgping -endpoint <ip:port> -sig <hex> -mac <mac>      # impersonate via signature
 //	wgping -sig <hex> -recovery -mac <mac> # derive the disk recovery passphrase
+//	wgping -sig <hex> -admin laptop -wgquick -endpoint <ip:port>  # emit wg-quick client config
 //
 // The -master/-sig modes derive the client key, tunnel address, and
 // server public key exactly like the server does for a provisioned
@@ -62,6 +63,8 @@ func main() {
 		mac       = flag.String("mac", "", "machine MAC to impersonate (with -master/-sig)")
 		subnet    = flag.String("subnet", "10.99.0.0/24", "tunnel subnet (with -master/-sig)")
 		recovery  = flag.Bool("recovery", false, "print the machine's disk recovery passphrase (with -master/-sig and -mac) and exit")
+		admin     = flag.String("admin", "", "admin peer name to derive (with -master/-sig); use with -wgquick or as the ping identity")
+		wgquick   = flag.Bool("wgquick", false, "print a wg-quick config for -admin and exit (requires -endpoint)")
 	)
 	flag.Parse()
 
@@ -88,7 +91,40 @@ func main() {
 		fmt.Println(wgderive.RecoveryPassphrase(m, normMAC))
 		return
 	}
-	if *master != "" {
+	if *master != "" && *admin != "" {
+		m, err := wgderive.MasterFromHex(*master)
+		if err != nil {
+			log.Fatalf("-master: %v", err)
+		}
+		priv := wgderive.AdminKey(m, *admin)
+		ip, err := wgderive.AdminTunnelIP(m, *admin, netip.MustParsePrefix(*subnet))
+		if err != nil {
+			log.Fatalf("deriving admin tunnel ip: %v", err)
+		}
+		serverPubKey := wgderive.PublicKey(wgderive.ServerKey(m))
+		if *wgquick {
+			if *endpoint == "" {
+				log.Fatal("-wgquick needs -endpoint (the server's public ip:port)")
+			}
+			// PersistentKeepalive keeps the NAT mapping open so the
+			// hub can also reach the admin peer unprompted.
+			fmt.Printf(`[Interface]
+PrivateKey = %s
+Address = %s/%d
+
+[Peer]
+PublicKey = %s
+Endpoint = %s
+AllowedIPs = %s
+PersistentKeepalive = 25
+`, wgderive.KeyBase64(priv), ip, netip.MustParsePrefix(*subnet).Bits(), wgderive.KeyBase64(serverPubKey), *endpoint, netip.MustParsePrefix(*subnet).Masked())
+			return
+		}
+		*serverPub = wgderive.KeyHex(serverPubKey)
+		*key = wgderive.KeyHex(priv)
+		*addr = ip.String()
+		log.Printf("derived admin %q: addr %s, pubkey %s", *admin, ip, wgderive.KeyBase64(wgderive.PublicKey(priv)))
+	} else if *master != "" {
 		m, err := wgderive.MasterFromHex(*master)
 		if err != nil {
 			log.Fatalf("-master: %v", err)

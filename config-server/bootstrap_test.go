@@ -122,7 +122,7 @@ func TestControlPlanesFilter(t *testing.T) {
 
 // TestStepSealed: the loop must be inert while the server is sealed.
 func TestStepSealed(t *testing.T) {
-	wgm := newWGManager(51820, netip.MustParsePrefix("10.99.0.1/24"), "203.0.113.7:51820", "", t.TempDir(), nil)
+	wgm := newWGManager(51820, netip.MustParsePrefix("10.99.0.1/24"), "203.0.113.7:51820", "", t.TempDir(), nil, nil)
 	b := newBootstrapper(t.TempDir(), wgm)
 	b.step(t.Context()) // must not panic or act
 	if b.st.attempted || b.st.done {

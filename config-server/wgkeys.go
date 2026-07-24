@@ -14,9 +14,9 @@ import (
 	"slices"
 
 	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun/netstack"
 
 	"github.com/marnyg/talos-config/config-server/wgderive"
+	"github.com/marnyg/talos-config/config-server/wgstack"
 )
 
 // wgSettings is the WireGuard state needed at serve time to inject
@@ -27,7 +27,8 @@ type wgSettings struct {
 	serverIP  netip.Addr
 	subnet    netip.Prefix
 	endpoint  string         // public ip:port machines dial
-	tnet      *netstack.Net  // dials machines through the tunnel (nil in tests)
+	admins    []string       // named admin peers (laptops), keys derived like machines'
+	tnet      *wgstack.Net   // dials machines through the tunnel (nil in tests)
 	dev       *device.Device // live WG device, for peer stats (nil in tests)
 }
 
@@ -44,9 +45,10 @@ func (w *wgSettings) machineTunnelIP(mac string, m machine) (netip.Addr, error) 
 	return wgderive.TunnelIP(w.master, mac, w.subnet)
 }
 
-// derivePeers computes the WG peer set for all known machines, failing
-// on tunnel-address collisions (resolve by setting an explicit wgIP in
-// one colliding machine's meta.yaml).
+// derivePeers computes the WG peer set for all known machines plus the
+// named admin peers, failing on tunnel-address collisions (resolve by
+// setting an explicit wgIP in one colliding machine's meta.yaml, or
+// renaming the admin peer).
 func (w *wgSettings) derivePeers(machines map[string]machine) ([]wgPeer, error) {
 	claimed := map[netip.Addr]string{w.serverIP: "the server"}
 	var peers []wgPeer
@@ -60,6 +62,25 @@ func (w *wgSettings) derivePeers(machines map[string]machine) ([]wgPeer, error) 
 		}
 		claimed[ip] = mac
 		pub := wgderive.PublicKey(wgderive.MachineKey(w.master, mac))
+		peers = append(peers, wgPeer{
+			publicKeyHex: wgderive.KeyHex(pub),
+			allowedIP:    netip.PrefixFrom(ip, 32),
+		})
+	}
+	for _, name := range w.admins {
+		name = wgderive.NormalizeAdmin(name)
+		if name == "" {
+			continue
+		}
+		ip, err := wgderive.AdminTunnelIP(w.master, name, w.subnet)
+		if err != nil {
+			return nil, err
+		}
+		if prev, dup := claimed[ip]; dup {
+			return nil, fmt.Errorf("tunnel address collision: %s and admin %q both get %s (rename the admin peer)", prev, name, ip)
+		}
+		claimed[ip] = "admin " + name
+		pub := wgderive.PublicKey(wgderive.AdminKey(w.master, name))
 		peers = append(peers, wgPeer{
 			publicKeyHex: wgderive.KeyHex(pub),
 			allowedIP:    netip.PrefixFrom(ip, 32),

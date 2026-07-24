@@ -28,6 +28,9 @@ func TestDerivationStability(t *testing.T) {
 		// KMS: uppercase input UUID must normalize to the same key.
 		"kms seal key": hex.EncodeToString(KMSSealKey(master, "8C0D9A51-6E23-4BA1-A1D7-2D5D4C6B0F00")),
 		"recovery":     RecoveryPassphrase(master, testMAC),
+		// Admin peers: uppercase input name must normalize to the same key.
+		"admin priv": KeyHex(AdminKey(master, "Laptop")),
+		"admin pub":  KeyHex(PublicKey(AdminKey(master, "laptop"))),
 	}
 	want := map[string]string{
 		"server priv":  "800b5d44d8d92c6de62e8c25b6d191b1fdbf7dac120ca2582be51c53f4566d78",
@@ -37,6 +40,8 @@ func TestDerivationStability(t *testing.T) {
 		"machine b64":  "YFIxzUYOW1AmL3mFsE9NuGOaJWwH4QOFpCUO825AzlU=",
 		"kms seal key": "a4925a58234469eedf9b8e8a76381683fd07adecdb1daa36c93be65617189121",
 		"recovery":     "bhgafhpz-i5qbzl5j-csjuuhan-hxvacurb",
+		"admin priv":   "885a7a32c8bc86908bbf1567bffc637dc7c8aaf6e53ef536d16a487e5a55a660",
+		"admin pub":    "595c3842b5e72bad4b19d94ffd664cdddeda6ad61614626c9cd54c2e8f7ef222",
 	}
 	for k, w := range want {
 		if got[k] != w {
@@ -50,6 +55,14 @@ func TestDerivationStability(t *testing.T) {
 	}
 	if ip.String() != "10.99.0.16" {
 		t.Errorf("tunnel ip changed: got %s, want 10.99.0.16 — this renumbers the fleet", ip)
+	}
+
+	adminIP, err := AdminTunnelIP(master, "laptop", netip.MustParsePrefix("10.99.0.0/24"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adminIP.String() != "10.99.0.79" {
+		t.Errorf("admin tunnel ip changed: got %s, want 10.99.0.79 — this renumbers admin peers", adminIP)
 	}
 }
 

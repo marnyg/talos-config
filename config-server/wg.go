@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun/netstack"
 
 	"github.com/marnyg/talos-config/config-server/wgderive"
+	"github.com/marnyg/talos-config/config-server/wgstack"
 )
 
 type wgPeer struct {
@@ -31,9 +31,10 @@ type wgPeer struct {
 // plain TCP reads, curl, wget, and dumb uptime probes all get a clean
 // response. The returned netstack handle dials machines through the
 // tunnel (auto-bootstrap); the device handle exposes live peer
-// counters for /status.
-func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) (*netstack.Net, *device.Device, error) {
-	tun, tnet, err := netstack.CreateNetTUN([]netip.Addr{addr}, []netip.Addr{}, 1280)
+// counters for /status. The netstack forwards between peers (wgstack),
+// so admin peers reach machines through the hub.
+func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) (*wgstack.Net, *device.Device, error) {
+	tun, tnet, err := wgstack.CreateNetTUN([]netip.Addr{addr}, 1280)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating netstack TUN: %w", err)
 	}

@@ -278,6 +278,7 @@ func main() {
 		wgAddr      = flag.String("wg-address", "10.99.0.1/24", "server tunnel address with subnet")
 		wgEndpoint  = flag.String("wg-endpoint", "", "public ip:port machines dial to reach the tunnel (required with --wg-port)")
 		wgPubkey    = flag.String("wg-server-pubkey", "", "pinned expected server pubkey (base64 or hex); unseal fails on mismatch")
+		wgAdmins    = flag.String("wg-admin-peers", "", "comma-separated named admin WG peers (e.g. laptop); keys derived from the master, config via wgping -admin")
 		autoBoot    = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the tunnel when its etcd waits for it")
 		kmsAdv      = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --wg-port)")
 		kmsPort     = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared h2c port)")
@@ -318,7 +319,13 @@ func main() {
 		if err != nil {
 			log.Fatalf("--wg-address: %v", err)
 		}
-		wgm = newWGManager(*wgPort, serverPrefix, *wgEndpoint, *wgPubkey, *root, addrs)
+		var adminPeers []string
+		for _, name := range strings.Split(*wgAdmins, ",") {
+			if n := strings.TrimSpace(name); n != "" {
+				adminPeers = append(adminPeers, n)
+			}
+		}
+		wgm = newWGManager(*wgPort, serverPrefix, *wgEndpoint, *wgPubkey, *root, addrs, adminPeers)
 
 		if env := os.Getenv("WG_MASTER_KEY"); env != "" {
 			// Dev/testing escape hatch: auto-unseal from an explicit

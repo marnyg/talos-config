@@ -16,9 +16,9 @@ import (
 	"sync"
 
 	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun/netstack"
 
 	"github.com/marnyg/talos-config/config-server/wgderive"
+	"github.com/marnyg/talos-config/config-server/wgstack"
 )
 
 // wgManager owns the WireGuard lifecycle. It is created when WG is
@@ -31,15 +31,16 @@ type wgManager struct {
 	pinnedPub  string       // expected server pubkey (base64 or hex, "" = unpinned)
 	root       string       // talos/ directory
 	adminAddrs []string     // wallets allowed to unseal
+	adminPeers []string     // named admin WG peers (laptops)
 
 	// start is startWireGuard, stubbed in tests.
-	start func(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) (*netstack.Net, *device.Device, error)
+	start func(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) (*wgstack.Net, *device.Device, error)
 
 	mu       sync.Mutex
 	settings *wgSettings // nil while sealed
 }
 
-func newWGManager(port int, addr netip.Prefix, endpoint, pinnedPub, root string, adminAddrs []string) *wgManager {
+func newWGManager(port int, addr netip.Prefix, endpoint, pinnedPub, root string, adminAddrs, adminPeers []string) *wgManager {
 	return &wgManager{
 		port:       port,
 		addr:       addr,
@@ -47,6 +48,7 @@ func newWGManager(port int, addr netip.Prefix, endpoint, pinnedPub, root string,
 		pinnedPub:  pinnedPub,
 		root:       root,
 		adminAddrs: adminAddrs,
+		adminPeers: adminPeers,
 		start:      startWireGuard,
 	}
 }
@@ -113,6 +115,7 @@ func (m *wgManager) unsealWithMaster(master []byte) error {
 		serverIP:  m.addr.Addr(),
 		subnet:    m.addr.Masked(),
 		endpoint:  m.endpoint,
+		admins:    m.adminPeers,
 	}
 	machines, err := loadMachines(filepath.Join(m.root, "machines"))
 	if err != nil {
@@ -131,6 +134,15 @@ func (m *wgManager) unsealWithMaster(master []byte) error {
 	m.settings = wg
 	log.Printf("wireguard unsealed: server pubkey %s (hex %s), endpoint %s, %d peer(s)",
 		wgderive.KeyBase64(pub), wgderive.KeyHex(pub), m.endpoint, len(peers))
+	for _, name := range m.adminPeers {
+		name = wgderive.NormalizeAdmin(name)
+		if name == "" {
+			continue
+		}
+		ip, _ := wgderive.AdminTunnelIP(master, name, wg.subnet)
+		log.Printf("admin peer %q: tunnel ip %s, pubkey %s (config: wgping -admin %s -sig <unseal-sig> -wgquick)",
+			name, ip, wgderive.KeyBase64(wgderive.PublicKey(wgderive.AdminKey(master, name))), name)
+	}
 	return nil
 }
 

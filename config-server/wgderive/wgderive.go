@@ -29,6 +29,8 @@ const (
 	masterSigInfo  = "talos-config/wg/v1/master-from-sig"
 	kmsSealInfoPfx = "talos-config/kms/v1/seal-key/" // + lowercase node UUID
 	recoveryPfx    = "talos-config/kms/v1/recovery/" // + normalized MAC
+	adminKeyPfx    = "talos-config/wg/v1/admin-key/"  // + normalized admin name
+	adminAddrPfx   = "talos-config/wg/v1/admin-addr/" // + normalized admin name
 )
 
 // MasterMessage is the canonical text the admin wallet signs (EIP-191
@@ -96,6 +98,22 @@ func MachineKey(master []byte, mac string) [32]byte {
 	return clamp(derive(master, machineInfoPfx+mac, 32))
 }
 
+// NormalizeAdmin lowercases and trims an admin peer name. Part of the
+// derivation contract: the server and the offline tooling must agree
+// on the form. Names live in a separate HKDF domain from MACs, so an
+// admin name can never collide with a machine's key material.
+func NormalizeAdmin(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// AdminKey derives the WG private key for a named admin peer (e.g. a
+// laptop). Re-derivable offline from the master signature, exactly
+// like machine keys — `wgping -admin <name> -sig <sig> -wgquick`
+// emits the ready-to-use client config.
+func AdminKey(master []byte, name string) [32]byte {
+	return clamp(derive(master, adminKeyPfx+NormalizeAdmin(name), 32))
+}
+
 // PublicKey returns the Curve25519 public key for priv.
 func PublicKey(priv [32]byte) [32]byte {
 	pub, err := curve25519.X25519(priv[:], curve25519.Basepoint)
@@ -147,11 +165,22 @@ func RecoveryPassphrase(master []byte, mac string) string {
 // server. Collisions between machines are possible and must be checked
 // by the caller.
 func TunnelIP(master []byte, mac string, subnet netip.Prefix) (netip.Addr, error) {
+	return hostIP(master, addrInfoPfx+mac, subnet)
+}
+
+// AdminTunnelIP deterministically assigns a named admin peer a host
+// address in subnet, from its own derivation domain. Collisions with
+// machines are possible and must be checked by the caller.
+func AdminTunnelIP(master []byte, name string, subnet netip.Prefix) (netip.Addr, error) {
+	return hostIP(master, adminAddrPfx+NormalizeAdmin(name), subnet)
+}
+
+func hostIP(master []byte, info string, subnet netip.Prefix) (netip.Addr, error) {
 	subnet = subnet.Masked()
 	if !subnet.Addr().Is4() || subnet.Bits() != 24 {
 		return netip.Addr{}, fmt.Errorf("tunnel subnet must be an IPv4 /24, got %s", subnet)
 	}
-	b := derive(master, addrInfoPfx+mac, 1)
+	b := derive(master, info, 1)
 	a := subnet.Addr().As4()
 	a[3] = byte(2 + int(b[0])%253)
 	return netip.AddrFrom4(a), nil

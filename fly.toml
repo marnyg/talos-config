@@ -18,6 +18,10 @@ WG_SERVER_PUBKEY = "uNUI+XlWP/1Q+byYzpl1BBP28o6owEATBU3LwV43xl0="
 # unlock happens before the tunnel exists, so this must be
 # WAN-reachable.
 KMS_ADVERTISE = "https://marnyg-talos-config.fly.dev:8443"
+# Named admin WG peers: keys/IPs derived from the wallet master, no
+# registry. Client config: wgping -admin <name> -sig <unseal-sig> \
+#   -wgquick -endpoint 213.188.219.215:51820
+WG_ADMIN_PEERS = "laptop"
 
 [http_service]
 internal_port = 8080
