@@ -133,20 +133,11 @@ func newTestServer(t *testing.T) *server {
 	return &server{
 		root:        root,
 		store:       newAuthStore(),
+		sessions:    newSessionStore(),
 		requireAuth: true,
 		clientID:    "talos-pxe",
 		adminToken:  "test-admin-token",
 	}
-}
-
-func (s *server) mux() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /config", s.handleConfig)
-	mux.HandleFunc("POST /device/code", s.handleDeviceCode)
-	mux.HandleFunc("POST /token", s.handleToken)
-	mux.HandleFunc("GET /verify", s.handleVerifyPage)
-	mux.HandleFunc("POST /verify", s.handleVerifyPost)
-	return mux
 }
 
 func TestHTTPFullFlow(t *testing.T) {

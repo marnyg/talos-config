@@ -27,6 +27,7 @@ import (
 	"net/netip"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -111,10 +112,25 @@ func observeEtcd(services []*machineapi.ServiceInfo) etcdObservation {
 	return etcdAbsent
 }
 
+// bootSnapshot is a point-in-time view of the loop, for /status. It is
+// the only bootstrapper state shared across goroutines.
+type bootSnapshot struct {
+	LastPoll  time.Time
+	State     string // sealed | no-control-plane | multi-cp-refused | <observation>
+	Target    string // control-plane MAC
+	TunnelIP  string
+	Done      bool   // cluster confirmed bootstrapped
+	Attempted bool   // a Bootstrap call succeeded this lifetime
+	LastErr   string // last RPC failure, "" when healthy
+}
+
 // bootstrapper runs the auto-bootstrap loop.
 type bootstrapper struct {
 	root string
 	wgm  *wgManager
+
+	snapMu sync.Mutex
+	snap   bootSnapshot
 
 	st            bootState
 	multiCPWarned bool
@@ -130,6 +146,19 @@ func newBootstrapper(root string, wgm *wgManager) *bootstrapper {
 		wgm:     wgm,
 		caCache: map[string]*x509.PEMEncodedCertificateAndKey{},
 	}
+}
+
+// status returns a copy of the current snapshot.
+func (b *bootstrapper) status() bootSnapshot {
+	b.snapMu.Lock()
+	defer b.snapMu.Unlock()
+	return b.snap
+}
+
+func (b *bootstrapper) setSnap(f func(*bootSnapshot)) {
+	b.snapMu.Lock()
+	defer b.snapMu.Unlock()
+	f(&b.snap)
 }
 
 func (b *bootstrapper) run(ctx context.Context) {
@@ -148,8 +177,11 @@ func (b *bootstrapper) run(ctx context.Context) {
 
 // step performs one poll + decision.
 func (b *bootstrapper) step(ctx context.Context) {
+	b.setSnap(func(s *bootSnapshot) { s.LastPoll = time.Now() })
+
 	wg := b.wgm.current()
 	if wg == nil || wg.tnet == nil {
+		b.setSnap(func(s *bootSnapshot) { s.State = "sealed" })
 		return // sealed (or tests): nothing to dial through
 	}
 
@@ -160,9 +192,11 @@ func (b *bootstrapper) step(ctx context.Context) {
 	}
 	cps := controlPlanes(machines)
 	if len(cps) == 0 {
+		b.setSnap(func(s *bootSnapshot) { s.State = "no-control-plane" })
 		return
 	}
 	if len(cps) > 1 {
+		b.setSnap(func(s *bootSnapshot) { s.State = "multi-cp-refused" })
 		if !b.multiCPWarned {
 			log.Printf("auto-bootstrap: %d control planes declared — refusing to auto-bootstrap (split-brain risk); bootstrap manually", len(cps))
 			b.multiCPWarned = true
@@ -187,7 +221,13 @@ func (b *bootstrapper) step(ctx context.Context) {
 		b.lastObs, b.obsLogged = obs, true
 	}
 
-	switch b.st.next(obs) {
+	action := b.st.next(obs)
+	b.setSnap(func(s *bootSnapshot) {
+		s.State, s.Target, s.TunnelIP = obs.String(), mac, ip.String()
+		s.Done, s.Attempted, s.LastErr = b.st.done, b.st.attempted, b.lastFail
+	})
+
+	switch action {
 	case actBootstrap:
 		b.bootstrap(ctx, wg, mac, m, ip)
 	case actDone:

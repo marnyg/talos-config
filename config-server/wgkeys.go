@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"slices"
 
+	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
 
 	"github.com/marnyg/talos-config/config-server/wgderive"
@@ -25,8 +26,9 @@ type wgSettings struct {
 	serverPub [32]byte
 	serverIP  netip.Addr
 	subnet    netip.Prefix
-	endpoint  string        // public ip:port machines dial
-	tnet      *netstack.Net // dials machines through the tunnel (nil in tests)
+	endpoint  string         // public ip:port machines dial
+	tnet      *netstack.Net  // dials machines through the tunnel (nil in tests)
+	dev       *device.Device // live WG device, for peer stats (nil in tests)
 }
 
 // machineTunnelIP returns the machine's tunnel address: the explicit

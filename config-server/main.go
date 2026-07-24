@@ -19,6 +19,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -122,11 +124,34 @@ type server struct {
 	root string // talos/ directory
 
 	store       *authStore
+	sessions    *sessionStore // SIWE sessions for /status
 	requireAuth bool
-	clientID    string     // expected OAuth client_id ("" = accept any)
-	adminToken  string     // break-glass fallback for /verify approval
-	adminAddrs  []string   // allowlisted wallet addresses (lowercase 0x)
-	wgm         *wgManager // nil = WireGuard disabled entirely
+	clientID    string        // expected OAuth client_id ("" = accept any)
+	adminToken  string        // break-glass fallback for /verify approval
+	adminAddrs  []string      // allowlisted wallet addresses (lowercase 0x)
+	wgm         *wgManager    // nil = WireGuard disabled entirely
+	boot        *bootstrapper // nil unless --auto-bootstrap
+	started     time.Time
+
+	fetchMu sync.Mutex
+	fetches map[string]time.Time // MAC -> last successful config serve
+}
+
+// recordFetch notes a successful config serve, for /status.
+func (s *server) recordFetch(mac string) {
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+	if s.fetches == nil {
+		s.fetches = map[string]time.Time{}
+	}
+	s.fetches[mac] = time.Now()
+}
+
+func (s *server) lastFetch(mac string) (time.Time, bool) {
+	s.fetchMu.Lock()
+	defer s.fetchMu.Unlock()
+	t, ok := s.fetches[mac]
+	return t, ok
 }
 
 func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +217,25 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	if s.requireAuth {
 		s.store.consume(token) // single-use: burn only after a successful serve
 	}
+	s.recordFetch(mac)
 	log.Printf("served config for %s", mac)
+}
+
+// mux wires all routes. Shared between main and the HTTP tests so the
+// two can never drift.
+func (s *server) mux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /config", s.handleConfig)
+	mux.HandleFunc("POST /device/code", s.handleDeviceCode)
+	mux.HandleFunc("POST /token", s.handleToken)
+	mux.HandleFunc("GET /verify", s.handleVerifyPage)
+	mux.HandleFunc("POST /verify", s.handleVerifyPost)
+	mux.HandleFunc("POST /unseal", s.handleUnseal)
+	mux.HandleFunc("GET /sealed", s.handleSealed)
+	mux.HandleFunc("GET /status", s.handleStatus)
+	mux.HandleFunc("POST /status/login", s.handleStatusLogin)
+	mux.HandleFunc("POST /status/logout", s.handleStatusLogout)
+	return mux
 }
 
 func main() {
@@ -269,11 +312,13 @@ func main() {
 	s := &server{
 		root:        *root,
 		store:       newAuthStore(),
+		sessions:    newSessionStore(),
 		requireAuth: *requireAuth,
 		clientID:    *clientID,
 		adminToken:  adminToken,
 		adminAddrs:  addrs,
 		wgm:         wgm,
+		started:     time.Now(),
 	}
 
 	machines, err := loadMachines(filepath.Join(s.root, "machines"))
@@ -285,22 +330,14 @@ func main() {
 		if wgm == nil {
 			log.Fatal("--auto-bootstrap requires --wg-port (it works over the tunnel)")
 		}
-		go newBootstrapper(*root, wgm).run(context.Background())
+		s.boot = newBootstrapper(*root, wgm)
+		go s.boot.run(context.Background())
 	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /config", s.handleConfig)
-	mux.HandleFunc("POST /device/code", s.handleDeviceCode)
-	mux.HandleFunc("POST /token", s.handleToken)
-	mux.HandleFunc("GET /verify", s.handleVerifyPage)
-	mux.HandleFunc("POST /verify", s.handleVerifyPost)
-	mux.HandleFunc("POST /unseal", s.handleUnseal)
-	mux.HandleFunc("GET /sealed", s.handleSealed)
 
 	addr := fmt.Sprintf("%s:%d", *bind, *port)
 	log.Printf("serving configs on %s (auth required: %v)", addr, *requireAuth)
 	for mac, m := range machines {
 		log.Printf("  %s -> %s", mac, m.Config)
 	}
-	log.Fatal(http.ListenAndServe(addr, mux))
+	log.Fatal(http.ListenAndServe(addr, s.mux()))
 }
