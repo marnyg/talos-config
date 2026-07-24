@@ -7,3 +7,5 @@ talos/clusters/**/secrets.yaml
 talos/clusters/**/sealed-secrets.yaml
 result
 config-server/config-server
+.claude/
+k8s/MIGRATION.md
