@@ -65,6 +65,7 @@ func main() {
 		recovery  = flag.Bool("recovery", false, "print the machine's disk recovery passphrase (with -master/-sig and -mac) and exit")
 		admin     = flag.String("admin", "", "admin peer name to derive (with -master/-sig); use with -wgquick or as the ping identity")
 		wgquick   = flag.Bool("wgquick", false, "print a wg-quick config for -admin and exit (requires -endpoint)")
+		ageRecip  = flag.Bool("age-recipient", false, "print the wallet-derived age recipient (with -master/-sig) and exit; commit it as talos/age-recipient.txt")
 	)
 	flag.Parse()
 
@@ -78,6 +79,18 @@ func main() {
 			log.Fatalf("-sig: %v", err)
 		}
 		*master = hex.EncodeToString(m)
+	}
+	if *ageRecip {
+		if *master == "" {
+			log.Fatal("-age-recipient needs -master or -sig")
+		}
+		m, err := wgderive.MasterFromHex(*master)
+		if err != nil {
+			log.Fatalf("-master: %v", err)
+		}
+		_, recipient := wgderive.AgeIdentity(m)
+		fmt.Println(recipient)
+		return
 	}
 	if *recovery {
 		if *master == "" || *mac == "" {

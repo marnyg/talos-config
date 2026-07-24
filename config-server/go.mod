@@ -3,6 +3,7 @@ module github.com/marnyg/talos-config/config-server
 go 1.25.6
 
 require (
+	filippo.io/age v1.3.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/siderolabs/crypto v0.6.5
 	github.com/siderolabs/kms-client v0.2.0
@@ -17,6 +18,7 @@ require (
 
 require (
 	cel.dev/expr v0.25.1 // indirect
+	filippo.io/hpke v0.4.0 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/ProtonMail/go-mime v0.0.0-20230322103455-7d82a3887f2f // indirect
 	github.com/ProtonMail/gopenpgp/v2 v2.10.0 // indirect

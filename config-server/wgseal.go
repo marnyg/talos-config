@@ -117,6 +117,12 @@ func (m *wgManager) unsealWithMaster(master []byte) error {
 		endpoint:  m.endpoint,
 		admins:    m.adminPeers,
 	}
+	// Secrets decrypt before anything unblocks: config serving and the
+	// KMS gate on settings != nil, and an unseal that cannot produce
+	// the secrets must fail loudly rather than serve broken configs.
+	if err := decryptAgeSecrets(m.root, master); err != nil {
+		return fmt.Errorf("decrypting secrets: %w", err)
+	}
 	machines, err := loadMachines(filepath.Join(m.root, "machines"))
 	if err != nil {
 		return fmt.Errorf("loading machines: %w", err)

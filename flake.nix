@@ -35,7 +35,7 @@
             pname = "config-server";
             version = "0.1.0";
             src = ./config-server;
-            vendorHash = "sha256-8hQ628ZxGZJYEvhiyYbPPBFuMCrak889bTF2UAFAFis=";
+            vendorHash = "sha256-iTi2EGrbn0XvmiiMVv3WGrnwuguBq7ZzALHLo2n7N/4=";
           };
 
           packages.config-server = pkgs.writeShellApplication {
@@ -53,11 +53,16 @@
             program = toString (pkgs.writeShellScript "encrypt-secrets" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)/talos"
-              # Cluster secrets are additionally encrypted to the fly.io
-              # deploy key (public recipient, committed) so the config
-              # server can decrypt them at startup without our SSH key.
+              # Cluster secrets are additionally encrypted to the
+              # wallet-derived age recipient (public, committed — derive
+              # with `wgping -age-recipient -sig <unseal-sig>`) so the
+              # config server can decrypt them at unseal time. The ssh
+              # key stays as a second recipient for break-glass.
               FLY_RECIP=""
-              if [ -f fly-recipient.txt ]; then
+              if [ -f age-recipient.txt ]; then
+                FLY_RECIP="-r $(cat age-recipient.txt)"
+              elif [ -f fly-recipient.txt ]; then
+                echo "WARNING: using legacy fly-recipient.txt — migrate to age-recipient.txt" >&2
                 FLY_RECIP="-r $(cat fly-recipient.txt)"
               fi
               # Encrypt talosconfig (SSH key only — fly never needs admin creds)

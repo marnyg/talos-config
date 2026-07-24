@@ -1,29 +1,13 @@
 #!/bin/sh
-# Fly.io entrypoint: decrypt cluster secrets into tmpfs, then start the
-# config server. Plaintext secrets only ever exist in /dev/shm (memory);
-# the image and the VM disk hold only .age ciphertext.
+# Fly.io entrypoint: stage the talos tree into tmpfs and start the
+# config server. The image and the VM disk hold only .age ciphertext;
+# the server decrypts it into /dev/shm at UNSEAL time with the
+# wallet-derived age identity (wgderive.AgeIdentity) — no AGE_KEY
+# secret, and no plaintext anywhere until an admin signs.
 set -eu
-
-: "${AGE_KEY:?AGE_KEY secret not set (fly secrets set AGE_KEY=...)}"
 
 mkdir -p /dev/shm/talos
 cp -R /app/talos/. /dev/shm/talos/
-
-keyfile=/dev/shm/age-key.txt
-printf '%s\n' "$AGE_KEY" > "$keyfile"
-
-# Fail loudly if any shipped .age file cannot be decrypted — a silently
-# missing secrets patch would compose a broken machine config.
-find /dev/shm/talos -name '*.age' | while IFS= read -r f; do
-    out="${f%.age}"
-    if ! age -d -i "$keyfile" -o "$out" "$f"; then
-        echo "FATAL: cannot decrypt $f with the fly deploy key" >&2
-        exit 1
-    fi
-    echo "decrypted ${out#/dev/shm/talos/}"
-done
-
-rm -f "$keyfile"
 
 # WireGuard control channel: enabled when WG_ENDPOINT is set. Starts
 # SEALED — no key material at rest; an admin unseals at runtime by

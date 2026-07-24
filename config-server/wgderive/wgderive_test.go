@@ -9,6 +9,9 @@ import (
 const testMaster = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
 const testMAC = "b0:41:6f:15:3b:8f"
 
+func ageIdentityForTest(master []byte) string  { id, _ := AgeIdentity(master); return id }
+func ageRecipientForTest(master []byte) string { _, r := AgeIdentity(master); return r }
+
 // TestDerivationStability pins the derivation contract. If this test
 // breaks, the change RE-KEYS THE ENTIRE FLEET: every provisioned
 // machine's tunnel config becomes invalid until re-provisioned. Do not
@@ -31,6 +34,8 @@ func TestDerivationStability(t *testing.T) {
 		// Admin peers: uppercase input name must normalize to the same key.
 		"admin priv": KeyHex(AdminKey(master, "Laptop")),
 		"admin pub":  KeyHex(PublicKey(AdminKey(master, "laptop"))),
+		"age id":     ageIdentityForTest(master),
+		"age recip":  ageRecipientForTest(master),
 	}
 	want := map[string]string{
 		"server priv":  "800b5d44d8d92c6de62e8c25b6d191b1fdbf7dac120ca2582be51c53f4566d78",
@@ -42,6 +47,10 @@ func TestDerivationStability(t *testing.T) {
 		"recovery":     "bhgafhpz-i5qbzl5j-csjuuhan-hxvacurb",
 		"admin priv":   "885a7a32c8bc86908bbf1567bffc637dc7c8aaf6e53ef536d16a487e5a55a660",
 		"admin pub":    "595c3842b5e72bad4b19d94ffd664cdddeda6ad61614626c9cd54c2e8f7ef222",
+		// Changing these orphans every .age file encrypted to the
+		// wallet-derived recipient.
+		"age id":    "AGE-SECRET-KEY-1SPNS4ULQSAMVET6FS5NYRAJYQ09P75PT35AM062D52UL8YSMM9XQTSXA77",
+		"age recip": "age19ftlkvzz0tseq0zayuzlwdnz3z99m7ewzfs45epcfd0am5l0kfhs0hschn",
 	}
 	for k, w := range want {
 		if got[k] != w {
