@@ -1,6 +1,6 @@
 # Handover — next session
 
-_Last updated: 2026-07-24 (late evening). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
+_Last updated: 2026-07-24 (night). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
 
 ## Where things stand
 
@@ -43,14 +43,50 @@ admin wallet 0xf568...9406 (EOA, RFC 6979 deterministic)
 - App **marnyg-talos-config**, `arn`, single always-on machine (in-memory state — do NOT scale up).
 - Secrets: **only `AGE_KEY`** remains. `WG_PRIVATE_KEY`/`WG_PEERS` retired.
 - Dedicated IPv4 **213.188.219.215** (UDP :51820). Deployed 2026-07-24, unsealed by admin wallet, pin validated.
-- [ ] **TODO: point an uptime pinger at `GET /sealed`** — a surprise fly restart sits sealed (tunnel down) until noticed.
+- Sealed-state monitoring: `.github/workflows/sealed-check.yml` probes `GET /sealed` every 15 min.
 
-## Next session: auto-bootstrap (sketch `c8fa867d`)
+## Auto-bootstrap — SHIPPED & validated live (2026-07-24 night)
 
-1. **Auto-bootstrap slice**: server watches tunnel for approved-but-unbootstrapped CP, calls machinery `Bootstrap` (fly already holds OS CA — no trust escalation). The tunnel to the real node is now live to test against.
-2. Then: status page behind SIWE session login; KMS unseal over tunnel (passphrase break-glass slot mandatory).
+`config-server/bootstrap.go`: 30s poll loop, dials apid at the derived
+tunnel IP through the netstack, mutual TLS with a short-lived os:admin
+cert minted from the OS CA (extracted from the machine's own composed
+config — no extra secrets plumbing). Pure decision core `bootState`
+(unit-tested): etcd `waiting` ×2 consecutive → one `Bootstrap` per
+lifetime; `Running` is terminal. Guards: exactly ONE declared CP
+(multi-CP refused — split-brain), sealed = inert. Opt-in
+`--auto-bootstrap`, set by the fly entrypoint.
 
-Rollout gotchas learned: `talosctl pcap --bpf-filter` takes `tcpdump -ddd`-style instruction lists (comma-joined) but the filter silently didn't apply server-side — and an unfiltered pcap captures its own gRPC stream (~0.5 GB/30s feedback loop). Filter offline instead. Default namespace enforces baseline PSS (no hostNetwork pods) — use kube-system. Repo kubeconfig context pointed at a dead OIDC setup; `talosctl kubeconfig` works.
+Live validation: deployed, unsealed, observed `etcd-running → going
+idle` against the real node. The *action* path (actual Bootstrap call)
+is unit-tested but fires first on the next freshly provisioned CP —
+watch fly logs during the next PXE boot.
+
+**Gotcha found live: apid cert SANs don't include wg0 addresses** (node
+address discovery skips it) — mutual TLS failed as a bare
+"unreachable". Fixed twice: live node patched manually
+(`certSANs: [10.99.0.54]`), and injection now appends the tunnel IP to
+certSANs for future machines (append semantics test-covered). RPC
+errors now logged on change (not swallowed).
+
+⚠️ `40ea519` (certSAN injection + RPC logging) is committed/pushed but
+**NOT deployed** — ride it with the next deploy to save an unseal
+ceremony. Deployed fly image = `5067832`.
+
+## Next session (sketch `c8fa867d`)
+
+1. Status page behind SIWE session login (tunnel liveness, last fetch,
+   bootstrap state — bootstrapper state is ready to surface).
+2. KMS unseal over tunnel (passphrase break-glass slot mandatory).
+
+Gotchas learned this session: `talosctl pcap --bpf-filter` takes
+`tcpdump -ddd`-style instruction lists but silently didn't filter
+server-side — and an unfiltered pcap captures its own gRPC stream
+(~0.5 GB/30s feedback loop); filter offline. Default namespace enforces
+baseline PSS (no hostNetwork pods) — use kube-system. Repo kubeconfig
+context points at a dead OIDC setup; `talosctl kubeconfig` works. nix
+vendorHash depends on the **import graph**, not just go.mod/go.sum —
+stage new .go files before computing. Flake builds ignore untracked
+files.
 
 ## Gotchas that cost time
 
@@ -62,7 +98,8 @@ Rollout gotchas learned: `talosctl pcap --bpf-filter` takes `tcpdump -ddd`-style
 
 ## Loose ends
 
-- [ ] Uptime pinger on `/sealed` (see above)
+- [x] ~~Uptime pinger on `/sealed`~~ — GitHub Actions `sealed-check` every 15 min (fails → email). Deliberately NOT a fly health check: fly restarting a sealed machine = unrecoverable seal loop.
+- [ ] `40ea519` awaiting next fly deploy (see above)
 - [ ] DHCP reservation for 10.0.0.20 — user deferred, IP confirmed correct for now
 - [ ] `k8s/MIGRATION.md` untracked — user said leave it
 - [ ] `wgbind.go` DNS timeout broken window — not yet filed as +debt
