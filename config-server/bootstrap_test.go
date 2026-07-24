@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/netip"
+	"os"
+	"path/filepath"
 	"testing"
 
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
@@ -87,19 +89,34 @@ func TestBootStateAlreadyBootstrapped(t *testing.T) {
 	}
 }
 
-// TestControlPlanesFilter: only controlplane-based machines are
-// eligible; the single-CP guard depends on this.
+// TestControlPlanesFilter: eligibility comes from the declared
+// machine.type in the base config — not the filename; the single-CP
+// guard depends on this.
 func TestControlPlanesFilter(t *testing.T) {
-	machines := map[string]machine{
-		"aa:aa:aa:aa:aa:aa": {Config: "base/controlplane.yaml"},
-		"bb:bb:bb:bb:bb:bb": {Config: "base/worker.yaml"},
+	root := t.TempDir()
+	write := func(name, typ string) {
+		t.Helper()
+		body := "version: v1alpha1\nmachine:\n  type: " + typ + "\n"
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	cps := controlPlanes(machines)
+	// Filenames deliberately lie: the worker file is named
+	// "controlplane.yaml" and vice versa.
+	write("controlplane.yaml", "worker")
+	write("worker.yaml", "controlplane")
+
+	machines := map[string]machine{
+		"aa:aa:aa:aa:aa:aa": {Config: "worker.yaml"},
+		"bb:bb:bb:bb:bb:bb": {Config: "controlplane.yaml"},
+		"cc:cc:cc:cc:cc:cc": {Config: "missing.yaml"}, // unreadable: skipped
+	}
+	cps := controlPlanes(root, machines)
 	if len(cps) != 1 {
 		t.Fatalf("got %d control planes, want 1", len(cps))
 	}
 	if _, ok := cps["aa:aa:aa:aa:aa:aa"]; !ok {
-		t.Fatal("wrong machine selected")
+		t.Fatal("declared type must win over filename")
 	}
 }
 

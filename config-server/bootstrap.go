@@ -25,8 +25,8 @@ import (
 	"log"
 	"net"
 	"net/netip"
+	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -190,7 +190,7 @@ func (b *bootstrapper) step(ctx context.Context) {
 		log.Printf("auto-bootstrap: loading machines: %v", err)
 		return
 	}
-	cps := controlPlanes(machines)
+	cps := controlPlanes(b.root, machines)
 	if len(cps) == 0 {
 		b.setSnap(func(s *bootSnapshot) { s.State = "no-control-plane" })
 		return
@@ -334,11 +334,25 @@ func (b *bootstrapper) issuingCA(m machine) (*x509.PEMEncodedCertificateAndKey, 
 	return ca, nil
 }
 
-// controlPlanes filters machines to those with a control-plane base.
-func controlPlanes(machines map[string]machine) map[string]machine {
+// controlPlanes filters machines to those whose base config declares a
+// control-plane machine.type. The base (role) layer is where the type
+// lives; patches never change it in this repo. Parsing the declared
+// type — not the filename — keeps the single-CP guard honest if a
+// role file is ever renamed or added.
+func controlPlanes(root string, machines map[string]machine) map[string]machine {
 	cps := map[string]machine{}
 	for mac, m := range machines {
-		if strings.Contains(m.Config, "controlplane") {
+		raw, err := os.ReadFile(filepath.Join(root, m.Config))
+		if err != nil {
+			log.Printf("auto-bootstrap: reading base config for %s: %v", mac, err)
+			continue
+		}
+		provider, err := configloader.NewFromBytes(raw)
+		if err != nil {
+			log.Printf("auto-bootstrap: parsing base config for %s: %v", mac, err)
+			continue
+		}
+		if provider.Machine() != nil && provider.Machine().Type().IsControlPlane() {
 			cps[mac] = m
 		}
 	}
