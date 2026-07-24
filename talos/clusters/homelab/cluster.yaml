@@ -8,6 +8,12 @@ cluster:
   apiServer:
     certSANs:
       - 10.99.0.54
+  proxy:
+    # kube-proxy in nftables mode serves NodePorts only on the primary
+    # node IP by default — which would exclude wg0. Serve them on all
+    # addresses so admin peers reach apps over the tunnel.
+    extraArgs:
+      nodeport-addresses: 0.0.0.0/0
   inlineManifests:
     - name: argocd-namespace
       contents: |

@@ -1,4 +1,6 @@
-ip: 10.0.0.20
+# Tunnel address (HKDF-derived from the MAC) — stable across DHCP
+# leases and reprovisions; reachable from admin WG peers via the hub.
+ip: 10.99.0.54
 uuid: 37a1f6ed-580e-054c-8392-98bd8090d21a
 diskEncryption: true
 config: base/controlplane.yaml

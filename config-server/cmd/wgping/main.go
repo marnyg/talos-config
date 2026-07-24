@@ -107,10 +107,14 @@ func main() {
 				log.Fatal("-wgquick needs -endpoint (the server's public ip:port)")
 			}
 			// PersistentKeepalive keeps the NAT mapping open so the
-			// hub can also reach the admin peer unprompted.
+			// hub can also reach the admin peer unprompted. MTU must
+			// stay under the hub netstack's 1280 or TLS-sized packets
+			// blackhole mid-handshake (small packets pass — nasty to
+			// debug; found the hard way).
 			fmt.Printf(`[Interface]
 PrivateKey = %s
 Address = %s/%d
+MTU = 1240
 
 [Peer]
 PublicKey = %s
