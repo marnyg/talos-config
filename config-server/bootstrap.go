@@ -120,6 +120,7 @@ type bootstrapper struct {
 	multiCPWarned bool
 	lastObs       etcdObservation
 	obsLogged     bool
+	lastFail      string                                       // last RPC failure, logged on change only
 	caCache       map[string]*x509.PEMEncodedCertificateAndKey // machine dir -> OS CA
 }
 
@@ -208,8 +209,15 @@ func (b *bootstrapper) observe(ctx context.Context, wg *wgSettings, m machine, i
 
 	resp, err := c.ServiceList(ctx)
 	if err != nil {
+		// "unreachable" alone hides whether the tunnel or TLS failed;
+		// log the underlying error whenever it changes.
+		if msg := err.Error(); msg != b.lastFail {
+			log.Printf("auto-bootstrap: service list via tunnel failed: %v", err)
+			b.lastFail = msg
+		}
 		return etcdUnreachable
 	}
+	b.lastFail = ""
 	var services []*machineapi.ServiceInfo
 	for _, msg := range resp.GetMessages() {
 		services = append(services, msg.GetServices()...)

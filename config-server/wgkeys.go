@@ -68,7 +68,10 @@ func (w *wgSettings) derivePeers(machines map[string]machine) ([]wgPeer, error) 
 
 // machinePatch renders the strategic-merge patch giving the machine
 // its tunnel interface. persistentKeepaliveInterval keeps the NAT
-// mapping open so the server can reach the machine unprompted.
+// mapping open so the server can reach the machine unprompted. The
+// tunnel address is also added to certSANs: apid's node-address
+// discovery does not pick up wg0, and without the SAN the server's
+// TLS dial for auto-bootstrap is rejected.
 func (w *wgSettings) machinePatch(mac string, m machine) (string, error) {
 	ip, err := w.machineTunnelIP(mac, m)
 	if err != nil {
@@ -76,6 +79,8 @@ func (w *wgSettings) machinePatch(mac string, m machine) (string, error) {
 	}
 	priv := wgderive.MachineKey(w.master, mac)
 	return fmt.Sprintf(`machine:
+  certSANs:
+    - %s
   network:
     interfaces:
       - interface: wg0
@@ -89,5 +94,5 @@ func (w *wgSettings) machinePatch(mac string, m machine) (string, error) {
               persistentKeepaliveInterval: 25s
               allowedIPs:
                 - %s
-`, ip, w.subnet.Bits(), wgderive.KeyBase64(priv), wgderive.KeyBase64(w.serverPub), w.endpoint, w.subnet.Masked()), nil
+`, ip, ip, w.subnet.Bits(), wgderive.KeyBase64(priv), wgderive.KeyBase64(w.serverPub), w.endpoint, w.subnet.Masked()), nil
 }

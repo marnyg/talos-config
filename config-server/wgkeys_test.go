@@ -29,8 +29,9 @@ func testWGSettings(t *testing.T) *wgSettings {
 }
 
 // TestWGInjection verifies serve-time WireGuard injection changes the
-// composed config ONLY by adding the wg0 interface — everything else
-// must be identical to a compose without injection. Both composes
+// composed config ONLY by adding the wg0 interface and appending the
+// tunnel address to certSANs — everything else must be identical to a
+// compose without injection. Both composes
 // include a regular patch (as every real machine does) so they take
 // the same re-render path through the machinery encoder.
 func TestWGInjection(t *testing.T) {
@@ -69,8 +70,16 @@ func TestWGInjection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Pull out and verify the injected interface.
 	machineDoc := injectedDoc["machine"].(map[string]any)
+
+	// The tunnel address must be APPENDED to the existing certSANs
+	// (strategic merge must not replace the list).
+	sans, ok := machineDoc["certSANs"].([]any)
+	if !ok || len(sans) != 2 || sans[0] != "10.0.0.20" || sans[1] != "10.99.0.16" {
+		t.Fatalf("certSANs: got %#v, want [10.0.0.20 10.99.0.16]", machineDoc["certSANs"])
+	}
+
+	// Pull out and verify the injected interface.
 	network, ok := machineDoc["network"].(map[string]any)
 	if !ok {
 		t.Fatal("injected config has no machine.network")
@@ -104,13 +113,14 @@ func TestWGInjection(t *testing.T) {
 		t.Errorf("allowedIPs: got %v", allowed[0])
 	}
 
-	// With the injected section removed, the docs must be deep-equal.
+	// With the injected sections removed, the docs must be deep-equal.
 	delete(network, "interfaces")
 	if len(network) == 0 {
 		delete(machineDoc, "network")
 	}
+	machineDoc["certSANs"] = sans[:1]
 	if !reflect.DeepEqual(plainDoc, injectedDoc) {
-		t.Error("injection changed the config beyond machine.network.interfaces")
+		t.Error("injection changed the config beyond machine.network.interfaces and certSANs")
 	}
 }
 
