@@ -1,193 +1,134 @@
 # Handover — next session
 
-_Last updated: 2026-07-24 (late night). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
+_Last updated: 2026-07-24 (evening, post reprovision-day). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
 
 ## Where things stand
 
-### The cluster
+### The cluster — rebuilt encrypted, tunnel-native
 
-- Single control-plane node `b0:41:6f:15:3b:8f` at **10.0.0.20**, Talos v1.12.6, k8s v1.32.3. ArgoCD syncing `k8s/apps` from `main`.
-- IP confirmed correct for now; DHCP reservation still not formally set. Endpoint-as-DNS/VIP remains an open thread (task `9b5b204d`).
-- Admin talosconfig cert expires **2027-07**, no expiry alarm exists.
-- ✅ **wg0 is live on the node** (2026-07-24): tunnel address `10.99.0.54/24`, steady 25s keepalives to fly, bidirectional traffic verified (hostNetwork pod → `nc 10.99.0.1 80` → "hello from the tunnel"; fly logs show `wg hello served to 10.99.0.54`). Rollout path: manual device flow + wallet approval on `/verify` → re-fetched composed config from the (already unsealed) fly server → `talosctl apply-config` (no reboot). **The master signature was never touched** — server-side injection did all derivation. Diff vs WG-off baseline was exactly the wg0 block.
+- Single CP node `b0:41:6f:15:3b:8f`, Talos v1.12.6, k8s v1.32.3,
+  reprovisioned 2026-07-24 with **LUKS2 on STATE+EPHEMERAL**.
+- **Cluster endpoint is the node's derived tunnel IP**
+  `https://10.99.0.54:6443` (decision: cluster correctness must not
+  depend on local hardware state — DHCP handed out four different
+  leases in one day and none of it mattered). apiServer certSAN
+  matches. LAN IP is cosmetic; don't record it anywhere.
+- **First real auto-Bootstrap fired and validated** (etcd waited ×2 →
+  Bootstrap accepted → running). Unattended reboot recovery ~20s.
+- ArgoCD re-synced the app stack from git unaided. Media pods were
+  still crash-settling at session end — check `kubectl get pods -n
+  media` before assuming anything is broken.
+- Admin access is **tunnel-only** now: `talos/talosconfig` (local,
+  gitignored) points at 10.99.0.54; kubeconfig via `talosctl
+  kubeconfig` gets the tunnel endpoint natively; NodePorts (Jellyfin
+  :30096 etc.) serve on wg0. All require the laptop WG peer to be up.
 
-### The config server (`config-server/`, Go) — all deployed & production-validated
+### Disk encryption posture (decision, recorded + closed)
 
-| Component | File | Notes |
-|---|---|---|
-| Config composition | `main.go` | machinery `configpatcher` v1.12.6 (keep in lockstep with cluster) |
-| Device flow (RFC 8628) | `deviceflow.go`, `oauth.go` | in-memory, single-use MAC-bound tokens |
-| Wallet approval | `siwe.go` | EIP-191 recovery vs allowlist |
-| **SIWE status page** | `status.go`, `session.go` | single-use login nonce → 12h HttpOnly cookie; zero-leak logged out |
-| **WG key derivation** | `wgderive/` | HKDF from one master; **frozen v1 contract**, stability tests pin vectors — breaking them re-keys the fleet |
-| **WG injection** | `wgkeys.go` | `wg0` patch composed at serve time only; byte-identical output when WG off (verified vs pre-slice binary) |
-| **Sealed unseal** | `wgseal.go` | wallet sig over `talos-config/wg/master/v1` → master in memory only |
-| WG userspace device | `wg.go`, `wgbind.go` | custom `fly-global-services` bind (mandatory on fly) |
-| Test client | `cmd/wgping` | `-master`/`-sig` modes impersonate a machine end-to-end |
+Slot 0 = KMS (fly, WAN, per-boot) — currently **dormant in practice**:
+early-boot DNS isn't up when STATE unlocks, so every boot so far used
+slot 1. Slot 1 = static derived passphrase, persisted in plaintext
+META by Talos. Accepted trade-off: encryption protects disk
+disposal/RMA only; theft protection and real revocation would need
+KMS-only (break-glass tooling for slot-0 blobs doesn't exist — build
+it before ever dropping slot 1). Consequence: sealed fly server does
+NOT block reboots, only provisioning — task `19a4c316` (seal window)
+is low-stakes until this changes.
 
-### Root of trust: the admin wallet
+### Admin over the tunnel — SHIPPED & validated live (task `b79e0570`)
 
-```
-admin wallet 0xf568...9406 (EOA, RFC 6979 deterministic)
-  → EIP-191 sig over "talos-config/wg/master/v1"  ← SIGNATURE IS THE MASTER KEY
-    → HKDF master (memory only, never at rest)
-      → server WG key + per-machine keys (MAC-keyed) + tunnel IPs (10.99.0.0/24, server .1)
-```
+- `wgstack/`: vendored trimmed netstack TUN with **IPv4 forwarding**
+  (upstream keeps the stack unexported, same story as the fly bind).
+  The hub now routes peer↔peer. E2E test: real hub + two userspace
+  peers over loopback UDP, TCP straight through.
+- **Admin peers**: named identities (env `WG_ADMIN_PEERS = "laptop"`
+  in fly.toml), keys/IPs HKDF-derived from new frozen v1 domains
+  (`admin-key/`, `admin-addr/` — vectors pinned). No registry.
+- Laptop config: `wgping -admin laptop -sig <unseal-sig> -wgquick
+  -endpoint 213.188.219.215:51820`. Laptop = `10.99.0.207`.
+- **MTU gotcha (cost an hour): the hub netstack runs at 1280.** A
+  client at 1420 blackholes TLS-sized packets mid-handshake while
+  pings/hellos pass. wgquick output now emits `MTU = 1240`; any
+  hand-rolled peer config must too.
+- **kube-proxy nftables gotcha**: NodePorts default to the primary
+  node IP only (unlike iptables mode). Fixed in cluster.yaml
+  (`proxy.extraArgs.nodeport-addresses: 0.0.0.0/0`) for future
+  provisions AND live-patched into the kube-proxy DaemonSet (Talos
+  renders bootstrap manifests once; config changes don't reconcile
+  them post-bootstrap).
+- Forwarding hub is also the missing piece multi-node needed: a second
+  node can now reach the endpoint through the hub.
 
-- **Never sign the master message anywhere** except the server's `/verify` page or offline `cast wallet sign`. Any captured signature = fleet master until message rotates to `/v2`.
-- Server restart → **re-seals**. `/sealed` returns 503 until an admin signs at `/verify`. Config serving also 503s while sealed (deliberate: don't strand machines outside the tunnel).
-- Pinned server pubkey in `fly.toml` (`WG_SERVER_PUBKEY = uNUI+XlWP/1Q...`) — wrong-wallet unseal fails.
-- Decision recorded (query `status:any +decision`): sealed-server accepted; human re-unseal after restart is fine because the tunnel has no unattended consumers yet.
+### The config server (fly app marnyg-talos-config)
 
-### Fly deployment
+All previous slices still live: device flow, wallet approval, SIWE
+status page, sealed-server unseal, KMS gRPC (:8443, h2_backend under
+http_options — the exact nesting matters), auto-bootstrap.
+**Deployed image is at `5bb5a6f`; repo is ahead** (`346c877`: wgping
+MTU, cluster.yaml proxy args, meta.yaml tunnel ip) — rides the next
+deploy, nothing urgent. Every deploy re-seals; unseal at /verify.
+Secrets on fly: only `AGE_KEY` (task `9316194f`… no — see task list:
+wallet-derived age identity retires it, queued next).
 
-- App **marnyg-talos-config**, `arn`, single always-on machine (in-memory state — do NOT scale up).
-- Secrets: **only `AGE_KEY`** remains. `WG_PRIVATE_KEY`/`WG_PEERS` retired.
-- Dedicated IPv4 **213.188.219.215** (UDP :51820). Deployed 2026-07-24, unsealed by admin wallet, pin validated.
-- Sealed-state monitoring: `.github/workflows/sealed-check.yml` probes `GET /sealed` every 15 min.
+### Root of trust (unchanged)
 
-## KMS disk unseal — SHIPPED & wire-validated (2026-07-24, later still)
+Admin wallet `0xf568…9406` signs `talos-config/wg/master/v1` →
+HKDF master (memory only) → server WG key, machine keys, admin peer
+keys, tunnel IPs, KMS seal keys, recovery passphrases. The signature
+IS the fleet master. Sign it nowhere except /verify or offline
+`cast wallet sign`.
 
-`kms.go` implements the siderolabs kms-client gRPC protocol. Per-node
-seal keys are HKDF from the wallet master (`kms/v1`, frozen, vectors
-pinned in `wgderive`); AES-256-GCM; stateless; sealed server →
-everything `Unavailable`.
+## Next session — pick up
 
-**Design pivot, settled with user:** the sketch said "KMS over
-tunnel" — impossible for STATE. Talos persists the STATE encryption
-config to META and unlocks with early kernel-arg/DHCP networking,
-before the machine config (and thus wg0) exists. So the KMS endpoint
-is WAN: `https://marnyg-talos-config.fly.dev:8443`, dedicated
-`--kms-port 8081` internally. SideroLink adoption (tunnel from kernel
-args, would fix this properly) is filed as task 30 — "control channel
-v3" candidate.
+1. **Wallet-derived age identity** (task queued, refs `da2e069d`):
+   HKDF(master, `age/v1`) → X25519 age identity; commit the public
+   recipient; decrypt secrets **at unseal time** instead of
+   entrypoint (strictly better: today plaintext sits in tmpfs while
+   sealed); retire `AGE_KEY`; keep ssh key as break-glass recipient.
+   One deploy, one unseal ceremony, zero secrets at rest on fly.
+2. Parked: SideroLink v3 (task `9da98ad2`), endpoint DNS/VIP thread
+   (`9b5b204d` — largely absorbed by the tunnel-endpoint decision;
+   re-read before acting), seal-window thread (`19a4c316`, teeth
+   pulled by the slot-1 decision).
 
-**Unseal policy:** UUID declared in `machines/<mac>/meta.yaml` (the
-durable allowlist — deleting the line is revocation) ∪ sealed by this
-server lifetime (grace so fresh installs reboot freely before the
-admin records the UUID). Seal is open but logged; `/status` shouts
-undeclared seals with the exact yaml line to paste. Injection needs no
-UUID at all — recovery passphrases key off the MAC.
+## Gotchas that cost time (new this session)
 
-**Per-machine opt-in:** `diskEncryption: true` in meta.yaml →
-serve-time `systemDiskEncryption` injection (STATE+EPHEMERAL, luks2,
-KMS slot 0, derived passphrase slot 1). Byte-identical output without
-the flag — verified against the deployed binary. Break-glass:
-`wgping -recovery -sig <unseal-sig> -mac <mac>` offline.
-
-**Validated in production** with `cmd/kmsprobe` (keeper tool — exact
-node dial path): sealed → `Unavailable`, unsealed → Seal/Unseal
-roundtrip OK, undeclared-uuid warning fired. A probe uuid
-(`00000000-dead-beef-…`) shows on /status until next restart —
-harmless.
-
-**Fly gotcha that burned an hour:** `h2_backend = true` works ONLY
-under `[services.ports.http_options]`. Under `[http_service]` or bare
-on the port it is silently dropped; `tls_options.alpn = ["h2"]` alone
-never offers h2 at the edge. Symptom chain: `no application protocol`
-→ 502 → mux 404, depending on which wrong config you have.
-
-**NOT yet done: no machine is actually encrypted.** Partitions encrypt
-at creation only → the CP node needs a deliberate wipe + reprovision
-(auto-bootstrap will fire its first real Bootstrap). That day closes
-sketch `c8fa867d`. Before wiping: record the node's UUID in its
-meta.yaml (it's on /verify at approval time) and note the recovery
-passphrase.
-
-## Status page — SHIPPED & validated live (2026-07-24 late night)
-
-`/status` (read-only) behind SIWE session login. Login signs
-`talos config-server status login\nnonce: <n>` — an ordinary auth
-message, distinct prefix from both the approval and master messages; a
-captured login signature grants nothing but a 12h session. Logged out
-the page is only the sign-in prompt; without `--admin-address` it 404s.
-
-Shows per machine: WG last handshake / rx / tx / observed WAN endpoint
-(parsed from the device UAPI, `parsePeerStats`), last config fetch per
-MAC, plus the auto-bootstrap loop snapshot (`bootSnapshot` — including
-`multi-cp-refused`, which was previously invisible), seal state, and
-the deployed `FLY_IMAGE_REF`. Auto-refreshes every 30s.
-
-Also in this batch: `controlPlanes` now parses `machine.type` from the
-base config instead of matching "controlplane" in the filename (the
-single-CP guard no longer trusts file names), and the HTTP route mux
-moved out of the test file into `main.go` so tests exercise the real
-routing.
-
-Live validation: deployed `deployment-01KYA6J6MS` (git `417114d`),
-unsealed, first status login recorded, node re-handshaked ~50s after
-unseal, auto-bootstrap re-observed `etcd-running → idle`. During the
-sealed→reconnect window the server logs
-`Failed to send handshake initiation: no known endpoint for peer`
-every ~5s — known-benign wireguard-go retry noise; stops the moment
-the node dials in.
-
-## Auto-bootstrap — SHIPPED & validated live (2026-07-24 night)
-
-`config-server/bootstrap.go`: 30s poll loop, dials apid at the derived
-tunnel IP through the netstack, mutual TLS with a short-lived os:admin
-cert minted from the OS CA (extracted from the machine's own composed
-config — no extra secrets plumbing). Pure decision core `bootState`
-(unit-tested): etcd `waiting` ×2 consecutive → one `Bootstrap` per
-lifetime; `Running` is terminal. Guards: exactly ONE declared CP
-(multi-CP refused — split-brain), sealed = inert. Opt-in
-`--auto-bootstrap`, set by the fly entrypoint.
-
-Live validation: deployed, unsealed, observed `etcd-running → going
-idle` against the real node. The *action* path (actual Bootstrap call)
-is unit-tested but fires first on the next freshly provisioned CP —
-watch fly logs during the next PXE boot.
-
-**Gotcha found live: apid cert SANs don't include wg0 addresses** (node
-address discovery skips it) — mutual TLS failed as a bare
-"unreachable". Fixed twice: live node patched manually
-(`certSANs: [10.99.0.54]`), and injection now appends the tunnel IP to
-certSANs for future machines (append semantics test-covered). RPC
-errors now logged on change (not swallowed).
-
-`40ea519` (certSAN injection + RPC logging) went live with the
-`01KYA6J6MS` deploy — nothing is waiting on a deploy anymore.
-
-## Next session (sketch `c8fa867d`)
-
-1. **Encrypted reprovision day** (closes the sketch): record CP UUID
-   in meta.yaml, set `diskEncryption: true`, wipe + PXE the node,
-   watch auto-bootstrap fire for real, verify disks unlock on reboot
-   and that the recovery passphrase works at the console.
-2. Parked nearby: task 29 (wallet-derived age key — retires AGE_KEY,
-   the last fly secret), task 30 (SideroLink / control channel v3),
-   task 28 (admin access over tunnel), thread 9b5b204d (endpoint
-   DNS/VIP).
-
-Gotchas learned this session: `talosctl pcap --bpf-filter` takes
-`tcpdump -ddd`-style instruction lists but silently didn't filter
-server-side — and an unfiltered pcap captures its own gRPC stream
-(~0.5 GB/30s feedback loop); filter offline. Default namespace enforces
-baseline PSS (no hostNetwork pods) — use kube-system. Repo kubeconfig
-context points at a dead OIDC setup; `talosctl kubeconfig` works. nix
-vendorHash depends on the **import graph**, not just go.mod/go.sum —
-stage new .go files before computing. Flake builds ignore untracked
-files.
-
-## Gotchas that cost time
-
-- **`fly-global-services` DNS lookup hangs ~20s off-fly** (no timeout in `wgbind.go`) — local WG-enabled starts are slow; filed as broken window.
-- **Redeploy = restart = resealed.** Every `fly deploy` needs a follow-up unseal signature.
-- **nix vendorHash**: `go.mod` changes need fake-hash dance. This slice avoided it (stdlib `crypto/hkdf`, Go ≥1.24).
-- configpatcher returns input **verbatim with zero patches** but re-renders (adds `token: ""` etc.) with ≥1 — byte-diff comparisons must use the same render path.
-- Earlier gotchas (poll interval ≥6s, fly UDP dedicated v4, `nix run` silent rebuilds) still apply.
+- Hub netstack MTU 1280: clamp every WG client to ≤1240 or TLS
+  blackholes. Symptom: ping works, small HTTP works, any TLS
+  handshake times out.
+- kube-proxy nftables mode ≠ iptables defaults: NodePorts bind
+  primary IP only.
+- Talos bootstrap manifests (kube-proxy DS etc.) render once at
+  bootstrap; `cluster.proxy` config changes need a manual DS patch or
+  `talosctl upgrade-k8s` on a live cluster.
+- `fly logs` replays old buffered history — filter by timestamp
+  before drawing conclusions (nearly misdiagnosed a seal state from
+  stale lines).
+- Talos KMS slot ordering: install-time seal/unseal happens during
+  volume creation; boot-time unlock is a separate path that races
+  early-boot DNS. `encryptionSlot` in volumestatus tells you which
+  slot actually opened the volume.
 
 ## Loose ends
 
-- [x] ~~Uptime pinger on `/sealed`~~ — GitHub Actions `sealed-check` every 15 min (fails → email). Deliberately NOT a fly health check: fly restarting a sealed machine = unrecoverable seal loop.
-- [x] ~~`40ea519` awaiting deploy~~ — live in `01KYA6J6MS`
-- [x] ~~`wgbind.go` DNS timeout~~ — was already fixed (2s bounded lookup); stale task 27 closed
-- [ ] DHCP reservation for 10.0.0.20 — user deferred, IP confirmed correct for now
+- [ ] Media stack pods still settling post-rebuild (nzbget/radarr
+      CreateContainerConfigError at session end — likely sealed-secret
+      timing; recheck before debugging)
+- [ ] Deployed fly image behind repo (`5bb5a6f` vs `346c877`) — next
+      deploy syncs it
+- [ ] DHCP reservation: obsolete as a correctness issue (endpoint
+      decision); LAN IP only matters for LAN-device media access (TV)
 - [ ] `k8s/MIGRATION.md` untracked — user said leave it
 - [ ] `.claude/` untracked in repo root — gitignore?
-- [ ] User's default kubeconfig context is stale (dead zitadel OIDC) — repoint or prune
-- [ ] Handshake-initiation log spam while a peer is away — known-benign, not filed
+- [ ] Old kubeconfigs/talosconfigs pointing at 10.0.0.20 anywhere
+      outside the repo will fail — regenerate via `talosctl
+      kubeconfig` over the tunnel
 
 ## Taskwarrior map
 
-`task +repo_5efa11ff status:pending list` — sketch `c8fa867d` carries the slice-by-slice history as annotations. Decisions closed: build-not-Omni; no OIDC/chain RPC; fly per-boot dependency accepted; wallet-rooted sealed-server unseal. New since last update: task 28 (+thread, admin access over tunnel), task 29 (+idea, wallet-derived age key), stale task 27 closed.
+`task +repo_5efa11ff status:pending list`. Closed this session:
+sketch `c8fa867d` (control channel v2 — the whole arc), task 30
+(reprovision day), decisions: endpoint/local-hardware-independence
+(task 32-old), slot-1-encryption-posture (task 33-old). Shipped &
+awaiting close confirm: admin-over-tunnel task `b79e0570` + its
+origin thread `0b7713a4`. Queued: wallet age identity, SideroLink v3.
