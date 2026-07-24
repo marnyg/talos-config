@@ -35,7 +35,7 @@
             pname = "config-server";
             version = "0.1.0";
             src = ./config-server;
-            vendorHash = "sha256-flW3DQfi5dsandjVjfDZm6NS4gXuzJ4vwvm3lpv07Dk=";
+            vendorHash = "sha256-JmM2K1YFl34dbhWu8LBv4IcP3+k/ayY3fFw3Nw7O1HQ=";
           };
 
           packages.config-server = pkgs.writeShellApplication {

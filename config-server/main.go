@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -175,8 +176,21 @@ func main() {
 		requireAuth = flag.Bool("require-auth", false, "require OAuth device-flow bearer token on /config")
 		clientID    = flag.String("client-id", "talos-pxe", "expected OAuth client_id (empty = accept any)")
 		adminAddrs  = flag.String("admin-address", "", "comma-separated wallet addresses allowed to approve machines")
+		wgPort      = flag.Int("wg-port", 0, "WireGuard UDP listen port (0 = disabled; needs WG_PRIVATE_KEY env)")
+		wgAddr      = flag.String("wg-address", "10.99.0.1", "server tunnel address")
+		wgPeers     = flag.String("wg-peers", "", "comma-separated <pubkey-hex>:<allowed-ip/cidr> peers")
 	)
 	flag.Parse()
+
+	if *wgPort > 0 {
+		peers, err := parseWGPeers(*wgPeers)
+		if err != nil {
+			log.Fatalf("--wg-peers: %v", err)
+		}
+		if err := startWireGuard(os.Getenv("WG_PRIVATE_KEY"), *wgPort, netip.MustParseAddr(*wgAddr), peers); err != nil {
+			log.Fatalf("starting wireguard: %v", err)
+		}
+	}
 
 	var addrs []string
 	for _, a := range strings.Split(*adminAddrs, ",") {

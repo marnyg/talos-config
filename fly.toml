@@ -14,7 +14,17 @@ internal_port = 8080
 force_https = true
 auto_stop_machines = "stop"
 auto_start_machines = true
-min_machines_running = 0
+min_machines_running = 1
+
+# WireGuard control channel (spike). UDP on fly requires a dedicated
+# IPv4 and binding fly-global-services; machines dial out, so the app
+# can no longer scale to zero.
+[[services]]
+protocol = "udp"
+internal_port = 51820
+
+  [[services.ports]]
+  port = 51820
 
 [[vm]]
 size = "shared-cpu-1x"

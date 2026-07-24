@@ -25,9 +25,17 @@ done
 
 rm -f "$keyfile"
 
+# WireGuard control channel: enabled when the key is present.
+WG_ARGS=""
+if [ -n "${WG_PRIVATE_KEY:-}" ]; then
+    WG_ARGS="--wg-port 51820 ${WG_PEERS:+--wg-peers $WG_PEERS}"
+fi
+
+# shellcheck disable=SC2086
 exec config-server \
     --root /dev/shm/talos \
     --bind 0.0.0.0 \
     --port 8080 \
     --require-auth \
-    ${ADMIN_ADDRESSES:+--admin-address "$ADMIN_ADDRESSES"}
+    ${ADMIN_ADDRESSES:+--admin-address "$ADMIN_ADDRESSES"} \
+    $WG_ARGS
