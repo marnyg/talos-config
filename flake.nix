@@ -53,14 +53,22 @@
             program = toString (pkgs.writeShellScript "encrypt-secrets" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)/talos"
-              # Encrypt talosconfig
+              # Cluster secrets are additionally encrypted to the fly.io
+              # deploy key (public recipient, committed) so the config
+              # server can decrypt them at startup without our SSH key.
+              FLY_RECIP=""
+              if [ -f fly-recipient.txt ]; then
+                FLY_RECIP="-r $(cat fly-recipient.txt)"
+              fi
+              # Encrypt talosconfig (SSH key only — fly never needs admin creds)
               if [ -f talosconfig ]; then
                 ${pkgs.age}/bin/age -R "${sshKey}.pub" -o talosconfig.age talosconfig
                 echo "Encrypted talosconfig"
               fi
               # Encrypt cluster secrets
               find clusters -type f \( -name 'secrets.yaml' -o -name 'sealed-secrets.yaml' \) | while IFS= read -r f; do
-                ${pkgs.age}/bin/age -R "${sshKey}.pub" -o "$f.age" "$f"
+                # shellcheck disable=SC2086
+                ${pkgs.age}/bin/age -R "${sshKey}.pub" $FLY_RECIP -o "$f.age" "$f"
                 echo "Encrypted $f"
               done
             '');
@@ -169,6 +177,7 @@
               age
               jq
               kubeseal
+              flyctl
             ];
             enterShell = ''
               cd_talos="$(git rev-parse --show-toplevel)/talos"

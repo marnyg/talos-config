@@ -1,0 +1,14 @@
+# Allowlist: only the server source, the talos tree, and the entrypoint.
+*
+!config-server
+!talos
+!fly
+
+# Never ship plaintext secrets or admin credentials — the entrypoint
+# decrypts the .age files at runtime.
+talos/talosconfig
+talos/talosconfig.age
+talos/fly-age-key.age
+talos/clusters/*/secrets.yaml
+talos/clusters/*/sealed-secrets.yaml
+config-server/config-server
