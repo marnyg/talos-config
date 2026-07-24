@@ -1,134 +1,113 @@
 # Handover — next session
 
-_Last updated: 2026-07-24 (evening, post reprovision-day). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
+_Last updated: 2026-07-24 (end of day). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
+
+## The day in one paragraph
+
+Reprovision day happened and then kept going: the CP node was wiped
+and rebuilt with LUKS2 disks, the first real auto-Bootstrap fired, the
+cluster endpoint moved off DHCP onto the node's derived tunnel IP
+(after DHCP handed out four leases in one day), the laptop became a
+WG peer with full talosctl/kubectl/NodePort access through a
+forwarding hub, secrets moved to a wallet-derived age identity
+decrypted at unseal, `AGE_KEY` was deleted — **fly now holds zero
+secrets** — and the sealed-secrets controller (silently killed by the
+Bitnami chart purge) was re-vendored and verified unsealing real
+Secrets on the rebuilt cluster.
 
 ## Where things stand
 
-### The cluster — rebuilt encrypted, tunnel-native
+### The cluster — encrypted, tunnel-native, fully healthy
 
-- Single CP node `b0:41:6f:15:3b:8f`, Talos v1.12.6, k8s v1.32.3,
-  reprovisioned 2026-07-24 with **LUKS2 on STATE+EPHEMERAL**.
-- **Cluster endpoint is the node's derived tunnel IP**
-  `https://10.99.0.54:6443` (decision: cluster correctness must not
-  depend on local hardware state — DHCP handed out four different
-  leases in one day and none of it mattered). apiServer certSAN
-  matches. LAN IP is cosmetic; don't record it anywhere.
-- **First real auto-Bootstrap fired and validated** (etcd waited ×2 →
-  Bootstrap accepted → running). Unattended reboot recovery ~20s.
-- ArgoCD re-synced the app stack from git unaided. Media pods were
-  still crash-settling at session end — check `kubectl get pods -n
-  media` before assuming anything is broken.
-- Admin access is **tunnel-only** now: `talos/talosconfig` (local,
-  gitignored) points at 10.99.0.54; kubeconfig via `talosctl
-  kubeconfig` gets the tunnel endpoint natively; NodePorts (Jellyfin
-  :30096 etc.) serve on wg0. All require the laptop WG peer to be up.
+- Single CP `b0:41:6f:15:3b:8f`, Talos v1.12.6, k8s v1.32.3.
+  LUKS2 on STATE+EPHEMERAL. Endpoint `https://10.99.0.54:6443`
+  (derived tunnel IP; LAN IP is cosmetic, don't record it).
+- Media stack 6/6 Running; SealedSecrets (`newshosting`, `nzbgeek`)
+  unseal correctly via the inlineManifest-provisioned key pair.
+- Admin access is tunnel-only: laptop WG peer `10.99.0.207`
+  (**move `/tmp/wg-talos.conf` somewhere permanent + chmod 600**),
+  `talos/talosconfig` (local, gitignored) points at 10.99.0.54,
+  NodePorts serve on wg0 (Jellyfin `10.99.0.54:30096`).
 
-### Disk encryption posture (decision, recorded + closed)
+### The config server — zero secrets at rest
 
-Slot 0 = KMS (fly, WAN, per-boot) — currently **dormant in practice**:
-early-boot DNS isn't up when STATE unlocks, so every boot so far used
-slot 1. Slot 1 = static derived passphrase, persisted in plaintext
-META by Talos. Accepted trade-off: encryption protects disk
-disposal/RMA only; theft protection and real revocation would need
-KMS-only (break-glass tooling for slot-0 blobs doesn't exist — build
-it before ever dropping slot 1). Consequence: sealed fly server does
-NOT block reboots, only provisioning — task `19a4c316` (seal window)
-is low-stakes until this changes.
+- `fly secrets list` is EMPTY. Everything derives from the wallet
+  signature at unseal: WG keys (server/machine/admin), tunnel IPs,
+  KMS seal keys, recovery passphrases, and now the **age identity**
+  (`talos-config/age/v1/identity`, frozen, vectors pinned) that
+  decrypts `clusters/**/*.age` into tmpfs at unseal time. An unseal
+  that cannot decrypt the secrets fails loudly.
+- Public recipient committed: `talos/age-recipient.txt` (derive:
+  `wgping -age-recipient -sig <unseal-sig>`). ssh key remains
+  break-glass recipient (verified). Legacy fly deploy key deleted.
+- Hub netstack (`wgstack/`) forwards peer↔peer; admin peers declared
+  via `WG_ADMIN_PEERS` (fly.toml), keys from frozen `admin-key/` /
+  `admin-addr/` domains. Laptop config:
+  `wgping -admin laptop -sig <sig> -wgquick -endpoint 213.188.219.215:51820`.
+- Deployed image current with repo as of `392e4b5`.
 
-### Admin over the tunnel — SHIPPED & validated live (task `b79e0570`)
+### Encryption posture (decision, closed)
 
-- `wgstack/`: vendored trimmed netstack TUN with **IPv4 forwarding**
-  (upstream keeps the stack unexported, same story as the fly bind).
-  The hub now routes peer↔peer. E2E test: real hub + two userspace
-  peers over loopback UDP, TCP straight through.
-- **Admin peers**: named identities (env `WG_ADMIN_PEERS = "laptop"`
-  in fly.toml), keys/IPs HKDF-derived from new frozen v1 domains
-  (`admin-key/`, `admin-addr/` — vectors pinned). No registry.
-- Laptop config: `wgping -admin laptop -sig <unseal-sig> -wgquick
-  -endpoint 213.188.219.215:51820`. Laptop = `10.99.0.207`.
-- **MTU gotcha (cost an hour): the hub netstack runs at 1280.** A
-  client at 1420 blackholes TLS-sized packets mid-handshake while
-  pings/hellos pass. wgquick output now emits `MTU = 1240`; any
-  hand-rolled peer config must too.
-- **kube-proxy nftables gotcha**: NodePorts default to the primary
-  node IP only (unlike iptables mode). Fixed in cluster.yaml
-  (`proxy.extraArgs.nodeport-addresses: 0.0.0.0/0`) for future
-  provisions AND live-patched into the kube-proxy DaemonSet (Talos
-  renders bootstrap manifests once; config changes don't reconcile
-  them post-bootstrap).
-- Forwarding hub is also the missing piece multi-node needed: a second
-  node can now reach the endpoint through the hub.
+Slot 0 KMS (dormant at boot — early-boot DNS loses the race every
+time so far), slot 1 static passphrase in plaintext META. Accepted:
+encryption = disk disposal/RMA protection only. Sealed fly server
+does NOT block reboots (slot 1 boots) — only provisioning/refetch.
+Going KMS-only requires break-glass tooling for slot-0 blobs first.
 
-### The config server (fly app marnyg-talos-config)
+## Next session — candidates
 
-All previous slices still live: device flow, wallet approval, SIWE
-status page, sealed-server unseal, KMS gRPC (:8443, h2_backend under
-http_options — the exact nesting matters), auto-bootstrap.
-**Deployed image is at `5bb5a6f`; repo is ahead** (`346c877`: wgping
-MTU, cluster.yaml proxy args, meta.yaml tunnel ip) — rides the next
-deploy, nothing urgent. Every deploy re-seals; unseal at /verify.
-Secrets on fly: only `AGE_KEY` (task `9316194f`… no — see task list:
-wallet-derived age identity retires it, queued next).
+Nothing urgent is open. Queued by preference:
+1. **SideroLink / control channel v3** (idea `9da98ad2`) — tunnel
+   from kernel args, pre-STATE, KMS in-tunnel; would fix the
+   KMS-must-be-WAN wart properly.
+2. **Sealed-secrets controller upgrade** (debt `4d6d9e26`, +later) —
+   vendored v0.27.3 → 0.38.x.
+3. Threads to re-read before acting: `9b5b204d` (endpoint/VIP —
+   mostly absorbed by the tunnel-endpoint decision; close?),
+   `19a4c316` (seal window — teeth pulled by slot-1 decision).
+4. The original v1 sketch `0e7b7d36` is fully realized — close it
+   next session after a skim of its annotations.
 
-### Root of trust (unchanged)
+## Gotchas that cost time (today's additions)
 
-Admin wallet `0xf568…9406` signs `talos-config/wg/master/v1` →
-HKDF master (memory only) → server WG key, machine keys, admin peer
-keys, tunnel IPs, KMS seal keys, recovery passphrases. The signature
-IS the fleet master. Sign it nowhere except /verify or offline
-`cast wallet sign`.
-
-## Next session — pick up
-
-1. **Wallet-derived age identity** (task queued, refs `da2e069d`):
-   HKDF(master, `age/v1`) → X25519 age identity; commit the public
-   recipient; decrypt secrets **at unseal time** instead of
-   entrypoint (strictly better: today plaintext sits in tmpfs while
-   sealed); retire `AGE_KEY`; keep ssh key as break-glass recipient.
-   One deploy, one unseal ceremony, zero secrets at rest on fly.
-2. Parked: SideroLink v3 (task `9da98ad2`), endpoint DNS/VIP thread
-   (`9b5b204d` — largely absorbed by the tunnel-endpoint decision;
-   re-read before acting), seal-window thread (`19a4c316`, teeth
-   pulled by the slot-1 decision).
-
-## Gotchas that cost time (new this session)
-
-- Hub netstack MTU 1280: clamp every WG client to ≤1240 or TLS
-  blackholes. Symptom: ping works, small HTTP works, any TLS
-  handshake times out.
-- kube-proxy nftables mode ≠ iptables defaults: NodePorts bind
-  primary IP only.
-- Talos bootstrap manifests (kube-proxy DS etc.) render once at
-  bootstrap; `cluster.proxy` config changes need a manual DS patch or
-  `talosctl upgrade-k8s` on a live cluster.
-- `fly logs` replays old buffered history — filter by timestamp
-  before drawing conclusions (nearly misdiagnosed a seal state from
-  stale lines).
-- Talos KMS slot ordering: install-time seal/unseal happens during
-  volume creation; boot-time unlock is a separate path that races
-  early-boot DNS. `encryptionSlot` in volumestatus tells you which
-  slot actually opened the volume.
+- **bech32 from memory: one bit wrong in generator[1]**
+  (0x26508e6b vs 6d). The cross-check test against the real age
+  parser caught it — keep that pattern: never trust a hand-rolled
+  encoding without an oracle round-trip.
+- **Hub netstack MTU 1280**: every WG client must clamp ≤1240 or TLS
+  blackholes mid-handshake while pings pass. wgquick output emits
+  `MTU = 1240` now.
+- **kube-proxy nftables mode**: NodePorts bind primary node IP only
+  by default; fixed via `proxy.extraArgs.nodeport-addresses` +
+  live DS patch (Talos renders bootstrap manifests once — config
+  changes don't reconcile them on a live cluster).
+- **Bitnami chart purge**: `bitnami-labs.github.io/sealed-secrets`
+  is 404. Any helm-repo Application is a rebuild time bomb — vendor
+  release manifests instead.
+- **nix vendorHash**: new module (filippo.io/age) = fake-hash dance;
+  also a STALE vendor dir under an unchanged hash gives
+  "inconsistent vendoring", not a hash mismatch.
+- `git add -A` swept in deliberately-untracked files once —
+  `.claude/` and `k8s/MIGRATION.md` are gitignored now.
+- `fly logs` replays old buffered history — filter by timestamp.
 
 ## Loose ends
 
-- [ ] Media stack pods still settling post-rebuild (nzbget/radarr
-      CreateContainerConfigError at session end — likely sealed-secret
-      timing; recheck before debugging)
-- [ ] Deployed fly image behind repo (`5bb5a6f` vs `346c877`) — next
-      deploy syncs it
-- [ ] DHCP reservation: obsolete as a correctness issue (endpoint
-      decision); LAN IP only matters for LAN-device media access (TV)
-- [ ] `k8s/MIGRATION.md` untracked — user said leave it
-- [ ] `.claude/` untracked in repo root — gitignore?
-- [ ] Old kubeconfigs/talosconfigs pointing at 10.0.0.20 anywhere
-      outside the repo will fail — regenerate via `talosctl
-      kubeconfig` over the tunnel
+- [ ] Laptop WG config lives in `/tmp` — move + chmod 600 (user)
+- [ ] `argocd-dex-server` pod in Error — OIDC component, unused?
+      candidate for disabling in the ArgoCD install
+- [ ] `tailscale-operator` Application Degraded — not investigated
+- [ ] KMS slot 0 never used at boot (DNS race) — accepted, but if it
+      bothers you: KMS endpoint by IP instead of hostname would
+      dodge DNS entirely
+- [ ] Old kubeconfigs pointing at 10.0.0.x are dead — regenerate
 
 ## Taskwarrior map
 
-`task +repo_5efa11ff status:pending list`. Closed this session:
-sketch `c8fa867d` (control channel v2 — the whole arc), task 30
-(reprovision day), decisions: endpoint/local-hardware-independence
-(task 32-old), slot-1-encryption-posture (task 33-old). Shipped &
-awaiting close confirm: admin-over-tunnel task `b79e0570` + its
-origin thread `0b7713a4`. Queued: wallet age identity, SideroLink v3.
+`task +repo_5efa11ff status:pending list` — 7 pending: registry,
+this handover pointer, v1 sketch (close candidate), threads
+`9b5b204d` + `19a4c316`, idea `9da98ad2` (SideroLink v3), debt
+`4d6d9e26` (controller upgrade). Closed today: sketch c8fa867d
+(control channel v2), reprovision day, admin-over-tunnel (+ its
+thread), wallet age identity (+ its idea), decisions on endpoint
+independence and slot-1 posture.
