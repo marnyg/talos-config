@@ -13,19 +13,36 @@ WG_ENDPOINT = "213.188.219.215:51820"
 # Pinned server WG pubkey (public; derived from the admin wallet's
 # unseal signature). Unseal fails if a signature derives anything else.
 WG_SERVER_PUBKEY = "uNUI+XlWP/1Q+byYzpl1BBP28o6owEATBU3LwV43xl0="
-# Disk-unseal KMS endpoint advertised to machines (fly terminates TLS,
-# gRPC rides h2 → h2c to the backend). STATE unlock happens before the
-# tunnel exists, so this must be WAN-reachable.
-KMS_ADVERTISE = "https://marnyg-talos-config.fly.dev:443"
+# Disk-unseal KMS endpoint advertised to machines (fly terminates TLS
+# on the dedicated gRPC port below, raw h2 to the backend). STATE
+# unlock happens before the tunnel exists, so this must be
+# WAN-reachable.
+KMS_ADVERTISE = "https://marnyg-talos-config.fly.dev:8443"
 
 [http_service]
 internal_port = 8080
 force_https = true
-# gRPC (KMS) needs HTTP/2 to the backend.
-h2_backend = true
 auto_stop_machines = "stop"
 auto_start_machines = true
 min_machines_running = 1
+
+# Disk-unseal KMS: gRPC needs end-to-end HTTP/2, which fly's HTTP
+# handler would not guarantee to the backend — so it gets its own TLS
+# port with ALPN h2 and byte-passthrough to the same internal port
+# (the server's h2c handler speaks prior-knowledge h2).
+[[services]]
+protocol = "tcp"
+internal_port = 8081
+
+  [[services.ports]]
+  port = 8443
+  handlers = ["tls", "http"]
+
+    # Proxy speaks HTTP/2 cleartext (prior knowledge) to the backend
+    # — required for gRPC. Note the exact nesting: everywhere else
+    # this key is silently dropped.
+    [services.ports.http_options]
+    h2_backend = true
 
 # WireGuard control channel. UDP on fly requires a dedicated IPv4 and
 # binding fly-global-services; machines dial out, so the app can no

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -279,6 +280,7 @@ func main() {
 		wgPubkey    = flag.String("wg-server-pubkey", "", "pinned expected server pubkey (base64 or hex); unseal fails on mismatch")
 		autoBoot    = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the tunnel when its etcd waits for it")
 		kmsAdv      = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --wg-port)")
+		kmsPort     = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared h2c port)")
 	)
 	flag.Parse()
 
@@ -356,6 +358,17 @@ func main() {
 		}
 		s.kms = newKMSServer(*root, wgm)
 		log.Printf("kms: serving disk unseal, advertised endpoint %s", *kmsAdv)
+		if *kmsPort > 0 {
+			// Dedicated listener for fly's gRPC port: the h2c handler
+			// speaks both prior-knowledge h2 and the Upgrade dialect,
+			// whichever the proxy uses.
+			lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *bind, *kmsPort))
+			if err != nil {
+				log.Fatalf("kms listener: %v", err)
+			}
+			go func() { log.Fatal(http.Serve(lis, s.handler())) }()
+			log.Printf("kms: grpc listening on %s:%d", *bind, *kmsPort)
+		}
 	}
 
 	machines, err := loadMachines(filepath.Join(s.root, "machines"))
