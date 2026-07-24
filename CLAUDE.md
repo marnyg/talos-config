@@ -88,9 +88,9 @@ rm /tmp/secret.yaml  # clean up plaintext
 | `talos/clusters/homelab/sealed-secrets.yaml.age` | Yes (age) | TLS key pair, provisioned into cluster at boot |
 | `k8s/apps/*/sealed-secret.yaml` | Yes (RSA) | SealedSecret CRDs, decrypted in-cluster |
 
-## Config Server (talos/serve-config.py)
+## Config Server (config-server/)
 
-Python HTTP server that receives `GET /config?mac=<mac>`, looks up the machine in `machines.json`, runs `talosctl machineconfig patch` to compose base + all patches, and returns the merged config. Used during PXE boot via the `talos.config` kernel argument.
+Go HTTP server that receives `GET /config?mac=<mac>`, scans `talos/machines/` for the machine, and composes base + all patches in-process using the Talos machinery library (`configpatcher` — the same code path as `talosctl machineconfig patch`). Used during PXE boot via the `talos.config` kernel argument. Built via `nix build .#config-server-bin`; `nix run .#config-server` wraps it with the repo root.
 
 ## Kubernetes Apps (k8s/apps/)
 

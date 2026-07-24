@@ -31,12 +31,19 @@
           };
           packages.talosctl = pkgs.talosctl;
 
+          packages.config-server-bin = pkgs.buildGoModule {
+            pname = "config-server";
+            version = "0.1.0";
+            src = ./config-server;
+            vendorHash = "sha256-T4BNv36zPdUPPMf3FflqSGnTLQItrHUJHbqlZ7cE7rM=";
+          };
+
           packages.config-server = pkgs.writeShellApplication {
             name = "config-server";
-            runtimeInputs = [ (pkgs.python3.withPackages (ps: [ ps.pyyaml ])) self'.packages.talosctl ];
+            runtimeInputs = [ pkgs.git ];
             text = ''
-              cd "$(git rev-parse --show-toplevel)/talos"
-              exec python3 ${./talos/serve-config.py} "$@"
+              exec ${self'.packages.config-server-bin}/bin/config-server \
+                --root "$(git rev-parse --show-toplevel)/talos" "$@"
             '';
           };
 

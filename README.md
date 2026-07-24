@@ -19,7 +19,8 @@ talos/                           # Talos cluster configuration
     meta.yaml                    #     ip, base config, patch list
     patch.yaml                   #     machine-specific overrides (optional)
   talosconfig.age                #   Encrypted talosctl admin credentials (all clusters)
-  serve-config.py                #   PXE boot config server
+
+config-server/                   # Go PXE boot config server (talos machinery)
 
 k8s/                             # Kubernetes manifests (TODO)
 ```
