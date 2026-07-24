@@ -115,8 +115,9 @@ type server struct {
 
 	store       *authStore
 	requireAuth bool
-	clientID    string // expected OAuth client_id ("" = accept any)
-	adminToken  string // gates the /verify approval action
+	clientID    string   // expected OAuth client_id ("" = accept any)
+	adminToken  string   // break-glass fallback for /verify approval
+	adminAddrs  []string // allowlisted wallet addresses (lowercase 0x)
 }
 
 func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -173,12 +174,25 @@ func main() {
 		root        = flag.String("root", "", "talos/ directory (default: <git root>/talos)")
 		requireAuth = flag.Bool("require-auth", false, "require OAuth device-flow bearer token on /config")
 		clientID    = flag.String("client-id", "talos-pxe", "expected OAuth client_id (empty = accept any)")
+		adminAddrs  = flag.String("admin-address", "", "comma-separated wallet addresses allowed to approve machines")
 	)
 	flag.Parse()
 
+	var addrs []string
+	for _, a := range strings.Split(*adminAddrs, ",") {
+		if strings.TrimSpace(a) == "" {
+			continue
+		}
+		norm, err := normalizeAddress(a)
+		if err != nil {
+			log.Fatalf("--admin-address: %v", err)
+		}
+		addrs = append(addrs, norm)
+	}
+
 	adminToken := os.Getenv("CONFIG_SERVER_ADMIN_TOKEN")
-	if *requireAuth && adminToken == "" {
-		log.Fatal("--require-auth needs CONFIG_SERVER_ADMIN_TOKEN set (gates the /verify approval page)")
+	if *requireAuth && adminToken == "" && len(addrs) == 0 {
+		log.Fatal("--require-auth needs --admin-address and/or CONFIG_SERVER_ADMIN_TOKEN (something must gate /verify)")
 	}
 
 	if *root == "" {
@@ -195,6 +209,7 @@ func main() {
 		requireAuth: *requireAuth,
 		clientID:    *clientID,
 		adminToken:  adminToken,
+		adminAddrs:  addrs,
 	}
 
 	machines, err := loadMachines(filepath.Join(s.root, "machines"))

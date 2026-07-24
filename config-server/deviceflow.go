@@ -40,6 +40,7 @@ const (
 type deviceAuth struct {
 	DeviceCode string
 	UserCode   string
+	Nonce      string // uniquifies the SIWE approval message
 	ClientID   string
 	// Identity holds the extra variables Talos sent in the device auth
 	// request (talos.config.oauth.extra_variable=uuid,mac,serial).
@@ -112,6 +113,7 @@ func (s *authStore) begin(clientID string, identity map[string]string) *deviceAu
 	da := &deviceAuth{
 		DeviceCode: randomHex(32),
 		UserCode:   newUserCode(),
+		Nonce:      randomHex(16),
 		ClientID:   clientID,
 		Identity:   identity,
 		CreatedAt:  now,
@@ -139,6 +141,20 @@ func (s *authStore) pending() []*deviceAuth {
 }
 
 var errUnknownUserCode = errors.New("unknown or expired user code")
+
+// nonceFor returns the nonce of a pending authorization, for rebuilding
+// the canonical approval message server-side.
+func (s *authStore) nonceFor(userCode string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireLocked()
+
+	da, ok := s.byUserCode[userCode]
+	if !ok || da.status != statusPending {
+		return "", errUnknownUserCode
+	}
+	return da.Nonce, nil
+}
 
 func (s *authStore) approve(userCode string) error { return s.decide(userCode, statusApproved) }
 func (s *authStore) deny(userCode string) error    { return s.decide(userCode, statusDenied) }

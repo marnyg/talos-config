@@ -102,7 +102,14 @@ talos.config.oauth.client_id=talos-pxe
 talos.config.oauth.extra_variable=uuid,mac,serial
 ```
 
-Talos hits `POST /device/code` (sending its hardware identity), prints a user code on the console, and polls `POST /token`. A human approves the machine on `GET /verify` (gated by the admin token). Tokens are **single-use** and **bound to the MAC** captured at device-auth time — one approval serves exactly one config, to exactly that machine. All flow state is in-memory; a server restart just restarts the flow on the machine console.
+Talos hits `POST /device/code` (sending its hardware identity), prints a user code on the console, and polls `POST /token`. A human approves the machine on `GET /verify`. Tokens are **single-use** and **bound to the MAC** captured at device-auth time — one approval serves exactly one config, to exactly that machine. All flow state is in-memory; a server restart just restarts the flow on the machine console.
+
+Approval on `/verify` is authorized by either (in order of preference):
+
+1. **Wallet signature** (`--admin-address 0x...,0x...`) — the admin signs a canonical message (EIP-191 `personal_sign`) binding action + user code + a per-request nonce. Works via browser wallet (in-page button) or headless via `cast wallet sign` + paste. Verification is offline signature recovery against the allowlist — no OIDC provider, no chain RPC (EOA only, by design).
+2. **Admin token** (`CONFIG_SERVER_ADMIN_TOKEN` env) — break-glass fallback.
+
+At least one must be configured when `--require-auth` is on.
 
 ## Kubernetes Apps (k8s/apps/)
 

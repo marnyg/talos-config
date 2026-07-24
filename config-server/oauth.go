@@ -106,10 +106,12 @@ var verifyTemplate = template.Must(template.New("verify").Parse(`<!DOCTYPE html>
 <html>
 <head><title>Machine approval</title>
 <style>
- body { font-family: monospace; max-width: 40rem; margin: 2rem auto; }
+ body { font-family: monospace; max-width: 44rem; margin: 2rem auto; }
  table { border-collapse: collapse; width: 100%; }
  td, th { border: 1px solid #999; padding: .4rem .6rem; text-align: left; }
  .msg { padding: .5rem; border: 1px solid #999; margin-bottom: 1rem; }
+ pre { background: #f4f4f4; padding: .5rem; overflow-x: auto; }
+ details { margin: .5rem 0; }
 </style></head>
 <body>
 <h1>Pending machine approvals</h1>
@@ -117,23 +119,69 @@ var verifyTemplate = template.Must(template.New("verify").Parse(`<!DOCTYPE html>
 {{if not .Pending}}<p>No pending requests.</p>{{end}}
 {{range .Pending}}
 <table>
- <tr><th>User code</th><td>{{.UserCode}}</td></tr>
- {{range $k, $v := .Identity}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
- <tr><th>Requested</th><td>{{.CreatedAt.Format "15:04:05"}}</td></tr>
+ <tr><th>User code</th><td>{{.Auth.UserCode}}</td></tr>
+ {{range $k, $v := .Auth.Identity}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+ <tr><th>Requested</th><td>{{.Auth.CreatedAt.Format "15:04:05"}}</td></tr>
 </table>
-<form method="POST" action="/verify">
- <input type="hidden" name="user_code" value="{{.UserCode}}">
- <input type="password" name="admin_token" placeholder="admin token" required>
- <button name="action" value="approve">Approve</button>
- <button name="action" value="deny">Deny</button>
+<form method="POST" action="/verify" data-msg-approve="{{.MsgApprove}}" data-msg-deny="{{.MsgDeny}}">
+ <input type="hidden" name="user_code" value="{{.Auth.UserCode}}">
+{{if $.WalletEnabled}}
+ <button type="button" class="wallet" data-action="approve">Approve with wallet</button>
+ <button type="button" class="wallet" data-action="deny">Deny with wallet</button>
+ <details>
+  <summary>Sign manually (e.g. cast wallet sign)</summary>
+  <p>To approve, sign:</p><pre>{{.MsgApprove}}</pre>
+  <p>To deny, sign:</p><pre>{{.MsgDeny}}</pre>
+  <input type="text" name="signature" placeholder="0x signature" size="60">
+  <button name="action" value="approve">Submit approve</button>
+  <button name="action" value="deny">Submit deny</button>
+ </details>
+{{end}}
+{{if $.TokenEnabled}}
+ <details>
+  <summary>Admin token (break-glass)</summary>
+  <input type="password" name="admin_token" placeholder="admin token">
+  <button name="action" value="approve">Approve</button>
+  <button name="action" value="deny">Deny</button>
+ </details>
+{{end}}
 </form>
 <br>
 {{end}}
+{{if .WalletEnabled}}
+<script>
+document.querySelectorAll('button.wallet').forEach(function (btn) {
+  btn.addEventListener('click', async function () {
+    var form = btn.closest('form');
+    var action = btn.dataset.action;
+    var msg = action === 'approve' ? form.dataset.msgApprove : form.dataset.msgDeny;
+    if (!window.ethereum) { alert('no wallet found'); return; }
+    try {
+      var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      var sig = await ethereum.request({ method: 'personal_sign', params: [msg, accounts[0]] });
+      form.querySelector('input[name=signature]').value = sig;
+      var act = document.createElement('input');
+      act.type = 'hidden'; act.name = 'action'; act.value = action;
+      form.appendChild(act);
+      form.submit();
+    } catch (e) { alert('signing failed: ' + (e.message || e)); }
+  });
+});
+</script>
+{{end}}
 </body></html>`))
 
+type verifyEntry struct {
+	Auth       *deviceAuth
+	MsgApprove string
+	MsgDeny    string
+}
+
 type verifyPageData struct {
-	Pending []*deviceAuth
-	Message string
+	Pending       []verifyEntry
+	Message       string
+	WalletEnabled bool
+	TokenEnabled  bool
 }
 
 func (s *server) handleVerifyPage(w http.ResponseWriter, r *http.Request) {
@@ -146,22 +194,23 @@ func (s *server) handleVerifyPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.adminToken == "" || !constantTimeEqual(r.FormValue("admin_token"), s.adminToken) {
-		http.Error(w, "invalid admin token", http.StatusForbidden)
+	userCode := strings.ToUpper(strings.TrimSpace(r.FormValue("user_code")))
+	action := r.FormValue("action")
+	if action != "approve" && action != "deny" {
+		http.Error(w, "unknown action", http.StatusBadRequest)
 		return
 	}
 
-	userCode := strings.ToUpper(strings.TrimSpace(r.FormValue("user_code")))
-	var err error
-	action := r.FormValue("action")
-	switch action {
-	case "approve":
-		err = s.store.approve(userCode)
-	case "deny":
-		err = s.store.deny(userCode)
-	default:
-		http.Error(w, "unknown action", http.StatusBadRequest)
+	if !s.authorizeAdmin(r, userCode, action) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
+	}
+
+	var err error
+	if action == "approve" {
+		err = s.store.approve(userCode)
+	} else {
+		err = s.store.deny(userCode)
 	}
 	if err != nil {
 		s.renderVerify(w, fmt.Sprintf("%s: %v", userCode, err))
@@ -172,9 +221,54 @@ func (s *server) handleVerifyPost(w http.ResponseWriter, r *http.Request) {
 	s.renderVerify(w, fmt.Sprintf("%s %sd", userCode, action))
 }
 
+// authorizeAdmin accepts either a wallet signature over the canonical
+// approval message (checked against the address allowlist) or the
+// break-glass admin token.
+func (s *server) authorizeAdmin(r *http.Request, userCode, action string) bool {
+	if sig := r.FormValue("signature"); sig != "" && len(s.adminAddrs) > 0 {
+		nonce, err := s.store.nonceFor(userCode)
+		if err != nil {
+			return false
+		}
+		addr, err := recoverPersonalSign(approvalMessage(action, userCode, nonce), sig)
+		if err != nil {
+			log.Printf("signature verification failed for %s: %v", userCode, err)
+			return false
+		}
+		for _, allowed := range s.adminAddrs {
+			if addr == allowed {
+				log.Printf("wallet %s authorized %s of %s", addr, action, userCode)
+				return true
+			}
+		}
+		log.Printf("wallet %s not in allowlist (user_code=%s)", addr, userCode)
+		return false
+	}
+
+	if s.adminToken != "" && constantTimeEqual(r.FormValue("admin_token"), s.adminToken) {
+		return true
+	}
+	return false
+}
+
 func (s *server) renderVerify(w http.ResponseWriter, msg string) {
+	var entries []verifyEntry
+	for _, da := range s.store.pending() {
+		entries = append(entries, verifyEntry{
+			Auth:       da,
+			MsgApprove: approvalMessage("approve", da.UserCode, da.Nonce),
+			MsgDeny:    approvalMessage("deny", da.UserCode, da.Nonce),
+		})
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := verifyTemplate.Execute(w, verifyPageData{Pending: s.store.pending(), Message: msg}); err != nil {
+	err := verifyTemplate.Execute(w, verifyPageData{
+		Pending:       entries,
+		Message:       msg,
+		WalletEnabled: len(s.adminAddrs) > 0,
+		TokenEnabled:  s.adminToken != "",
+	})
+	if err != nil {
 		log.Printf("rendering verify page: %v", err)
 	}
 }
