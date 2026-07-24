@@ -46,6 +46,54 @@ admin wallet 0xf568...9406 (EOA, RFC 6979 deterministic)
 - Dedicated IPv4 **213.188.219.215** (UDP :51820). Deployed 2026-07-24, unsealed by admin wallet, pin validated.
 - Sealed-state monitoring: `.github/workflows/sealed-check.yml` probes `GET /sealed` every 15 min.
 
+## KMS disk unseal — SHIPPED & wire-validated (2026-07-24, later still)
+
+`kms.go` implements the siderolabs kms-client gRPC protocol. Per-node
+seal keys are HKDF from the wallet master (`kms/v1`, frozen, vectors
+pinned in `wgderive`); AES-256-GCM; stateless; sealed server →
+everything `Unavailable`.
+
+**Design pivot, settled with user:** the sketch said "KMS over
+tunnel" — impossible for STATE. Talos persists the STATE encryption
+config to META and unlocks with early kernel-arg/DHCP networking,
+before the machine config (and thus wg0) exists. So the KMS endpoint
+is WAN: `https://marnyg-talos-config.fly.dev:8443`, dedicated
+`--kms-port 8081` internally. SideroLink adoption (tunnel from kernel
+args, would fix this properly) is filed as task 30 — "control channel
+v3" candidate.
+
+**Unseal policy:** UUID declared in `machines/<mac>/meta.yaml` (the
+durable allowlist — deleting the line is revocation) ∪ sealed by this
+server lifetime (grace so fresh installs reboot freely before the
+admin records the UUID). Seal is open but logged; `/status` shouts
+undeclared seals with the exact yaml line to paste. Injection needs no
+UUID at all — recovery passphrases key off the MAC.
+
+**Per-machine opt-in:** `diskEncryption: true` in meta.yaml →
+serve-time `systemDiskEncryption` injection (STATE+EPHEMERAL, luks2,
+KMS slot 0, derived passphrase slot 1). Byte-identical output without
+the flag — verified against the deployed binary. Break-glass:
+`wgping -recovery -sig <unseal-sig> -mac <mac>` offline.
+
+**Validated in production** with `cmd/kmsprobe` (keeper tool — exact
+node dial path): sealed → `Unavailable`, unsealed → Seal/Unseal
+roundtrip OK, undeclared-uuid warning fired. A probe uuid
+(`00000000-dead-beef-…`) shows on /status until next restart —
+harmless.
+
+**Fly gotcha that burned an hour:** `h2_backend = true` works ONLY
+under `[services.ports.http_options]`. Under `[http_service]` or bare
+on the port it is silently dropped; `tls_options.alpn = ["h2"]` alone
+never offers h2 at the edge. Symptom chain: `no application protocol`
+→ 502 → mux 404, depending on which wrong config you have.
+
+**NOT yet done: no machine is actually encrypted.** Partitions encrypt
+at creation only → the CP node needs a deliberate wipe + reprovision
+(auto-bootstrap will fire its first real Bootstrap). That day closes
+sketch `c8fa867d`. Before wiping: record the node's UUID in its
+meta.yaml (it's on /verify at approval time) and note the recovery
+passphrase.
+
 ## Status page — SHIPPED & validated live (2026-07-24 late night)
 
 `/status` (read-only) behind SIWE session login. Login signs
@@ -102,17 +150,14 @@ errors now logged on change (not swallowed).
 
 ## Next session (sketch `c8fa867d`)
 
-1. **KMS disk unseal** — the last major slice. Per-boot disk keys via
-   the siderolabs KMS protocol, passphrase break-glass slot mandatory
-   (recorded decision — TPM would void revocation). Open design
-   question to settle FIRST: whether STATE-partition unlock can reach
-   a KMS over wg0 at all (wg0 comes from machine config, which lives
-   on STATE — possible chicken-and-egg; Omni avoids it because
-   SideroLink is kernel-arg-configured). May force WAN-exposed KMS
-   gRPC with UUID-keyed derived seals instead of tunnel-only.
-2. Parked nearby: task 29 (derive age identity from the unseal
-   signature — retires AGE_KEY, the last fly secret), task 28 (admin
-   access over tunnel), thread 9b5b204d (endpoint DNS/VIP).
+1. **Encrypted reprovision day** (closes the sketch): record CP UUID
+   in meta.yaml, set `diskEncryption: true`, wipe + PXE the node,
+   watch auto-bootstrap fire for real, verify disks unlock on reboot
+   and that the recovery passphrase works at the console.
+2. Parked nearby: task 29 (wallet-derived age key — retires AGE_KEY,
+   the last fly secret), task 30 (SideroLink / control channel v3),
+   task 28 (admin access over tunnel), thread 9b5b204d (endpoint
+   DNS/VIP).
 
 Gotchas learned this session: `talosctl pcap --bpf-filter` takes
 `tcpdump -ddd`-style instruction lists but silently didn't filter
