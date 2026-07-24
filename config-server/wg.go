@@ -7,10 +7,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/netip"
 	"strings"
+	"time"
 
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
@@ -24,7 +26,9 @@ type wgPeer struct {
 }
 
 // startWireGuard brings up the userspace WG device and a hello
-// listener on the tunnel address.
+// listener on the tunnel address. The hello speaks minimal HTTP/1.0 so
+// plain TCP reads, curl, wget, and dumb uptime probes all get a clean
+// response.
 func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) error {
 	tun, tnet, err := netstack.CreateNetTUN([]netip.Addr{addr}, []netip.Addr{}, 1280)
 	if err != nil {
@@ -60,7 +64,12 @@ func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPe
 			}
 			go func(c net.Conn) {
 				defer c.Close()
-				fmt.Fprintf(c, "hello from the tunnel: %s\n", addr)
+				body := fmt.Sprintf("hello from the tunnel: %s\n", addr)
+				fmt.Fprintf(c, "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+				// Drain any request bytes so closing doesn't RST the
+				// response out from under HTTP clients.
+				_ = c.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+				_, _ = io.Copy(io.Discard, c)
 				log.Printf("wg hello served to %s", c.RemoteAddr())
 			}(c)
 		}

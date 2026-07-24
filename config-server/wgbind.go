@@ -7,10 +7,12 @@ package main
 // sees any traffic there.
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/netip"
 	"sync"
+	"time"
 
 	"golang.zx2c4.com/wireguard/conn"
 )
@@ -23,9 +25,13 @@ type flyBind struct {
 }
 
 // resolveFlyGlobalServices returns the bind address for fly's UDP
-// routing, or the unspecified address when not running on fly.
+// routing, or the unspecified address when not running on fly. The
+// lookup is bounded: off-fly the name doesn't exist and some resolvers
+// take ~20s to say so, which would stall every local WG-enabled start.
 func resolveFlyGlobalServices() netip.Addr {
-	ips, err := net.LookupIP("fly-global-services")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", "fly-global-services")
 	if err == nil {
 		for _, ip := range ips {
 			if a, ok := netip.AddrFromSlice(ip.To4()); ok && ip.To4() != nil {
