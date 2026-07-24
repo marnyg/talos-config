@@ -1,4 +1,6 @@
 ip: 10.0.0.20
+uuid: 37a1f6ed-580e-054c-8392-98bd8090d21a
+diskEncryption: true
 config: base/controlplane.yaml
 patches:
   - clusters/homelab/cluster.yaml
