@@ -25,10 +25,13 @@ done
 
 rm -f "$keyfile"
 
-# WireGuard control channel: enabled when the key is present.
+# WireGuard control channel: enabled when WG_ENDPOINT is set. Starts
+# SEALED — no key material at rest; an admin unseals at runtime by
+# signing the master message at /verify (wallet). WG_SERVER_PUBKEY
+# pins the expected derived pubkey so a wrong-wallet unseal fails.
 WG_ARGS=""
-if [ -n "${WG_PRIVATE_KEY:-}" ]; then
-    WG_ARGS="--wg-port 51820 ${WG_PEERS:+--wg-peers $WG_PEERS}"
+if [ -n "${WG_ENDPOINT:-}" ]; then
+    WG_ARGS="--wg-port 51820 --wg-endpoint $WG_ENDPOINT ${WG_SERVER_PUBKEY:+--wg-server-pubkey $WG_SERVER_PUBKEY}"
 fi
 
 # shellcheck disable=SC2086

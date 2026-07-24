@@ -1,9 +1,16 @@
-// Command wgping is the client half of the WireGuard-over-fly spike:
-// a userspace WG client (no root) that connects to the config server's
-// tunnel endpoint and fetches the TCP hello through it.
+// Command wgping is a userspace WG test client (no root) that connects
+// to the config server's tunnel endpoint and fetches the TCP hello
+// through it.
 //
 //	wgping -genkey                 # print a keypair
 //	wgping -endpoint <ip:port> -server-pub <hex> -key <hex>
+//	wgping -endpoint <ip:port> -master <hex> -mac <mac>   # impersonate a machine
+//	wgping -sig <hex>              # unseal signature → print server pubkey (for pinning)
+//	wgping -endpoint <ip:port> -sig <hex> -mac <mac>      # impersonate via signature
+//
+// The -master/-sig modes derive the client key, tunnel address, and
+// server public key exactly like the server does for a provisioned
+// machine — an end-to-end check of the derivation contract.
 package main
 
 import (
@@ -16,11 +23,14 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/curve25519"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
+
+	"github.com/marnyg/talos-config/config-server/wgderive"
 )
 
 func genkey() {
@@ -46,12 +56,46 @@ func main() {
 		key       = flag.String("key", "", "client private key (hex)")
 		addr      = flag.String("addr", "10.99.0.2", "client tunnel address")
 		target    = flag.String("target", "10.99.0.1:80", "TCP target through the tunnel")
+		master    = flag.String("master", "", "WG master key (hex); with -mac, derives -key/-addr/-server-pub")
+		sig       = flag.String("sig", "", "unseal signature (hex over the master message); alternative to -master")
+		mac       = flag.String("mac", "", "machine MAC to impersonate (with -master/-sig)")
+		subnet    = flag.String("subnet", "10.99.0.0/24", "tunnel subnet (with -master/-sig)")
 	)
 	flag.Parse()
 
 	if *doGenkey {
 		genkey()
 		return
+	}
+	if *sig != "" {
+		m, err := wgderive.MasterFromSignatureHex(*sig)
+		if err != nil {
+			log.Fatalf("-sig: %v", err)
+		}
+		*master = hex.EncodeToString(m)
+	}
+	if *master != "" {
+		m, err := wgderive.MasterFromHex(*master)
+		if err != nil {
+			log.Fatalf("-master: %v", err)
+		}
+		serverPubKey := wgderive.PublicKey(wgderive.ServerKey(m))
+		*serverPub = wgderive.KeyHex(serverPubKey)
+		fmt.Printf("server pubkey: %s (hex %s)\n", wgderive.KeyBase64(serverPubKey), *serverPub)
+		if *mac == "" {
+			// No machine to impersonate: derivation info only (e.g. to
+			// compute the --wg-server-pubkey pin).
+			return
+		}
+		normMAC := strings.ToLower(strings.ReplaceAll(*mac, "-", ":"))
+		priv := wgderive.MachineKey(m, normMAC)
+		ip, err := wgderive.TunnelIP(m, normMAC, netip.MustParsePrefix(*subnet))
+		if err != nil {
+			log.Fatalf("deriving tunnel ip: %v", err)
+		}
+		*key = wgderive.KeyHex(priv)
+		*addr = ip.String()
+		log.Printf("derived: addr %s, pubkey %s", ip, wgderive.KeyBase64(wgderive.PublicKey(priv)))
 	}
 	if *endpoint == "" || *serverPub == "" || *key == "" {
 		flag.Usage()

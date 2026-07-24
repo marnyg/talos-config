@@ -8,6 +8,11 @@ dockerfile = "Dockerfile"
 
 [env]
 ADMIN_ADDRESSES = "0xf56863bF40A75dC3c632C17fc65AA2EB06a89406"
+# Public tunnel endpoint machines dial (dedicated IPv4, UDP).
+WG_ENDPOINT = "213.188.219.215:51820"
+# Pinned server WG pubkey (public; derived from the admin wallet's
+# unseal signature). Unseal fails if a signature derives anything else.
+WG_SERVER_PUBKEY = "uNUI+XlWP/1Q+byYzpl1BBP28o6owEATBU3LwV43xl0="
 
 [http_service]
 internal_port = 8080
@@ -16,9 +21,10 @@ auto_stop_machines = "stop"
 auto_start_machines = true
 min_machines_running = 1
 
-# WireGuard control channel (spike). UDP on fly requires a dedicated
-# IPv4 and binding fly-global-services; machines dial out, so the app
-# can no longer scale to zero.
+# WireGuard control channel. UDP on fly requires a dedicated IPv4 and
+# binding fly-global-services; machines dial out, so the app can no
+# longer scale to zero. No key secret at rest: the server starts
+# sealed and an admin wallet-signature unseals it at /verify.
 [[services]]
 protocol = "udp"
 internal_port = 51820

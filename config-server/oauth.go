@@ -11,6 +11,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/marnyg/talos-config/config-server/wgderive"
 )
 
 const deviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
@@ -116,6 +118,23 @@ var verifyTemplate = template.Must(template.New("verify").Parse(`<!DOCTYPE html>
 <body>
 <h1>Pending machine approvals</h1>
 {{if .Message}}<div class="msg">{{.Message}}</div>{{end}}
+{{if .WGSealed}}
+<div class="msg" style="border-color:#c00">
+ <strong>⚠ WireGuard control channel is SEALED</strong> — config serving is paused.
+ <p>Unsealing signs the master-key derivation message. <strong>This signature IS the
+ fleet master key.</strong> Only ever sign it on this page or offline via
+ <code>cast wallet sign</code> — never on any other site.</p>
+ <form method="POST" action="/unseal" id="unseal-form">
+ {{if .WalletEnabled}}<button type="button" id="unseal-wallet">Unseal with wallet</button>{{end}}
+  <details>
+   <summary>Sign manually (e.g. cast wallet sign)</summary>
+   <p>Sign exactly:</p><pre>{{.MasterMessage}}</pre>
+   <input type="text" name="signature" placeholder="0x signature" size="60">
+   <button>Submit unseal</button>
+  </details>
+ </form>
+</div>
+{{end}}
 {{if not .Pending}}<p>No pending requests.</p>{{end}}
 {{range .Pending}}
 <table>
@@ -150,6 +169,20 @@ var verifyTemplate = template.Must(template.New("verify").Parse(`<!DOCTYPE html>
 {{end}}
 {{if .WalletEnabled}}
 <script>
+(function () {
+  var btn = document.getElementById('unseal-wallet');
+  if (!btn) return;
+  btn.addEventListener('click', async function () {
+    if (!window.ethereum) { alert('no wallet found'); return; }
+    try {
+      var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      var sig = await ethereum.request({ method: 'personal_sign', params: [{{.MasterMessage}}, accounts[0]] });
+      var form = document.getElementById('unseal-form');
+      form.querySelector('input[name=signature]').value = sig;
+      form.submit();
+    } catch (e) { alert('signing failed: ' + (e.message || e)); }
+  });
+})();
 document.querySelectorAll('button.wallet').forEach(function (btn) {
   btn.addEventListener('click', async function () {
     var form = btn.closest('form');
@@ -182,6 +215,8 @@ type verifyPageData struct {
 	Message       string
 	WalletEnabled bool
 	TokenEnabled  bool
+	WGSealed      bool
+	MasterMessage string
 }
 
 func (s *server) handleVerifyPage(w http.ResponseWriter, r *http.Request) {
@@ -267,6 +302,8 @@ func (s *server) renderVerify(w http.ResponseWriter, msg string) {
 		Message:       msg,
 		WalletEnabled: len(s.adminAddrs) > 0,
 		TokenEnabled:  s.adminToken != "",
+		WGSealed:      s.wgm != nil && s.wgm.sealed(),
+		MasterMessage: wgderive.MasterMessage,
 	})
 	if err != nil {
 		log.Printf("rendering verify page: %v", err)

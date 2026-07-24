@@ -1,13 +1,11 @@
 package main
 
-// WireGuard control-channel spike: a userspace WireGuard endpoint
+// WireGuard control channel: a userspace WireGuard endpoint
 // (wireguard-go + gVisor netstack, no kernel/root needed) inside the
-// config server. For the spike it serves a TCP hello on the tunnel
-// address so a client can prove end-to-end connectivity through
-// fly.io's UDP proxying.
+// config server. Serves a TCP hello on the tunnel address as a cheap
+// liveness check through fly.io's UDP proxying.
 
 import (
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -16,6 +14,8 @@ import (
 
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
+
+	"github.com/marnyg/talos-config/config-server/wgderive"
 )
 
 type wgPeer struct {
@@ -23,37 +23,9 @@ type wgPeer struct {
 	allowedIP    netip.Prefix
 }
 
-// parseWGPeers parses "pubkeyhex:10.99.0.2/32,pubkeyhex:10.99.0.3/32".
-func parseWGPeers(s string) ([]wgPeer, error) {
-	var peers []wgPeer
-	for _, p := range strings.Split(s, ",") {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		key, ip, ok := strings.Cut(p, ":")
-		if !ok {
-			return nil, fmt.Errorf("peer %q: want <pubkey-hex>:<allowed-ip/cidr>", p)
-		}
-		if _, err := hex.DecodeString(key); err != nil || len(key) != 64 {
-			return nil, fmt.Errorf("peer %q: public key must be 64 hex chars", p)
-		}
-		prefix, err := netip.ParsePrefix(ip)
-		if err != nil {
-			return nil, fmt.Errorf("peer %q: %w", p, err)
-		}
-		peers = append(peers, wgPeer{publicKeyHex: key, allowedIP: prefix})
-	}
-	return peers, nil
-}
-
-// startWireGuard brings up the userspace WG device and a spike hello
+// startWireGuard brings up the userspace WG device and a hello
 // listener on the tunnel address.
-func startWireGuard(privateKeyHex string, port int, addr netip.Addr, peers []wgPeer) error {
-	if _, err := hex.DecodeString(privateKeyHex); err != nil || len(privateKeyHex) != 64 {
-		return fmt.Errorf("WG_PRIVATE_KEY must be 64 hex chars")
-	}
-
+func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) error {
 	tun, tnet, err := netstack.CreateNetTUN([]netip.Addr{addr}, []netip.Addr{}, 1280)
 	if err != nil {
 		return fmt.Errorf("creating netstack TUN: %w", err)
@@ -64,7 +36,7 @@ func startWireGuard(privateKeyHex string, port int, addr netip.Addr, peers []wgP
 	log.Printf("wireguard binding %s (fly-global-services resolved: %v)", bindIP, !bindIP.IsUnspecified())
 
 	var uapi strings.Builder
-	fmt.Fprintf(&uapi, "private_key=%s\nlisten_port=%d\nreplace_peers=true\n", privateKeyHex, port)
+	fmt.Fprintf(&uapi, "private_key=%s\nlisten_port=%d\nreplace_peers=true\n", wgderive.KeyHex(privateKey), port)
 	for _, p := range peers {
 		fmt.Fprintf(&uapi, "public_key=%s\nallowed_ip=%s\n", p.publicKeyHex, p.allowedIP)
 	}

@@ -1,0 +1,142 @@
+package wgderive
+
+import (
+	"net/netip"
+	"testing"
+)
+
+const testMaster = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+const testMAC = "b0:41:6f:15:3b:8f"
+
+// TestDerivationStability pins the derivation contract. If this test
+// breaks, the change RE-KEYS THE ENTIRE FLEET: every provisioned
+// machine's tunnel config becomes invalid until re-provisioned. Do not
+// update the expected values casually.
+func TestDerivationStability(t *testing.T) {
+	master, err := MasterFromHex(testMaster)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]string{
+		"server priv":  KeyHex(ServerKey(master)),
+		"server pub":   KeyHex(PublicKey(ServerKey(master))),
+		"machine priv": KeyHex(MachineKey(master, testMAC)),
+		"machine pub":  KeyHex(PublicKey(MachineKey(master, testMAC))),
+		"machine b64":  KeyBase64(MachineKey(master, testMAC)),
+	}
+	want := map[string]string{
+		"server priv":  "800b5d44d8d92c6de62e8c25b6d191b1fdbf7dac120ca2582be51c53f4566d78",
+		"server pub":   "b9ece5d6e02d55873844538106f17ff106ae4f5e44279f03b5719b88dff84368",
+		"machine priv": "605231cd460e5b50262f7985b04f4db8639a256c07e10385a4250ef36e40ce55",
+		"machine pub":  "85dd72a62d628075c6e7b4f302acf9d2550da6dba5f63c0154008f9c0ce3b57d",
+		"machine b64":  "YFIxzUYOW1AmL3mFsE9NuGOaJWwH4QOFpCUO825AzlU=",
+	}
+	for k, w := range want {
+		if got[k] != w {
+			t.Errorf("%s changed: got %s, want %s — this re-keys the fleet", k, got[k], w)
+		}
+	}
+
+	ip, err := TunnelIP(master, testMAC, netip.MustParsePrefix("10.99.0.0/24"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip.String() != "10.99.0.16" {
+		t.Errorf("tunnel ip changed: got %s, want 10.99.0.16 — this renumbers the fleet", ip)
+	}
+}
+
+func TestClamping(t *testing.T) {
+	master, _ := MasterFromHex(testMaster)
+	for _, k := range [][32]byte{ServerKey(master), MachineKey(master, testMAC)} {
+		if k[0]&7 != 0 {
+			t.Errorf("low bits not cleared: %x", k[0])
+		}
+		if k[31]&128 != 0 || k[31]&64 == 0 {
+			t.Errorf("high byte not clamped: %x", k[31])
+		}
+	}
+}
+
+func TestDistinctPerMachine(t *testing.T) {
+	master, _ := MasterFromHex(testMaster)
+	if MachineKey(master, "aa:bb:cc:dd:ee:01") == MachineKey(master, "aa:bb:cc:dd:ee:02") {
+		t.Error("different MACs derived the same key")
+	}
+	if MachineKey(master, testMAC) == ServerKey(master) {
+		t.Error("machine key collides with server key")
+	}
+}
+
+func TestTunnelIPRange(t *testing.T) {
+	master, _ := MasterFromHex(testMaster)
+	subnet := netip.MustParsePrefix("10.99.0.0/24")
+	for _, mac := range []string{testMAC, "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02", "00:00:00:00:00:00"} {
+		ip, err := TunnelIP(master, mac, subnet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		last := ip.As4()[3]
+		if last < 2 || last > 254 {
+			t.Errorf("mac %s: host %d outside [2,254]", mac, last)
+		}
+		if !subnet.Contains(ip) {
+			t.Errorf("mac %s: %s outside subnet", mac, ip)
+		}
+	}
+
+	if _, err := TunnelIP(master, testMAC, netip.MustParsePrefix("10.99.0.0/16")); err == nil {
+		t.Error("expected error for non-/24 subnet")
+	}
+}
+
+// TestMasterFromSignatureStability pins the signature→master KDF. Same
+// fleet-re-keying warning as TestDerivationStability.
+func TestMasterFromSignatureStability(t *testing.T) {
+	sig := make([]byte, 65)
+	for i := range sig {
+		sig[i] = byte(i)
+	}
+	master, err := MasterFromSignature(sig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "81de8479284e7b63ada15f449be3e3d9413180b52e70fee002ac1395203aca05"
+	if got := KeyHex([32]byte(master)); got != want {
+		t.Errorf("master changed: got %s, want %s — this re-keys the fleet", got, want)
+	}
+}
+
+// TestMasterFromSignatureVInvariance: wallets encode the recovery byte
+// differently (27/28 vs 0/1); it must not affect the master.
+func TestMasterFromSignatureVInvariance(t *testing.T) {
+	sigA := make([]byte, 65)
+	sigB := make([]byte, 65)
+	for i := range sigA {
+		sigA[i] = byte(i + 1)
+		sigB[i] = byte(i + 1)
+	}
+	sigA[64] = 27
+	sigB[64] = 0
+	mA, _ := MasterFromSignature(sigA)
+	mB, _ := MasterFromSignature(sigB)
+	if string(mA) != string(mB) {
+		t.Error("recovery byte changed the derived master")
+	}
+
+	if _, err := MasterFromSignature(sigA[:64]); err == nil {
+		t.Error("expected error for 64-byte signature")
+	}
+	if _, err := MasterFromSignatureHex("0xzz"); err == nil {
+		t.Error("expected error for invalid hex")
+	}
+}
+
+func TestMasterFromHex(t *testing.T) {
+	for _, bad := range []string{"", "abcd", "zz", testMaster + "00"} {
+		if _, err := MasterFromHex(bad); err == nil {
+			t.Errorf("expected error for %q", bad)
+		}
+	}
+}
