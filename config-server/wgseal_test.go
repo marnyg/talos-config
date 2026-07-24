@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.zx2c4.com/wireguard/tun/netstack"
+
 	"github.com/marnyg/talos-config/config-server/wgderive"
 )
 
@@ -32,7 +34,7 @@ func testWGManager(t *testing.T, adminAddrs []string, pinnedPub string) *wgManag
 	}
 
 	m := newWGManager(51820, netip.MustParsePrefix("10.99.0.1/24"), "203.0.113.7:51820", pinnedPub, root, adminAddrs)
-	m.start = func([32]byte, int, netip.Addr, []wgPeer) error { return nil } // no real socket
+	m.start = func([32]byte, int, netip.Addr, []wgPeer) (*netstack.Net, error) { return nil, nil } // no real socket
 	return m
 }
 

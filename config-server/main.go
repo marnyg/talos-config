@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -206,6 +207,7 @@ func main() {
 		wgAddr      = flag.String("wg-address", "10.99.0.1/24", "server tunnel address with subnet")
 		wgEndpoint  = flag.String("wg-endpoint", "", "public ip:port machines dial to reach the tunnel (required with --wg-port)")
 		wgPubkey    = flag.String("wg-server-pubkey", "", "pinned expected server pubkey (base64 or hex); unseal fails on mismatch")
+		autoBoot    = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the tunnel when its etcd waits for it")
 	)
 	flag.Parse()
 
@@ -277,6 +279,13 @@ func main() {
 	machines, err := loadMachines(filepath.Join(s.root, "machines"))
 	if err != nil {
 		log.Fatalf("loading machines: %v", err)
+	}
+
+	if *autoBoot {
+		if wgm == nil {
+			log.Fatal("--auto-bootstrap requires --wg-port (it works over the tunnel)")
+		}
+		go newBootstrapper(*root, wgm).run(context.Background())
 	}
 
 	mux := http.NewServeMux()

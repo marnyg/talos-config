@@ -28,11 +28,12 @@ type wgPeer struct {
 // startWireGuard brings up the userspace WG device and a hello
 // listener on the tunnel address. The hello speaks minimal HTTP/1.0 so
 // plain TCP reads, curl, wget, and dumb uptime probes all get a clean
-// response.
-func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) error {
+// response. The returned netstack handle dials machines through the
+// tunnel (auto-bootstrap).
+func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) (*netstack.Net, error) {
 	tun, tnet, err := netstack.CreateNetTUN([]netip.Addr{addr}, []netip.Addr{}, 1280)
 	if err != nil {
-		return fmt.Errorf("creating netstack TUN: %w", err)
+		return nil, fmt.Errorf("creating netstack TUN: %w", err)
 	}
 
 	bindIP := resolveFlyGlobalServices()
@@ -45,15 +46,15 @@ func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPe
 		fmt.Fprintf(&uapi, "public_key=%s\nallowed_ip=%s\n", p.publicKeyHex, p.allowedIP)
 	}
 	if err := dev.IpcSet(uapi.String()); err != nil {
-		return fmt.Errorf("configuring WG device: %w", err)
+		return nil, fmt.Errorf("configuring WG device: %w", err)
 	}
 	if err := dev.Up(); err != nil {
-		return fmt.Errorf("bringing WG device up: %w", err)
+		return nil, fmt.Errorf("bringing WG device up: %w", err)
 	}
 
 	listener, err := tnet.ListenTCP(&net.TCPAddr{Port: 80})
 	if err != nil {
-		return fmt.Errorf("tunnel hello listener: %w", err)
+		return nil, fmt.Errorf("tunnel hello listener: %w", err)
 	}
 	go func() {
 		for {
@@ -76,5 +77,5 @@ func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPe
 	}()
 
 	log.Printf("wireguard listening on udp/%d, tunnel address %s, %d peer(s)", port, addr, len(peers))
-	return nil
+	return tnet, nil
 }

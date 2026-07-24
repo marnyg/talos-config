@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	"golang.zx2c4.com/wireguard/tun/netstack"
+
 	"github.com/marnyg/talos-config/config-server/wgderive"
 )
 
@@ -30,7 +32,7 @@ type wgManager struct {
 	adminAddrs []string     // wallets allowed to unseal
 
 	// start is startWireGuard, stubbed in tests.
-	start func(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) error
+	start func(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) (*netstack.Net, error)
 
 	mu       sync.Mutex
 	settings *wgSettings // nil while sealed
@@ -119,9 +121,11 @@ func (m *wgManager) unsealWithMaster(master []byte) error {
 	if err != nil {
 		return fmt.Errorf("deriving peers: %w", err)
 	}
-	if err := m.start(priv, m.port, wg.serverIP, peers); err != nil {
+	tnet, err := m.start(priv, m.port, wg.serverIP, peers)
+	if err != nil {
 		return fmt.Errorf("starting wireguard: %w", err)
 	}
+	wg.tnet = tnet
 
 	m.settings = wg
 	log.Printf("wireguard unsealed: server pubkey %s (hex %s), endpoint %s, %d peer(s)",
