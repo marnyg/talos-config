@@ -92,6 +92,18 @@ rm /tmp/secret.yaml  # clean up plaintext
 
 Go HTTP server that receives `GET /config?mac=<mac>`, scans `talos/machines/` for the machine, and composes base + all patches in-process using the Talos machinery library (`configpatcher` — the same code path as `talosctl machineconfig patch`). Used during PXE boot via the `talos.config` kernel argument. Built via `nix build .#config-server-bin`; `nix run .#config-server` wraps it with the repo root.
 
+### OAuth device-flow authentication (optional)
+
+With `--require-auth` (needs `CONFIG_SERVER_ADMIN_TOKEN` env), `/config` requires a bearer token obtained via the OAuth2 device flow (RFC 8628). Machines boot with:
+
+```
+talos.config=http://<server>:8080/config?mac=${mac}
+talos.config.oauth.client_id=talos-pxe
+talos.config.oauth.extra_variable=uuid,mac,serial
+```
+
+Talos hits `POST /device/code` (sending its hardware identity), prints a user code on the console, and polls `POST /token`. A human approves the machine on `GET /verify` (gated by the admin token). Tokens are **single-use** and **bound to the MAC** captured at device-auth time — one approval serves exactly one config, to exactly that machine. All flow state is in-memory; a server restart just restarts the flow on the machine console.
+
 ## Kubernetes Apps (k8s/apps/)
 
 ArgoCD watches `k8s/apps/` (recursive, auto-sync with prune + self-heal) from the `main` branch of `github.com/marnyg/talos-config`. All manifests pushed to `main` are automatically deployed.

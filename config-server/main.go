@@ -112,6 +112,11 @@ func fileExists(path string) bool {
 // server holds the immutable-per-request state.
 type server struct {
 	root string // talos/ directory
+
+	store       *authStore
+	requireAuth bool
+	clientID    string // expected OAuth client_id ("" = accept any)
+	adminToken  string // gates the /verify approval action
 }
 
 func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -121,6 +126,16 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mac = normalizeMAC(mac)
+
+	token := bearerToken(r)
+	if s.requireAuth {
+		if err := s.store.validate(token, mac); err != nil {
+			log.Printf("rejected config request for %s: %v", mac, err)
+			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
 
 	machines, err := loadMachines(filepath.Join(s.root, "machines"))
 	if err != nil {
@@ -145,16 +160,26 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+	if s.requireAuth {
+		s.store.consume(token) // single-use: burn only after a successful serve
+	}
 	log.Printf("served config for %s", mac)
 }
 
 func main() {
 	var (
-		port = flag.Int("port", 8080, "listen port")
-		bind = flag.String("bind", "0.0.0.0", "bind address")
-		root = flag.String("root", "", "talos/ directory (default: <git root>/talos)")
+		port        = flag.Int("port", 8080, "listen port")
+		bind        = flag.String("bind", "0.0.0.0", "bind address")
+		root        = flag.String("root", "", "talos/ directory (default: <git root>/talos)")
+		requireAuth = flag.Bool("require-auth", false, "require OAuth device-flow bearer token on /config")
+		clientID    = flag.String("client-id", "talos-pxe", "expected OAuth client_id (empty = accept any)")
 	)
 	flag.Parse()
+
+	adminToken := os.Getenv("CONFIG_SERVER_ADMIN_TOKEN")
+	if *requireAuth && adminToken == "" {
+		log.Fatal("--require-auth needs CONFIG_SERVER_ADMIN_TOKEN set (gates the /verify approval page)")
+	}
 
 	if *root == "" {
 		r, err := talosRoot()
@@ -164,7 +189,13 @@ func main() {
 		*root = r
 	}
 
-	s := &server{root: *root}
+	s := &server{
+		root:        *root,
+		store:       newAuthStore(),
+		requireAuth: *requireAuth,
+		clientID:    *clientID,
+		adminToken:  adminToken,
+	}
 
 	machines, err := loadMachines(filepath.Join(s.root, "machines"))
 	if err != nil {
@@ -173,9 +204,13 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /config", s.handleConfig)
+	mux.HandleFunc("POST /device/code", s.handleDeviceCode)
+	mux.HandleFunc("POST /token", s.handleToken)
+	mux.HandleFunc("GET /verify", s.handleVerifyPage)
+	mux.HandleFunc("POST /verify", s.handleVerifyPost)
 
 	addr := fmt.Sprintf("%s:%d", *bind, *port)
-	log.Printf("serving configs on %s", addr)
+	log.Printf("serving configs on %s (auth required: %v)", addr, *requireAuth)
 	for mac, m := range machines {
 		log.Printf("  %s -> %s", mac, m.Config)
 	}
