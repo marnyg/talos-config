@@ -1,6 +1,6 @@
 # Handover — next session
 
-_Last updated: 2026-07-24 (evening). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
+_Last updated: 2026-07-24 (late evening). Read alongside `docs/vision.md` (why) — this file is the what/where/next._
 
 ## Where things stand
 
@@ -9,7 +9,7 @@ _Last updated: 2026-07-24 (evening). Read alongside `docs/vision.md` (why) — t
 - Single control-plane node `b0:41:6f:15:3b:8f` at **10.0.0.20**, Talos v1.12.6, k8s v1.32.3. ArgoCD syncing `k8s/apps` from `main`.
 - IP confirmed correct for now; DHCP reservation still not formally set. Endpoint-as-DNS/VIP remains an open thread (task `9b5b204d`).
 - Admin talosconfig cert expires **2027-07**, no expiry alarm exists.
-- ⚠️ The node was provisioned **before** WG injection existed — it has **no wg0 interface yet**. Rolling the tunnel out to it is the first job of the next slice (keys are derivable locally from the master; patch via `talosctl patch mc` or re-fetch).
+- ✅ **wg0 is live on the node** (2026-07-24): tunnel address `10.99.0.54/24`, steady 25s keepalives to fly, bidirectional traffic verified (hostNetwork pod → `nc 10.99.0.1 80` → "hello from the tunnel"; fly logs show `wg hello served to 10.99.0.54`). Rollout path: manual device flow + wallet approval on `/verify` → re-fetched composed config from the (already unsealed) fly server → `talosctl apply-config` (no reboot). **The master signature was never touched** — server-side injection did all derivation. Diff vs WG-off baseline was exactly the wg0 block.
 
 ### The config server (`config-server/`, Go) — all deployed & production-validated
 
@@ -45,11 +45,12 @@ admin wallet 0xf568...9406 (EOA, RFC 6979 deterministic)
 - Dedicated IPv4 **213.188.219.215** (UDP :51820). Deployed 2026-07-24, unsealed by admin wallet, pin validated.
 - [ ] **TODO: point an uptime pinger at `GET /sealed`** — a surprise fly restart sits sealed (tunnel down) until noticed.
 
-## Next session: tunnel rollout + auto-bootstrap (sketch `c8fa867d`)
+## Next session: auto-bootstrap (sketch `c8fa867d`)
 
-1. **Roll wg0 out to the provisioned node** — it never got the injected interface. Either apply the derived patch via `talosctl patch mc` (derive with `wgping -sig <sig> -mac b0-41-6f-15-3b-8f`, mind: don't leak the sig into shell history) or re-serve config. Verify server sees handshake.
-2. **Auto-bootstrap slice**: server watches tunnel for approved-but-unbootstrapped CP, calls machinery `Bootstrap` (fly already holds OS CA — no trust escalation).
-3. Then: status page behind SIWE session login; KMS unseal over tunnel (passphrase break-glass slot mandatory).
+1. **Auto-bootstrap slice**: server watches tunnel for approved-but-unbootstrapped CP, calls machinery `Bootstrap` (fly already holds OS CA — no trust escalation). The tunnel to the real node is now live to test against.
+2. Then: status page behind SIWE session login; KMS unseal over tunnel (passphrase break-glass slot mandatory).
+
+Rollout gotchas learned: `talosctl pcap --bpf-filter` takes `tcpdump -ddd`-style instruction lists (comma-joined) but the filter silently didn't apply server-side — and an unfiltered pcap captures its own gRPC stream (~0.5 GB/30s feedback loop). Filter offline instead. Default namespace enforces baseline PSS (no hostNetwork pods) — use kube-system. Repo kubeconfig context pointed at a dead OIDC setup; `talosctl kubeconfig` works.
 
 ## Gotchas that cost time
 
@@ -62,11 +63,11 @@ admin wallet 0xf568...9406 (EOA, RFC 6979 deterministic)
 ## Loose ends
 
 - [ ] Uptime pinger on `/sealed` (see above)
-- [ ] wg0 rollout to node (next slice, step 1)
 - [ ] DHCP reservation for 10.0.0.20 — user deferred, IP confirmed correct for now
 - [ ] `k8s/MIGRATION.md` untracked — user said leave it
 - [ ] `wgbind.go` DNS timeout broken window — not yet filed as +debt
 - [ ] `.claude/` untracked in repo root — gitignore?
+- [ ] User's default kubeconfig context is stale (dead zitadel OIDC) — repoint or prune
 
 ## Taskwarrior map
 
