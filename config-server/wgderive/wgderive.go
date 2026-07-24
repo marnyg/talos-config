@@ -11,6 +11,7 @@ package wgderive
 import (
 	"crypto/hkdf"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -26,6 +27,8 @@ const (
 	machineInfoPfx = "talos-config/wg/v1/machine-key/" // + normalized MAC
 	addrInfoPfx    = "talos-config/wg/v1/tunnel-addr/" // + normalized MAC
 	masterSigInfo  = "talos-config/wg/v1/master-from-sig"
+	kmsSealInfoPfx = "talos-config/kms/v1/seal-key/" // + lowercase node UUID
+	recoveryPfx    = "talos-config/kms/v1/recovery/" // + normalized MAC
 )
 
 // MasterMessage is the canonical text the admin wallet signs (EIP-191
@@ -110,6 +113,34 @@ func KeyHex(k [32]byte) string { return hex.EncodeToString(k[:]) }
 // KeyBase64 renders a key in the standard WireGuard encoding used by
 // Talos machine configs.
 func KeyBase64(k [32]byte) string { return base64.StdEncoding.EncodeToString(k[:]) }
+
+// KMSSealKey derives the AES-256 key that seals/unseals disk
+// encryption keys for the node with the given SMBIOS UUID. Sealed
+// blobs are AES-GCM, so possession of a blob that authenticates under
+// this key proves it was sealed by this fleet's master for this UUID.
+func KMSSealKey(master []byte, uuid string) []byte {
+	return derive(master, kmsSealInfoPfx+NormalizeUUID(uuid), 32)
+}
+
+// NormalizeUUID lowercases and trims a node UUID. Part of the KMS
+// derivation contract: Seal and Unseal must agree on the form.
+func NormalizeUUID(uuid string) string {
+	return strings.ToLower(strings.TrimSpace(uuid))
+}
+
+// RecoveryPassphrase derives the break-glass LUKS passphrase for the
+// machine with the given normalized MAC: 160 bits, base32, grouped for
+// console typing. Re-derivable offline from the master signature alone
+// (cast wallet sign + wgping -recovery) — stored nowhere.
+func RecoveryPassphrase(master []byte, mac string) string {
+	raw := derive(master, recoveryPfx+mac, 20)
+	s := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw))
+	parts := make([]string, 0, 4)
+	for i := 0; i < len(s); i += 8 {
+		parts = append(parts, s[i:i+8])
+	}
+	return strings.Join(parts, "-")
+}
 
 // TunnelIP deterministically assigns the machine a host address in
 // subnet (must be an IPv4 /24): hosts 2–254, .1 is reserved for the

@@ -31,7 +31,7 @@ rm -f "$keyfile"
 # pins the expected derived pubkey so a wrong-wallet unseal fails.
 WG_ARGS=""
 if [ -n "${WG_ENDPOINT:-}" ]; then
-    WG_ARGS="--wg-port 51820 --wg-endpoint $WG_ENDPOINT ${WG_SERVER_PUBKEY:+--wg-server-pubkey $WG_SERVER_PUBKEY} --auto-bootstrap"
+    WG_ARGS="--wg-port 51820 --wg-endpoint $WG_ENDPOINT ${WG_SERVER_PUBKEY:+--wg-server-pubkey $WG_SERVER_PUBKEY} --auto-bootstrap ${KMS_ADVERTISE:+--kms-advertise $KMS_ADVERTISE}"
 fi
 
 # shellcheck disable=SC2086

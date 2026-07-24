@@ -7,6 +7,7 @@
 //	wgping -endpoint <ip:port> -master <hex> -mac <mac>   # impersonate a machine
 //	wgping -sig <hex>              # unseal signature → print server pubkey (for pinning)
 //	wgping -endpoint <ip:port> -sig <hex> -mac <mac>      # impersonate via signature
+//	wgping -sig <hex> -recovery -mac <mac> # derive the disk recovery passphrase
 //
 // The -master/-sig modes derive the client key, tunnel address, and
 // server public key exactly like the server does for a provisioned
@@ -60,6 +61,7 @@ func main() {
 		sig       = flag.String("sig", "", "unseal signature (hex over the master message); alternative to -master")
 		mac       = flag.String("mac", "", "machine MAC to impersonate (with -master/-sig)")
 		subnet    = flag.String("subnet", "10.99.0.0/24", "tunnel subnet (with -master/-sig)")
+		recovery  = flag.Bool("recovery", false, "print the machine's disk recovery passphrase (with -master/-sig and -mac) and exit")
 	)
 	flag.Parse()
 
@@ -73,6 +75,18 @@ func main() {
 			log.Fatalf("-sig: %v", err)
 		}
 		*master = hex.EncodeToString(m)
+	}
+	if *recovery {
+		if *master == "" || *mac == "" {
+			log.Fatal("-recovery needs -master/-sig and -mac")
+		}
+		m, err := wgderive.MasterFromHex(*master)
+		if err != nil {
+			log.Fatalf("-master: %v", err)
+		}
+		normMAC := strings.ToLower(strings.ReplaceAll(*mac, "-", ":"))
+		fmt.Println(wgderive.RecoveryPassphrase(m, normMAC))
+		return
 	}
 	if *master != "" {
 		m, err := wgderive.MasterFromHex(*master)

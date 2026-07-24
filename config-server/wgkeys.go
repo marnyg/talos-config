@@ -98,3 +98,34 @@ func (w *wgSettings) machinePatch(mac string, m machine) (string, error) {
                 - %s
 `, ip, ip, w.subnet.Bits(), wgderive.KeyBase64(priv), wgderive.KeyBase64(w.serverPub), w.endpoint, w.subnet.Masked()), nil
 }
+
+// diskEncryptionPatch renders the strategic-merge patch enabling
+// system disk encryption: slot 0 unseals via the network KMS on every
+// boot (per-boot auth, revocable server-side), slot 1 is the derived
+// break-glass passphrase (recoverable offline from the master
+// signature via `wgping -recovery`; stored nowhere). Applies at
+// install time only — partitions encrypt when they are created.
+func (w *wgSettings) diskEncryptionPatch(mac, kmsEndpoint string) string {
+	pass := wgderive.RecoveryPassphrase(w.master, mac)
+	return fmt.Sprintf(`machine:
+  systemDiskEncryption:
+    state:
+      provider: luks2
+      keys:
+        - slot: 0
+          kms:
+            endpoint: %[1]s
+        - slot: 1
+          static:
+            passphrase: %[2]s
+    ephemeral:
+      provider: luks2
+      keys:
+        - slot: 0
+          kms:
+            endpoint: %[1]s
+        - slot: 1
+          static:
+            passphrase: %[2]s
+`, kmsEndpoint, pass)
+}

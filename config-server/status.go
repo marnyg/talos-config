@@ -188,6 +188,11 @@ var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
  {{end}}
  <tr><th>pending approvals</th><td>{{if .Pending}}{{range .Pending}}{{.}} {{end}}— <a href="/verify">review</a>{{else}}none{{end}}</td></tr>
 </table>
+{{range .UndeclaredKMS}}
+<div class="msg warn">machine sealed disk keys under UNDECLARED uuid <code>{{.}}</code> —
+add <code>uuid: {{.}}</code> to its machines/&lt;mac&gt;/meta.yaml before the next
+server restart or it will not be able to unlock its disks.</div>
+{{end}}
 <h2>Machines</h2>
 <table>
  <tr><th>mac</th><th>role</th><th>lan ip</th><th>tunnel ip</th><th>handshake</th><th>rx</th><th>tx</th><th>wan endpoint</th><th>last config fetch</th></tr>
@@ -202,14 +207,15 @@ type statusRow struct {
 }
 
 type statusData struct {
-	Addr    string
-	Version string
-	Started string
-	Seal    string
-	Sealed  bool
-	Boot    *bootSnapshot
-	Pending []string
-	Rows    []statusRow
+	Addr          string
+	Version       string
+	Started       string
+	Seal          string
+	Sealed        bool
+	Boot          *bootSnapshot
+	Pending       []string
+	UndeclaredKMS []string
+	Rows          []statusRow
 }
 
 func (s *server) renderStatus(w http.ResponseWriter, addr string) {
@@ -291,6 +297,9 @@ func (s *server) renderStatus(w http.ResponseWriter, addr string) {
 	}
 	for _, da := range s.store.pending() {
 		data.Pending = append(data.Pending, da.UserCode)
+	}
+	if s.kms != nil {
+		data.UndeclaredKMS = s.kms.undeclaredSealed()
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

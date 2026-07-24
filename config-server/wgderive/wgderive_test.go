@@ -1,6 +1,7 @@
 package wgderive
 
 import (
+	"encoding/hex"
 	"net/netip"
 	"testing"
 )
@@ -24,6 +25,9 @@ func TestDerivationStability(t *testing.T) {
 		"machine priv": KeyHex(MachineKey(master, testMAC)),
 		"machine pub":  KeyHex(PublicKey(MachineKey(master, testMAC))),
 		"machine b64":  KeyBase64(MachineKey(master, testMAC)),
+		// KMS: uppercase input UUID must normalize to the same key.
+		"kms seal key": hex.EncodeToString(KMSSealKey(master, "8C0D9A51-6E23-4BA1-A1D7-2D5D4C6B0F00")),
+		"recovery":     RecoveryPassphrase(master, testMAC),
 	}
 	want := map[string]string{
 		"server priv":  "800b5d44d8d92c6de62e8c25b6d191b1fdbf7dac120ca2582be51c53f4566d78",
@@ -31,6 +35,8 @@ func TestDerivationStability(t *testing.T) {
 		"machine priv": "605231cd460e5b50262f7985b04f4db8639a256c07e10385a4250ef36e40ce55",
 		"machine pub":  "85dd72a62d628075c6e7b4f302acf9d2550da6dba5f63c0154008f9c0ce3b57d",
 		"machine b64":  "YFIxzUYOW1AmL3mFsE9NuGOaJWwH4QOFpCUO825AzlU=",
+		"kms seal key": "a4925a58234469eedf9b8e8a76381683fd07adecdb1daa36c93be65617189121",
+		"recovery":     "bhgafhpz-i5qbzl5j-csjuuhan-hxvacurb",
 	}
 	for k, w := range want {
 		if got[k] != w {

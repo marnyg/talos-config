@@ -13,10 +13,16 @@ WG_ENDPOINT = "213.188.219.215:51820"
 # Pinned server WG pubkey (public; derived from the admin wallet's
 # unseal signature). Unseal fails if a signature derives anything else.
 WG_SERVER_PUBKEY = "uNUI+XlWP/1Q+byYzpl1BBP28o6owEATBU3LwV43xl0="
+# Disk-unseal KMS endpoint advertised to machines (fly terminates TLS,
+# gRPC rides h2 → h2c to the backend). STATE unlock happens before the
+# tunnel exists, so this must be WAN-reachable.
+KMS_ADVERTISE = "https://marnyg-talos-config.fly.dev:443"
 
 [http_service]
 internal_port = 8080
 force_https = true
+# gRPC (KMS) needs HTTP/2 to the backend.
+h2_backend = true
 auto_stop_machines = "stop"
 auto_start_machines = true
 min_machines_running = 1

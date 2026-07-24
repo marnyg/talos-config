@@ -22,8 +22,12 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 
+	kmsapi "github.com/siderolabs/kms-client/api/kms"
 	"github.com/siderolabs/talos/pkg/machinery/config/configpatcher"
 
 	"github.com/marnyg/talos-config/config-server/wgderive"
@@ -35,6 +39,13 @@ type machine struct {
 	Config  string   `yaml:"config"`
 	Patches []string `yaml:"patches"`
 	WGIP    string   `yaml:"wgIP"` // optional explicit tunnel address (collision override)
+	// UUID is the node's SMBIOS UUID (shown on /verify at approval).
+	// It is the durable KMS unseal allowlist: deleting it revokes.
+	UUID string `yaml:"uuid"`
+	// DiskEncryption injects systemDiskEncryption (KMS + recovery
+	// passphrase) into the served config. Takes effect at install
+	// time only — an existing machine needs a wipe to encrypt.
+	DiskEncryption bool `yaml:"diskEncryption"`
 
 	dir string // machines/<mac> directory, absolute
 }
@@ -123,15 +134,17 @@ func fileExists(path string) bool {
 type server struct {
 	root string // talos/ directory
 
-	store       *authStore
-	sessions    *sessionStore // SIWE sessions for /status
-	requireAuth bool
-	clientID    string        // expected OAuth client_id ("" = accept any)
-	adminToken  string        // break-glass fallback for /verify approval
-	adminAddrs  []string      // allowlisted wallet addresses (lowercase 0x)
-	wgm         *wgManager    // nil = WireGuard disabled entirely
-	boot        *bootstrapper // nil unless --auto-bootstrap
-	started     time.Time
+	store        *authStore
+	sessions     *sessionStore // SIWE sessions for /status
+	requireAuth  bool
+	clientID     string        // expected OAuth client_id ("" = accept any)
+	adminToken   string        // break-glass fallback for /verify approval
+	adminAddrs   []string      // allowlisted wallet addresses (lowercase 0x)
+	wgm          *wgManager    // nil = WireGuard disabled entirely
+	boot         *bootstrapper // nil unless --auto-bootstrap
+	kms          *kmsServer    // nil unless KMS enabled
+	kmsAdvertise string        // endpoint machines dial for disk unseal
+	started      time.Time
 
 	fetchMu sync.Mutex
 	fetches map[string]time.Time // MAC -> last successful config serve
@@ -202,6 +215,20 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		extra = append(extra, p)
+
+		if m.DiskEncryption {
+			if s.kmsAdvertise == "" {
+				log.Printf("refusing config for %s: diskEncryption set but no --kms-advertise endpoint", mac)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			extra = append(extra, wg.diskEncryptionPatch(mac, s.kmsAdvertise))
+		}
+	} else if m.DiskEncryption {
+		// Disk keys derive from the master; without WG there is none.
+		log.Printf("refusing config for %s: diskEncryption requires the wireguard control channel", mac)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
 
 	body, err := buildConfig(s.root, m, extra...)
@@ -251,6 +278,7 @@ func main() {
 		wgEndpoint  = flag.String("wg-endpoint", "", "public ip:port machines dial to reach the tunnel (required with --wg-port)")
 		wgPubkey    = flag.String("wg-server-pubkey", "", "pinned expected server pubkey (base64 or hex); unseal fails on mismatch")
 		autoBoot    = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the tunnel when its etcd waits for it")
+		kmsAdv      = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --wg-port)")
 	)
 	flag.Parse()
 
@@ -310,15 +338,24 @@ func main() {
 	}
 
 	s := &server{
-		root:        *root,
-		store:       newAuthStore(),
-		sessions:    newSessionStore(),
-		requireAuth: *requireAuth,
-		clientID:    *clientID,
-		adminToken:  adminToken,
-		adminAddrs:  addrs,
-		wgm:         wgm,
-		started:     time.Now(),
+		root:         *root,
+		store:        newAuthStore(),
+		sessions:     newSessionStore(),
+		requireAuth:  *requireAuth,
+		clientID:     *clientID,
+		adminToken:   adminToken,
+		adminAddrs:   addrs,
+		wgm:          wgm,
+		kmsAdvertise: *kmsAdv,
+		started:      time.Now(),
+	}
+
+	if *kmsAdv != "" {
+		if wgm == nil {
+			log.Fatal("--kms-advertise requires --wg-port (disk keys derive from the same master)")
+		}
+		s.kms = newKMSServer(*root, wgm)
+		log.Printf("kms: serving disk unseal, advertised endpoint %s", *kmsAdv)
 	}
 
 	machines, err := loadMachines(filepath.Join(s.root, "machines"))
@@ -339,5 +376,25 @@ func main() {
 	for mac, m := range machines {
 		log.Printf("  %s -> %s", mac, m.Config)
 	}
-	log.Fatal(http.ListenAndServe(addr, s.mux()))
+	log.Fatal(http.ListenAndServe(addr, s.handler()))
+}
+
+// handler wraps the mux with the KMS gRPC service (h2c so fly's proxy
+// can speak HTTP/2 cleartext to us; gRPC requests are told apart by
+// their content type).
+func (s *server) handler() http.Handler {
+	if s.kms == nil {
+		return s.mux()
+	}
+	grpcSrv := grpc.NewServer()
+	kmsapi.RegisterKMSServiceServer(grpcSrv, s.kms)
+	mux := s.mux()
+	mixed := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcSrv.ServeHTTP(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+	return h2c.NewHandler(mixed, &http2.Server{})
 }
