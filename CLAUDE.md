@@ -128,8 +128,9 @@ Disable/override with `--wg-dns-domain`.
 **Connecting an admin device** (must be declared in `WG_ADMIN_PEERS`):
 
 ```bash
-wgup                 # enroll (wallet signs a device-bound nonce), then wg-quick up
+wgup                 # enroll (browser wallet signs a device-bound nonce), then wg-quick up
 wgup -down           # disconnect
+wgup -paste          # headless: paste a `cast wallet sign` signature instead
 wgup -name phone -print   # enroll another device, just print the config path
 ```
 
