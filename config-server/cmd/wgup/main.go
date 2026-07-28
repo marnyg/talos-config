@@ -54,6 +54,7 @@ func main() {
 		reenroll = flag.Bool("reenroll", false, "discard the cached config and enroll again")
 		print    = flag.Bool("print", false, "enroll if needed and print the config path instead of bringing the tunnel up")
 		paste    = flag.Bool("paste", false, "paste a signature instead of signing in the browser (headless)")
+		dnsMode  = flag.String("dns", "auto", "tunnel DNS: auto (split DNS via resolvectl when available, else none), keep (wg-quick DNS= line — routes ALL queries through the hub), off")
 	)
 	flag.Parse()
 
@@ -88,6 +89,22 @@ func main() {
 			log.Fatal(err)
 		}
 		log.Printf("enrolled %q — config cached at %s", dev, path)
+	}
+
+	// Adapt the DNS line for this machine — never on -down, so the
+	// teardown always matches the config the tunnel came up with.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	adapted, note := adaptDNS(string(raw), *dnsMode, haveResolvectl())
+	if note != "" {
+		log.Print(note)
+	}
+	if adapted != string(raw) {
+		if err := os.WriteFile(path, []byte(adapted), 0o600); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	if *print {
@@ -151,6 +168,51 @@ func enroll(server, name string, paste bool) (string, error) {
 		return "", fmt.Errorf("enrollment rejected: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 	return string(body), nil
+}
+
+// adaptDNS rewrites the server-rendered `DNS = <hub>, <domain>` line
+// for this machine. wg-quick implements DNS= exclusively (resolvconf
+// -x): it hijacks ALL name resolution into the hub, which only
+// answers the tunnel zone — breaking normal networking, and breaking
+// it completely while the server is sealed. Split DNS via
+// systemd-resolved routes only the tunnel domain through the tunnel.
+// Idempotent: an already-adapted config passes through unchanged.
+func adaptDNS(cfg, mode string, haveResolvectl bool) (out, note string) {
+	lines := strings.Split(cfg, "\n")
+	idx := -1
+	var hub, domain string
+	for i, l := range lines {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "DNS ="); ok {
+			if ip, dom, found := strings.Cut(v, ","); found {
+				hub, domain = strings.TrimSpace(ip), strings.TrimSpace(dom)
+			} else {
+				hub = strings.TrimSpace(v)
+			}
+			idx = i
+			break
+		}
+	}
+	if idx == -1 || mode == "keep" {
+		return cfg, ""
+	}
+	if mode == "auto" && haveResolvectl && domain != "" {
+		lines[idx] = fmt.Sprintf("PostUp = resolvectl dns %%i %s; resolvectl domain %%i %s", hub, domain)
+		return strings.Join(lines, "\n"),
+			fmt.Sprintf("split DNS: only *.%s resolves via the hub (%s); the rest of your DNS is untouched", domain, hub)
+	}
+	// off, or auto without a split-DNS-capable resolver: no tunnel DNS.
+	out = strings.Join(append(lines[:idx], lines[idx+1:]...), "\n")
+	if mode != "off" {
+		note = "tunnel DNS disabled (no resolvectl for split DNS) — use tunnel IPs, or -dns keep to route ALL DNS through the hub"
+	}
+	return out, note
+}
+
+// haveResolvectl reports whether systemd-resolved's CLI is on PATH.
+// Package var so tests can pin it.
+var haveResolvectl = func() bool {
+	_, err := exec.LookPath("resolvectl")
+	return err == nil
 }
 
 // pasteSignature prints the challenge and reads a signature from
