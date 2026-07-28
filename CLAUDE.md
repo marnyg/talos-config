@@ -99,8 +99,13 @@ With `--require-auth` (needs `CONFIG_SERVER_ADMIN_TOKEN` env), `/config` require
 ```
 talos.config=http://<server>:8080/config?mac=${mac}
 talos.config.oauth.client_id=talos-pxe
-talos.config.oauth.extra_variable=uuid,mac,serial
+talos.config.oauth.extra_variable=uuid
+talos.config.oauth.extra_variable=mac
+talos.config.oauth.extra_variable=serial
 ```
+
+(`extra_variable` must be repeated per variable — Talos rejects a
+comma-separated list with "unsupported variable name".)
 
 Talos hits `POST /device/code` (sending its hardware identity), prints a user code on the console, and polls `POST /token`. A human approves the machine on `GET /verify`. Tokens are **single-use** and **bound to the MAC** captured at device-auth time — one approval serves exactly one config, to exactly that machine. All flow state is in-memory; a server restart just restarts the flow on the machine console.
 
@@ -125,6 +130,11 @@ unseal; out-of-zone queries are REFUSED (split-DNS). The DNS name is
 also added to machine certSANs, so `talosctl -e cp1.talos.wg` works.
 Disable/override with `--wg-dns-domain`.
 
+Tunnel names resolve on **admin devices only** (split DNS via wgup).
+Nodes resolve through LAN DNS and cannot see `talos.wg` — so use
+names for `-e` (client-side resolution), IPs for `-n` (resolved by
+apid on the node).
+
 **Connecting an admin device** (must be declared in `WG_ADMIN_PEERS`):
 
 ```bash
@@ -139,6 +149,31 @@ the wallet signs an ordinary single-use challenge, the server returns
 the derived wg-quick config over TLS. The master signature is only
 ever signed at `/verify` (unseal) or used offline with
 `wgping -sig <sig> …` as break-glass.
+
+### Recovery USB
+
+If PXE isn't available, build a boot stick that replicates the PXE
+flow (device flow → wallet approve → install, `wipe: false`):
+
+```bash
+curl -s -X POST --data-binary @- https://factory.talos.dev/schematics <<'EOF'
+customization:
+  extraKernelArgs:
+    - talos.config=https://marnyg-talos-config.fly.dev/config?mac=${mac}
+    - talos.config.oauth.client_id=talos-pxe
+    - talos.config.oauth.extra_variable=uuid
+    - talos.config.oauth.extra_variable=mac
+    - talos.config.oauth.extra_variable=serial
+EOF
+# → {"id":"<schematic>"} ; then:
+curl -sLo talos-usb.iso "https://factory.talos.dev/image/<schematic>/<talos-version>/metal-amd64.iso"
+sudo dd if=talos-usb.iso of=/dev/<usb> bs=4M oflag=sync status=progress
+```
+
+Note: a fresh install always recreates EPHEMERAL (`wipe: false`
+protects the disk layout, not EPHEMERAL contents) — etcd and
+`/var/media` are lost; ArgoCD + SealedSecrets rebuild everything from
+git after auto/manual bootstrap.
 
 ## Kubernetes Apps (k8s/apps/)
 
