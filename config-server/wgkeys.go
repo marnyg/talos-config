@@ -28,6 +28,7 @@ type wgSettings struct {
 	subnet    netip.Prefix
 	endpoint  string         // public ip:port machines dial
 	admins    []string       // named admin peers (laptops), keys derived like machines'
+	dnsDomain string         // tunnel DNS domain ("" = tunnel DNS disabled)
 	tnet      *wgstack.Net   // dials machines through the tunnel (nil in tests)
 	dev       *device.Device // live WG device, for peer stats (nil in tests)
 }
@@ -92,13 +93,18 @@ func (w *wgSettings) derivePeers(machines map[string]machine) ([]wgPeer, error) 
 // machinePatch renders the strategic-merge patch giving the machine
 // its tunnel interface. persistentKeepaliveInterval keeps the NAT
 // mapping open so the server can reach the machine unprompted. The
-// tunnel address is also added to certSANs: apid's node-address
-// discovery does not pick up wg0, and without the SAN the server's
-// TLS dial for auto-bootstrap is rejected.
+// tunnel address (and its tunnel DNS name, when tunnel DNS is on) is
+// also added to certSANs: apid's node-address discovery does not pick
+// up wg0, and without the SAN the server's TLS dial for auto-bootstrap
+// is rejected.
 func (w *wgSettings) machinePatch(mac string, m machine) (string, error) {
 	ip, err := w.machineTunnelIP(mac, m)
 	if err != nil {
 		return "", err
+	}
+	sans := ip.String()
+	if w.dnsDomain != "" {
+		sans += "\n    - " + machineDNSName(mac, m) + "." + w.dnsDomain
 	}
 	priv := wgderive.MachineKey(w.master, mac)
 	return fmt.Sprintf(`machine:
@@ -117,7 +123,22 @@ func (w *wgSettings) machinePatch(mac string, m machine) (string, error) {
               persistentKeepaliveInterval: 25s
               allowedIPs:
                 - %s
-`, ip, ip, w.subnet.Bits(), wgderive.KeyBase64(priv), wgderive.KeyBase64(w.serverPub), w.endpoint, w.subnet.Masked()), nil
+`, sans, ip, w.subnet.Bits(), wgderive.KeyBase64(priv), wgderive.KeyBase64(w.serverPub), w.endpoint, w.subnet.Masked()), nil
+}
+
+// adminWGQuick renders the ready-to-use wg-quick config for a named
+// admin peer — the payload of the /wg/enroll flow.
+func (w *wgSettings) adminWGQuick(name string) (string, error) {
+	name = wgderive.NormalizeAdmin(name)
+	ip, err := wgderive.AdminTunnelIP(w.master, name, w.subnet)
+	if err != nil {
+		return "", err
+	}
+	dns := netip.Addr{}
+	if w.dnsDomain != "" {
+		dns = w.serverIP
+	}
+	return wgderive.WGQuick(wgderive.AdminKey(w.master, name), ip, w.subnet, w.serverPub, w.endpoint, dns, w.dnsDomain), nil
 }
 
 // diskEncryptionPatch renders the strategic-merge patch enabling

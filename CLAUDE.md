@@ -111,6 +111,34 @@ Approval on `/verify` is authorized by either (in order of preference):
 
 At least one must be configured when `--require-auth` is on.
 
+### WireGuard control channel, tunnel DNS, and admin devices
+
+The server runs a userspace WireGuard hub (fly UDP :51820). All key
+material is HKDF-derived from the wallet unseal signature — no peer
+registry, no key state. Machines get their `wg0` injected into served
+configs; the hub forwards peer↔peer (admin laptop → node).
+
+**Tunnel DNS**: the hub answers A queries on `10.99.0.1:53` for
+`<name>.talos.wg` — `hub`, each machine (`name:` in `meta.yaml`,
+MAC-with-dashes fallback), and each admin peer. Zone is derived at
+unseal; out-of-zone queries are REFUSED (split-DNS). The DNS name is
+also added to machine certSANs, so `talosctl -e cp1.talos.wg` works.
+Disable/override with `--wg-dns-domain`.
+
+**Connecting an admin device** (must be declared in `WG_ADMIN_PEERS`):
+
+```bash
+wgup                 # enroll (wallet signs a device-bound nonce), then wg-quick up
+wgup -down           # disconnect
+wgup -name phone -print   # enroll another device, just print the config path
+```
+
+Enrollment (`GET`/`POST /wg/enroll`) never touches the fleet master:
+the wallet signs an ordinary single-use challenge, the server returns
+the derived wg-quick config over TLS. The master signature is only
+ever signed at `/verify` (unseal) or used offline with
+`wgping -sig <sig> …` as break-glass.
+
 ## Kubernetes Apps (k8s/apps/)
 
 ArgoCD watches `k8s/apps/` (recursive, auto-sync with prune + self-heal) from the `main` branch of `github.com/marnyg/talos-config`. All manifests pushed to `main` are automatically deployed.

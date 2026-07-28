@@ -65,6 +65,7 @@ func main() {
 		recovery  = flag.Bool("recovery", false, "print the machine's disk recovery passphrase (with -master/-sig and -mac) and exit")
 		admin     = flag.String("admin", "", "admin peer name to derive (with -master/-sig); use with -wgquick or as the ping identity")
 		wgquick   = flag.Bool("wgquick", false, "print a wg-quick config for -admin and exit (requires -endpoint)")
+		dnsDomain = flag.String("dns-domain", "talos.wg", "tunnel DNS domain for the wg-quick DNS line (empty = no DNS line)")
 		ageRecip  = flag.Bool("age-recipient", false, "print the wallet-derived age recipient (with -master/-sig) and exit; commit it as talos/age-recipient.txt")
 	)
 	flag.Parse()
@@ -119,22 +120,16 @@ func main() {
 			if *endpoint == "" {
 				log.Fatal("-wgquick needs -endpoint (the server's public ip:port)")
 			}
-			// PersistentKeepalive keeps the NAT mapping open so the
-			// hub can also reach the admin peer unprompted. MTU must
-			// stay under the hub netstack's 1280 or TLS-sized packets
-			// blackhole mid-handshake (small packets pass — nasty to
-			// debug; found the hard way).
-			fmt.Printf(`[Interface]
-PrivateKey = %s
-Address = %s/%d
-MTU = 1240
-
-[Peer]
-PublicKey = %s
-Endpoint = %s
-AllowedIPs = %s
-PersistentKeepalive = 25
-`, wgderive.KeyBase64(priv), ip, netip.MustParsePrefix(*subnet).Bits(), wgderive.KeyBase64(serverPubKey), *endpoint, netip.MustParsePrefix(*subnet).Masked())
+			// By convention the hub (and thus the tunnel DNS server)
+			// is the first host of the subnet.
+			sn := netip.MustParsePrefix(*subnet).Masked()
+			dns := netip.Addr{}
+			if *dnsDomain != "" {
+				a := sn.Addr().As4()
+				a[3] = 1
+				dns = netip.AddrFrom4(a)
+			}
+			fmt.Print(wgderive.WGQuick(priv, ip, sn, serverPubKey, *endpoint, dns, *dnsDomain))
 			return
 		}
 		*serverPub = wgderive.KeyHex(serverPubKey)

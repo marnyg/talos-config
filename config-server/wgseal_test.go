@@ -34,7 +34,7 @@ func testWGManager(t *testing.T, adminAddrs []string, pinnedPub string) *wgManag
 		t.Fatal(err)
 	}
 
-	m := newWGManager(51820, netip.MustParsePrefix("10.99.0.1/24"), "203.0.113.7:51820", pinnedPub, root, adminAddrs, []string{"laptop"})
+	m := newWGManager(51820, netip.MustParsePrefix("10.99.0.1/24"), "203.0.113.7:51820", pinnedPub, "talos.wg", root, adminAddrs, []string{"laptop"})
 	m.start = func([32]byte, int, netip.Addr, []wgPeer) (*wgstack.Net, *device.Device, error) { return nil, nil, nil } // no real socket
 	return m
 }

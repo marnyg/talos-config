@@ -27,8 +27,8 @@ const (
 	machineInfoPfx = "talos-config/wg/v1/machine-key/" // + normalized MAC
 	addrInfoPfx    = "talos-config/wg/v1/tunnel-addr/" // + normalized MAC
 	masterSigInfo  = "talos-config/wg/v1/master-from-sig"
-	kmsSealInfoPfx = "talos-config/kms/v1/seal-key/" // + lowercase node UUID
-	recoveryPfx    = "talos-config/kms/v1/recovery/" // + normalized MAC
+	kmsSealInfoPfx = "talos-config/kms/v1/seal-key/"  // + lowercase node UUID
+	recoveryPfx    = "talos-config/kms/v1/recovery/"  // + normalized MAC
 	adminKeyPfx    = "talos-config/wg/v1/admin-key/"  // + normalized admin name
 	adminAddrPfx   = "talos-config/wg/v1/admin-addr/" // + normalized admin name
 )
@@ -123,6 +123,28 @@ func PublicKey(priv [32]byte) [32]byte {
 	var p [32]byte
 	copy(p[:], pub)
 	return p
+}
+
+// WGQuick renders a wg-quick client config for an admin peer. When
+// dns is valid a DNS line is emitted (with domain as the search
+// domain, if set) so tunnel names resolve via the hub. MTU stays under
+// the hub netstack's 1280 or TLS-sized packets blackhole mid-handshake
+// while small packets pass — nasty to debug; found the hard way.
+// PersistentKeepalive keeps the NAT mapping open so the hub can also
+// reach the admin peer unprompted.
+func WGQuick(priv [32]byte, addr netip.Addr, subnet netip.Prefix, serverPub [32]byte, endpoint string, dns netip.Addr, domain string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "[Interface]\nPrivateKey = %s\nAddress = %s/%d\nMTU = 1240\n", KeyBase64(priv), addr, subnet.Bits())
+	if dns.IsValid() {
+		if domain != "" {
+			fmt.Fprintf(&b, "DNS = %s, %s\n", dns, domain)
+		} else {
+			fmt.Fprintf(&b, "DNS = %s\n", dns)
+		}
+	}
+	fmt.Fprintf(&b, "\n[Peer]\nPublicKey = %s\nEndpoint = %s\nAllowedIPs = %s\nPersistentKeepalive = 25\n",
+		KeyBase64(serverPub), endpoint, subnet.Masked())
+	return b.String()
 }
 
 // KeyHex renders a key for WG UAPI (IpcSet) use.

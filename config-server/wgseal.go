@@ -29,6 +29,7 @@ type wgManager struct {
 	addr       netip.Prefix // server tunnel address with subnet
 	endpoint   string       // public ip:port machines dial
 	pinnedPub  string       // expected server pubkey (base64 or hex, "" = unpinned)
+	dnsDomain  string       // tunnel DNS domain ("" = tunnel DNS disabled)
 	root       string       // talos/ directory
 	adminAddrs []string     // wallets allowed to unseal
 	adminPeers []string     // named admin WG peers (laptops)
@@ -40,12 +41,13 @@ type wgManager struct {
 	settings *wgSettings // nil while sealed
 }
 
-func newWGManager(port int, addr netip.Prefix, endpoint, pinnedPub, root string, adminAddrs, adminPeers []string) *wgManager {
+func newWGManager(port int, addr netip.Prefix, endpoint, pinnedPub, dnsDomain, root string, adminAddrs, adminPeers []string) *wgManager {
 	return &wgManager{
 		port:       port,
 		addr:       addr,
 		endpoint:   endpoint,
 		pinnedPub:  pinnedPub,
+		dnsDomain:  dnsDomain,
 		root:       root,
 		adminAddrs: adminAddrs,
 		adminPeers: adminPeers,
@@ -116,6 +118,7 @@ func (m *wgManager) unsealWithMaster(master []byte) error {
 		subnet:    m.addr.Masked(),
 		endpoint:  m.endpoint,
 		admins:    m.adminPeers,
+		dnsDomain: m.dnsDomain,
 	}
 	// Secrets decrypt before anything unblocks: config serving and the
 	// KMS gate on settings != nil, and an unseal that cannot produce
@@ -131,11 +134,25 @@ func (m *wgManager) unsealWithMaster(master []byte) error {
 	if err != nil {
 		return fmt.Errorf("deriving peers: %w", err)
 	}
+	// The zone is validated (labels, collisions) even when the WG start
+	// is stubbed, so a bad name fails the unseal loudly.
+	var zone map[string]netip.Addr
+	if m.dnsDomain != "" {
+		if zone, err = buildDNSZone(machines, wg); err != nil {
+			return fmt.Errorf("building dns zone: %w", err)
+		}
+	}
 	tnet, dev, err := m.start(priv, m.port, wg.serverIP, peers)
 	if err != nil {
 		return fmt.Errorf("starting wireguard: %w", err)
 	}
 	wg.tnet, wg.dev = tnet, dev
+	if wg.tnet != nil && zone != nil {
+		if err := wg.serveDNS(zone); err != nil {
+			return fmt.Errorf("starting tunnel dns: %w", err)
+		}
+		log.Printf("tunnel dns: %d name(s) under .%s on %s:53", len(zone), m.dnsDomain, wg.serverIP)
+	}
 
 	m.settings = wg
 	log.Printf("wireguard unsealed: server pubkey %s (hex %s), endpoint %s, %d peer(s)",

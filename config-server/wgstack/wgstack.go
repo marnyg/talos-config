@@ -196,3 +196,14 @@ func (n *Net) ListenTCP(addr *net.TCPAddr) (*gonet.TCPListener, error) {
 	fa, pn := convertToFullAddr(netip.AddrPortFrom(ip, uint16(addr.Port)))
 	return gonet.ListenTCP(n.stack, fa, pn)
 }
+
+// ListenUDP listens for UDP datagrams on the tunnel address (used by
+// the hub DNS server).
+func (n *Net) ListenUDP(addr *net.UDPAddr) (*gonet.UDPConn, error) {
+	if addr == nil {
+		addr = &net.UDPAddr{}
+	}
+	ip, _ := netip.AddrFromSlice(addr.IP)
+	fa, pn := convertToFullAddr(netip.AddrPortFrom(ip, uint16(addr.Port)))
+	return gonet.DialUDP(n.stack, &fa, nil, pn)
+}

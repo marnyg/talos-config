@@ -40,6 +40,9 @@ type machine struct {
 	Config  string   `yaml:"config"`
 	Patches []string `yaml:"patches"`
 	WGIP    string   `yaml:"wgIP"` // optional explicit tunnel address (collision override)
+	// Name is the machine's tunnel DNS label (<name>.<domain>);
+	// defaults to the MAC with dashes.
+	Name string `yaml:"name"`
 	// UUID is the node's SMBIOS UUID (shown on /verify at approval).
 	// It is the durable KMS unseal allowlist: deleting it revokes.
 	UUID string `yaml:"uuid"`
@@ -259,6 +262,8 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("GET /verify", s.handleVerifyPage)
 	mux.HandleFunc("POST /verify", s.handleVerifyPost)
 	mux.HandleFunc("POST /unseal", s.handleUnseal)
+	mux.HandleFunc("GET /wg/enroll", s.handleEnrollChallenge)
+	mux.HandleFunc("POST /wg/enroll", s.handleEnroll)
 	mux.HandleFunc("GET /sealed", s.handleSealed)
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("POST /status/login", s.handleStatusLogin)
@@ -278,7 +283,8 @@ func main() {
 		wgAddr      = flag.String("wg-address", "10.99.0.1/24", "server tunnel address with subnet")
 		wgEndpoint  = flag.String("wg-endpoint", "", "public ip:port machines dial to reach the tunnel (required with --wg-port)")
 		wgPubkey    = flag.String("wg-server-pubkey", "", "pinned expected server pubkey (base64 or hex); unseal fails on mismatch")
-		wgAdmins    = flag.String("wg-admin-peers", "", "comma-separated named admin WG peers (e.g. laptop); keys derived from the master, config via wgping -admin")
+		wgAdmins    = flag.String("wg-admin-peers", "", "comma-separated named admin WG peers (e.g. laptop); keys derived from the master, config via /wg/enroll (wgup) or wgping -admin")
+		wgDNS       = flag.String("wg-dns-domain", "talos.wg", "DNS domain the hub serves on the tunnel (empty = no tunnel DNS)")
 		autoBoot    = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the tunnel when its etcd waits for it")
 		kmsAdv      = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --wg-port)")
 		kmsPort     = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared h2c port)")
@@ -325,7 +331,7 @@ func main() {
 				adminPeers = append(adminPeers, n)
 			}
 		}
-		wgm = newWGManager(*wgPort, serverPrefix, *wgEndpoint, *wgPubkey, *root, addrs, adminPeers)
+		wgm = newWGManager(*wgPort, serverPrefix, *wgEndpoint, *wgPubkey, *wgDNS, *root, addrs, adminPeers)
 
 		if env := os.Getenv("WG_MASTER_KEY"); env != "" {
 			// Dev/testing escape hatch: auto-unseal from an explicit
