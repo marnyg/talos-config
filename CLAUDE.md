@@ -181,8 +181,39 @@ apply half-state, not a failure — apid is already up, so apply through
 it.
 
 Node firewall on the overlay: ICMP from anyone, everything from the hub
-(cert name `hub` — apid, auto-bootstrap) and from the `admins` group.
-Machines cannot reach each other's control surfaces over the mesh.
+(cert name `hub` — apid, auto-bootstrap) and from the `admins` group,
+plus Jellyfin's NodePort from the `media` group. Machines cannot reach
+each other's control surfaces over the mesh.
+
+**Device groups.** Three, and the hub decides which — never the client,
+because the group is signed into the certificate:
+
+| Group | Declared in | Gets |
+|---|---|---|
+| `machines` | `talos/machines/` | injected at compose time |
+| `admins` | `MESH_DEVICES` | unrestricted node access (what wg0 grants today) |
+| `media` | `MESH_MEDIA_DEVICES` | Jellyfin's NodePort, nothing else |
+
+A shared-space appliance (TV) belongs in `media`: anyone in the room can
+operate it. A name in both lists is a startup error. Regrouping a device
+means re-enrolling it, but it keeps its key and address — the group is
+not part of the derivation.
+
+**Connecting a device** (`nebup`, the `wgup` pattern one overlay over):
+
+```bash
+nebup                          # enroll if needed, then run nebula (Ctrl-C disconnects)
+nebup -print                   # enroll, print the config path, run nothing
+nebup -reenroll                # discard the cache and re-derive the same identity
+nebup -name androidtv -print   # admin-mediated: for a device that cannot sign
+nebup -paste                   # headless: paste a `cast wallet sign` signature
+```
+
+Enrollment (`GET`/`POST /mesh/enroll`) never touches the fleet master:
+the wallet signs an ordinary single-use challenge and the hub returns a
+self-contained config (CA, cert and key inline — one file, so it moves by
+scp, clipboard or QR). Device certs last 90 days; re-running `nebup`
+re-derives the same key and address, so re-enrolling is the renewal.
 
 ### Recovery USB
 

@@ -3,15 +3,11 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Mesh v2 **phase 1** — dual overlay (uuid fca5be68). Hub side and
-node side are both written: derivation (`nebderive`) → netstack
-(`nebstack`) → config (`nebconf`) → overlay DNS (`nebdns`) → lifecycle
-(`nebseal`) → node identity injection (`nebmachine`) + nebula extension
-schematic. Next act is **deployment**, which is the first irreversible
-step on real hardware: `fly deploy` → wallet unseal → `talosctl upgrade`
-(no wipe) → `nix run .#apply`. Then `nebup` enrollment, then ≥1 week
-dogfood measuring direct-vs-relay rate and throughput (kill criteria 2–4
-still armed).
+**Now:** Mesh v2 **phase 1** — dual overlay (uuid fca5be68). Everything is
+built and cp1 is on the mesh; what remains is getting a **second member**
+on it. `fly deploy` → unseal → `nebup` on the laptop, and then the ≥1
+week dogfood can actually start — kill criteria 2–4 measure paths
+*between* members, so a one-member mesh proves nothing yet.
 
 **Toward goal:** "Mesh v2" in `desired-state/goals.md` — direct peer
 paths, phones/TV on the network, one derivation tree. ADR-0002 Accepted.
@@ -23,4 +19,6 @@ paths, phones/TV on the network, one derivation tree. ADR-0002 Accepted.
 - App SSO / any OIDC issuer.
 - Cert revocation/expiry mechanics: 5-year machine leaves stand until a
   config-refresh mechanism exists (thread dc04e3e8).
+- TV onboarding (task 38): designed, deliberately not built until the
+  laptop path has been dogfooded.
 - ENS commitment layer (+idea task; strictly additive, never auth-path).
