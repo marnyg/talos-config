@@ -31,8 +31,16 @@ WG_ADMIN_PEERS = "laptop"
 # this value, so changing it re-issues configs, not certs.
 MESH_ENDPOINT = "213.188.219.215:4242"
 # Named mesh devices: identities derived from the same master as wg0's,
-# no registry. Listed here only so their names resolve in mesh DNS.
+# no registry. The list decides two things — which names may enroll at
+# /mesh/enroll, and which resolve in mesh DNS.
+#
+# MESH_DEVICES are owner devices (admins group): unrestricted access to
+# nodes, matching what wg0 already grants them.
 MESH_DEVICES = "laptop"
+# MESH_MEDIA_DEVICES are shared-space appliances (media group): Jellyfin's
+# NodePort and nothing else. A device in both lists is a startup error,
+# because the group is signed into its certificate.
+MESH_MEDIA_DEVICES = ""
 
 [http_service]
 internal_port = 8080

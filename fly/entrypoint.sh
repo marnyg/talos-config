@@ -23,7 +23,7 @@ fi
 # is also why --mesh-port is only accepted alongside --wg-port.
 MESH_ARGS=""
 if [ -n "${MESH_ENDPOINT:-}" ]; then
-    MESH_ARGS="--mesh-port 4242 --mesh-endpoint $MESH_ENDPOINT ${MESH_DEVICES:+--mesh-devices $MESH_DEVICES}"
+    MESH_ARGS="--mesh-port 4242 --mesh-endpoint $MESH_ENDPOINT ${MESH_DEVICES:+--mesh-devices $MESH_DEVICES} ${MESH_MEDIA_DEVICES:+--mesh-media-devices $MESH_MEDIA_DEVICES}"
 fi
 
 # shellcheck disable=SC2086
