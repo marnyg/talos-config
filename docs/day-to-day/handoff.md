@@ -26,12 +26,13 @@ stale wg-spike handover task.
 - Cert version pin: `nebula-cert` ≥1.10 emits V2 certs; nebula ≤1.9
   can't parse them. Node extension + clients must be ≥1.10 (hub embeds
   1.11.0).
-- Revocation/expiry policy (uuid 888aac0f) before enrolling
+- Revocation/expiry policy (uuid dc04e3e8) before enrolling
   shared-space devices.
 - Legacy `docs/handover.md` still to be absorbed into day-to-day/.
 
 ## Suggested next steps
 
-- Start phase 1 (uuid 1afafb50, tagged +next): factory schematic +
-  nebula extension, HKDF cert derivation, compose-time injection,
-  nebup enrollment, dual overlay, ≥1wk dogfood (kill criteria 2–4).
+- Continue phase 1 (uuid fca5be68 — note: `1afafb50` is phase *2*):
+  hub embedding, then factory schematic + nebula extension,
+  compose-time injection, nebup enrollment, dual overlay, ≥1wk
+  dogfood (kill criteria 2–4).

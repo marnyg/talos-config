@@ -31,11 +31,14 @@
           };
           packages.talosctl = pkgs.talosctl;
 
-          packages.config-server-bin = pkgs.buildGoModule {
+          # buildGo126Module, not buildGoModule: the embedded nebula
+          # (slackhq/nebula 1.11.0, for the mesh CA + lighthouse/relay)
+          # requires go >= 1.26.0, while pkgs.go is still 1.25.x here.
+          packages.config-server-bin = pkgs.buildGo126Module {
             pname = "config-server";
             version = "0.1.0";
             src = ./config-server;
-            vendorHash = "sha256-iTi2EGrbn0XvmiiMVv3WGrnwuguBq7ZzALHLo2n7N/4=";
+            vendorHash = "sha256-lGjNHARcVFxihnP0W+DSqE/rcWD/A5CxhDszdZox/E4=";
           };
 
           packages.config-server = pkgs.writeShellApplication {
@@ -182,6 +185,11 @@
               jq
               kubeseal
               flyctl
+              # nebula-cert: the mesh golden interop test
+              # (nebderive.TestStockNebulaCertVerify) shells out to it and
+              # skips when absent. Version must track the Sidero nebula
+              # extension shipped by the factory (currently 1.10.3).
+              nebula
             ];
             enterShell = ''
               cd_talos="$(git rev-parse --show-toplevel)/talos"

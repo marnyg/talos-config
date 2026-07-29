@@ -2,8 +2,9 @@
 
 _Design record, 2026-07-29. Product of a grill-design session; decisions
 below are confirmed unless marked **open**. Tasks (by uuid — short ids
-renumber): spike done/passed 69138146, phase 1 1afafb50, phase 2
-dc04e3e8, revocation thread 888aac0f. This doc will be decomposed into
+renumber): spike done/passed 69138146, phase 1 fca5be68, phase 2
+1afafb50, revocation thread dc04e3e8, ENS commitment idea 888aac0f.
+This doc will be decomposed into
 the docs scaffold (ADR, invariants, exploration log) when that lands;
 until then it is authoritative for the mesh design._
 
@@ -141,7 +142,7 @@ Findings: `nebula-cert` ≥1.10 emits V2 certs (nebula ≤1.9 can't parse
 — pin versions); stock lighthouse `serve_dns` unusable on the embedded
 hub (see DNS bullet above).
 
-**Phase 1 (uuid 1afafb50)** — dual overlay:
+**Phase 1 (uuid fca5be68)** — dual overlay:
 - New factory schematic with nebula extension; `talosctl upgrade`
   (no wipe, `/var/media` survives).
 - CA + cert derivation in the hub; compose-time injection of extension
@@ -151,7 +152,7 @@ hub (see DNS bullet above).
 - The measurement window is the evaluation window — the go/no-go for
   phase 2 lands before anything irreversible.
 
-**Phase 2 (uuid dc04e3e8)** — cutover, in order:
+**Phase 2 (uuid 1afafb50)** — cutover, in order:
 1. Add nebula name + IP to certSANs (additive, safe).
 2. Move cluster endpoint to the node's nebula IP; re-point
    talosconfig/kubeconfig.
@@ -191,14 +192,13 @@ hub (see DNS bullet above).
 
 ## Open items
 
-- **Revocation/expiry policy** (thread uuid 888aac0f): nebula has no CRL —
+- **Revocation/expiry policy** (thread uuid dc04e3e8): nebula has no CRL —
   blocklist-by-fingerprint distributed via git-managed configs, or
   short-lived device certs. Decide before enrolling shared-space
-  devices (TV).
-- Nebula CIDR (phase 1 detail). DNS zone: use the owned ENS name as the
-  on-tunnel zone (split-DNS only — cosmetic, no chain resolution; check
-  .eth interception in Brave/MetaMask on admin devices).
-- **Extension to explore — ENS commitment layer**: text records on the
+  devices (TV). `nebderive` keeps this option open: leaf validity is
+  caller-supplied, so short-lived certs need no derivation change.
+- **Extension to explore — ENS commitment layer** (idea uuid 888aac0f):
+  text records on the
   owned .eth name carrying the nebula CA fingerprint + hub endpoint, as
   wallet-anchored out-of-band discovery/verification. Strictly additive:
   never in an auth path (invariant 1), never publish mesh IPs on-chain.
@@ -209,6 +209,33 @@ hub (see DNS bullet above).
 - Speculative: implementing Defined's managed-enrollment API subset on
   the hub for polished in-app enrollment — only if the copy-paste UX
   actually hurts.
+
+## Settled 2026-07-29 (was open)
+
+- **Overlay CIDR: `10.42.0.0/16`**, hub/lighthouse `10.42.0.1`. Clear of
+  the LAN (`10.0.0.0/24`), the pod subnet (`10.244.0.0/16`) and the
+  service subnet (`10.96.0.0/12` — which spans 10.96–10.111 and so
+  already contains wg0's `10.99.0.0/24`). A /16 rather than a /24
+  because certs bake the address: over a /24's 253 slots the birthday
+  bound hits ~50% at only ~19 peers, and phase 1 adds phones + TV.
+  Not `100.64.0.0/10` — a CGNAT hotspot underlay (kill criterion 2)
+  lives there.
+- **DNS zone: `mesh.internal`** (ICANN-reserved private-use TLD).
+  The ENS-name-as-zone idea is **rejected**: Brave ships `.eth`
+  interception (Settings → Web3 → Ethereum) and MetaMask resolves
+  `.eth` in its in-app browser, so the zone would be hijacked in the
+  URL bar on exactly the admin devices meant to use it — a real hazard
+  for a cosmetic gain. The ENS name keeps its role in the commitment
+  layer above. `mesh.internal` also drops the misleading `.wg` suffix,
+  which names the transport phase 2 deletes.
+- **Cert format: V2.** Extension ships nebula 1.10.3, Mobile Nebula and
+  the hub embed 1.11.0, and `nebula-cert` 1.10.3 already defaults to
+  `-version 2`; nothing in the toolchain predates 1.10, so V1 would be
+  the deviation. V2 also unlocks IPv6 / multiple overlay addresses.
+- **CA is network-unconstrained.** Nebula can restrict a CA's
+  subordinate networks; we omit it so a future renumber re-mints only
+  leaves instead of re-rooting the mesh. The constraint would only
+  bound a leaked CA key, which forces re-rooting anyway.
 
 ## Verified claims (session evidence)
 

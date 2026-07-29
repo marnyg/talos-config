@@ -61,9 +61,9 @@ Migration: (0) prerequisite — the `apply` serve-time-stripping bug
 (landed 2026-07-29); (1) gate spike — `nebula/service` on fly:
 lighthouse+relay+dial without TUN (passed 2026-07-29); (2) phase 1 —
 dual overlay, dogfood ≥1 week measuring direct-vs-relay rate and
-throughput (task uuid 1afafb50); (3) phase 2 — certSANs (name+IP),
+throughput (task uuid fca5be68); (3) phase 2 — certSANs (name+IP),
 endpoint moves to nebula IP, wg0 stripped, wg* hub code removed
-(task uuid dc04e3e8).
+(task uuid 1afafb50).
 
 Kill criteria (any ⇒ revert to wg0 + LAN shortcut): spike fails; punch
 rate mostly-relay on real NAT pairs; direct LAN path can't sustain
@@ -82,7 +82,11 @@ Full design record: [`../../mesh-v2-nebula.md`](../../mesh-v2-nebula.md).
 - Nodes trade kernel WG for userspace nebula (throughput bar in kill
   criterion 3 guards this).
 - Open: cert revocation/expiry policy before shared-space devices
-  enroll (task uuid 888aac0f); nebula CIDR + DNS zone naming.
+  enroll (task uuid dc04e3e8).
+- Settled 2026-07-29: overlay CIDR `10.42.0.0/16` (hub `.1`), DNS zone
+  `mesh.internal` (ENS-as-zone rejected — `.eth` interception in
+  Brave/MetaMask), cert format V2, CA left network-unconstrained.
+  Rationale in the design record's "Settled" section.
 - Spike finding: nebula's built-in lighthouse DNS (`serve_dns`) binds a
   kernel socket and cannot work on the TUN-less embedded hub (verified:
   overlay UDP/53 is dropped by the netstack). Phase 1 ports the wgdns
