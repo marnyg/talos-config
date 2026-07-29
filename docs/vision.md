@@ -18,9 +18,16 @@ and reconstructible from this git repo plus keys the owner physically holds.
 - **Roots of trust are keys the owner holds**, never accounts someone hosts:
   - `~/.ssh/id_ed25519` — decrypts everything in the repo (`.age` files)
   - wallet `0xf568…9406` — admits machines to the cluster (seed phrase = cluster admission credential; treat accordingly)
-- **No OIDC providers, no third-party identity accounts, no chain RPC in any
-  auth path.** Wallet verification is offline EIP-191 signature recovery
-  (EOA only — smart-contract wallets would reintroduce an RPC dependency).
+- **No identity or membership state outside git + owner-held keys.** All
+  authentication reduces to offline verification against the wallet
+  (EIP-191 recovery, EOA only — smart-contract wallets would reintroduce an
+  RPC dependency), and the entire network (peers, certs, addresses) must be
+  re-derivable with zero runtime re-enrollment. No third-party identity
+  accounts, no chain RPC in any auth path. Self-hosted token/cert issuance
+  is permitted only when issuer keys are wallet-derived.
+  _(Amended 2026-07-29 — was "No OIDC providers…"; the ban was on
+  third-party trust dependencies, not the protocol. See
+  `docs/mesh-v2-nebula.md` and ADR-0002.)_
 - **Fly.io is trusted infrastructure but not a root of trust**: it holds a
   *dedicated* deploy key (scoped to cluster secrets), never the SSH key,
   and is accepted as a per-boot dependency (recorded decision) with
@@ -52,8 +59,10 @@ The config server is a **minimal provisioning plane** — one Go binary that:
 - [x] composes and serves machine configs (machinery-native, byte-faithful)
 - [x] authenticates machines via OAuth device flow, humans via wallet
 - [x] runs on fly with TLS, UDP, and tmpfs-only secrets
-- [ ] maintains a WireGuard control channel to every machine (userspace on
-      fly, native on Talos) so nodes are reachable from anywhere, on any LAN
+- [x] maintains an overlay control channel to every machine so nodes are
+      reachable from anywhere, on any LAN (today: hub-and-spoke WireGuard;
+      end-state: nebula mesh with direct peer paths, hub as
+      lighthouse/relay — see `docs/mesh-v2-nebula.md`)
 - [ ] bootstraps fresh control planes itself over the tunnel (zero-touch
       after the wallet signature)
 - [ ] serves a status page (SIWE session login): machine liveness, last
