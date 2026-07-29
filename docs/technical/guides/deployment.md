@@ -57,9 +57,23 @@ trial — see the kill criteria in `../../mesh-v2-nebula.md`.
   NXDOMAIN.
 - Jellyfin reachable over the overlay: 302 in 5.4ms on
   `10.42.218.125:30096`.
-- **Kill criterion 2 (remote case): not tested.** Needs the laptop on a
-  CGNAT hotspot against the home router — the pair that decides whether
-  punching works where it is hard. Cannot be tested from the LAN.
+- **Kill criterion 2 (remote case): measured 2026-07-29 — RELAYED.**
+  Laptop on a phone hotspot (carrier CGNAT + tether NAT) against the
+  home router: handshake completed `from="213.188.219.215:4242
+  (relayed)"`, no roam to direct over several minutes, and a packet
+  capture on the Wi-Fi interface showed **all** overlay traffic
+  laptop↔fly, zero packets to the home WAN. Steady-state RTT ~59ms min
+  (= 40ms hotspot→fly baseline + fly→home leg), i.e. exactly today's
+  wg0 hairpin. Not a config gap: `punchy.punch`/`respond` are on for
+  both laptop and node, and the hub's punch rendezvous is unconditional.
+  **Caveats bounding the result:** (a) the first two attempts were
+  invalidated by wg0 being up — nebula used the wireguard tunnel as
+  underlay (`from="10.99.0.54:4242"`) and hairpinned through fly, so
+  any dual-overlay measurement with wg0 up is poisoned; (b) this pair
+  stacks tether NAT on carrier CGNAT — blame (home NAT vs cellular
+  CGNAT) is unresolved, and a punch test from ordinary foreign Wi-Fi
+  (café/office) would discriminate. Cellular CGNATs are typically
+  symmetric, which no amount of punching defeats.
 - **Kill criterion 3 (throughput): passes.** iperf3 against a temporary
   NodePort pod, laptop ↔ cp1:
 
