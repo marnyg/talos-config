@@ -2,6 +2,9 @@
 
 - Status: Accepted _(2026-07-29: gate spike passed — see Confirmation)_
 - Date: 2026-07-29
+- Amended by: ADR-0005 — refines this record's "TCP-only `nebula/service`"
+  diagnosis (the body below is left as written; ADR-0005 has the accurate
+  cause and the implementation)
 
 ## Context and Problem Statement
 

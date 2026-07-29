@@ -45,7 +45,6 @@ plaintext META.
 - Going KMS-only would first require break-glass tooling for slot-0
   blobs.
 
-> This posture has never been written up as an ADR, which it probably
-> deserves — it is a real trade-off with a non-obvious consequence
-> (encryption is weaker than "disks are encrypted" suggests). Flagged for
-> the next docs pass.
+> Now recorded properly in **ADR-0004**, including the consequence that
+> matters most: wipe META before a *machine* (not just a disk) leaves the
+> owner's hands, because the slot-1 passphrase travels with it.
