@@ -159,14 +159,91 @@ func (s *server) respondAction(w http.ResponseWriter, r *http.Request, msg strin
 }
 
 const statusStyle = `
- body { font-family: monospace; max-width: 60rem; margin: 2rem auto; }
- table { border-collapse: collapse; width: 100%; margin-bottom: 1rem; }
- td, th { border: 1px solid #999; padding: .4rem .6rem; text-align: left; }
- .msg { padding: .5rem; border: 1px solid #999; margin-bottom: 1rem; }
- .warn { border-color: #c00; }
- pre { background: #f4f4f4; padding: .5rem; overflow-x: auto; }
- details { margin: .5rem 0; }
- form.inline { display: inline; }
+ :root {
+   --bg: #f5f6f8; --panel: #ffffff; --border: #d8dde4;
+   --text: #1d2530; --muted: #67717e; --accent: #2563eb;
+   --warn: #b91c1c; --warn-bg: #fdf2f2; --warn-border: #e8b4b4;
+   --code-bg: #edf0f4; --thead: #eef1f5; --zebra: #f8fafc;
+ }
+ @media (prefers-color-scheme: dark) {
+   :root {
+     --bg: #0f141b; --panel: #161d26; --border: #2b3542;
+     --text: #d6dde7; --muted: #8593a3; --accent: #60a5fa;
+     --warn: #f08c8c; --warn-bg: #2a1717; --warn-border: #5c2b2b;
+     --code-bg: #0b1017; --thead: #1b2430; --zebra: #131a23;
+   }
+ }
+ * { box-sizing: border-box; }
+ body {
+   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+   font-size: 14px; line-height: 1.55;
+   background: var(--bg); color: var(--text);
+   max-width: 64rem; margin: 0 auto; padding: 2rem 1.25rem 4rem;
+ }
+ h1 {
+   font-size: 1.35rem; margin: 0 0 1.25rem;
+   padding-bottom: .6rem; border-bottom: 2px solid var(--border);
+ }
+ h2 {
+   font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+   color: var(--muted); margin: 2rem 0 .6rem;
+ }
+ a { color: var(--accent); }
+ table {
+   border-collapse: collapse; width: 100%; margin-bottom: 1rem;
+   background: var(--panel);
+ }
+ td, th {
+   border: 1px solid var(--border); padding: .45rem .7rem;
+   text-align: left; vertical-align: top;
+ }
+ th { background: var(--thead); font-weight: 600; white-space: nowrap; }
+ tbody tr:nth-child(even) td, table tr:nth-child(even) td { background: var(--zebra); }
+ .msg {
+   padding: .7rem .9rem; margin-bottom: 1rem;
+   background: var(--panel); border: 1px solid var(--border);
+   border-left: 4px solid var(--accent); border-radius: 4px;
+ }
+ .msg.warn, td.warn {
+   background: var(--warn-bg); border-color: var(--warn-border);
+   border-left-color: var(--warn); color: var(--warn);
+ }
+ .msg.warn code, .msg.warn pre { color: var(--text); }
+ pre {
+   background: var(--code-bg); border: 1px solid var(--border);
+   border-radius: 4px; padding: .6rem .8rem; overflow-x: auto;
+ }
+ code { background: var(--code-bg); padding: .1rem .35rem; border-radius: 3px; }
+ button {
+   font: inherit; cursor: pointer;
+   background: var(--panel); color: var(--text);
+   border: 1px solid var(--border); border-radius: 4px;
+   padding: .35rem .9rem; margin: .15rem .15rem .15rem 0;
+ }
+ button:hover { border-color: var(--accent); color: var(--accent); }
+ button.wallet, #login-wallet, #unseal-wallet {
+   background: var(--accent); border-color: var(--accent); color: #fff;
+ }
+ button.wallet:hover, #login-wallet:hover, #unseal-wallet:hover {
+   filter: brightness(1.1); color: #fff;
+ }
+ input[type=text], input[type=password] {
+   font: inherit; background: var(--bg); color: var(--text);
+   border: 1px solid var(--border); border-radius: 4px;
+   padding: .35rem .6rem; margin: .15rem .15rem .15rem 0; max-width: 100%;
+ }
+ input[type=text]:focus, input[type=password]:focus {
+   outline: none; border-color: var(--accent);
+ }
+ details {
+   margin: .5rem 0; padding: .4rem .7rem;
+   border: 1px dashed var(--border); border-radius: 4px;
+ }
+ summary { cursor: pointer; color: var(--muted); }
+ details[open] summary { margin-bottom: .4rem; }
+ form.inline { display: inline; margin-left: .5rem; }
+ form.inline button { padding: .15rem .6rem; font-size: .85em; }
+ .session-line { color: var(--muted); margin: 0 0 1.25rem; }
 `
 
 var loginTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
@@ -238,7 +315,7 @@ var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
 <style>` + statusStyle + `</style></head>
 <body>
 <h1>Cluster status</h1>
-<p>signed in as {{.Addr}}
+<p class="session-line">signed in as {{.Addr}}
  <form class="inline" method="POST" action="/status/logout"><button>sign out</button></form>
 </p>
 {{if .Message}}<div class="msg">{{.Message}}</div>
@@ -310,8 +387,8 @@ server restart or it will not be able to unlock its disks.</div>
 {{end}}
 <h2>Machines</h2>
 <table>
- <tr><th>mac</th><th>role</th><th>lan ip</th><th>tunnel ip</th><th>handshake</th><th>rx</th><th>tx</th><th>wan endpoint</th><th>last config fetch</th></tr>
-{{range .Rows}} <tr><td>{{.MAC}}</td><td>{{.Role}}</td><td>{{.IP}}</td><td>{{.TunnelIP}}</td><td>{{.Handshake}}</td><td>{{.Rx}}</td><td>{{.Tx}}</td><td>{{.Endpoint}}</td><td>{{.LastFetch}}</td></tr>
+ <tr><th>mac</th><th>dns</th><th>role</th><th>lan ip</th><th>tunnel ip</th><th>handshake</th><th>rx</th><th>tx</th><th>wan endpoint</th><th>last config fetch</th></tr>
+{{range .Rows}} <tr><td>{{.MAC}}</td><td>{{.DNS}}</td><td>{{.Role}}</td><td>{{.IP}}</td><td>{{.TunnelIP}}</td><td>{{.Handshake}}</td><td>{{.Rx}}</td><td>{{.Tx}}</td><td>{{.Endpoint}}</td><td>{{.LastFetch}}</td></tr>
 {{end}}</table>
 {{if .WalletEnabled}}
 <script>
@@ -351,9 +428,9 @@ document.querySelectorAll('button.wallet').forEach(function (btn) {
 </body></html>`))
 
 type statusRow struct {
-	MAC, Role, IP, TunnelIP     string
-	Handshake, Rx, Tx, Endpoint string
-	LastFetch                   string
+	MAC, DNS, Role, IP, TunnelIP string
+	Handshake, Rx, Tx, Endpoint  string
+	LastFetch                    string
 }
 
 type statusData struct {
@@ -404,6 +481,7 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		m := machines[mac]
 		row := statusRow{
 			MAC:       mac,
+			DNS:       "—",
 			Role:      strings.TrimSuffix(filepath.Base(m.Config), filepath.Ext(m.Config)),
 			IP:        m.IP,
 			TunnelIP:  "—",
@@ -412,6 +490,11 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 			Tx:        "—",
 			Endpoint:  "—",
 			LastFetch: "never",
+		}
+		// DNS names are derived from meta.yaml + the configured domain,
+		// so they are known even while the tunnel is sealed.
+		if s.wgm != nil && s.wgm.dnsDomain != "" {
+			row.DNS = machineDNSName(mac, m) + "." + s.wgm.dnsDomain
 		}
 		if wg != nil {
 			if ip, err := wg.machineTunnelIP(mac, m); err == nil {
