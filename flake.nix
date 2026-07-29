@@ -120,7 +120,13 @@
             '');
           };
 
-          # nix run .#apply [-- <mac>] — build and apply config to machines
+          # nix run .#apply [-- <mac>] — fetch the hub-composed config
+          # over the wg tunnel and apply it. Never composes locally:
+          # the hub injects wg0, certSANs, and disk encryption at serve
+          # time, so a locally composed config would strip that state
+          # from a running machine. Requires being on the tunnel as an
+          # admin peer (the hub's /config tunnel route refuses others).
+          # Override the hub with APPLY_HUB (default http://10.99.0.1).
           apps.apply = {
             type = "app";
             program = toString (pkgs.writeShellScript "apply" ''
@@ -128,31 +134,24 @@
               cd "$(git rev-parse --show-toplevel)/talos"
 
               YQ="${pkgs.yq-go}/bin/yq"
+              HUB="''${APPLY_HUB:-http://10.99.0.1}"
               FILTER="''${1:-}"
 
               apply_machine() {
                 local mac_dir="$1"
-                local mac meta ip config
+                local mac ip composed
 
                 mac=$(basename "$mac_dir")
-                meta="$mac_dir/meta.yaml"
-                ip=$($YQ '.ip' "$meta")
-                config=$($YQ '.config' "$meta")
+                ip=$($YQ '.ip' "$mac_dir/meta.yaml")
 
-                # Build patch args from meta.yaml patches list
-                local patches=""
-                while IFS= read -r p; do
-                  [ -n "$p" ] && patches="$patches --patch @$p"
-                done < <($YQ '.patches[]' "$meta")
+                echo "Applying to $mac ($ip) — hub-composed config from $HUB"
 
-                # Add machine-specific patch if it exists
-                if [ -f "$mac_dir/patch.yaml" ]; then
-                  patches="$patches --patch @$mac_dir/patch.yaml"
+                if ! composed=$(${pkgs.curl}/bin/curl -fsS --connect-timeout 10 "$HUB/config?mac=$mac"); then
+                  echo "ERROR: could not fetch hub-composed config for $mac from $HUB." >&2
+                  echo "Local composing is not a fallback: it would strip serve-time state (wg0, certSANs, disk encryption)." >&2
+                  echo "Check: are you on the tunnel as an admin peer (wgup)? Is the hub unsealed (/status)?" >&2
+                  exit 1
                 fi
-
-                echo "Applying to $mac ($ip) — $config"
-
-                composed=$(${pkgs.talosctl}/bin/talosctl machineconfig patch "$config" $patches -o /dev/stdout)
 
                 ${pkgs.talosctl}/bin/talosctl \
                   -n "$ip" -e "$ip" \

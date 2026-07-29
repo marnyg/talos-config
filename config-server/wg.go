@@ -7,9 +7,9 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
+	"net/http"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -26,13 +26,12 @@ type wgPeer struct {
 	allowedIP    netip.Prefix
 }
 
-// startWireGuard brings up the userspace WG device and a hello
-// listener on the tunnel address. The hello speaks minimal HTTP/1.0 so
-// plain TCP reads, curl, wget, and dumb uptime probes all get a clean
-// response. The returned netstack handle dials machines through the
-// tunnel (auto-bootstrap); the device handle exposes live peer
-// counters for /status. The netstack forwards between peers (wgstack),
-// so admin peers reach machines through the hub.
+// startWireGuard brings up the userspace WG device. The returned
+// netstack handle dials machines through the tunnel (auto-bootstrap)
+// and hosts the tunnel HTTP listener (serveTunnelHTTP); the device
+// handle exposes live peer counters for /status. The netstack
+// forwards between peers (wgstack), so admin peers reach machines
+// through the hub.
 func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) (*wgstack.Net, *device.Device, error) {
 	tun, tnet, err := wgstack.CreateNetTUN([]netip.Addr{addr}, 1280)
 	if err != nil {
@@ -55,32 +54,66 @@ func startWireGuard(privateKey [32]byte, port int, addr netip.Addr, peers []wgPe
 		return nil, nil, fmt.Errorf("bringing WG device up: %w", err)
 	}
 
-	listener, err := tnet.ListenTCP(&net.TCPAddr{Port: 80})
-	if err != nil {
-		return nil, nil, fmt.Errorf("tunnel hello listener: %w", err)
-	}
-	go func() {
-		for {
-			c, err := listener.Accept()
-			if err != nil {
-				log.Printf("wg hello accept: %v", err)
-				return
-			}
-			go func(c net.Conn) {
-				defer c.Close()
-				body := fmt.Sprintf("hello from the tunnel: %s\n", addr)
-				fmt.Fprintf(c, "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
-				// Drain any request bytes so closing doesn't RST the
-				// response out from under HTTP clients.
-				_ = c.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-				_, _ = io.Copy(io.Discard, c)
-				log.Printf("wg hello served to %s", c.RemoteAddr())
-			}(c)
-		}
-	}()
-
 	log.Printf("wireguard listening on udp/%d, tunnel address %s, %d peer(s)", port, addr, len(peers))
 	return tnet, dev, nil
+}
+
+// serveTunnelHTTP starts the tunnel-side HTTP server on the hub's
+// tunnel address: "/" keeps the hello (liveness, wgping) for every
+// peer, /config serves hub-composed machine configs to admin peers
+// only. Inside the tunnel the source address is cryptokey-routed —
+// wireguard drops packets whose source doesn't match the sending
+// peer's allowed-ips — so "request from an admin tunnel IP" is
+// authentication: that address maps to exactly one wallet-enrolled
+// admin device key.
+func (m *wgManager) serveTunnelHTTP(wg *wgSettings) error {
+	adminIPs := map[netip.Addr]bool{}
+	for _, name := range m.adminPeers {
+		name = wgderive.NormalizeAdmin(name)
+		if name == "" {
+			continue
+		}
+		ip, err := wgderive.AdminTunnelIP(wg.master, name, wg.subnet)
+		if err != nil {
+			return fmt.Errorf("deriving admin tunnel ip for %q: %w", name, err)
+		}
+		adminIPs[ip] = true
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, "hello from the tunnel: %s\n", wg.serverIP)
+	})
+	if m.tunnelConfig != nil {
+		mux.Handle("GET /config", requireAdminPeer(adminIPs, m.tunnelConfig))
+	}
+
+	listener, err := wg.tnet.ListenTCP(&net.TCPAddr{Port: 80})
+	if err != nil {
+		return fmt.Errorf("tunnel http listener: %w", err)
+	}
+	go func() {
+		if err := http.Serve(listener, mux); err != nil {
+			log.Printf("tunnel http server: %v", err)
+		}
+	}()
+	return nil
+}
+
+// requireAdminPeer gates a tunnel route to admin peer source
+// addresses. Machines are tunnel peers too, and served configs carry
+// other machines' secrets — a machine must never read a config it
+// didn't earn a device-flow token for.
+func requireAdminPeer(admins map[netip.Addr]bool, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ap, err := netip.ParseAddrPort(r.RemoteAddr)
+		if err != nil || !admins[ap.Addr().Unmap()] {
+			log.Printf("tunnel %s %s: refused non-admin peer %s", r.Method, r.URL.Path, r.RemoteAddr)
+			http.Error(w, "forbidden: admin tunnel peers only", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // wgPeerStat is one peer's live counters from the device UAPI.

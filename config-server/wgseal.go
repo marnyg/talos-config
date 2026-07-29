@@ -37,6 +37,10 @@ type wgManager struct {
 	// start is startWireGuard, stubbed in tests.
 	start func(privateKey [32]byte, port int, addr netip.Addr, peers []wgPeer) (*wgstack.Net, *device.Device, error)
 
+	// tunnelConfig serves GET /config on the tunnel listener to admin
+	// peers (set by main; nil disables the route).
+	tunnelConfig http.Handler
+
 	mu       sync.Mutex
 	settings *wgSettings // nil while sealed
 }
@@ -152,6 +156,11 @@ func (m *wgManager) unsealWithMaster(master []byte) error {
 			return fmt.Errorf("starting tunnel dns: %w", err)
 		}
 		log.Printf("tunnel dns: %d name(s) under .%s on %s:53", len(zone), m.dnsDomain, wg.serverIP)
+	}
+	if wg.tnet != nil {
+		if err := m.serveTunnelHTTP(wg); err != nil {
+			return fmt.Errorf("starting tunnel http: %w", err)
+		}
 	}
 
 	m.settings = wg

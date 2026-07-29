@@ -192,6 +192,9 @@ func main() {
 		log.Fatalf("dial through tunnel: %v", err)
 	}
 	defer c.Close()
+	// The hub's tunnel listener is a real HTTP server now — it won't
+	// speak until asked.
+	fmt.Fprintf(c, "GET / HTTP/1.0\r\nHost: hub\r\n\r\n")
 	body, err := io.ReadAll(c)
 	if err != nil {
 		log.Fatal(err)

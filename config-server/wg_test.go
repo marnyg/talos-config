@@ -1,6 +1,10 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/netip"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,5 +51,51 @@ func TestParsePeerStats(t *testing.T) {
 	}
 	if silent.txBytes != 148 {
 		t.Errorf("silent peer tx: got %d", silent.txBytes)
+	}
+}
+
+// TestRequireAdminPeer checks the tunnel /config gate: only requests
+// whose (cryptokey-routed) source address is a derived admin tunnel IP
+// get through — machines are peers too, and must not read other
+// machines' configs without a device-flow token.
+func TestRequireAdminPeer(t *testing.T) {
+	adminIP := netip.MustParseAddr("10.99.0.79")
+	gate := requireAdminPeer(map[netip.Addr]bool{adminIP: true},
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+
+	for _, tc := range []struct {
+		remote string
+		want   int
+	}{
+		{"10.99.0.79:41234", http.StatusOK},        // admin peer
+		{"10.99.0.54:41234", http.StatusForbidden}, // machine peer
+		{"203.0.113.9:443", http.StatusForbidden},  // not a tunnel address at all
+		{"garbage", http.StatusForbidden},          // unparseable
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/config?mac=aa:bb:cc:dd:ee:ff", nil)
+		r.RemoteAddr = tc.remote
+		w := httptest.NewRecorder()
+		gate.ServeHTTP(w, r)
+		if w.Code != tc.want {
+			t.Errorf("remote %s: got %d, want %d", tc.remote, w.Code, tc.want)
+		}
+	}
+}
+
+// TestTunnelConfigNeedsNoToken checks that the tunnel route serves a
+// composed config without any bearer token even when the public
+// /config requires auth — the admin-source-IP gate is the auth.
+func TestTunnelConfigNeedsNoToken(t *testing.T) {
+	s := newTestServer(t) // requireAuth: true
+	r := httptest.NewRequest(http.MethodGet, "/config?mac=aa:bb:cc:dd:ee:ff", nil)
+	w := httptest.NewRecorder()
+	s.handleTunnelConfig(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("tunnel config: got %d, want 200 (body: %s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "type: worker") {
+		t.Errorf("tunnel config body missing composed machine config: %q", w.Body.String())
 	}
 }

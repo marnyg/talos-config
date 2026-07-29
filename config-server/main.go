@@ -171,6 +171,59 @@ func (s *server) lastFetch(mac string) (time.Time, bool) {
 	return t, ok
 }
 
+// composeFor builds the fully-injected config for mac: base config,
+// repo patches, and the serve-time injections (wg0 control channel,
+// certSANs, disk encryption). On failure it returns a non-200 status
+// with a client-safe message; details go to the log.
+func (s *server) composeFor(mac string) ([]byte, int, string) {
+	machines, err := loadMachines(filepath.Join(s.root, "machines"))
+	if err != nil {
+		log.Printf("error loading machines: %v", err)
+		return nil, http.StatusInternalServerError, "internal error"
+	}
+
+	m, ok := machines[mac]
+	if !ok {
+		return nil, http.StatusNotFound, fmt.Sprintf("no config for MAC %s", mac)
+	}
+
+	var extra []string
+	if s.wgm != nil {
+		wg := s.wgm.current()
+		if wg == nil {
+			// Serving a config without the tunnel would strand the
+			// machine outside the control channel — refuse instead.
+			log.Printf("refusing config for %s: wireguard is sealed", mac)
+			return nil, http.StatusServiceUnavailable, "sealed: an admin must unseal the control channel at /status"
+		}
+		p, err := wg.machinePatch(mac, m)
+		if err != nil {
+			log.Printf("error building wg patch for %s: %v", mac, err)
+			return nil, http.StatusInternalServerError, "internal error"
+		}
+		extra = append(extra, p)
+
+		if m.DiskEncryption {
+			if s.kmsAdvertise == "" {
+				log.Printf("refusing config for %s: diskEncryption set but no --kms-advertise endpoint", mac)
+				return nil, http.StatusInternalServerError, "internal error"
+			}
+			extra = append(extra, wg.diskEncryptionPatch(mac, s.kmsAdvertise))
+		}
+	} else if m.DiskEncryption {
+		// Disk keys derive from the master; without WG there is none.
+		log.Printf("refusing config for %s: diskEncryption requires the wireguard control channel", mac)
+		return nil, http.StatusInternalServerError, "internal error"
+	}
+
+	body, err := buildConfig(s.root, m, extra...)
+	if err != nil {
+		log.Printf("error building config for %s: %v", mac, err)
+		return nil, http.StatusInternalServerError, "internal error"
+	}
+	return body, http.StatusOK, ""
+}
+
 func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	mac := r.URL.Query().Get("mac")
 	if mac == "" {
@@ -189,56 +242,9 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	machines, err := loadMachines(filepath.Join(s.root, "machines"))
-	if err != nil {
-		log.Printf("error loading machines: %v", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	m, ok := machines[mac]
-	if !ok {
-		http.Error(w, fmt.Sprintf("no config for MAC %s", mac), http.StatusNotFound)
-		return
-	}
-
-	var extra []string
-	if s.wgm != nil {
-		wg := s.wgm.current()
-		if wg == nil {
-			// Serving a config without the tunnel would strand the
-			// machine outside the control channel — refuse instead.
-			log.Printf("refusing config for %s: wireguard is sealed", mac)
-			http.Error(w, "sealed: an admin must unseal the control channel at /status", http.StatusServiceUnavailable)
-			return
-		}
-		p, err := wg.machinePatch(mac, m)
-		if err != nil {
-			log.Printf("error building wg patch for %s: %v", mac, err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		extra = append(extra, p)
-
-		if m.DiskEncryption {
-			if s.kmsAdvertise == "" {
-				log.Printf("refusing config for %s: diskEncryption set but no --kms-advertise endpoint", mac)
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
-			}
-			extra = append(extra, wg.diskEncryptionPatch(mac, s.kmsAdvertise))
-		}
-	} else if m.DiskEncryption {
-		// Disk keys derive from the master; without WG there is none.
-		log.Printf("refusing config for %s: diskEncryption requires the wireguard control channel", mac)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	body, err := buildConfig(s.root, m, extra...)
-	if err != nil {
-		log.Printf("error building config for %s: %v", mac, err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	body, status, msg := s.composeFor(mac)
+	if status != http.StatusOK {
+		http.Error(w, msg, status)
 		return
 	}
 
@@ -250,6 +256,31 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordFetch(mac)
 	log.Printf("served config for %s", mac)
+}
+
+// handleTunnelConfig serves hub-composed configs over the tunnel
+// listener for `nix run .#apply`. No bearer token: the route is only
+// reachable on the tunnel and gated to admin peer source addresses
+// (serveTunnelHTTP), whose membership is wallet-rooted via /wg/enroll.
+// It does not consume device-flow tokens or record fetches — the
+// machine itself is not fetching.
+func (s *server) handleTunnelConfig(w http.ResponseWriter, r *http.Request) {
+	mac := r.URL.Query().Get("mac")
+	if mac == "" {
+		http.Error(w, "missing mac parameter", http.StatusBadRequest)
+		return
+	}
+	mac = normalizeMAC(mac)
+
+	body, status, msg := s.composeFor(mac)
+	if status != http.StatusOK {
+		http.Error(w, msg, status)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-yaml")
+	_, _ = w.Write(body)
+	log.Printf("served config for %s to admin peer %s over the tunnel", mac, r.RemoteAddr)
 }
 
 // mux wires all routes. Shared between main and the HTTP tests so the
@@ -317,6 +348,7 @@ func main() {
 	}
 
 	var wgm *wgManager
+	var wgMasterEnv string
 	if *wgPort > 0 {
 		if *wgEndpoint == "" {
 			log.Fatal("--wg-port needs --wg-endpoint (the public ip:port machines dial)")
@@ -333,18 +365,11 @@ func main() {
 		}
 		wgm = newWGManager(*wgPort, serverPrefix, *wgEndpoint, *wgPubkey, *wgDNS, *root, addrs, adminPeers)
 
-		if env := os.Getenv("WG_MASTER_KEY"); env != "" {
-			// Dev/testing escape hatch: auto-unseal from an explicit
-			// master key. Production runs sealed (no secret at rest).
-			master, err := wgderive.MasterFromHex(env)
-			if err != nil {
-				log.Fatalf("WG_MASTER_KEY: %v", err)
-			}
-			if err := wgm.unsealWithMaster(master); err != nil {
-				log.Fatalf("unsealing from WG_MASTER_KEY: %v", err)
-			}
-			log.Print("wireguard unsealed from WG_MASTER_KEY env (dev mode)")
-		} else {
+		// Dev/testing escape hatch: WG_MASTER_KEY auto-unseals — but
+		// the unseal itself runs after the server is built, so the
+		// tunnel /config route is wired before the tunnel comes up.
+		wgMasterEnv = os.Getenv("WG_MASTER_KEY")
+		if wgMasterEnv == "" {
 			if len(addrs) == 0 {
 				log.Fatal("sealed wireguard needs --admin-address (a wallet must be able to unseal)")
 			}
@@ -363,6 +388,22 @@ func main() {
 		wgm:          wgm,
 		kmsAdvertise: *kmsAdv,
 		started:      time.Now(),
+	}
+
+	if wgm != nil {
+		// The tunnel /config route serves hub-composed configs to admin
+		// peers; wired here because the handler needs the full server.
+		wgm.tunnelConfig = http.HandlerFunc(s.handleTunnelConfig)
+		if wgMasterEnv != "" {
+			master, err := wgderive.MasterFromHex(wgMasterEnv)
+			if err != nil {
+				log.Fatalf("WG_MASTER_KEY: %v", err)
+			}
+			if err := wgm.unsealWithMaster(master); err != nil {
+				log.Fatalf("unsealing from WG_MASTER_KEY: %v", err)
+			}
+			log.Print("wireguard unsealed from WG_MASTER_KEY env (dev mode)")
+		}
 	}
 
 	if *kmsAdv != "" {
