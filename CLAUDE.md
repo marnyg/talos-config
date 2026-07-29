@@ -171,8 +171,14 @@ talosctl -e cp1.talos.wg -n 10.99.0.54 upgrade \
 # then re-fetch the config so the node gets its mesh identity
 nix run .#apply
 talosctl -n 10.99.0.54 get extensionserviceconfigs
-talosctl -n 10.99.0.54 service nebula
+talosctl -n 10.99.0.54 service ext-nebula   # Talos prefixes extension services
 ```
+
+Until the config lands, `ext-nebula` deliberately does not start (the
+extension declares `depends: configuration: true`) and the boot sequence
+warns `service "ext-nebula" to be "up"`. That is the upgrade-without-
+apply half-state, not a failure — apid is already up, so apply through
+it.
 
 Node firewall on the overlay: ICMP from anyone, everything from the hub
 (cert name `hub` — apid, auto-bootstrap) and from the `admins` group.
