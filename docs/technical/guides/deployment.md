@@ -17,6 +17,32 @@ or change something, update the date.
 - Admin access is tunnel-only: `talos/talosconfig` (local, gitignored)
   points at 10.99.0.54; NodePorts serve on wg0 (Jellyfin
   `10.99.0.54:30096`).
+- _2026-07-29_: upgraded in place to the nebula schematic (see Mesh
+  below). EPHEMERAL survived, as expected since Talos 1.5 — etcd and
+  `/var/media` intact, media stack unaffected.
+
+## Mesh (nebula, phase 1) — _last verified 2026-07-29_
+
+Both overlays run at once; **wg0 still carries production traffic**
+(talosconfig, KMS, auto-bootstrap, `nix run .#apply`). The mesh is on
+trial — see the kill criteria in `../../mesh-v2-nebula.md`.
+
+- Hub is lighthouse + relay on `10.42.0.1`, fly udp/4242, same dedicated
+  IPv4 as wg0 (`213.188.219.215`).
+- cp1 runs `siderolabs/nebula` 1.10.3 from factory schematic
+  `011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598`,
+  service `ext-nebula`, interface `nebula0`, overlay `10.42.218.125/16`.
+- Verified handshake in both directions, node WAN endpoint seen by the
+  hub as `80.212.67.203:4242` — so NAT mapping is visible and direct
+  punching is possible.
+- Node inbound firewall: icmp from any member, everything from cert name
+  `hub`, everything from group `admins`. Machines are not in that list.
+- **No mesh certSANs yet** (phase 2 step 1), so `talosctl -e
+  cp1.mesh.internal` fails TLS. Use wg0 for talosctl until then.
+- The CA fingerprint is re-derived on every unseal and is the value
+  members pin; it was `b881d6ff…` on the 2026-07-29 unseal. A *different*
+  fingerprint after an unseal means a different wallet signed — not a
+  rotation.
 
 ## Hub on fly — _last verified 2026-07-29_
 

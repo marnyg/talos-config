@@ -33,6 +33,11 @@
   nebula with no config file, and a re-fetched config on the old
   schematic carries an ExtensionServiceConfig no service consumes.
   Neither state is harmful, but neither is on the mesh.
+- 2026-07-29 — the upgrade→apply gap is safe to sit in: cp1 spent ~5
+  minutes with `ext-nebula` in `[Waiting]: Waiting for extension service
+  config` and nothing else degraded (apid up, etcd fine, media stack
+  untouched). Deploy the extension and the identity in either order; the
+  node just is not on the mesh until both land.
 - 2026-07-29 — a mesh derivation error (address collision, bad `meshIP`)
   now refuses the whole `/config` serve, provisioning included. Pure
   derivation, so no overlay dependency, but it does mean a repo mistake
