@@ -3,22 +3,20 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Mesh v2 **phase 1** — dual overlay (uuid fca5be68). Everything is
-built and cp1 is on the mesh; what remains is getting a **second member**
-on it. `fly deploy` → unseal → `nebup` on the laptop, and then the ≥1
-week dogfood can actually start — kill criteria 2–4 measure paths
-*between* members, so a one-member mesh proves nothing yet.
+**Now:** Mesh v2 **phase 1 verdict** (uuid fca5be68). Everything is
+built and deployed; three of four kill criteria cleared. Criterion 2's
+remote case measured RELAYED on the CGNAT-hotspot pair — one
+discriminating test remains (punch from office Wi-Fi, `+next` task)
+before deciding: fire the criterion (keep wg0, LAN shortcut) or amend
+it (LAN-direct + wg0-parity remote + drivers 2/3 justify phase 2).
+That decision wants an ADR either way.
 
-**Toward goal:** "Mesh v2" in `desired-state/goals.md` — direct peer
-paths, phones/TV on the network, one derivation tree. ADR-0002 Accepted.
+**Toward goal:** "Mesh v2" in `desired-state/goals.md` — but driver 1
+(direct peer paths) is now known to be LAN-only-at-best, so the goal's
+calculus is exactly what's being decided.
 
 **Out of scope:**
-- Phase 2 cutover (certSANs, endpoint move, wg0 removal) until phase 1
-  dogfooding passes the kill criteria. Invariant 5's two-overlay
-  exception ends there, so a stalled phase 2 is a real cost.
-- App SSO / any OIDC issuer.
-- Cert revocation/expiry mechanics: 5-year machine leaves stand until a
-  config-refresh mechanism exists (thread dc04e3e8).
-- TV onboarding (task 38): designed, deliberately not built until the
-  laptop path has been dogfooded.
-- ENS commitment layer (+idea task; strictly additive, never auth-path).
+- Phase 2 cutover until the criterion 2 verdict and the ≥1wk dogfood.
+  Invariant 5's two-overlay exception is the running cost.
+- TV onboarding (task 36) until revocation policy (dc04e3e8) settles.
+- App SSO / OIDC; ENS commitment layer (+idea).

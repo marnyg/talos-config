@@ -5,57 +5,46 @@
 
 ## Last session
 
-2026-07-29 (evening) — **Mesh v2 phase 1: node and device sides both
-deployed and verified. Three of four kill criteria cleared.**
+2026-07-29 (late evening) — **Criterion 2 remote case measured: the
+CGNAT-hotspot pair RELAYS. Verdict deferred pending one discriminating
+data point.**
 
-- Deployed: cp1 on schematic `011ccccd…`, `ext-nebula` Running,
-  `nebula0` at `10.42.218.125/16`. Handshake confirmed both directions,
-  one CA (`b881d6ff…`) on both sides, node WAN endpoint visible to the
-  hub — so the cert/mesh-DNS agreement property holds in the running
-  system, not just in tests. Details in
-  `technical/guides/deployment.md`.
-- **Three groups, not two** (`f7f2598`): `machines`, `admins`, and a new
-  `media` for shared-space appliances, which get Jellyfin's NodePort and
-  nothing else. The group is signed into the cert, so the hub decides it
-  and a name declared in both lists is a startup error.
-- `/mesh/enroll` + `nebup` (`f7f2598`, `353f30e`): wallet-signed
-  single-use challenge → self-contained config (inline PEM). The signing
-  flow moved out of `wgup` into package `walletsign`, since that is the
-  part that survives wg0's deletion.
-- Verified with stock `nebula-cert`: laptop → `[admins]`, androidtv →
-  `[media]`, 90-day windows, addresses matching the derivation.
-
-- Measured (see `technical/guides/deployment.md`): direct LAN path at
-  1.8ms with 0% loss (criterion 2, LAN), and 229/168 Mbit/s over the mesh
-  against a 326/182 LAN baseline — 2–3× the 4K-remux floor, so criterion
-  3 passes.
+- cp1 re-applied (`84d7ca5`): the `media` firewall rule (tcp/30096) is
+  now live on the node — five rules confirmed in `ext-nebula` logs,
+  applied without reboot, mesh reconverged direct. TV-path node blocker
+  cleared.
+- Criterion 2 remote (`d84026e`): laptop on phone hotspot ↔ home
+  router **does not punch** — handshake `(relayed)`, packet capture
+  shows all overlay traffic laptop↔fly, zero to the home WAN. Config
+  exonerated (punchy on both sides, rendezvous unconditional). Full
+  detail in `technical/guides/deployment.md`.
+- **Two earlier runs were invalid**: the wg tunnel (interface
+  `talos-laptop`, *not* `wg0`) was up, and nebula used it as underlay —
+  any measurement with wg up is poisoned.
+- Toolchain pin committed (`55a116a`): go 1.26 in Dockerfile matches
+  go.mod and `buildGo126Module`; all three move together.
 
 ## Loose threads
 
-- **Uncommitted `Dockerfile` change** (`golang:1.25`→`1.26`), apparently
-  from making the deploy work. Three places pin the toolchain — `go.mod`,
-  `buildGo126Module` in `flake.nix`, the Dockerfile tag — and they must
-  move together.
-- **The one remaining design risk is criterion 2's remote case**: laptop
-  on a CGNAT hotspot against the home router. LAN punching proves little
-  about hard NAT, and if that pair falls back to relay the whole plan's
-  first driver evaporates. One `ping` decides it — under ~20ms is direct,
-  because fly is 20ms away.
-- cp1's stored config predates the `media` firewall rule, so it needs a
-  re-apply before any TV can reach Jellyfin over the mesh.
-- certSANs still deliberately absent (phase 2 step 1) — `talosctl` stays
-  on wg0.
-- TV onboarding via device-flow + QR is designed and filed (task 38); the
-  unverified part is Mobile Nebula's import UX on Android TV.
-- Machine certs: 5 years, re-minted only on a config serve (thread
-  dc04e3e8). Device certs: 90 days, renewed by re-running `nebup`.
+- **Decision pending — criterion 2.** User chose "one more data point":
+  a punch test from office Wi-Fi (non-cellular foreign NAT), filed as a
+  `+next` task. Direct there ⇒ only cellular clients relay (amend
+  criterion, likely ADR). Relay there ⇒ home NAT is symmetric and the
+  criterion fires as written (keep wg0, LAN shortcut). Either outcome
+  probably wants an ADR against ADR-0002.
+- **Laptop state:** `talos-laptop` (wg) was deleted for the test and the
+  test nebula killed — run `wgup` to restore the admin path, `nebup` to
+  rejoin the mesh.
+- **Unfiled:** the dual-overlay underlay-poisoning finding — proposed as
+  a `+bug` task twice, no decision yet.
+- Revocation policy (thread dc04e3e8) still gates the TV build (task 36).
+- certSANs still absent (phase 2 step 1) — talosctl stays on wg.
 
 ## Suggested next steps
 
-- Run criterion 2's remote test from a phone hotspot. It is the last
-  gate that could still send the whole plan back to "keep wg0".
-- Start the ≥1 week dogfood — ordinary use, watching for relay fallback.
-- Settle the revocation policy (dc04e3e8) before building the TV path
-  (thread 37), since a shared-space cert is exactly what revocation is
-  for. Phase 2 (uuid 1afafb50) stays closed until the criteria clear;
-  invariant 5's dual-overlay exception is what a stalled phase 2 costs.
+- Office punch test (the `+next` task has the exact procedure — wg DOWN
+  first). Then decide: fire criterion 2, or amend it and draft the ADR.
+- Dogfood continues regardless — LAN use is unaffected and measured
+  good.
+- If continuing after the verdict: settle revocation (dc04e3e8), then
+  the TV path (task 36).

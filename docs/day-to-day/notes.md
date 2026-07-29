@@ -35,9 +35,20 @@
   Neither state is harmful, but neither is on the mesh.
 - 2026-07-29 — a node's overlay firewall lives in its *stored config*, so
   changing `nodeNebulaConfig` (adding the media rule, say) does nothing
-  until every node re-fetches and re-applies. cp1's applied config
-  predates the media group — it must be re-applied before a TV can reach
-  Jellyfin over the mesh.
+  until every node re-fetches and re-applies. ~~cp1's applied config
+  predates the media group~~ Re-applied later same day (`84d7ca5`);
+  the media rule is live on cp1.
+- 2026-07-29 — the laptop's wireguard interface is named `talos-laptop`,
+  **not** `wg0` — `ip link show wg0` proving absence proves nothing. It
+  is kernel wireguard with no owning daemon (`wg show` output can still
+  be empty — check for `kworker/R-wg-crypt-talos-laptop`); take it down
+  with `sudo ip link del talos-laptop`, restore with `wgup`.
+- 2026-07-29 — **any mesh measurement taken with the wg tunnel up is
+  poisoned**: the lighthouse advertises cp1's wg and pod IPs
+  (`10.99.0.54`, `10.244.x`) and a dual-overlay client will "punch"
+  straight through wireguard — nebula-over-wg-over-fly, double
+  encryption, hairpinned. Symptom: handshake `from="10.99.0.54:4242"`.
+  Two criterion-2 runs were invalidated by this before it was caught.
 - 2026-07-29 — first mesh tunnel takes ~6s to converge: the initial
   pings are dropped during lighthouse query + punch, then arrive relayed
   (~27ms via fly), then direct (~1.8ms on the LAN). Steady-state latency
