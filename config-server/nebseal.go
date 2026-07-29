@@ -34,10 +34,10 @@ type nebManager struct {
 	port       int
 	subnet     netip.Prefix // mesh CIDR; the hub's address is derived, not configured
 	listenHost string
-	endpoint   string   // hub's public host:port, injected into node configs
-	dnsZone    string   // "" = no mesh DNS
-	devices    []string // named devices whose identities are derived
-	root       string   // talos/ directory
+	endpoint   string      // hub's public host:port, injected into node configs
+	dnsZone    string      // "" = no mesh DNS
+	devices    []nebDevice // named devices whose identities are derived
+	root       string      // talos/ directory
 
 	// start is startMeshNebula, stubbed in tests.
 	start func(cfg []byte) (*nebstack.Service, error)
@@ -48,7 +48,16 @@ type nebManager struct {
 	err  error // last startup failure, surfaced by state()
 }
 
-func newNebManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone, root string, devices []string) *nebManager {
+// nebDevice is one enrollable device: a derived identity plus the group
+// its certificate will carry. Declared, not registered — the list says
+// which names are allowed to enroll and what access they get, and the
+// identity itself is a pure function of (master, name).
+type nebDevice struct {
+	name  string
+	group string // nebGroupAdmins or nebGroupMedia
+}
+
+func newNebManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone, root string, devices []nebDevice) *nebManager {
 	return &nebManager{
 		port:       port,
 		subnet:     subnet,
@@ -59,6 +68,11 @@ func newNebManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone,
 		root:       root,
 		start:      startMeshNebula,
 	}
+}
+
+// machinesDir is where declared machines live under the talos tree.
+func (m *nebManager) machinesDir() string {
+	return filepath.Join(m.root, "machines")
 }
 
 // hubIP is the hub's overlay address: derived from the subnet, never
@@ -100,7 +114,7 @@ func (m *nebManager) unsealWithMaster(master []byte) error {
 	// than after certs have been minted against it.
 	var zone map[string]netip.Addr
 	if m.dnsZone != "" {
-		machines, err := loadMachines(filepath.Join(m.root, "machines"))
+		machines, err := loadMachines(m.machinesDir())
 		if err != nil {
 			return m.fail(fmt.Errorf("loading machines: %w", err))
 		}
@@ -145,16 +159,12 @@ func (m *nebManager) unsealWithMaster(master []byte) error {
 	} else {
 		log.Printf("mesh configured (start stubbed): %s on udp/%d, CA %s", hubIP, m.port, fp)
 	}
-	for _, name := range m.devices {
-		name = nebderive.Normalize(name)
-		if name == "" {
-			continue
-		}
-		ip, err := nebderive.DeviceIP(master, name, m.subnet)
+	for _, d := range m.devices {
+		ip, err := nebderive.DeviceIP(master, d.name, m.subnet)
 		if err != nil {
 			continue
 		}
-		log.Printf("mesh device %q: overlay address %s", name, ip)
+		log.Printf("mesh device %q (%s): overlay address %s", d.name, d.group, ip)
 	}
 	return nil
 }
@@ -195,17 +205,48 @@ func startMeshNebula(cfg []byte) (*nebstack.Service, error) {
 // meshBuildVersion is what the hub reports to peers in handshakes.
 const meshBuildVersion = "talos-config-hub"
 
-// parseMeshDevices splits the --mesh-devices list, normalizing names the
-// same way the derivation does so a stray capital cannot produce a
-// different identity than the one an enrolled device holds.
-func parseMeshDevices(s string) []string {
-	var out []string
-	for _, name := range strings.Split(s, ",") {
-		if n := nebderive.Normalize(name); n != "" {
-			out = append(out, n)
+// parseMeshDevices splits the two device lists into one declared set,
+// normalizing names the same way the derivation does so a stray capital
+// cannot produce a different identity than the one an enrolled device
+// holds.
+//
+// A name in both lists is an error rather than a precedence rule: the
+// group is signed into the cert, so "which group did laptop get?" must
+// have one answer, and guessing it silently is how a TV ends up with
+// admin access.
+func parseMeshDevices(admins, media string) ([]nebDevice, error) {
+	var out []nebDevice
+	seen := map[string]string{}
+	for _, spec := range []struct {
+		list  string
+		group string
+	}{{admins, nebGroupAdmins}, {media, nebGroupMedia}} {
+		for _, name := range strings.Split(spec.list, ",") {
+			n := nebderive.Normalize(name)
+			if n == "" {
+				continue
+			}
+			if prev, dup := seen[n]; dup {
+				return nil, fmt.Errorf("device %q is declared in both the %s and %s groups", n, prev, spec.group)
+			}
+			seen[n] = spec.group
+			out = append(out, nebDevice{name: n, group: spec.group})
 		}
 	}
-	return out
+	return out, nil
+}
+
+// device returns the declared device with this name. Enrollment refuses
+// anything else: a name that is not declared has no group, and a cert
+// without a group reaches nothing.
+func (m *nebManager) device(name string) (nebDevice, bool) {
+	name = nebderive.Normalize(name)
+	for _, d := range m.devices {
+		if d.name == name {
+			return d, true
+		}
+	}
+	return nebDevice{}, false
 }
 
 // resolveMeshListenHost picks the address nebula binds.

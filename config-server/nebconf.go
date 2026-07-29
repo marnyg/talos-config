@@ -24,12 +24,21 @@ import (
 // address: the group is signed by the CA, so it cannot be spoofed by a
 // peer that merely reaches us.
 //
-// Two groups, matching the two kinds of membership the domain model
-// already names: machines (Talos nodes, cert minted at compose time)
-// and admins (owner devices, cert minted at enrollment).
+// Three groups. Two follow the kinds of membership the domain model
+// names: machines (Talos nodes, cert minted at compose time) and admins
+// (owner devices, cert minted at enrollment). The third exists because
+// "owner device" and "device the owner controls" are not the same thing:
+// a TV in a shared space runs an appliance client anyone in the room can
+// operate, so it must not inherit admin access to nodes. It gets to
+// reach the media it is for, and nothing else.
+//
+// The group is signed into the cert, so it cannot be spoofed — and so
+// regrouping a device means re-enrolling it. It is *not* part of the
+// derivation: a regrouped device keeps its key and address.
 const (
 	nebGroupMachines = "machines"
 	nebGroupAdmins   = "admins"
+	nebGroupMedia    = "media"
 )
 
 // nebFlyListenHost is the hostname nebula binds on fly.io. Fly's UDP

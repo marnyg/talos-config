@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ var nebNodeSubnet = netip.MustParsePrefix("10.42.0.0/16")
 const nebTestEndpoint = "203.0.113.7:4242"
 
 func nebTestManager(root string) *nebManager {
-	return newNebManager(4242, nebNodeSubnet, "0.0.0.0", nebTestEndpoint, meshDNSZone, root, []string{"laptop"})
+	return newNebManager(4242, nebNodeSubnet, "0.0.0.0", nebTestEndpoint, meshDNSZone, root, adminDevices("laptop"))
 }
 
 // nebTestMachines is a machine set with one named control plane, mirroring
@@ -168,8 +169,10 @@ func TestNodeNebulaConfigTopology(t *testing.T) {
 }
 
 // TestNodeFirewallGrantsHubAndAdminsOnly pins who may reach a node over
-// the overlay. Machines are mesh members too, and a machine reaching
-// another machine's apid is exactly what the group split is for.
+// the overlay, as an allow-list: an unrecognised rule fails the test, so
+// widening node access is never a silent diff. Machines are mesh members
+// too, and a machine reaching another machine's apid is exactly what the
+// group split is for.
 func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
 	raw, err := nodeNebulaConfig(nodeParams(t, "b0:41:6f:15:3b:8f", machine{Name: "cp1"}))
 	if err != nil {
@@ -188,9 +191,19 @@ func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
 			continue // reachability from any member
 		case r.Host == nebderive.HubName, r.Group == nebGroupAdmins:
 			continue
+		case r.Group == nebGroupMedia:
+			// The media group's whole point is that it is narrow: one
+			// port, one protocol. "any" here would hand a shared-space
+			// appliance the node.
+			if r.Port != strconv.Itoa(nebMediaPort) || r.Proto != "tcp" {
+				t.Errorf("media rule %+v is wider than %d/tcp", r, nebMediaPort)
+			}
 		default:
-			t.Errorf("unexpected inbound rule %+v: only icmp, the hub and %q may reach a node", r, nebGroupAdmins)
+			t.Errorf("unexpected inbound rule %+v: only icmp, the hub, %q and %q may reach a node", r, nebGroupAdmins, nebGroupMedia)
 		}
+	}
+	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: strconv.Itoa(nebMediaPort), Proto: "tcp", Group: nebGroupMedia}) {
+		t.Errorf("the media group must reach jellyfin on %d", nebMediaPort)
 	}
 	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "any", Proto: "any", Host: nebderive.HubName}) {
 		t.Error("the hub must be able to dial apid (auto-bootstrap, status probes)")

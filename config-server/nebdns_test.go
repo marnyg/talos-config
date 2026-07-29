@@ -15,7 +15,7 @@ func TestBuildMeshZone(t *testing.T) {
 		"aa:bb:cc:dd:ee:01": {Name: "cp1"},
 		"aa:bb:cc:dd:ee:02": {}, // no name: label is the MAC with dashes
 	}
-	zone, err := buildMeshZone(master, nebDNSSubnet, machines, []string{"laptop", "phone"})
+	zone, err := buildMeshZone(master, nebDNSSubnet, machines, adminDevices("laptop", "phone"))
 	if err != nil {
 		t.Fatal(err)
 	}

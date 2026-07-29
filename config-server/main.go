@@ -334,6 +334,8 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("POST /unseal", s.handleUnseal)
 	mux.HandleFunc("GET /wg/enroll", s.handleEnrollChallenge)
 	mux.HandleFunc("POST /wg/enroll", s.handleEnroll)
+	mux.HandleFunc("GET /mesh/enroll", s.handleMeshEnrollChallenge)
+	mux.HandleFunc("POST /mesh/enroll", s.handleMeshEnroll)
 	mux.HandleFunc("GET /sealed", s.handleSealed)
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("POST /status/login", s.handleStatusLogin)
@@ -360,7 +362,8 @@ func main() {
 		meshHost     = flag.String("mesh-listen-host", "", "address nebula binds (default: fly-global-services on fly, 0.0.0.0 elsewhere)")
 		meshEndpoint = flag.String("mesh-endpoint", "", "public host:port mesh members dial to reach the hub lighthouse (required with --mesh-port)")
 		meshZone     = flag.String("mesh-dns-zone", meshDNSZone, "DNS zone the hub serves on the mesh (empty = no mesh DNS)")
-		meshDevices  = flag.String("mesh-devices", "", "comma-separated named mesh devices (e.g. laptop,phone,androidtv); identities derived from the master")
+		meshDevices  = flag.String("mesh-devices", "", "comma-separated owner devices in the mesh admins group (e.g. laptop,phone); identities derived from the master")
+		meshMedia    = flag.String("mesh-media-devices", "", "comma-separated shared-space devices in the mesh media group (e.g. androidtv); reach media only, never node control surfaces")
 		autoBoot     = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the tunnel when its etcd waits for it")
 		kmsAdv       = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --wg-port)")
 		kmsPort      = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared h2c port)")
@@ -430,7 +433,11 @@ func main() {
 			if listenHost == "" {
 				listenHost = resolveMeshListenHost()
 			}
-			wgm.mesh = newNebManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root, parseMeshDevices(*meshDevices))
+			devices, err := parseMeshDevices(*meshDevices, *meshMedia)
+			if err != nil {
+				log.Fatalf("--mesh-devices/--mesh-media-devices: %v", err)
+			}
+			wgm.mesh = newNebManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root, devices)
 			log.Printf("mesh enabled: %s on udp/%d, binding %s (unseals with wireguard)", subnet, *meshPort, listenHost)
 		}
 

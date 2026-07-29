@@ -43,7 +43,7 @@ func testTalosTree(t *testing.T) string {
 func testNebManager(t *testing.T, root string, devices []string) (*nebManager, *[]byte) {
 	t.Helper()
 	var rendered []byte
-	m := newNebManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, meshDNSZone, root, devices)
+	m := newNebManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, meshDNSZone, root, adminDevices(devices...))
 	m.start = func(cfg []byte) (*nebstack.Service, error) {
 		rendered = cfg
 		return nil, nil
@@ -225,15 +225,41 @@ func TestSealedEndpointReportsMeshWithoutPaging(t *testing.T) {
 	}
 }
 
+// adminDevices is the common case in tests: named devices, all in the
+// admins group.
+func adminDevices(names ...string) []nebDevice {
+	var out []nebDevice
+	for _, n := range names {
+		out = append(out, nebDevice{name: nebderive.Normalize(n), group: nebGroupAdmins})
+	}
+	return out
+}
+
 func TestParseMeshDevices(t *testing.T) {
-	got := parseMeshDevices(" Laptop , ,phone,ANDROIDTV ")
-	want := []string{"laptop", "phone", "androidtv"}
+	got, err := parseMeshDevices(" Laptop , ,phone ", "ANDROIDTV")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []nebDevice{
+		{name: "laptop", group: nebGroupAdmins},
+		{name: "phone", group: nebGroupAdmins},
+		{name: "androidtv", group: nebGroupMedia},
+	}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
-			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
+			t.Errorf("got[%d] = %+v, want %+v", i, got[i], want[i])
 		}
+	}
+}
+
+// TestParseMeshDevicesRejectsBothGroups: the group is signed into the
+// cert, so a name in both lists has no single answer and must not get a
+// guessed one — guessing is how a shared-space TV ends up an admin.
+func TestParseMeshDevicesRejectsBothGroups(t *testing.T) {
+	if _, err := parseMeshDevices("laptop,androidtv", "androidtv"); err == nil {
+		t.Fatal("expected an error for a device declared in both groups, got none")
 	}
 }

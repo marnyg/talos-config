@@ -18,6 +18,7 @@ package main
 import (
 	"fmt"
 	"net/netip"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -57,6 +58,13 @@ const nebNodeTunDev = "nebula0"
 // nebNodeMTU is nebula's default overlay MTU (1300), stated rather than
 // inherited so a change is a visible diff.
 const nebNodeMTU = 1300
+
+// nebMediaPort is the only thing the media group may reach on a node:
+// Jellyfin's NodePort. Kept a single port rather than "the NodePort
+// range" because the point of the group is that a shared-space appliance
+// reaches the one service it exists for — sonarr and radarr are on
+// neighbouring NodePorts and are admin tools.
+const nebMediaPort = 30096
 
 // nebMachineCertValidity bounds a machine's leaf certificate.
 //
@@ -230,8 +238,11 @@ func nodeNebulaConfig(p nebNodeParams) ([]byte, error) {
 				// already grants them (allowed-ips, no firewall), so
 				// narrowing it here would be a regression dressed as
 				// hardening. What the rule does buy is that *machines*
-				// (and any future non-admin device group) are not in it.
+				// and the media group are not in it.
 				{Port: "any", Proto: "any", Group: nebGroupAdmins},
+				// Shared-space appliances: the media they are for, and
+				// nothing else. No apid, no kube API, no other NodePort.
+				{Port: strconv.Itoa(nebMediaPort), Proto: "tcp", Group: nebGroupMedia},
 			},
 		},
 		Logging: nebLoggingYAML{Level: "info", Format: "text"},

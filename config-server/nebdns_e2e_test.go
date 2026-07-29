@@ -28,7 +28,7 @@ func TestMeshDNSOverOverlay(t *testing.T) {
 	const lighthousePort = 24243
 
 	machines := map[string]machine{"aa:bb:cc:dd:ee:01": {Name: "cp1"}}
-	zone, err := buildMeshZone(master, subnet, machines, []string{"laptop"})
+	zone, err := buildMeshZone(master, subnet, machines, adminDevices("laptop"))
 	if err != nil {
 		t.Fatal(err)
 	}

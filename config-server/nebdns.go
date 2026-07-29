@@ -63,7 +63,7 @@ func machineMeshIP(master []byte, mac string, m machine, subnet netip.Prefix) (n
 // deliberately leaves that to the caller, and this is the one place that
 // sees every member at once, so an unseal fails loudly here rather than
 // minting two certs that claim the same address.
-func buildMeshZone(master []byte, subnet netip.Prefix, machines map[string]machine, devices []string) (map[string]netip.Addr, error) {
+func buildMeshZone(master []byte, subnet netip.Prefix, machines map[string]machine, devices []nebDevice) (map[string]netip.Addr, error) {
 	hubIP, err := nebderive.HubIP(subnet)
 	if err != nil {
 		return nil, err
@@ -99,16 +99,12 @@ func buildMeshZone(master []byte, subnet netip.Prefix, machines map[string]machi
 			return nil, err
 		}
 	}
-	for _, name := range devices {
-		name = nebderive.Normalize(name)
-		if name == "" {
-			continue
-		}
-		ip, err := nebderive.DeviceIP(master, name, subnet)
+	for _, d := range devices {
+		ip, err := nebderive.DeviceIP(master, d.name, subnet)
 		if err != nil {
 			return nil, err
 		}
-		if err := claim(name, "device "+name, ip); err != nil {
+		if err := claim(d.name, "device "+d.name, ip); err != nil {
 			return nil, err
 		}
 	}
