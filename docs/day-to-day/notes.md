@@ -33,6 +33,15 @@
   nebula with no config file, and a re-fetched config on the old
   schematic carries an ExtensionServiceConfig no service consumes.
   Neither state is harmful, but neither is on the mesh.
+- 2026-07-29 — a node's overlay firewall lives in its *stored config*, so
+  changing `nodeNebulaConfig` (adding the media rule, say) does nothing
+  until every node re-fetches and re-applies. cp1's applied config
+  predates the media group — it must be re-applied before a TV can reach
+  Jellyfin over the mesh.
+- 2026-07-29 — first mesh tunnel takes ~6s to converge: the initial
+  pings are dropped during lighthouse query + punch, then arrive relayed
+  (~27ms via fly), then direct (~1.8ms on the LAN). Steady-state latency
+  is the number that matters; the loss is setup, not packet loss.
 - 2026-07-29 — the upgrade→apply gap is safe to sit in: cp1 spent ~5
   minutes with `ext-nebula` in `[Waiting]: Waiting for extension service
   config` and nothing else degraded (apid up, etcd fine, media stack

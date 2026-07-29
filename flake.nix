@@ -194,6 +194,10 @@
               jq
               kubeseal
               flyctl
+              # dig: verifying mesh DNS is a routine check now, and it has
+              # to be aimed at the hub's overlay address (dig @10.42.0.1)
+              # because the zone is served only on the overlay.
+              dnsutils
               # nebula-cert: the mesh golden interop test
               # (nebderive.TestStockNebulaCertVerify) shells out to it and
               # skips when absent. Version must track the Sidero nebula
