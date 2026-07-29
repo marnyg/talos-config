@@ -320,6 +320,11 @@ func main() {
 		wgPubkey    = flag.String("wg-server-pubkey", "", "pinned expected server pubkey (base64 or hex); unseal fails on mismatch")
 		wgAdmins    = flag.String("wg-admin-peers", "", "comma-separated named admin WG peers (e.g. laptop); keys derived from the master, config via /wg/enroll (wgup) or wgping -admin")
 		wgDNS       = flag.String("wg-dns-domain", "talos.wg", "DNS domain the hub serves on the tunnel (empty = no tunnel DNS)")
+		meshPort    = flag.Int("mesh-port", 0, "nebula UDP listen port (0 = disabled); the hub is the mesh lighthouse + relay")
+		meshSubnet  = flag.String("mesh-subnet", "10.42.0.0/16", "mesh overlay CIDR; the hub takes the first host address (derived, not configurable)")
+		meshHost    = flag.String("mesh-listen-host", "", "address nebula binds (default: fly-global-services on fly, 0.0.0.0 elsewhere)")
+		meshZone    = flag.String("mesh-dns-zone", meshDNSZone, "DNS zone the hub serves on the mesh (empty = no mesh DNS)")
+		meshDevices = flag.String("mesh-devices", "", "comma-separated named mesh devices (e.g. laptop,phone,androidtv); identities derived from the master")
 		autoBoot    = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the tunnel when its etcd waits for it")
 		kmsAdv      = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --wg-port)")
 		kmsPort     = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared h2c port)")
@@ -369,6 +374,27 @@ func main() {
 		}
 		wgm = newWGManager(*wgPort, serverPrefix, *wgEndpoint, *wgPubkey, *wgDNS, *root, addrs, adminPeers)
 
+		// The mesh unseals from the same master, so for now it hangs off
+		// the wg manager. Phase 2 deletes wg0 and the dependency inverts.
+		if *meshPort > 0 {
+			subnet, err := netip.ParsePrefix(*meshSubnet)
+			if err != nil {
+				log.Fatalf("--mesh-subnet: %v", err)
+			}
+			if subnet.Addr() != subnet.Masked().Addr() {
+				log.Fatalf("--mesh-subnet %s is not a network address (did you mean %s?)", subnet, subnet.Masked())
+			}
+			if subnet.Overlaps(serverPrefix) {
+				log.Fatalf("--mesh-subnet %s overlaps the wg0 subnet %s; phase 1 runs both overlays at once", subnet, serverPrefix)
+			}
+			listenHost := *meshHost
+			if listenHost == "" {
+				listenHost = resolveMeshListenHost()
+			}
+			wgm.mesh = newNebManager(*meshPort, subnet, listenHost, *meshZone, *root, parseMeshDevices(*meshDevices))
+			log.Printf("mesh enabled: %s on udp/%d, binding %s (unseals with wireguard)", subnet, *meshPort, listenHost)
+		}
+
 		// Dev/testing escape hatch: WG_MASTER_KEY auto-unseals — but
 		// the unseal itself runs after the server is built, so the
 		// tunnel /config route is wired before the tunnel comes up.
@@ -379,6 +405,8 @@ func main() {
 			}
 			log.Printf("wireguard SEALED: an admin must sign %q at /status to unseal", wgderive.MasterMessage)
 		}
+	} else if *meshPort > 0 {
+		log.Fatal("--mesh-port requires --wg-port: phase 1 is a dual overlay and both unseal from the same master")
 	}
 
 	s := &server{

@@ -41,6 +41,12 @@ type wgManager struct {
 	// peers (set by main; nil disables the route).
 	tunnelConfig http.Handler
 
+	// mesh is the phase-1 second overlay, unsealed from the same master
+	// (nil = mesh disabled). It hangs off wgManager only because the
+	// unseal currently lives here; the unseal is a *hub* concern, and
+	// phase 2 lifts it out when wg0 is deleted.
+	mesh *nebManager
+
 	mu       sync.Mutex
 	settings *wgSettings // nil while sealed
 }
@@ -164,6 +170,18 @@ func (m *wgManager) unsealWithMaster(master []byte) error {
 	}
 
 	m.settings = wg
+
+	// Fan out to the mesh. Deliberately non-fatal: in phase 1 wg0 carries
+	// production traffic (talosconfig, KMS, auto-bootstrap) while the mesh
+	// is on trial, so a mesh that cannot start must not take the working
+	// overlay down with it. The error is kept on nebManager rather than
+	// only logged, so it stays queryable instead of scrolling away.
+	if m.mesh != nil {
+		if err := m.mesh.unsealWithMaster(master); err != nil {
+			log.Printf("MESH DOWN (wg0 unaffected): %v", err)
+		}
+	}
+
 	log.Printf("wireguard unsealed: server pubkey %s (hex %s), endpoint %s, %d peer(s)",
 		wgderive.KeyBase64(pub), wgderive.KeyHex(pub), m.endpoint, len(peers))
 	for _, name := range m.adminPeers {
@@ -203,13 +221,44 @@ func (s *server) handleUnseal(w http.ResponseWriter, r *http.Request) {
 
 // handleSealed is a monitoring endpoint: 200 when healthy (unsealed or
 // WG disabled), 503 while sealed — point an external pinger at it.
+//
+// Mesh state is reported but never changes the status code. In phase 1
+// the mesh is on trial while wg0 carries production traffic, so a mesh
+// failure is something to read, not something to page for. Phase 2
+// inverts that along with everything else.
 func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
-	switch {
-	case s.wgm == nil:
+	sealed := s.wgm != nil && s.wgm.sealed()
+	if sealed {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintln(w, "wireguard: SEALED")
+	} else if s.wgm == nil {
 		fmt.Fprintln(w, "wireguard: disabled")
-	case s.wgm.sealed():
-		http.Error(w, "wireguard: SEALED", http.StatusServiceUnavailable)
-	default:
+	} else {
 		fmt.Fprintln(w, "wireguard: unsealed")
 	}
+
+	switch mesh := s.mesh(); {
+	case mesh == nil:
+		fmt.Fprintln(w, "mesh: disabled")
+	case mesh.up():
+		fmt.Fprintln(w, "mesh: up")
+	default:
+		_, _, err := mesh.state()
+		if err != nil {
+			fmt.Fprintf(w, "mesh: DOWN (%v)\n", err)
+		} else if sealed {
+			fmt.Fprintln(w, "mesh: sealed")
+		} else {
+			fmt.Fprintln(w, "mesh: down")
+		}
+	}
+}
+
+// mesh returns the mesh manager, or nil when the mesh is disabled.
+func (s *server) mesh() *nebManager {
+	if s.wgm == nil {
+		return nil
+	}
+	return s.wgm.mesh
 }
