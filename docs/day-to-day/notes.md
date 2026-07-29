@@ -24,8 +24,19 @@
   embeds 1.11.0. (Now also recorded in `technical/guides/gotchas.md`.)
 - 2026-07-29 — mesh names resolve but nothing answers on them yet:
   `<name>.mesh.internal` is served by the hub from derived state, while
-  machine and device certs are not minted until the node side lands. Not
-  a bug; the next gap to close.
+  machine and device certs are not minted until the node side lands.
+  Node-side injection is written as of later the same day, so this holds
+  only until the deploy + `talosctl upgrade` + `apply` sequence runs.
+- 2026-07-29 — the node's mesh identity arrives with its *config*, and
+  the nebula extension arrives with its *installer image*. Both are
+  needed: a node on the new schematic without a re-fetched config runs
+  nebula with no config file, and a re-fetched config on the old
+  schematic carries an ExtensionServiceConfig no service consumes.
+  Neither state is harmful, but neither is on the mesh.
+- 2026-07-29 — a mesh derivation error (address collision, bad `meshIP`)
+  now refuses the whole `/config` serve, provisioning included. Pure
+  derivation, so no overlay dependency, but it does mean a repo mistake
+  in mesh addressing blocks installs — the same posture wg0 already has.
 - 2026-07-29 — the mesh is enabled per-deploy with `--mesh-port` and
   requires `--wg-port` (phase 1 is a dual overlay, one master). A mesh
   startup failure is deliberately non-fatal: `/sealed` reports

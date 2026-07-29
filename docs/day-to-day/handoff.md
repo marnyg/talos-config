@@ -5,51 +5,52 @@
 
 ## Last session
 
-2026-07-29 (late) — **Mesh v2 phase 1: the hub side is done and
-running.** Five commits, `c74a2fd..b09b286`:
+2026-07-29 (later) — **Mesh v2 phase 1: the node side is written but not
+yet deployed.** Two commits, `ec2ed8b..4906454`:
 
-- `nebderive` — wallet-derived mesh CA + machine/device/hub identities,
-  byte-stable CA, golden-tested against stock `nebula-cert` 1.10.3.
-- `nebstack` — vendored trim of nebula's `service` with `ListenUDP`. The
-  real blocker was never UDP capability: upstream's stack already
-  registers `udp.NewProtocol`, but `*stack.Stack` is unexported with no
-  accessor, exactly why `wgstack` is vendored too.
-- `nebconf` — hub lighthouse+relay config as a pure function of
-  (master, subnet, port), validated by nebula's own `configTest`.
-- `nebdns` + `nebtest` — `mesh.internal` served on the overlay,
-  e2e-resolved over a real handshake. `dnsRespond` is shared with wgdns,
-  not copied.
-- `nebseal` — wired into the existing unseal (one master, two overlays),
-  `--mesh-*` flags, mesh failure non-fatal and reported on `/sealed`.
-
-Also: absorbed and deleted the legacy `docs/handover.md` (see
-`technical/guides/{gotchas,deployment}.md`), and noted a bounded
-exception to invariant 5 for the dual-overlay window.
+- `nebmachine.go` — a machine's nebula config, CA, cert and key are
+  injected into its served Talos config as an **ExtensionServiceConfig
+  document** (the extension is a service, not an interface, so this is a
+  new document rather than a `machine:` merge). The overlay address comes
+  from `buildMeshZone`, so the cert and mesh DNS are the same answer by
+  construction — the gap that made `cp1.mesh.internal` resolve to
+  nothing is closed in code.
+- Node topology and firewall: hub as sole lighthouse/relay/static host;
+  inbound closed except ICMP, the hub by cert *name*, and the `admins`
+  group. Machines cannot reach each other's control surfaces.
+- Installer image → factory schematic
+  `011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598`
+  (v1.12.6 + `siderolabs/nebula` 1.10.3). fly gets `MESH_ENDPOINT` and
+  udp/4242.
+- Verified by running the binary, not just tests: `/config` returns a
+  two-document config with wg0, disk-encryption slots and the mesh doc
+  all intact; nebula's own `configTest` accepts the node config; Talos's
+  loader parses and validates the extension document.
 
 ## Loose threads
 
-- **Nothing mints machine or device certs yet**, so `cp1.mesh.internal`
-  resolves to an address no one answers on. This is the next gap.
-- **ADR-0003 obligation not yet met**: when the mesh `/config` route
-  lands, it must keep the derived-admin-IP gate. The firewall rule
-  (`admins` group) is defense in depth, not a replacement.
-- Two ADR candidates raised and not yet decided: the disk-encryption
-  posture (pre-existing gap, prose now in `guides/deployment.md`) and
-  the `nebstack` vendoring rationale.
-- Exploration-log section "Mesh v2 — hub DNS mechanism" says to delete
-  itself once phase 1 lands. It has landed; deletion awaits a yes.
-- Revocation/expiry policy (uuid dc04e3e8) still open before enrolling
-  shared-space devices. `nebderive` keeps it cheap: leaf validity is
-  caller-supplied.
-- Mobile-app DNS push still unverified (folds into kill criterion 4).
+- **Nothing is deployed.** `fly deploy` (re-seals the hub → wallet unseal
+  at `/status`), then `talosctl upgrade` to the new schematic, then
+  `nix run .#apply` so cp1 receives its mesh identity.
+- **certSANs deliberately omitted** (phase 2 step 1): until they land,
+  `talosctl -e cp1.mesh.internal` fails TLS, so phase-1 measurement has
+  to use ICMP/throughput tests rather than talosctl over the mesh.
+- **Non-admin device group** (task 36): the node firewall grants `admins`
+  unrestricted access, so a shared-space TV must not be enrolled as an
+  admin. Needed before `nebup` enrolls phones/TV.
+- Machine leaf certs are valid 5 years and are only re-minted when a
+  config is re-served — an expiry cliff, not a revocation control
+  (thread uuid dc04e3e8).
+- ADR-0003 obligation still unmet: a mesh `/config` route must keep the
+  derived-admin-IP gate; the `admins` firewall rule is defence in depth.
+- Mobile-app DNS push still unverified (kill criterion 4).
 
 ## Suggested next steps
 
-- Node side of phase 1: factory schematic + nebula extension
-  (`talosctl upgrade`, no wipe), then compose-time cert injection using
-  `nebderive.MachineKey`/`MachineIP` and the `machines` group.
-- Then `nebup` enrollment for devices, then the ≥1 week dogfood
-  measuring direct-vs-relay and throughput (kill criteria 2–4 armed).
-- Two practices earned their keep this session and should continue: run
-  the binary (not just tests — it caught dead code `go vet` missed), and
-  `nix build` before committing anything touching `go.mod`.
+- Deploy in that order (fly → unseal → upgrade → apply) and confirm
+  `talosctl get extensionserviceconfigs` / `service nebula` on cp1.
+- Then `nebup` enrollment for devices, then the ≥1 week dogfood measuring
+  direct-vs-relay and throughput (kill criteria 2–4 armed).
+- Practices that keep paying: run the binary, and `nix build` before
+  committing — `git add` new files first, since flakes only see tracked
+  ones.
