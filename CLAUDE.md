@@ -164,7 +164,8 @@ injected at serve time as an `ExtensionServiceConfig` document — same
 trust chain as wg0's key injection, nothing at rest:
 
 ```bash
-# after changing the installer image: upgrade, do NOT wipe
+# after changing the installer image: upgrade (EPHEMERAL survives since
+# Talos 1.5 — etcd and /var/media come back; a fresh install would not)
 talosctl -e cp1.talos.wg -n 10.99.0.54 upgrade \
   --image factory.talos.dev/installer/011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598:v1.12.6
 # then re-fetch the config so the node gets its mesh identity

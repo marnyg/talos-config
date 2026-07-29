@@ -13,7 +13,9 @@ machine:
     #   EOF
     #
     # Changing this image on a *running* node needs an upgrade, not a
-    # reboot: `talosctl upgrade --image factory.talos.dev/installer/<id>:<ver>`
-    # (no --wipe: /var/media and etcd survive).
+    # reboot: `talosctl upgrade --image factory.talos.dev/installer/<id>:<ver>`.
+    # EPHEMERAL survives — upgrades stopped wiping it in Talos 1.5, which
+    # is why there is no --preserve flag to pass — so etcd and
+    # /var/media come back. A fresh *install* is the destructive path.
     disk: /dev/nvme0n1
     image: factory.talos.dev/installer/011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598:v1.12.6
