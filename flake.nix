@@ -38,7 +38,16 @@
             pname = "config-server";
             version = "0.1.0";
             src = ./config-server;
-            vendorHash = "sha256-lGjNHARcVFxihnP0W+DSqE/rcWD/A5CxhDszdZox/E4=";
+            # git add new packages BEFORE recomputing this hash. Flakes only
+            # see tracked files, so an untracked directory is invisible to
+            # `go mod vendor` and its imports get silently left out of the
+            # vendor dir — the build then fails with "import lookup disabled
+            # by -mod=vendor" for a module that go.mod clearly requires.
+            # Worse, the vendor derivation is fixed-output: nix reuses any
+            # store path matching the hash, so a stale-but-matching vendor
+            # dir survives `go mod tidy`. Force a recompute by setting a
+            # bogus hash and reading nix's "got:" line.
+            vendorHash = "sha256-0PjzsdVvS8ysAHDBlUqbGDGeCA3QBxZWSvPUCsBeCwg=";
           };
 
           packages.config-server = pkgs.writeShellApplication {

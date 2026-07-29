@@ -40,6 +40,10 @@ type machine struct {
 	Config  string   `yaml:"config"`
 	Patches []string `yaml:"patches"`
 	WGIP    string   `yaml:"wgIP"` // optional explicit tunnel address (collision override)
+	// MeshIP is the nebula overlay address override. Same purpose as
+	// WGIP, but load-bearing sooner: mesh certs bake the address, so a
+	// derived collision must be resolvable without re-rooting anything.
+	MeshIP string `yaml:"meshIP"`
 	// Name is the machine's tunnel DNS label (<name>.<domain>);
 	// defaults to the MAC with dashes.
 	Name string `yaml:"name"`
