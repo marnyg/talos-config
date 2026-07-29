@@ -1,7 +1,7 @@
 # Vision — desired state of this repo
 
-_This is the higher-order goal future sessions should steer toward. The
-handover (`docs/handover.md`) says where we are; this says where we're going
+_This is the higher-order goal future sessions should steer toward.
+`day-to-day/handoff.md` says where we are; this says where we're going
 and — equally important — where we've decided not to go._
 
 ## North star

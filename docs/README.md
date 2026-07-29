@@ -4,7 +4,10 @@ Structured docs for humans and agents. Layout:
 
 - **`context/`** — Why this project exists, users, owners. Stable.
 - **`desired-state/`** — Goals, invariants, domain model. The north star agents read every session.
-- **`technical/`** — ADRs and guides. Landed knowledge.
+- **`technical/`** — ADRs and guides. Landed knowledge
+  ([`gotchas.md`](technical/guides/gotchas.md) — traps that have each cost
+  real time; [`deployment.md`](technical/guides/deployment.md) — where the
+  running system stands).
 - **`day-to-day/`** — Active cross-session context. Handoffs, focus, notes, exploration log.
 
 See `AGENTS.md` for how agents use this tree.
@@ -12,7 +15,6 @@ See `AGENTS.md` for how agents use this tree.
 Pre-scaffold documents (authoritative, being gradually absorbed):
 
 - [`vision.md`](vision.md) — north star + trust model narrative
-- [`handover.md`](handover.md) — legacy session handover (superseded by `day-to-day/handoff.md` going forward)
 - [`mesh-v2-nebula.md`](mesh-v2-nebula.md) — mesh design record (source for ADR-0002)
 
 ## Sub-scopes

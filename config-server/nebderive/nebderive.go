@@ -209,15 +209,11 @@ func hostIP(master []byte, info string, subnet netip.Prefix) (netip.Addr, error)
 	// bias is bounded by usable/2^32 and is irrelevant here.
 	offset := 2 + binary.BigEndian.Uint32(derive(master, info, 4))%usable
 
-	base := binary.BigEndian.Uint32(asSlice(subnet.Addr()))
+	base4 := subnet.Addr().As4()
+	base := binary.BigEndian.Uint32(base4[:])
 	var a [4]byte
 	binary.BigEndian.PutUint32(a[:], base+offset)
 	return netip.AddrFrom4(a), nil
-}
-
-func asSlice(a netip.Addr) []byte {
-	b := a.As4()
-	return b[:]
 }
 
 // CACert mints the mesh CA certificate: self-signed, byte-stable, and
