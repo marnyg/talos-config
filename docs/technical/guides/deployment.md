@@ -58,8 +58,20 @@ trial — see the kill criteria in `../../mesh-v2-nebula.md`.
 - **Kill criterion 2 (remote case): not tested.** Needs the laptop on a
   CGNAT hotspot against the home router — the pair that decides whether
   punching works where it is hard. Cannot be tested from the LAN.
-- **Kill criterion 3 (throughput): not measured.** Needs a real payload
-  (~80 Mbps floor for a 4K remux).
+- **Kill criterion 3 (throughput): passes.** iperf3 against a temporary
+  NodePort pod, laptop ↔ cp1:
+
+  | Direction | Mesh | Bare LAN | Ratio |
+  |---|---|---|---|
+  | laptop → node | 229 Mbit/s | 326 Mbit/s | 70% |
+  | node → laptop | 168 Mbit/s | 182 Mbit/s | 92% |
+
+  2.1–2.9× the ~80 Mbit/s 4K-remux floor. Userspace nebula on the node
+  costs 8–30% versus the raw LAN path. Caveat: the 326 Mbit/s baseline is
+  low for wired gigabit, so the underlay was probably Wi-Fi — the ratio
+  is the meaningful number, not the absolutes. The LAN reverse run had 93
+  retransmits against the mesh's 4 and came out *slower*, which is
+  underlay noise rather than the overlay winning.
 
 ## Hub on fly — _last verified 2026-07-29_
 
