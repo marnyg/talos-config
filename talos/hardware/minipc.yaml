@@ -1,4 +1,19 @@
 machine:
   install:
+    # Factory schematic 011ccc… = stock v1.12.6 + the siderolabs/nebula
+    # system extension (nebula 1.10.3), which runs the mesh overlay on
+    # the node. Rebuild the id from its inputs — the factory is
+    # content-addressed, so the same customization always yields it:
+    #
+    #   curl -s -X POST --data-binary @- https://factory.talos.dev/schematics <<'EOF'
+    #   customization:
+    #     systemExtensions:
+    #       officialExtensions:
+    #         - siderolabs/nebula
+    #   EOF
+    #
+    # Changing this image on a *running* node needs an upgrade, not a
+    # reboot: `talosctl upgrade --image factory.talos.dev/installer/<id>:<ver>`
+    # (no --wipe: /var/media and etcd survive).
     disk: /dev/nvme0n1
-    image: factory.talos.dev/installer/376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba:v1.12.6
+    image: factory.talos.dev/installer/011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598:v1.12.6

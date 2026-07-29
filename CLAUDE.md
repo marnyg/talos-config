@@ -150,6 +150,33 @@ the derived wg-quick config over TLS. The master signature is only
 ever signed at `/status` (unseal) or used offline with
 `wgping -sig <sig> …` as break-glass.
 
+### Nebula mesh (phase 1 — runs beside wg0)
+
+The hub is also the mesh **lighthouse + relay** (fly UDP :4242,
+`MESH_ENDPOINT`). CA and every identity derive from the same wallet
+master as wg0 — membership is "holds a cert signed by the derived CA",
+no registry. Overlay `10.42.0.0/16`, hub `10.42.0.1`, zone
+`<name>.mesh.internal` served on the overlay by the hub.
+
+Nodes run the `siderolabs/nebula` system extension (see the schematic
+note in `talos/hardware/minipc.yaml`). Their config *and* cert are
+injected at serve time as an `ExtensionServiceConfig` document — same
+trust chain as wg0's key injection, nothing at rest:
+
+```bash
+# after changing the installer image: upgrade, do NOT wipe
+talosctl -e cp1.talos.wg -n 10.99.0.54 upgrade \
+  --image factory.talos.dev/installer/011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598:v1.12.6
+# then re-fetch the config so the node gets its mesh identity
+nix run .#apply
+talosctl -n 10.99.0.54 get extensionserviceconfigs
+talosctl -n 10.99.0.54 service nebula
+```
+
+Node firewall on the overlay: ICMP from anyone, everything from the hub
+(cert name `hub` — apid, auto-bootstrap) and from the `admins` group.
+Machines cannot reach each other's control surfaces over the mesh.
+
 ### Recovery USB
 
 If PXE isn't available, build a boot stick that replicates the PXE

@@ -18,6 +18,14 @@ if [ -n "${WG_ENDPOINT:-}" ]; then
     WG_ARGS="--wg-port 51820 --wg-endpoint $WG_ENDPOINT ${WG_SERVER_PUBKEY:+--wg-server-pubkey $WG_SERVER_PUBKEY} --auto-bootstrap ${KMS_ADVERTISE:+--kms-advertise $KMS_ADVERTISE} ${WG_ADMIN_PEERS:+--wg-admin-peers $WG_ADMIN_PEERS}"
 fi
 
+# Nebula mesh: enabled when MESH_ENDPOINT is set. No second secret and
+# no second unseal — the mesh derives from the same master as wg0, which
+# is also why --mesh-port is only accepted alongside --wg-port.
+MESH_ARGS=""
+if [ -n "${MESH_ENDPOINT:-}" ]; then
+    MESH_ARGS="--mesh-port 4242 --mesh-endpoint $MESH_ENDPOINT ${MESH_DEVICES:+--mesh-devices $MESH_DEVICES}"
+fi
+
 # shellcheck disable=SC2086
 exec config-server \
     --root /dev/shm/talos \
@@ -25,4 +33,5 @@ exec config-server \
     --port 8080 \
     --require-auth \
     ${ADMIN_ADDRESSES:+--admin-address "$ADMIN_ADDRESSES"} \
-    $WG_ARGS
+    $WG_ARGS \
+    $MESH_ARGS

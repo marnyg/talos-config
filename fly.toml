@@ -24,6 +24,15 @@ KMS_ADVERTISE = "https://marnyg-talos-config.fly.dev:8443"
 # fallback: wgping -admin <name> -sig <unseal-sig> -wgquick \
 #   -endpoint 213.188.219.215:51820
 WG_ADMIN_PEERS = "laptop"
+# Mesh v2 (nebula) — phase 1 runs it beside wg0. Public endpoint every
+# mesh member dials to find the lighthouse; same dedicated IPv4, second
+# UDP port (see the bounded invariant-5 exception in
+# docs/desired-state/invariants.md). Members are injected/enrolled with
+# this value, so changing it re-issues configs, not certs.
+MESH_ENDPOINT = "213.188.219.215:4242"
+# Named mesh devices: identities derived from the same master as wg0's,
+# no registry. Listed here only so their names resolve in mesh DNS.
+MESH_DEVICES = "laptop"
 
 [http_service]
 internal_port = 8080
@@ -60,6 +69,16 @@ internal_port = 51820
 
   [[services.ports]]
   port = 51820
+
+# Nebula mesh: lighthouse + relay for nodes and owner devices. Same
+# dedicated IPv4 and the same fly-global-services bind requirement as
+# wg0 above; nebula resolves listen.host itself, so no bind shim.
+[[services]]
+protocol = "udp"
+internal_port = 4242
+
+  [[services.ports]]
+  port = 4242
 
 [[vm]]
 size = "shared-cpu-1x"
