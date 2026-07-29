@@ -44,6 +44,23 @@ trial — see the kill criteria in `../../mesh-v2-nebula.md`.
   fingerprint after an unseal means a different wallet signed — not a
   rotation.
 
+### Phase-1 measurements — _2026-07-29, laptop ↔ cp1 on the same LAN_
+
+- **Kill criterion 2 (LAN case): passes.** Steady state 0% loss, min
+  1.785ms / avg 3.3ms. The hub is ~20ms away, so sub-20ms RTT is proof
+  the path is direct and not relayed. First tunnel takes ~6s to converge
+  (drops, then ~27ms relayed, then direct).
+- Mesh DNS answers clients: `cp1.mesh.internal` → `10.42.218.125`, the
+  same address as the cert. Out-of-zone → REFUSED, in-zone unknown →
+  NXDOMAIN.
+- Jellyfin reachable over the overlay: 302 in 5.4ms on
+  `10.42.218.125:30096`.
+- **Kill criterion 2 (remote case): not tested.** Needs the laptop on a
+  CGNAT hotspot against the home router — the pair that decides whether
+  punching works where it is hard. Cannot be tested from the LAN.
+- **Kill criterion 3 (throughput): not measured.** Needs a real payload
+  (~80 Mbps floor for a 4K remux).
+
 ## Hub on fly — _last verified 2026-07-29_
 
 - `fly secrets list` is **empty**. Everything derives from the wallet
