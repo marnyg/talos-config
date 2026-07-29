@@ -43,7 +43,7 @@ func testTalosTree(t *testing.T) string {
 func testNebManager(t *testing.T, root string, devices []string) (*nebManager, *[]byte) {
 	t.Helper()
 	var rendered []byte
-	m := newNebManager(4242, nebSealSubnet, "0.0.0.0", meshDNSZone, root, devices)
+	m := newNebManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, meshDNSZone, root, devices)
 	m.start = func(cfg []byte) (*nebstack.Service, error) {
 		rendered = cfg
 		return nil, nil

@@ -65,11 +65,17 @@ type nebHubParams struct {
 // formatting because the pki block carries multi-line PEM: yaml.Marshal
 // gets the block scalars right, hand-indented Sprintf eventually does
 // not.
+// One shape serves both the hub (hubNebulaConfig) and the nodes
+// (nodeNebulaConfig) so the two configs cannot drift in what a field
+// means. The fields only one side uses are omitempty; the fields both
+// sides set are always written, because "nebula's default" is not a
+// thing this repo wants to depend on silently.
 type nebConfigYAML struct {
 	PKI           nebPKIYAML          `yaml:"pki"`
 	StaticHostMap map[string][]string `yaml:"static_host_map"`
 	Lighthouse    nebLighthouseYAML   `yaml:"lighthouse"`
 	Listen        nebListenYAML       `yaml:"listen"`
+	Tun           *nebTunYAML         `yaml:"tun,omitempty"` // nodes only: the hub has no TUN
 	Punchy        nebPunchyYAML       `yaml:"punchy"`
 	Relay         nebRelayYAML        `yaml:"relay"`
 	Firewall      nebFirewallYAML     `yaml:"firewall"`
@@ -83,8 +89,10 @@ type nebPKIYAML struct {
 }
 
 type nebLighthouseYAML struct {
-	AmLighthouse bool `yaml:"am_lighthouse"`
-	ServeDNS     bool `yaml:"serve_dns"`
+	AmLighthouse bool     `yaml:"am_lighthouse"`
+	ServeDNS     bool     `yaml:"serve_dns"`
+	Interval     int      `yaml:"interval,omitempty"` // seconds between reports; lighthouses do not report
+	Hosts        []string `yaml:"hosts,omitempty"`    // must be empty on a lighthouse
 }
 
 type nebListenYAML struct {
@@ -98,8 +106,15 @@ type nebPunchyYAML struct {
 }
 
 type nebRelayYAML struct {
-	AmRelay   bool `yaml:"am_relay"`
-	UseRelays bool `yaml:"use_relays"`
+	AmRelay   bool     `yaml:"am_relay"`
+	UseRelays bool     `yaml:"use_relays"`
+	Relays    []string `yaml:"relays,omitempty"` // overlay addresses of relays to use
+}
+
+type nebTunYAML struct {
+	Disabled bool   `yaml:"disabled"`
+	Dev      string `yaml:"dev"`
+	MTU      int    `yaml:"mtu"`
 }
 
 type nebFirewallYAML struct {

@@ -34,6 +34,7 @@ type nebManager struct {
 	port       int
 	subnet     netip.Prefix // mesh CIDR; the hub's address is derived, not configured
 	listenHost string
+	endpoint   string   // hub's public host:port, injected into node configs
 	dnsZone    string   // "" = no mesh DNS
 	devices    []string // named devices whose identities are derived
 	root       string   // talos/ directory
@@ -47,11 +48,12 @@ type nebManager struct {
 	err  error // last startup failure, surfaced by state()
 }
 
-func newNebManager(port int, subnet netip.Prefix, listenHost, dnsZone, root string, devices []string) *nebManager {
+func newNebManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone, root string, devices []string) *nebManager {
 	return &nebManager{
 		port:       port,
 		subnet:     subnet,
 		listenHost: listenHost,
+		endpoint:   endpoint,
 		dnsZone:    dnsZone,
 		devices:    devices,
 		root:       root,
