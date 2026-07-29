@@ -65,7 +65,7 @@ func (k *kmsServer) master() ([]byte, error) {
 	if wg := k.wgm.current(); wg != nil {
 		return wg.master, nil
 	}
-	return nil, status.Error(codes.Unavailable, "control channel is sealed; an admin must unseal at /verify")
+	return nil, status.Error(codes.Unavailable, "control channel is sealed; an admin must unseal at /status")
 }
 
 // declared reports whether any machine's meta.yaml declares uuid.

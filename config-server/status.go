@@ -1,10 +1,14 @@
 package main
 
-// Read-only /status page behind a SIWE session login. Zero information
-// is rendered before an allowlisted wallet signs the login nonce: the
-// logged-out page is only the sign-in prompt. Shows per-machine tunnel
-// liveness (WG handshake/traffic), last config fetch, auto-bootstrap
-// state, and seal state.
+// The operator dashboard at /status, behind a SIWE session login (or
+// the break-glass admin token). Zero information is rendered before
+// the operator authenticates: the logged-out page is only the sign-in
+// prompt. Shows per-machine tunnel liveness (WG handshake/traffic),
+// last config fetch, auto-bootstrap state, and seal state, and hosts
+// the unseal form and pending machine approvals. The session only
+// gates *viewing* — approve/deny/unseal remain per-action wallet
+// signatures (POST /verify, POST /unseal); a stolen session cookie
+// cannot approve a machine or unseal the tunnel.
 
 import (
 	"cmp"
@@ -13,6 +17,7 @@ import (
 	"log"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,15 +29,23 @@ import (
 
 const sessionCookieName = "talos_status_session"
 
-// statusEnabled: the page only exists when a wallet allowlist is
-// configured — there is no other way in, and without one the page
-// must leak nothing (404, same as any unknown path).
+// tokenSessionAddr labels sessions opened with the break-glass admin
+// token instead of a wallet signature.
+const tokenSessionAddr = "admin (break-glass token)"
+
+// statusEnabled: the page only exists when some admin credential is
+// configured (wallet allowlist or break-glass token) — there is no
+// other way in, and without one the page must leak nothing (404, same
+// as any unknown path).
 func (s *server) statusEnabled() bool {
-	return len(s.adminAddrs) > 0 && s.sessions != nil
+	return (len(s.adminAddrs) > 0 || s.adminToken != "") && s.sessions != nil
 }
 
 // sessionAddr resolves the request's session cookie to a wallet address.
 func (s *server) sessionAddr(r *http.Request) (string, bool) {
+	if s.sessions == nil {
+		return "", false
+	}
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil || c.Value == "" {
 		return "", false
@@ -46,7 +59,7 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if addr, ok := s.sessionAddr(r); ok {
-		s.renderStatus(w, addr)
+		s.renderStatus(w, addr, r.URL.Query().Get("msg"))
 		return
 	}
 	s.renderLogin(w, "")
@@ -61,6 +74,19 @@ func (s *server) handleStatusLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+
+	// Break-glass: the admin token opens a session without a wallet.
+	if tok := r.FormValue("admin_token"); tok != "" {
+		if s.adminToken == "" || !constantTimeEqual(tok, s.adminToken) {
+			log.Print("status login: bad admin token")
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		log.Print("status login: admin token session opened")
+		s.openSession(w, r, tokenSessionAddr)
+		return
+	}
+
 	nonce, sig := r.FormValue("nonce"), r.FormValue("signature")
 	if nonce == "" || sig == "" {
 		http.Error(w, "missing nonce or signature", http.StatusBadRequest)
@@ -81,18 +107,24 @@ func (s *server) handleStatusLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	log.Printf("status login: wallet %s signed in", addr)
+	s.openSession(w, r, addr)
+}
 
+// openSession sets the session cookie and redirects to the dashboard.
+// Path is "/" so post-action renders on POST /verify and POST /unseal
+// see the session too.
+func (s *server) openSession(w http.ResponseWriter, r *http.Request, addr string) {
 	token := s.sessions.create(addr)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
-		Path:     "/status",
+		Path:     "/",
 		MaxAge:   int(sessionTTL.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   strings.HasPrefix(externalBase(r), "https://"),
 	})
-	log.Printf("status login: wallet %s signed in", addr)
 	http.Redirect(w, r, "/status", http.StatusSeeOther)
 }
 
@@ -105,9 +137,25 @@ func (s *server) handleStatusLogout(w http.ResponseWriter, r *http.Request) {
 		s.sessions.drop(c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookieName, Value: "", Path: "/status", MaxAge: -1, HttpOnly: true,
+		Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 	})
 	http.Redirect(w, r, "/status", http.StatusSeeOther)
+}
+
+// respondAction reports the outcome of a signature-authorized action
+// (approve/deny/unseal). Session holders get a POST-redirect-GET back
+// to the dashboard (rendering in place would leave the browser parked
+// on /unseal or /verify, where the auto-refresh GET then 405s); the
+// outcome rides along as a query param. Headless callers
+// (cast-wallet-sign + curl) get plain text.
+func (s *server) respondAction(w http.ResponseWriter, r *http.Request, msg string) {
+	if s.statusEnabled() {
+		if _, ok := s.sessionAddr(r); ok {
+			http.Redirect(w, r, "/status?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+			return
+		}
+	}
+	fmt.Fprintln(w, msg)
 }
 
 const statusStyle = `
@@ -128,6 +176,7 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 <h1>Status</h1>
 {{if .Message}}<div class="msg">{{.Message}}</div>{{end}}
 <p>Sign in with an admin wallet to view cluster status.</p>
+{{if .WalletEnabled}}
 <form method="POST" action="/status/login" id="login-form">
  <input type="hidden" name="nonce" value="{{.Nonce}}">
  <button type="button" id="login-wallet">Sign in with wallet</button>
@@ -138,6 +187,17 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
   <button>Submit</button>
  </details>
 </form>
+{{end}}
+{{if .TokenEnabled}}
+<details>
+ <summary>Admin token (break-glass)</summary>
+ <form method="POST" action="/status/login">
+  <input type="password" name="admin_token" placeholder="admin token">
+  <button>Sign in</button>
+ </form>
+</details>
+{{end}}
+{{if .WalletEnabled}}
 <script>
 (function () {
   var btn = document.getElementById('login-wallet');
@@ -153,15 +213,18 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
   });
 })();
 </script>
+{{end}}
 </body></html>`))
 
 func (s *server) renderLogin(w http.ResponseWriter, msg string) {
 	nonce := s.sessions.issueNonce()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	err := loginTemplate.Execute(w, map[string]string{
-		"Nonce":   nonce,
-		"Msg":     loginMessage(nonce),
-		"Message": msg,
+	err := loginTemplate.Execute(w, map[string]any{
+		"Nonce":         nonce,
+		"Msg":           loginMessage(nonce),
+		"Message":       msg,
+		"WalletEnabled": len(s.adminAddrs) > 0,
+		"TokenEnabled":  s.adminToken != "",
 	})
 	if err != nil {
 		log.Printf("rendering login page: %v", err)
@@ -171,13 +234,33 @@ func (s *server) renderLogin(w http.ResponseWriter, msg string) {
 var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
 <html>
 <head><title>Cluster status</title>
-<meta http-equiv="refresh" content="30">
+{{if .Refresh}}<meta http-equiv="refresh" content="30">{{end}}
 <style>` + statusStyle + `</style></head>
 <body>
 <h1>Cluster status</h1>
 <p>signed in as {{.Addr}}
  <form class="inline" method="POST" action="/status/logout"><button>sign out</button></form>
 </p>
+{{if .Message}}<div class="msg">{{.Message}}</div>
+<script>history.replaceState(null, '', '/status');</script>
+{{end}}
+{{if .Sealed}}
+<div class="msg warn">
+ <strong>⚠ WireGuard control channel is SEALED</strong> — config serving is paused.
+ <p>Unsealing signs the master-key derivation message. <strong>This signature IS the
+ fleet master key.</strong> Only ever sign it on this page or offline via
+ <code>cast wallet sign</code> — never on any other site.</p>
+ <form method="POST" action="/unseal" id="unseal-form">
+ {{if .WalletEnabled}}<button type="button" id="unseal-wallet">Unseal with wallet</button>{{end}}
+  <details>
+   <summary>Sign manually (e.g. cast wallet sign)</summary>
+   <p>Sign exactly:</p><pre>{{.MasterMessage}}</pre>
+   <input type="text" name="signature" placeholder="0x signature" size="60">
+   <button>Submit unseal</button>
+  </details>
+ </form>
+</div>
+{{end}}
 <table>
  <tr><th>server</th><td>{{.Version}}{{if .Started}} — up since {{.Started}}{{end}}</td></tr>
  <tr><th>control channel</th><td{{if .Sealed}} class="warn"{{end}}>{{.Seal}}</td></tr>
@@ -186,18 +269,85 @@ var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
  {{else}}
  <tr><th>auto-bootstrap</th><td>disabled</td></tr>
  {{end}}
- <tr><th>pending approvals</th><td>{{if .Pending}}{{range .Pending}}{{.}} {{end}}— <a href="/verify">review</a>{{else}}none{{end}}</td></tr>
 </table>
 {{range .UndeclaredKMS}}
 <div class="msg warn">machine sealed disk keys under UNDECLARED uuid <code>{{.}}</code> —
 add <code>uuid: {{.}}</code> to its machines/&lt;mac&gt;/meta.yaml before the next
 server restart or it will not be able to unlock its disks.</div>
 {{end}}
+<h2>Pending approvals</h2>
+{{if not .Pending}}<p>No pending requests.</p>{{end}}
+{{range .Pending}}
+<table>
+ <tr><th>User code</th><td>{{.Auth.UserCode}}</td></tr>
+ {{range $k, $v := .Auth.Identity}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
+ <tr><th>Requested</th><td>{{.Auth.CreatedAt.Format "15:04:05"}}</td></tr>
+</table>
+<form method="POST" action="/verify" data-msg-approve="{{.MsgApprove}}" data-msg-deny="{{.MsgDeny}}">
+ <input type="hidden" name="user_code" value="{{.Auth.UserCode}}">
+{{if $.WalletEnabled}}
+ <button type="button" class="wallet" data-action="approve">Approve with wallet</button>
+ <button type="button" class="wallet" data-action="deny">Deny with wallet</button>
+ <details>
+  <summary>Sign manually (e.g. cast wallet sign)</summary>
+  <p>To approve, sign:</p><pre>{{.MsgApprove}}</pre>
+  <p>To deny, sign:</p><pre>{{.MsgDeny}}</pre>
+  <input type="text" name="signature" placeholder="0x signature" size="60">
+  <button name="action" value="approve">Submit approve</button>
+  <button name="action" value="deny">Submit deny</button>
+ </details>
+{{end}}
+{{if $.TokenEnabled}}
+ <details>
+  <summary>Admin token (break-glass)</summary>
+  <input type="password" name="admin_token" placeholder="admin token">
+  <button name="action" value="approve">Approve</button>
+  <button name="action" value="deny">Deny</button>
+ </details>
+{{end}}
+</form>
+<br>
+{{end}}
 <h2>Machines</h2>
 <table>
  <tr><th>mac</th><th>role</th><th>lan ip</th><th>tunnel ip</th><th>handshake</th><th>rx</th><th>tx</th><th>wan endpoint</th><th>last config fetch</th></tr>
 {{range .Rows}} <tr><td>{{.MAC}}</td><td>{{.Role}}</td><td>{{.IP}}</td><td>{{.TunnelIP}}</td><td>{{.Handshake}}</td><td>{{.Rx}}</td><td>{{.Tx}}</td><td>{{.Endpoint}}</td><td>{{.LastFetch}}</td></tr>
 {{end}}</table>
+{{if .WalletEnabled}}
+<script>
+(function () {
+  var btn = document.getElementById('unseal-wallet');
+  if (!btn) return;
+  btn.addEventListener('click', async function () {
+    if (!window.ethereum) { alert('no wallet found'); return; }
+    try {
+      var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      var sig = await ethereum.request({ method: 'personal_sign', params: [{{.MasterMessage}}, accounts[0]] });
+      var form = document.getElementById('unseal-form');
+      form.querySelector('input[name=signature]').value = sig;
+      form.submit();
+    } catch (e) { alert('signing failed: ' + (e.message || e)); }
+  });
+})();
+document.querySelectorAll('button.wallet').forEach(function (btn) {
+  btn.addEventListener('click', async function () {
+    var form = btn.closest('form');
+    var action = btn.dataset.action;
+    var msg = action === 'approve' ? form.dataset.msgApprove : form.dataset.msgDeny;
+    if (!window.ethereum) { alert('no wallet found'); return; }
+    try {
+      var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+      var sig = await ethereum.request({ method: 'personal_sign', params: [msg, accounts[0]] });
+      form.querySelector('input[name=signature]').value = sig;
+      var act = document.createElement('input');
+      act.type = 'hidden'; act.name = 'action'; act.value = action;
+      form.appendChild(act);
+      form.submit();
+    } catch (e) { alert('signing failed: ' + (e.message || e)); }
+  });
+});
+</script>
+{{end}}
 </body></html>`))
 
 type statusRow struct {
@@ -208,17 +358,22 @@ type statusRow struct {
 
 type statusData struct {
 	Addr          string
+	Message       string
 	Version       string
 	Started       string
 	Seal          string
 	Sealed        bool
+	Refresh       bool
 	Boot          *bootSnapshot
-	Pending       []string
+	Pending       []verifyEntry
 	UndeclaredKMS []string
 	Rows          []statusRow
+	WalletEnabled bool
+	TokenEnabled  bool
+	MasterMessage string
 }
 
-func (s *server) renderStatus(w http.ResponseWriter, addr string) {
+func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 	machines, err := loadMachines(filepath.Join(s.root, "machines"))
 	if err != nil {
 		log.Printf("status: loading machines: %v", err)
@@ -230,7 +385,7 @@ func (s *server) renderStatus(w http.ResponseWriter, addr string) {
 	seal := "wireguard disabled"
 	if s.wgm != nil {
 		if wg = s.wgm.current(); wg == nil {
-			seal = "SEALED — config serving paused; unseal at /verify"
+			seal = "SEALED — config serving paused; unseal above"
 		} else {
 			seal = "unsealed — endpoint " + wg.endpoint
 		}
@@ -282,11 +437,15 @@ func (s *server) renderStatus(w http.ResponseWriter, addr string) {
 	}
 
 	data := statusData{
-		Addr:    addr,
-		Version: cmp.Or(os.Getenv("FLY_IMAGE_REF"), "dev"),
-		Seal:    seal,
-		Sealed:  s.wgm != nil && wg == nil,
-		Rows:    rows,
+		Addr:          addr,
+		Message:       msg,
+		Version:       cmp.Or(os.Getenv("FLY_IMAGE_REF"), "dev"),
+		Seal:          seal,
+		Sealed:        s.wgm != nil && wg == nil,
+		Rows:          rows,
+		WalletEnabled: len(s.adminAddrs) > 0,
+		TokenEnabled:  s.adminToken != "",
+		MasterMessage: wgderive.MasterMessage,
 	}
 	if !s.started.IsZero() {
 		data.Started = s.started.UTC().Format("2006-01-02 15:04 MST")
@@ -296,11 +455,18 @@ func (s *server) renderStatus(w http.ResponseWriter, addr string) {
 		data.Boot = &snap
 	}
 	for _, da := range s.store.pending() {
-		data.Pending = append(data.Pending, da.UserCode)
+		data.Pending = append(data.Pending, verifyEntry{
+			Auth:       da,
+			MsgApprove: approvalMessage("approve", da.UserCode, da.Nonce),
+			MsgDeny:    approvalMessage("deny", da.UserCode, da.Nonce),
+		})
 	}
 	if s.kms != nil {
 		data.UndeclaredKMS = s.kms.undeclaredSealed()
 	}
+	// Auto-refresh only when idle: a refresh would wipe a half-filled
+	// signature field on the unseal/approval forms.
+	data.Refresh = !data.Sealed && len(data.Pending) == 0
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := statusTemplate.Execute(w, data); err != nil {

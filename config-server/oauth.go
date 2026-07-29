@@ -1,18 +1,18 @@
 package main
 
-// HTTP handlers for the OAuth2 device flow (RFC 8628) and the human
-// verification page. Endpoint paths match the Talos defaults derived
-// from the talos.config URL: /device/code and /token.
+// HTTP handlers for the OAuth2 device flow (RFC 8628). Endpoint paths
+// match the Talos defaults derived from the talos.config URL:
+// /device/code and /token. Human approval lives on the /status
+// dashboard; /verify remains as the POST target for approval actions
+// and as a redirect for consoles that print the old URL.
 
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
-
-	"github.com/marnyg/talos-config/config-server/wgderive"
 )
 
 const deviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
@@ -73,8 +73,8 @@ func (s *server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"device_code":               da.DeviceCode,
 		"user_code":                 da.UserCode,
-		"verification_uri":          base + "/verify",
-		"verification_uri_complete": base + "/verify?user_code=" + da.UserCode,
+		"verification_uri":          base + "/status",
+		"verification_uri_complete": base + "/status?user_code=" + da.UserCode,
 		"expires_in":                int(deviceAuthTTL.Seconds()),
 		"interval":                  int(pollInterval.Seconds()),
 	})
@@ -104,123 +104,23 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-var verifyTemplate = template.Must(template.New("verify").Parse(`<!DOCTYPE html>
-<html>
-<head><title>Machine approval</title>
-<style>
- body { font-family: monospace; max-width: 44rem; margin: 2rem auto; }
- table { border-collapse: collapse; width: 100%; }
- td, th { border: 1px solid #999; padding: .4rem .6rem; text-align: left; }
- .msg { padding: .5rem; border: 1px solid #999; margin-bottom: 1rem; }
- pre { background: #f4f4f4; padding: .5rem; overflow-x: auto; }
- details { margin: .5rem 0; }
-</style></head>
-<body>
-<h1>Pending machine approvals</h1>
-{{if .Message}}<div class="msg">{{.Message}}</div>{{end}}
-{{if .WGSealed}}
-<div class="msg" style="border-color:#c00">
- <strong>⚠ WireGuard control channel is SEALED</strong> — config serving is paused.
- <p>Unsealing signs the master-key derivation message. <strong>This signature IS the
- fleet master key.</strong> Only ever sign it on this page or offline via
- <code>cast wallet sign</code> — never on any other site.</p>
- <form method="POST" action="/unseal" id="unseal-form">
- {{if .WalletEnabled}}<button type="button" id="unseal-wallet">Unseal with wallet</button>{{end}}
-  <details>
-   <summary>Sign manually (e.g. cast wallet sign)</summary>
-   <p>Sign exactly:</p><pre>{{.MasterMessage}}</pre>
-   <input type="text" name="signature" placeholder="0x signature" size="60">
-   <button>Submit unseal</button>
-  </details>
- </form>
-</div>
-{{end}}
-{{if not .Pending}}<p>No pending requests.</p>{{end}}
-{{range .Pending}}
-<table>
- <tr><th>User code</th><td>{{.Auth.UserCode}}</td></tr>
- {{range $k, $v := .Auth.Identity}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
- <tr><th>Requested</th><td>{{.Auth.CreatedAt.Format "15:04:05"}}</td></tr>
-</table>
-<form method="POST" action="/verify" data-msg-approve="{{.MsgApprove}}" data-msg-deny="{{.MsgDeny}}">
- <input type="hidden" name="user_code" value="{{.Auth.UserCode}}">
-{{if $.WalletEnabled}}
- <button type="button" class="wallet" data-action="approve">Approve with wallet</button>
- <button type="button" class="wallet" data-action="deny">Deny with wallet</button>
- <details>
-  <summary>Sign manually (e.g. cast wallet sign)</summary>
-  <p>To approve, sign:</p><pre>{{.MsgApprove}}</pre>
-  <p>To deny, sign:</p><pre>{{.MsgDeny}}</pre>
-  <input type="text" name="signature" placeholder="0x signature" size="60">
-  <button name="action" value="approve">Submit approve</button>
-  <button name="action" value="deny">Submit deny</button>
- </details>
-{{end}}
-{{if $.TokenEnabled}}
- <details>
-  <summary>Admin token (break-glass)</summary>
-  <input type="password" name="admin_token" placeholder="admin token">
-  <button name="action" value="approve">Approve</button>
-  <button name="action" value="deny">Deny</button>
- </details>
-{{end}}
-</form>
-<br>
-{{end}}
-{{if .WalletEnabled}}
-<script>
-(function () {
-  var btn = document.getElementById('unseal-wallet');
-  if (!btn) return;
-  btn.addEventListener('click', async function () {
-    if (!window.ethereum) { alert('no wallet found'); return; }
-    try {
-      var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-      var sig = await ethereum.request({ method: 'personal_sign', params: [{{.MasterMessage}}, accounts[0]] });
-      var form = document.getElementById('unseal-form');
-      form.querySelector('input[name=signature]').value = sig;
-      form.submit();
-    } catch (e) { alert('signing failed: ' + (e.message || e)); }
-  });
-})();
-document.querySelectorAll('button.wallet').forEach(function (btn) {
-  btn.addEventListener('click', async function () {
-    var form = btn.closest('form');
-    var action = btn.dataset.action;
-    var msg = action === 'approve' ? form.dataset.msgApprove : form.dataset.msgDeny;
-    if (!window.ethereum) { alert('no wallet found'); return; }
-    try {
-      var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-      var sig = await ethereum.request({ method: 'personal_sign', params: [msg, accounts[0]] });
-      form.querySelector('input[name=signature]').value = sig;
-      var act = document.createElement('input');
-      act.type = 'hidden'; act.name = 'action'; act.value = action;
-      form.appendChild(act);
-      form.submit();
-    } catch (e) { alert('signing failed: ' + (e.message || e)); }
-  });
-});
-</script>
-{{end}}
-</body></html>`))
-
+// verifyEntry is a pending device authorization plus the canonical
+// messages an admin signs to act on it. Rendered on /status.
 type verifyEntry struct {
 	Auth       *deviceAuth
 	MsgApprove string
 	MsgDeny    string
 }
 
-type verifyPageData struct {
-	Pending       []verifyEntry
-	Message       string
-	WalletEnabled bool
-	TokenEnabled  bool
-	WGSealed      bool
-	MasterMessage string
-}
-
+// handleVerifyPage redirects to the /status dashboard, which hosts the
+// approval UI. Kept so consoles showing an old verification_uri (and
+// bookmarks) still land somewhere useful.
 func (s *server) handleVerifyPage(w http.ResponseWriter, r *http.Request) {
-	s.renderVerify(w, "")
+	target := "/status"
+	if uc := r.URL.Query().Get("user_code"); uc != "" {
+		target += "?user_code=" + url.QueryEscape(uc)
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func (s *server) handleVerifyPost(w http.ResponseWriter, r *http.Request) {
@@ -248,12 +148,12 @@ func (s *server) handleVerifyPost(w http.ResponseWriter, r *http.Request) {
 		err = s.store.deny(userCode)
 	}
 	if err != nil {
-		s.renderVerify(w, fmt.Sprintf("%s: %v", userCode, err))
+		s.respondAction(w, r, fmt.Sprintf("%s: %v", userCode, err))
 		return
 	}
 
 	log.Printf("device auth %sd: user_code=%s", action, userCode)
-	s.renderVerify(w, fmt.Sprintf("%s %sd", userCode, action))
+	s.respondAction(w, r, fmt.Sprintf("%s %sd", userCode, action))
 }
 
 // authorizeAdmin accepts either a wallet signature over the canonical
@@ -284,30 +184,6 @@ func (s *server) authorizeAdmin(r *http.Request, userCode, action string) bool {
 		return true
 	}
 	return false
-}
-
-func (s *server) renderVerify(w http.ResponseWriter, msg string) {
-	var entries []verifyEntry
-	for _, da := range s.store.pending() {
-		entries = append(entries, verifyEntry{
-			Auth:       da,
-			MsgApprove: approvalMessage("approve", da.UserCode, da.Nonce),
-			MsgDeny:    approvalMessage("deny", da.UserCode, da.Nonce),
-		})
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	err := verifyTemplate.Execute(w, verifyPageData{
-		Pending:       entries,
-		Message:       msg,
-		WalletEnabled: len(s.adminAddrs) > 0,
-		TokenEnabled:  s.adminToken != "",
-		WGSealed:      s.wgm != nil && s.wgm.sealed(),
-		MasterMessage: wgderive.MasterMessage,
-	})
-	if err != nil {
-		log.Printf("rendering verify page: %v", err)
-	}
 }
 
 // bearerToken extracts the token from the Authorization header, or "".

@@ -53,7 +53,7 @@ internal_port = 8081
 # WireGuard control channel. UDP on fly requires a dedicated IPv4 and
 # binding fly-global-services; machines dial out, so the app can no
 # longer scale to zero. No key secret at rest: the server starts
-# sealed and an admin wallet-signature unseals it at /verify.
+# sealed and an admin wallet-signature unseals it at /status.
 [[services]]
 protocol = "udp"
 internal_port = 51820

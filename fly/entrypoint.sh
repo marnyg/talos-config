@@ -11,7 +11,7 @@ cp -R /app/talos/. /dev/shm/talos/
 
 # WireGuard control channel: enabled when WG_ENDPOINT is set. Starts
 # SEALED — no key material at rest; an admin unseals at runtime by
-# signing the master message at /verify (wallet). WG_SERVER_PUBKEY
+# signing the master message at /status (wallet). WG_SERVER_PUBKEY
 # pins the expected derived pubkey so a wrong-wallet unseal fails.
 WG_ARGS=""
 if [ -n "${WG_ENDPOINT:-}" ]; then

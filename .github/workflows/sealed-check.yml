@@ -1,7 +1,7 @@
 # Pings the config server's /sealed endpoint. A fly restart re-seals
 # the WG control channel (by design — no key material at rest), which
 # silently takes the tunnel and auto-bootstrap down until an admin
-# signs at /verify. This check turns that silent state into a failing
+# signs at /status. This check turns that silent state into a failing
 # workflow (GitHub emails the repo owner on failure).
 #
 # Deliberately NOT a fly health check: fly would restart a "failing"
@@ -25,6 +25,6 @@ jobs:
           code=${body##*$'\n'}
           echo "response: $body"
           if [ "$code" != "200" ]; then
-            echo "::error::config server is SEALED (or down) — unseal at https://marnyg-talos-config.fly.dev/verify"
+            echo "::error::config server is SEALED (or down) — unseal at https://marnyg-talos-config.fly.dev/status"
             exit 1
           fi

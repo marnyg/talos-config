@@ -45,7 +45,7 @@ func (s *server) handleEnrollChallenge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.wgm.sealed() {
-		http.Error(w, "sealed: an admin must unseal the control channel at /verify", http.StatusServiceUnavailable)
+		http.Error(w, "sealed: an admin must unseal the control channel at /status", http.StatusServiceUnavailable)
 		return
 	}
 	nonce := s.sessions.issueNonce()
@@ -91,7 +91,7 @@ func (s *server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	wg := s.wgm.current()
 	if wg == nil {
-		http.Error(w, "sealed: an admin must unseal the control channel at /verify", http.StatusServiceUnavailable)
+		http.Error(w, "sealed: an admin must unseal the control channel at /status", http.StatusServiceUnavailable)
 		return
 	}
 	cfg, err := wg.adminWGQuick(name)

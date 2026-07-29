@@ -107,9 +107,9 @@ talos.config.oauth.extra_variable=serial
 (`extra_variable` must be repeated per variable — Talos rejects a
 comma-separated list with "unsupported variable name".)
 
-Talos hits `POST /device/code` (sending its hardware identity), prints a user code on the console, and polls `POST /token`. A human approves the machine on `GET /verify`. Tokens are **single-use** and **bound to the MAC** captured at device-auth time — one approval serves exactly one config, to exactly that machine. All flow state is in-memory; a server restart just restarts the flow on the machine console.
+Talos hits `POST /device/code` (sending its hardware identity), prints a user code on the console, and polls `POST /token`. A human approves the machine on the `/status` dashboard (SIWE session login; `GET /verify` redirects there). Tokens are **single-use** and **bound to the MAC** captured at device-auth time — one approval serves exactly one config, to exactly that machine. All flow state is in-memory; a server restart just restarts the flow on the machine console.
 
-Approval on `/verify` is authorized by either (in order of preference):
+Viewing `/status` requires a session (wallet login, or the admin token as break-glass). Each approval action is authorized independently of the session by either (in order of preference):
 
 1. **Wallet signature** (`--admin-address 0x...,0x...`) — the admin signs a canonical message (EIP-191 `personal_sign`) binding action + user code + a per-request nonce. Works via browser wallet (in-page button) or headless via `cast wallet sign` + paste. Verification is offline signature recovery against the allowlist — no OIDC provider, no chain RPC (EOA only, by design).
 2. **Admin token** (`CONFIG_SERVER_ADMIN_TOKEN` env) — break-glass fallback.
@@ -147,7 +147,7 @@ wgup -name phone -print   # enroll another device, just print the config path
 Enrollment (`GET`/`POST /wg/enroll`) never touches the fleet master:
 the wallet signs an ordinary single-use challenge, the server returns
 the derived wg-quick config over TLS. The master signature is only
-ever signed at `/verify` (unseal) or used offline with
+ever signed at `/status` (unseal) or used offline with
 `wgping -sig <sig> …` as break-glass.
 
 ### Recovery USB

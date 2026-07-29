@@ -43,7 +43,7 @@ type machine struct {
 	// Name is the machine's tunnel DNS label (<name>.<domain>);
 	// defaults to the MAC with dashes.
 	Name string `yaml:"name"`
-	// UUID is the node's SMBIOS UUID (shown on /verify at approval).
+	// UUID is the node's SMBIOS UUID (shown on /status at approval).
 	// It is the durable KMS unseal allowlist: deleting it revokes.
 	UUID string `yaml:"uuid"`
 	// DiskEncryption injects systemDiskEncryption (KMS + recovery
@@ -142,7 +142,7 @@ type server struct {
 	sessions     *sessionStore // SIWE sessions for /status
 	requireAuth  bool
 	clientID     string        // expected OAuth client_id ("" = accept any)
-	adminToken   string        // break-glass fallback for /verify approval
+	adminToken   string        // break-glass fallback for approval/login
 	adminAddrs   []string      // allowlisted wallet addresses (lowercase 0x)
 	wgm          *wgManager    // nil = WireGuard disabled entirely
 	boot         *bootstrapper // nil unless --auto-bootstrap
@@ -209,7 +209,7 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			// Serving a config without the tunnel would strand the
 			// machine outside the control channel — refuse instead.
 			log.Printf("refusing config for %s: wireguard is sealed", mac)
-			http.Error(w, "sealed: an admin must unseal the control channel at /verify", http.StatusServiceUnavailable)
+			http.Error(w, "sealed: an admin must unseal the control channel at /status", http.StatusServiceUnavailable)
 			return
 		}
 		p, err := wg.machinePatch(mac, m)
@@ -313,7 +313,7 @@ func main() {
 
 	adminToken := os.Getenv("CONFIG_SERVER_ADMIN_TOKEN")
 	if *requireAuth && adminToken == "" && len(addrs) == 0 {
-		log.Fatal("--require-auth needs --admin-address and/or CONFIG_SERVER_ADMIN_TOKEN (something must gate /verify)")
+		log.Fatal("--require-auth needs --admin-address and/or CONFIG_SERVER_ADMIN_TOKEN (something must gate machine approval)")
 	}
 
 	var wgm *wgManager
@@ -348,7 +348,7 @@ func main() {
 			if len(addrs) == 0 {
 				log.Fatal("sealed wireguard needs --admin-address (a wallet must be able to unseal)")
 			}
-			log.Printf("wireguard SEALED: an admin must sign %q at /verify to unseal", wgderive.MasterMessage)
+			log.Printf("wireguard SEALED: an admin must sign %q at /status to unseal", wgderive.MasterMessage)
 		}
 	}
 

@@ -189,7 +189,7 @@ func (s *server) handleUnseal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	s.renderVerify(w, "control channel unsealed")
+	s.respondAction(w, r, "control channel unsealed")
 }
 
 // handleSealed is a monitoring endpoint: 200 when healthy (unsealed or

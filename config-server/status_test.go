@@ -64,13 +64,14 @@ func loginNonce(t *testing.T, c *http.Client, base string) string {
 }
 
 func TestStatusLeaksNothingLoggedOut(t *testing.T) {
-	_, ts := newStatusServer(t)
+	s, ts := newStatusServer(t)
+	da := s.store.begin("talos-pxe", map[string]string{"mac": testMAC, "uuid": "1234-5678"})
 
 	code, body := get(t, http.DefaultClient, ts.URL+"/status")
 	if code != http.StatusOK {
 		t.Fatalf("got %d", code)
 	}
-	for _, leak := range []string{testMAC, "Machines", "bootstrap", wellKnownAddr} {
+	for _, leak := range []string{testMAC, "Machines", "bootstrap", wellKnownAddr, da.UserCode, "1234-5678"} {
 		if strings.Contains(body, leak) {
 			t.Errorf("logged-out page leaks %q", leak)
 		}
@@ -80,8 +81,9 @@ func TestStatusLeaksNothingLoggedOut(t *testing.T) {
 	}
 }
 
-func TestStatusDisabledWithoutAdminAddrs(t *testing.T) {
+func TestStatusDisabledWithoutAdminCreds(t *testing.T) {
 	s := newTestServer(t)
+	s.adminToken = "" // no wallet allowlist, no break-glass token
 	ts := httptest.NewServer(s.mux())
 	defer ts.Close()
 
@@ -160,6 +162,152 @@ func TestStatusLoginRejectsWrongWallet(t *testing.T) {
 	if code, body := get(t, client, ts.URL+"/status"); code != http.StatusOK || strings.Contains(body, testMAC) {
 		t.Error("wrong wallet still ended up with a session")
 	}
+}
+
+func TestStatusLoginWithAdminToken(t *testing.T) {
+	_, ts := newStatusServer(t) // newTestServer sets adminToken
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+
+	// Wrong token: no session.
+	resp, err := client.PostForm(ts.URL+"/status/login", url.Values{"admin_token": {"wrong"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("wrong token: got %d, want 403", resp.StatusCode)
+	}
+
+	// Correct token opens a break-glass session.
+	resp, err = client.PostForm(ts.URL+"/status/login", url.Values{"admin_token": {"test-admin-token"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	code, body := get(t, client, ts.URL+"/status")
+	if code != http.StatusOK || !strings.Contains(body, testMAC) {
+		t.Fatalf("token session: got %d, machine visible: %v", code, strings.Contains(body, testMAC))
+	}
+	if !strings.Contains(body, tokenSessionAddr) {
+		t.Error("break-glass session not labeled as such")
+	}
+}
+
+func TestVerifyRedirectsToStatus(t *testing.T) {
+	_, ts := newStatusServer(t)
+
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Get(ts.URL + "/verify?user_code=ABCD-1234")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("GET /verify: got %d, want 303", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/status?user_code=ABCD-1234" {
+		t.Fatalf("redirect location: got %q", loc)
+	}
+}
+
+// login opens a wallet session and returns a cookie-carrying client.
+func login(t *testing.T, ts *httptest.Server) *http.Client {
+	t.Helper()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	nonce := loginNonce(t, client, ts.URL)
+	resp, err := client.PostForm(ts.URL+"/status/login", url.Values{
+		"nonce": {nonce}, "signature": {personalSign(t, testKey(t), loginMessage(nonce))},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return client
+}
+
+func TestStatusShowsPendingApprovals(t *testing.T) {
+	s, ts := newStatusServer(t)
+	da := s.store.begin("talos-pxe", map[string]string{"mac": testMAC, "uuid": "1234-5678"})
+
+	client := login(t, ts)
+	code, body := get(t, client, ts.URL+"/status")
+	if code != http.StatusOK {
+		t.Fatalf("status: got %d", code)
+	}
+	for _, want := range []string{da.UserCode, "1234-5678", "Pending approvals", `action="/verify"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("status page missing %q", want)
+		}
+	}
+
+	// Approving from the dashboard (admin token path) re-renders it.
+	resp, err := client.PostForm(ts.URL+"/verify", url.Values{
+		"user_code": {da.UserCode}, "action": {"approve"}, "admin_token": {"test-admin-token"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("approve: got %d", resp.StatusCode)
+	}
+	for _, want := range []string{da.UserCode + " approved", "Cluster status"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("post-approve page missing %q", want)
+		}
+	}
+}
+
+func TestStatusShowsUnsealFormWhenSealed(t *testing.T) {
+	m := testWGManager(t, []string{wellKnownAddr}, "")
+	s := &server{
+		root:       m.root,
+		store:      newAuthStore(),
+		sessions:   newSessionStore(),
+		adminAddrs: []string{wellKnownAddr},
+		wgm:        m,
+	}
+	ts := httptest.NewServer(s.mux())
+	defer ts.Close()
+
+	client := login(t, ts)
+	code, body := get(t, client, ts.URL+"/status")
+	if code != http.StatusOK {
+		t.Fatalf("status: got %d", code)
+	}
+	for _, want := range []string{"SEALED", `action="/unseal"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("sealed status page missing %q", want)
+		}
+	}
+
+	// Unsealing from the dashboard re-renders it, form gone.
+	resp, err := client.PostForm(ts.URL+"/unseal", url.Values{"signature": {unsealSig(t)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unseal: got %d", resp.StatusCode)
+	}
+	if !strings.Contains(body, "control channel unsealed") || strings.Contains(body, `action="/unseal"`) {
+		t.Error("post-unseal page should confirm and drop the unseal form")
+	}
+}
+
+func readBody(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 func TestStatusLoginNonceSingleUse(t *testing.T) {
