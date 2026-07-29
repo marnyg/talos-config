@@ -83,7 +83,7 @@ func TestHTTPSignatureApproval(t *testing.T) {
 	defer ts.Close()
 
 	priv := testKey(t)
-	da := s.store.begin("talos-pxe", map[string]string{"mac": "aa:bb:cc:dd:ee:ff"})
+	da := s.store.begin(authKindMachine, "talos-pxe", map[string]string{"mac": "aa:bb:cc:dd:ee:ff"})
 
 	post := func(action, sig string) int {
 		resp, err := http.PostForm(ts.URL+"/verify", url.Values{
@@ -123,7 +123,7 @@ func TestHTTPSignatureApproval(t *testing.T) {
 	}
 
 	// Admin token path is disabled when unset.
-	da2 := s.store.begin("talos-pxe", nil)
+	da2 := s.store.begin(authKindMachine, "talos-pxe", nil)
 	resp, err := http.PostForm(ts.URL+"/verify", url.Values{
 		"user_code": {da2.UserCode}, "action": {"approve"}, "admin_token": {"anything"},
 	})

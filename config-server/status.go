@@ -357,6 +357,7 @@ server restart or it will not be able to unlock its disks.</div>
 {{range .Pending}}
 <table>
  <tr><th>User code</th><td>{{.Auth.UserCode}}</td></tr>
+ <tr><th>kind</th><td>{{.Auth.Kind}}</td></tr>
  {{range $k, $v := .Auth.Identity}}<tr><th>{{$k}}</th><td>{{$v}}</td></tr>{{end}}
  <tr><th>Requested</th><td>{{.Auth.CreatedAt.Format "15:04:05"}}</td></tr>
 </table>

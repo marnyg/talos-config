@@ -47,7 +47,7 @@
             # store path matching the hash, so a stale-but-matching vendor
             # dir survives `go mod tidy`. Force a recompute by setting a
             # bogus hash and reading nix's "got:" line.
-            vendorHash = "sha256-0PjzsdVvS8ysAHDBlUqbGDGeCA3QBxZWSvPUCsBeCwg=";
+            vendorHash = "sha256-Jm1E850P4cnxZEUBgOD99nUonyKrp2rkGcUW63ODu2w=";
           };
 
           packages.config-server = pkgs.writeShellApplication {

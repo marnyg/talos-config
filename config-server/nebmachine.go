@@ -100,12 +100,17 @@ func (n *nebManager) nebMachinePatch(master []byte, mac string, m machine, machi
 		return "", fmt.Errorf("machine %s (%q) is not in the mesh zone", mac, name)
 	}
 
+	blocklist, err := loadMeshBlocklist(n.root)
+	if err != nil {
+		return "", fmt.Errorf("loading mesh blocklist: %w", err)
+	}
 	cfg, err := nodeNebulaConfig(nebNodeParams{
-		master:   master,
-		name:     name,
-		addr:     addr,
-		subnet:   n.subnet,
-		endpoint: n.endpoint,
+		master:    master,
+		name:      name,
+		addr:      addr,
+		subnet:    n.subnet,
+		endpoint:  n.endpoint,
+		blocklist: blocklist,
 	})
 	if err != nil {
 		return "", err
@@ -162,11 +167,12 @@ type nebConfigFileYAML struct {
 
 // nebNodeParams is everything needed to render one node's config.
 type nebNodeParams struct {
-	master   []byte
-	name     string       // nebula/DNS name; also the cert name
-	addr     netip.Addr   // overlay address
-	subnet   netip.Prefix // mesh CIDR
-	endpoint string       // hub's public host:port, for static_host_map
+	master    []byte
+	name      string       // nebula/DNS name; also the cert name
+	addr      netip.Addr   // overlay address
+	subnet    netip.Prefix // mesh CIDR
+	endpoint  string       // hub's public host:port, for static_host_map
+	blocklist []string     // revoked cert fingerprints (mesh-blocklist.txt)
 }
 
 // nodeNebulaConfig renders a node's nebula config.
@@ -195,7 +201,7 @@ func nodeNebulaConfig(p nebNodeParams) ([]byte, error) {
 		// Paths, not inline PEM (the hub's own config inlines it): the
 		// key material is mounted beside the config by the same
 		// ExtensionServiceConfig document.
-		PKI: nebPKIYAML{CA: nebNodeCAPath, Cert: nebNodeCertPath, Key: nebNodeKeyPath},
+		PKI: nebPKIYAML{CA: nebNodeCAPath, Cert: nebNodeCertPath, Key: nebNodeKeyPath, Blocklist: p.blocklist},
 		// The one thing a node knows without being told: where the hub
 		// is. Everything else it learns from the hub.
 		StaticHostMap: map[string][]string{hubIP.String(): {p.endpoint}},

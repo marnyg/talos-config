@@ -67,6 +67,7 @@ type nebHubParams struct {
 	listenPort int          // public UDP port
 	serveDNS   bool         // hub answers overlay DNS (nebdns, not nebula's)
 	logLevel   string       // nebula log level ("" = info)
+	blocklist  []string     // revoked cert fingerprints (mesh-blocklist.txt)
 	now        func() time.Time
 }
 
@@ -95,6 +96,10 @@ type nebPKIYAML struct {
 	CA   string `yaml:"ca"`
 	Cert string `yaml:"cert"`
 	Key  string `yaml:"key"`
+	// Blocklist is the git-managed revocation list (nebblock.go),
+	// present in every composed config so a revoked cert is refused
+	// mesh-wide.
+	Blocklist []string `yaml:"blocklist,omitempty"`
 }
 
 type nebLighthouseYAML struct {
@@ -194,9 +199,10 @@ func hubNebulaConfig(p nebHubParams) ([]byte, error) {
 
 	cfg := nebConfigYAML{
 		PKI: nebPKIYAML{
-			CA:   string(caPEM),
-			Cert: string(crtPEM),
-			Key:  string(nebderive.HostKeyPEM(priv)),
+			CA:        string(caPEM),
+			Cert:      string(crtPEM),
+			Key:       string(nebderive.HostKeyPEM(priv)),
+			Blocklist: p.blocklist,
 		},
 		StaticHostMap: map[string][]string{},
 		Lighthouse: nebLighthouseYAML{

@@ -1,0 +1,8 @@
+# Mesh certificate revocations. One lowercase hex SHA-256 cert
+# fingerprint per line; '#' starts a comment. Compiled into
+# pki.blocklist of every config the hub composes (its own, nodes,
+# devices). Enforcement is propagation: redeploy the hub, re-apply the
+# nodes (nix run .#apply).
+#
+# Get a fingerprint from the hub's enrollment log, or:
+#   nebula-cert print -json -path <cert> | jq -r .fingerprint

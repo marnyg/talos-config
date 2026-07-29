@@ -174,12 +174,17 @@ func (m *nebManager) deviceConfig(master []byte, d nebDevice) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshalling cert for %q: %w", d.name, err)
 	}
+	blocklist, err := loadMeshBlocklist(m.root)
+	if err != nil {
+		return nil, fmt.Errorf("loading mesh blocklist: %w", err)
+	}
 
 	cfg := nebConfigYAML{
 		PKI: nebPKIYAML{
-			CA:   string(caPEM),
-			Cert: string(crtPEM),
-			Key:  string(nebderive.HostKeyPEM(priv)),
+			CA:        string(caPEM),
+			Cert:      string(crtPEM),
+			Key:       string(nebderive.HostKeyPEM(priv)),
+			Blocklist: blocklist,
 		},
 		StaticHostMap: map[string][]string{hubIP.String(): {m.endpoint}},
 		Lighthouse: nebLighthouseYAML{

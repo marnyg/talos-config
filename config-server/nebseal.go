@@ -123,12 +123,18 @@ func (m *nebManager) unsealWithMaster(master []byte) error {
 		}
 	}
 
+	blocklist, err := loadMeshBlocklist(m.root)
+	if err != nil {
+		return m.fail(fmt.Errorf("loading mesh blocklist: %w", err))
+	}
+
 	cfg, err := hubNebulaConfig(nebHubParams{
 		master:     master,
 		subnet:     m.subnet,
 		listenHost: m.listenHost,
 		listenPort: m.port,
 		serveDNS:   m.dnsZone != "",
+		blocklist:  blocklist,
 	})
 	if err != nil {
 		return m.fail(fmt.Errorf("rendering mesh config: %w", err))

@@ -29,7 +29,7 @@ func newTestStore() (*authStore, *fakeClock) {
 func TestDeviceFlowHappyPath(t *testing.T) {
 	s, clock := newTestStore()
 
-	da := s.begin("talos-pxe", map[string]string{"mac": "b0-41-6f-15-3b-8f", "uuid": "abc"})
+	da := s.begin(authKindMachine, "talos-pxe", map[string]string{"mac": "b0-41-6f-15-3b-8f", "uuid": "abc"})
 
 	if _, errCode := s.poll(da.DeviceCode); errCode != errAuthorizationPending {
 		t.Fatalf("expected authorization_pending, got %q", errCode)
@@ -67,7 +67,7 @@ func TestDeviceFlowHappyPath(t *testing.T) {
 
 func TestDeviceFlowDenyAndSlowDown(t *testing.T) {
 	s, clock := newTestStore()
-	da := s.begin("talos-pxe", nil)
+	da := s.begin(authKindMachine, "talos-pxe", nil)
 
 	if _, errCode := s.poll(da.DeviceCode); errCode != errAuthorizationPending {
 		t.Fatalf("expected authorization_pending, got %q", errCode)
@@ -88,7 +88,7 @@ func TestDeviceFlowDenyAndSlowDown(t *testing.T) {
 
 func TestDeviceAuthExpiry(t *testing.T) {
 	s, clock := newTestStore()
-	da := s.begin("talos-pxe", nil)
+	da := s.begin(authKindMachine, "talos-pxe", nil)
 
 	clock.advance(deviceAuthTTL + time.Second)
 	if _, errCode := s.poll(da.DeviceCode); errCode != errInvalidGrant {
@@ -101,7 +101,7 @@ func TestDeviceAuthExpiry(t *testing.T) {
 
 func TestTokenNotBoundWithoutMAC(t *testing.T) {
 	s, clock := newTestStore()
-	da := s.begin("talos-pxe", map[string]string{"uuid": "abc"}) // no mac sent
+	da := s.begin(authKindMachine, "talos-pxe", map[string]string{"uuid": "abc"}) // no mac sent
 	if err := s.approve(da.UserCode); err != nil {
 		t.Fatal(err)
 	}

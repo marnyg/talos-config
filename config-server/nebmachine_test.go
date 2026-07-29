@@ -99,7 +99,7 @@ func TestNodeNebulaConfigValidates(t *testing.T) {
 	if err := yaml.Unmarshal(raw, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	if parsed.PKI != (nebPKIYAML{CA: nebNodeCAPath, Cert: nebNodeCertPath, Key: nebNodeKeyPath}) {
+	if parsed.PKI.CA != nebNodeCAPath || parsed.PKI.Cert != nebNodeCertPath || parsed.PKI.Key != nebNodeKeyPath {
 		t.Fatalf("pki = %+v, want the extension's mount paths", parsed.PKI)
 	}
 	parsed.PKI = nebPKIYAML{

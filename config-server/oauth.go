@@ -66,7 +66,7 @@ func (s *server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	da := s.store.begin(clientID, identity)
+	da := s.store.begin(authKindMachine, clientID, identity)
 	base := externalBase(r)
 
 	log.Printf("device auth started: user_code=%s identity=%v", da.UserCode, identity)

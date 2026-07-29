@@ -28,6 +28,18 @@ const (
 	errInvalidGrant         = "invalid_grant"
 )
 
+// authKind separates what a grant is *for*. Set server-side at flow
+// start, never from client input: a machine token must never redeem a
+// mesh device config and vice versa — the machine config carries wg
+// keys and disk passphrases, the device config carries a mesh identity,
+// and the only thing keeping them apart is this field.
+type authKind string
+
+const (
+	authKindMachine authKind = "machine"
+	authKindTV      authKind = "tv"
+)
+
 type authStatus int
 
 const (
@@ -42,6 +54,7 @@ type deviceAuth struct {
 	UserCode   string
 	Nonce      string // uniquifies the SIWE approval message
 	ClientID   string
+	Kind       authKind
 	// Identity holds the extra variables Talos sent in the device auth
 	// request (talos.config.oauth.extra_variable=uuid,mac,serial).
 	Identity  map[string]string
@@ -55,6 +68,7 @@ type deviceAuth struct {
 // tokenGrant is a minted access token: single-use, bound to the identity
 // captured at device-auth time.
 type tokenGrant struct {
+	Kind      authKind
 	Identity  map[string]string
 	ExpiresAt time.Time
 	used      bool
@@ -104,7 +118,7 @@ func newUserCode() string {
 }
 
 // begin registers a new device authorization and returns it.
-func (s *authStore) begin(clientID string, identity map[string]string) *deviceAuth {
+func (s *authStore) begin(kind authKind, clientID string, identity map[string]string) *deviceAuth {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.expireLocked()
@@ -115,6 +129,7 @@ func (s *authStore) begin(clientID string, identity map[string]string) *deviceAu
 		UserCode:   newUserCode(),
 		Nonce:      randomHex(16),
 		ClientID:   clientID,
+		Kind:       kind,
 		Identity:   identity,
 		CreatedAt:  now,
 		ExpiresAt:  now.Add(deviceAuthTTL),
@@ -203,6 +218,7 @@ func (s *authStore) poll(deviceCode string) (token string, errCode string) {
 	s.removeLocked(da)
 	token = randomHex(32)
 	s.tokens[token] = &tokenGrant{
+		Kind:      da.Kind,
 		Identity:  da.Identity,
 		ExpiresAt: now.Add(tokenTTL),
 	}
@@ -214,9 +230,10 @@ var (
 	errWrongTarget = errors.New("token not valid for requested machine")
 )
 
-// validate checks that token exists, is unused, unexpired, and — if the
-// grant captured a mac identity — that it matches the requested MAC.
-// It does not consume the token; call consume after successfully serving.
+// validate checks that token exists, is unused, unexpired, is a
+// *machine* grant, and — if the grant captured a mac identity — that it
+// matches the requested MAC. It does not consume the token; call
+// consume after successfully serving.
 func (s *authStore) validate(token, mac string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -225,12 +242,36 @@ func (s *authStore) validate(token, mac string) error {
 	if !ok || g.used || s.now().After(g.ExpiresAt) {
 		return errBadToken
 	}
+	if g.Kind != authKindMachine {
+		return errWrongTarget
+	}
 	if bound, ok := g.Identity["mac"]; ok && bound != "" {
 		if normalizeMAC(bound) != normalizeMAC(mac) {
 			return errWrongTarget
 		}
 	}
 	return nil
+}
+
+// meshDeviceFor validates a TV-kind token and returns the mesh device
+// name it was bound to at flow start. It does not consume the token;
+// call consume after successfully serving the config.
+func (s *authStore) meshDeviceFor(token string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	g, ok := s.tokens[token]
+	if !ok || g.used || s.now().After(g.ExpiresAt) {
+		return "", errBadToken
+	}
+	if g.Kind != authKindTV {
+		return "", errWrongTarget
+	}
+	name := g.Identity["mesh_device"]
+	if name == "" {
+		return "", errBadToken
+	}
+	return name, nil
 }
 
 // consume marks the token used. Single-use: subsequent validates fail.
