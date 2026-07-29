@@ -5,8 +5,8 @@
 
 ## Last session
 
-2026-07-29 (evening) — **Mesh v2 phase 1: node side deployed and
-verified; device enrollment written, not yet deployed.**
+2026-07-29 (evening) — **Mesh v2 phase 1: node and device sides both
+deployed and verified. Three of four kill criteria cleared.**
 
 - Deployed: cp1 on schematic `011ccccd…`, `ext-nebula` Running,
   `nebula0` at `10.42.218.125/16`. Handshake confirmed both directions,
@@ -25,16 +25,24 @@ verified; device enrollment written, not yet deployed.**
 - Verified with stock `nebula-cert`: laptop → `[admins]`, androidtv →
   `[media]`, 90-day windows, addresses matching the derivation.
 
+- Measured (see `technical/guides/deployment.md`): direct LAN path at
+  1.8ms with 0% loss (criterion 2, LAN), and 229/168 Mbit/s over the mesh
+  against a 326/182 LAN baseline — 2–3× the 4K-remux floor, so criterion
+  3 passes.
+
 ## Loose threads
 
 - **Uncommitted `Dockerfile` change** (`golang:1.25`→`1.26`), apparently
   from making the deploy work. Three places pin the toolchain — `go.mod`,
   `buildGo126Module` in `flake.nix`, the Dockerfile tag — and they must
   move together.
-- **Nothing enrolled yet**: the laptop is not on the mesh until a
-  `fly deploy` picks up `/mesh/enroll`, then `nebup`. Until a second
-  member exists there is nothing to measure, so the dogfood clock has not
-  started.
+- **The one remaining design risk is criterion 2's remote case**: laptop
+  on a CGNAT hotspot against the home router. LAN punching proves little
+  about hard NAT, and if that pair falls back to relay the whole plan's
+  first driver evaporates. One `ping` decides it — under ~20ms is direct,
+  because fly is 20ms away.
+- cp1's stored config predates the `media` firewall rule, so it needs a
+  re-apply before any TV can reach Jellyfin over the mesh.
 - certSANs still deliberately absent (phase 2 step 1) — `talosctl` stays
   on wg0.
 - TV onboarding via device-flow + QR is designed and filed (task 38); the
@@ -44,9 +52,10 @@ verified; device enrollment written, not yet deployed.**
 
 ## Suggested next steps
 
-- `fly deploy`, wallet unseal, then `nebup` on the laptop; confirm a
-  direct (not relayed) path to cp1 and start the ≥1 week dogfood.
-- Measure what the kill criteria actually ask for: direct-vs-relay rate
-  from nebula logs, and throughput against the ~80 Mbps floor.
-- Then decide the TV path (task 38) and revocation policy (dc04e3e8)
-  before any shared-space device enrolls.
+- Run criterion 2's remote test from a phone hotspot. It is the last
+  gate that could still send the whole plan back to "keep wg0".
+- Start the ≥1 week dogfood — ordinary use, watching for relay fallback.
+- Settle the revocation policy (dc04e3e8) before building the TV path
+  (thread 37), since a shared-space cert is exactly what revocation is
+  for. Phase 2 (uuid 1afafb50) stays closed until the criteria clear;
+  invariant 5's dual-overlay exception is what a stalled phase 2 costs.
