@@ -23,6 +23,17 @@ data point.**
   any measurement with wg up is poisoned.
 - Toolchain pin committed (`55a116a`): go 1.26 in Dockerfile matches
   go.mod and `buildGo126Module`; all three move together.
+- **TV onboarding built + revocation decided** (`f2cc4b7`, after the
+  wrap): `/mesh/tv` device-flow page (QR → `/status` approval, media
+  group only, enforced twice), token kinds (machine|tv) closing a
+  cross-redemption hole, and `talos/mesh-blocklist.txt` →
+  `pki.blocklist` in every composed config. Revocation thread dc04e3e8
+  closed as +decision: git blocklist, 90d device certs stand. Tests
+  green, nix build green (new dep go-qrcode, vendorHash refreshed).
+  **Not deployed** — and deploying re-seals the hub, so do NOT deploy
+  before the office punch test unless you unseal right after (a sealed
+  hub takes the lighthouse down and the test would read as a false
+  relay/failure).
 
 ## Loose threads
 
