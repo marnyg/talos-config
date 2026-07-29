@@ -36,7 +36,9 @@ trial — see the kill criteria in `../../mesh-v2-nebula.md`.
   hub as `80.212.67.203:4242` — so NAT mapping is visible and direct
   punching is possible.
 - Node inbound firewall: icmp from any member, everything from cert name
-  `hub`, everything from group `admins`. Machines are not in that list.
+  `hub`, everything from group `admins`, and — since the 2026-07-29
+  re-apply — Jellyfin's NodePort (tcp/30096) from group `media`.
+  Machines are not in that list.
 - **No mesh certSANs yet** (phase 2 step 1), so `talosctl -e
   cp1.mesh.internal` fails TLS. Use wg0 for talosctl until then.
 - The CA fingerprint is re-derived on every unseal and is the value
