@@ -13,6 +13,13 @@ spec:
       labels:
         app: jellyfin
     spec:
+      # The SSO plugin's code exchange dials the issuer server-side;
+      # pods cannot resolve .mesh.internal (Talos host DNS serves no
+      # /etc/hosts entries to kube-dns — siderolabs/talos#9822), so pin
+      # cp1's derived mesh address, same as argocd-server/oauth2-proxy.
+      hostAliases:
+        - ip: 10.42.218.125
+          hostnames: [auth.cp1.mesh.internal]
       containers:
         - name: jellyfin
           image: lscr.io/linuxserver/jellyfin:10.11.6

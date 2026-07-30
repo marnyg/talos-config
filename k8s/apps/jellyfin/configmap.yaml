@@ -68,5 +68,54 @@ data:
         -d '{"LibraryOptions":{"PathInfos":[{"Path":"/data/movies"}],"EnableRealtimeMonitor":true}}' || echo "WARN: Movies library failed"
     fi
 
+    # --- SSO against the SIWE→OIDC bridge (task refs 162c630d) ---
+    # Config lives on emptyDir, so this re-runs from scratch on every
+    # pod start — everything below is idempotent by construction.
+
+    # Plugin repo + install. POST /Repositories replaces the whole
+    # list, so the official repo rides along.
+    if ! curl -sf -H "$AUTH" "$JELLYFIN_URL/Plugins" | grep -q '505ce9d1-d916-42fa-86ca-673ef241d7df'; then
+      echo "Installing SSO plugin..."
+      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" "$JELLYFIN_URL/Repositories" \
+        -d '[{"Name":"Jellyfin Stable","Url":"https://repo.jellyfin.org/files/plugin/manifest.json","Enabled":true},{"Name":"jellyfin-plugin-sso","Url":"https://raw.githubusercontent.com/9p4/jellyfin-plugin-sso/manifest-release/manifest.json","Enabled":true}]'
+      curl -sf -X POST -H "$AUTH" "$JELLYFIN_URL/Packages/Installed/SSO%20Authentication?assemblyGuid=505ce9d1-d916-42fa-86ca-673ef241d7df" || echo "WARN: plugin install failed"
+      echo "Restarting Jellyfin to load the plugin..."
+      curl -sf -X POST -H "$AUTH" "$JELLYFIN_URL/System/Restart" || true
+      sleep 10
+      until curl -sf "$JELLYFIN_URL/health" > /dev/null 2>&1; do sleep 5; done
+    fi
+
+    # Provider "wallet": PKCE public client against the bridge (no
+    # secret — empty oidSecret means public client); groups claim
+    # [admins] grants login and Jellyfin admin. disableHttps because
+    # the issuer is plain HTTP over the mesh (ADR-0009). /sso/OID/Add
+    # overwrites the named provider, so re-runs converge.
+    curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" "$JELLYFIN_URL/sso/OID/Add/wallet" -d '{
+      "oidEndpoint": "http://auth.cp1.mesh.internal",
+      "oidClientId": "jellyfin",
+      "oidSecret": "",
+      "enabled": true,
+      "enableAuthorization": true,
+      "enableAllFolders": true,
+      "enabledFolders": [],
+      "roles": ["admins"],
+      "adminRoles": ["admins"],
+      "enableFolderRoles": false,
+      "folderRoleMapping": [],
+      "roleClaim": "groups",
+      "oidScopes": ["groups"],
+      "disableHttps": true
+    }' || echo "WARN: SSO provider config failed"
+
+    # Wallet button on the login page. Relative action: the redirect
+    # URI is derived from the requesting host, so mesh users get the
+    # registered jellyfin.cp1.mesh.internal callback while LAN-direct
+    # clients (TV on 30096) keep using the local login form.
+    curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" "$JELLYFIN_URL/System/Configuration/branding" -d '{
+      "LoginDisclaimer": "<form action=\"/sso/OID/start/wallet\"><button class=\"raised block emby-button button-submit\">Sign in with wallet</button></form>",
+      "CustomCss": "a.raised.emby-button { padding: 0.9em 1em; color: inherit !important; } .disclaimerContainer { display: block; }",
+      "SplashscreenEnabled": false
+    }' || echo "WARN: branding failed"
+
     echo "Jellyfin configuration complete!"
     sleep infinity
