@@ -40,7 +40,7 @@ MESH_DEVICES = "laptop"
 # MESH_MEDIA_DEVICES are shared-space appliances (media group): Jellyfin's
 # NodePort and nothing else. A device in both lists is a startup error,
 # because the group is signed into its certificate.
-MESH_MEDIA_DEVICES = "androidtv"
+MESH_MEDIA_DEVICES = "androidtv,phone"
 
 [http_service]
 internal_port = 8080
