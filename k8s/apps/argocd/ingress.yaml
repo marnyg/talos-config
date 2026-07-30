@@ -1,0 +1,24 @@
+# ArgoCD over the mesh (ADR-0009 pattern): plain HTTP, hostname
+# routing; argocd-server runs with server.insecure=true (set by the
+# installer job in talos/clusters/homelab/cluster.yaml) so it serves
+# HTTP instead of redirecting to its self-signed TLS. Sign-in is OIDC
+# against the SIWE bridge — the wallet is the identity (sketch
+# 162c630d); the local admin account remains as break-glass.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: argocd.cp1.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80

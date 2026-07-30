@@ -62,6 +62,61 @@ cluster:
                 - -c
                 - |
                   kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+                  # SSO (task refs 162c630d): ArgoCD authenticates against the
+                  # wallet through the SIWE→OIDC bridge (k8s/apps/siwe-oidc);
+                  # dex is deleted below — no second identity path. These are
+                  # patches, not full manifests: install.yaml owns the rest of
+                  # each ConfigMap's data.
+                  cat > /tmp/argocd-cm.patch <<'PATCH'
+                  data:
+                    url: http://argocd.cp1.mesh.internal
+                    oidc.config: |
+                      name: wallet
+                      issuer: http://auth.cp1.mesh.internal
+                      clientID: argocd
+                      enablePKCEAuthentication: true
+                      requestedScopes: ["openid", "profile", "email", "groups"]
+                  PATCH
+                  kubectl -n argocd patch configmap argocd-cm --type merge --patch-file /tmp/argocd-cm.patch
+
+                  # Plain HTTP behind ingress-nginx (ADR-0009): nebula encrypts
+                  # the wire; argocd-server must not self-redirect to TLS.
+                  kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge -p '{"data":{"server.insecure":"true"}}'
+
+                  # The bridge's groups claim carries [admins]; map it to full
+                  # admin. The built-in admin account stays as break-glass.
+                  cat > /tmp/argocd-rbac.patch <<'PATCH'
+                  data:
+                    policy.csv: |
+                      g, admins, role:admin
+                    scopes: "[groups]"
+                  PATCH
+                  kubectl -n argocd patch configmap argocd-rbac-cm --type merge --patch-file /tmp/argocd-rbac.patch
+
+                  # Pods cannot resolve .mesh.internal: Talos host DNS serves no
+                  # /etc/hosts entries to kube-dns queries (siderolabs/talos
+                  # #9822/#13141), so pin the issuer name to cp1's derived mesh
+                  # address — stable across leases and reprovisions (invariant
+                  # 7), and the same name browsers resolve via hub DNS (OIDC
+                  # requires issuer-URL equality between the two paths).
+                  cat > /tmp/argocd-server.patch <<'PATCH'
+                  spec:
+                    template:
+                      spec:
+                        hostAliases:
+                          - ip: 10.42.218.125
+                            hostnames: [auth.cp1.mesh.internal]
+                  PATCH
+                  kubectl -n argocd patch deployment argocd-server --patch-file /tmp/argocd-server.patch
+
+                  # No dex: the bridge is the only IdP (invariant 1 — no hosted
+                  # identity, and no idle second issuer to keep patched).
+                  kubectl -n argocd delete deployment,service argocd-dex-server --ignore-not-found
+
+                  # cmd-params is consumed as env — pods only see it on restart.
+                  kubectl -n argocd rollout restart deployment argocd-server
+
                   kubectl apply -f - <<'EOF'
                   apiVersion: argoproj.io/v1alpha1
                   kind: Application
