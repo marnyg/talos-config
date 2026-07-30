@@ -40,12 +40,9 @@ func machineDNSName(mac string, m machine) string {
 	return strings.ReplaceAll(mac, ":", "-")
 }
 
-// meshDNSZone is the on-mesh DNS zone. `.internal` is ICANN-reserved
-// for private use, so it can never collide with a real delegation —
-// unlike an ENS name, which Brave and MetaMask intercept in the URL bar
-// on exactly the admin devices meant to use the mesh. It also drops the
-// misleading `.wg` suffix, which named a transport phase 2 deletes.
-const meshDNSZone = "mesh.internal"
+// meshDNSZone is the on-mesh DNS zone; the constant (and the rationale
+// for `.internal`) lives in nebderive.DNSZone so nebup shares it.
+const meshDNSZone = nebderive.DNSZone
 
 // machineMeshIP returns the machine's overlay address: the explicit
 // meta.yaml meshIP override if set, else derived from the MAC.

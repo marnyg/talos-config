@@ -85,6 +85,14 @@ const CAName = "talos-config"
 // HubName is the reserved nebula name of the hub (lighthouse + relay).
 const HubName = "hub"
 
+// DNSZone is the on-mesh DNS zone. `.internal` is ICANN-reserved for
+// private use, so it can never collide with a real delegation — unlike
+// an ENS name, which Brave and MetaMask intercept in the URL bar on
+// exactly the admin devices meant to use the mesh. It lives here rather
+// than beside the hub's DNS server so mesh clients (cmd/nebup) share
+// the constant without importing the server.
+const DNSZone = "mesh.internal"
+
 func derive(master []byte, info string, n int) []byte {
 	out, err := hkdf.Key(sha256.New, master, nil, info, n)
 	if err != nil {
