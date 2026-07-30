@@ -177,9 +177,21 @@ func (p *Provider) handleToken(w http.ResponseWriter, r *http.Request) {
 	// client_secret, if a relying party insists on sending one (e.g.
 	// oauth2-proxy requires the field to be set), is ignored: public
 	// clients, PKCE is the proof.
+	//
+	// client_id may arrive as HTTP Basic auth instead of a form param
+	// (RFC 6749 §2.3.1, form-urlencoded username, empty password) —
+	// golang.org/x/oauth2 (ArgoCD, oauth2-proxy) tries that style
+	// first, and rejecting it burns the code before the library's
+	// in-params retry arrives.
+	clientID := r.FormValue("client_id")
+	if u, _, ok := r.BasicAuth(); ok && clientID == "" {
+		if dec, err := url.QueryUnescape(u); err == nil {
+			clientID = dec
+		}
+	}
 	resp, err := p.redeemCode(
 		r.FormValue("code"),
-		r.FormValue("client_id"),
+		clientID,
 		r.FormValue("redirect_uri"),
 		r.FormValue("code_verifier"),
 	)

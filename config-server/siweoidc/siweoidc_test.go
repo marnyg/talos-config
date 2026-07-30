@@ -244,6 +244,46 @@ func TestFullFlow(t *testing.T) {
 	}
 }
 
+// TestExchangeWithBasicAuthClientID: golang.org/x/oauth2 (ArgoCD,
+// oauth2-proxy) sends client_id as HTTP Basic auth with an empty
+// password before falling back to form params — and the fallback
+// arrives after the code is burned, so the Basic style must succeed
+// on the first attempt.
+func TestExchangeWithBasicAuthClientID(t *testing.T) {
+	p := testProvider(t)
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+
+	verifier, challenge := pkce()
+	code := authorize(t, ts, challenge, "", "").Query().Get("code")
+
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {testRedirect},
+		"code_verifier": {verifier},
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(testClient, "")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("basic-auth exchange: %d: %s", resp.StatusCode, body)
+	}
+	var tr tokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
+		t.Fatal(err)
+	}
+	if tr.IDToken == "" {
+		t.Fatal("no id_token in basic-auth exchange")
+	}
+}
+
 func TestCodeSingleUse(t *testing.T) {
 	p := testProvider(t)
 	ts := httptest.NewServer(p.Handler())
