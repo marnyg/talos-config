@@ -28,5 +28,8 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
 - **Every exposed service authenticates against the wallet** —
   self-hosted SIWE SSO, no hosted identity anywhere in the access
   path. Substrate landed 2026-07-31 (ADR-0009: nebula-native ingress,
-  tailscale gone); remaining scope is the stateless SIWE→OIDC bridge
-  and per-service wiring (tasks 38–41, sketch 162c630d).
+  tailscale gone); **reached 2026-07-31** — the in-cluster SIWE→OIDC
+  bridge serves ArgoCD (native OIDC, dex deleted), the five media UIs
+  (oauth2-proxy `auth_request`), and Jellyfin (jellyfin-plugin-sso).
+  Remaining scope deliberately deferred: HTTPS over the mesh via the
+  wallet-derived CA (task 75c8b6b3, `+later`).

@@ -41,6 +41,26 @@ these are properties of the tools, not current weather (that lives in
   default and nebula ≤1.9 cannot parse them. Anything minting or
   consuming mesh certs must be ≥1.10. See ADR-0002.
 
+## Kubernetes / Talos
+
+- **Talos host DNS does not serve `/etc/hosts` to pods.**
+  `extraHostEntries` + `hostDNS.forwardKubeDNSToHost` looks like it
+  should give every pod the host's static names — it deliberately does
+  not (siderolabs/talos#9822, #13141): kube-dns forwarding bypasses the
+  hosts file. Pods that must resolve a mesh name (OIDC issuer fetches)
+  need per-pod `hostAliases`. Also: Talos re-applies its bootstrap
+  manifests, so hand-edits to the CoreDNS ConfigMap revert on reboot.
+
+## OAuth / OIDC
+
+- **`golang.org/x/oauth2` sends `client_id` as HTTP Basic auth first**
+  (empty password, RFC 6749 §2.3.1) and only retries with form params
+  after a failure. A token endpoint that reads only the form burns a
+  single-use code on the Basic attempt and the retry dies on the dead
+  code — every exchange fails with `invalid_grant` while logs show two
+  different errors. Cost the first real ArgoCD sign-in; fixed in
+  `siweoidc` by accepting both styles (`75fb4e7`).
+
 ## Supply chain
 
 - **Any helm-repo Application is a rebuild time bomb.** The Bitnami

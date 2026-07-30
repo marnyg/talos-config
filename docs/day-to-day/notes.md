@@ -175,6 +175,23 @@
   practice (tailscale ns fully gone). Don't rely on it — but don't
   assume orphan cleanup is always owed either.
 
+- 2026-07-31 — **ArgoCD polls git every ~3 min**; a push is not a
+  deploy until then. Nudge with `kubectl annotate application apps -n
+  argocd argocd.argoproj.io/refresh=normal --overwrite`. Also: the
+  jellyfin pod once raced its own ConfigMap sync (deployment rolled
+  before the new script landed) — if a configurator ran the old
+  script, just `rollout restart`.
+- 2026-07-31 — **siwe-oidc restart semantics differ per relying
+  party**: a bridge pod restart rotates the JWKS → ArgoCD sessions die
+  (it re-validates tokens) but oauth2-proxy sessions survive (own
+  cookie, sealed secret). Not a bug; know which one you're debugging.
+- 2026-07-31 — the siwe-oidc image deploys as `:latest` +
+  `imagePullPolicy: Always`: CI push alone changes nothing running —
+  `kubectl -n sso rollout restart deployment siwe-oidc` after the
+  workflow finishes is the actual deploy step.
+- 2026-07-31 — ghcr package `siwe-oidc` came up **public** on first
+  push (no manual visibility flip was needed).
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have

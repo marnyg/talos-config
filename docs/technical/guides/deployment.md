@@ -36,6 +36,13 @@ or change something, update the date.
   30096 for LAN-direct clients (TV), plus transmission's peer ports.
   Recovery path: LAN address SANs (`talosctl -e 10.0.0.<lease>`) with
   owner keys.
+- Every web UI authenticates against the wallet _(since 2026-07-31)_:
+  the SIWE→OIDC bridge at `http://auth.cp1.mesh.internal` (sso ns) is
+  the only IdP — ArgoCD native OIDC (dex deleted, local `admin` =
+  break-glass), sonarr/radarr/nzbget/jackett/transmission behind
+  oauth2-proxy `auth_request` (one cookie for all five), Jellyfin via
+  jellyfin-plugin-sso ("Sign in with wallet"; local login stays for
+  the TV). A bridge restart rotates the JWKS — re-sign, nothing lost.
 - The node's only overlay link is `nebula0` (`ext-nebula` extension);
   wg0 was removed by the 2026-07-30 apply.
 - _2026-07-29_: upgraded in place to the nebula schematic (see Mesh

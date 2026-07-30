@@ -3,20 +3,19 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Wallet-anchored access to cluster services — the ingress
-substrate is live (ADR-0009: scoped `<service>.<member>` names,
-ingress-nginx over the mesh, tailscale gone); next is the stateless
-SIWE→OIDC bridge and per-service SSO (tasks 38–41).
+**Now:** The SSO arc is **complete** — every exposed service
+authenticates against the wallet (ArgoCD native OIDC, five UIs via
+oauth2-proxy `auth_request`, Jellyfin via plugin; all through the
+in-cluster SIWE→OIDC bridge). No active arc; next candidates are the
+deferred hardening items and refilling the media library.
 
 **Toward goal:** "Every exposed service authenticates against the
-wallet" in `desired-state/goals.md` (added this session) — the last
-hosted account left the access path, and authentication reduces to
-the wallet.
+wallet" in `desired-state/goals.md` — reached 2026-07-31. The last
+remaining scope under that goal is HTTPS-over-mesh (task 39, `+later`).
 
 **Out of scope:**
-- HTTPS over the mesh — deferred until the wallet-derived CA lands in
-  nebup (task 42, `+later`); plain HTTP is the recorded decision.
-- Per-service mesh identities / nebula firewall authz — rejected in
-  ADR-0009; authorization lives in the SSO layer.
-- Phone onboarding UX / TV client — unchanged deferrals (5183f6ea,
-  2e1bef85).
+- HTTPS over the mesh — still deferred until the wallet-derived CA
+  lands in nebup (task 39); plain HTTP remains the recorded decision.
+- TV mesh client / phone onboarding UX — unchanged deferrals.
+- Auto-enroll for undeclared devices (thread a7920bda) — needs an
+  invariant-1 discussion before any code.
