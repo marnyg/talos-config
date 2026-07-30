@@ -1,2 +1,39 @@
 cluster:
   allowSchedulingOnControlPlanes: true
+---
+# Cap EPHEMERAL so it stops swallowing the whole 512GB disk, leaving
+# room for the `media` user volume below. Takes effect only when the
+# partition is (re)created — a fresh install, not an upgrade or reboot.
+# The pre-cap layout (EPHEMERAL = 510GB, whole disk) persists until the
+# next reinstall.
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  maxSize: 160GiB
+  grow: false
+---
+# Media library on its own partition so a reinstall (which wipes STATE +
+# EPHEMERAL) preserves it: Talos re-adopts an existing partition matching
+# a UserVolumeConfig instead of recreating it. This is the answer to
+# "what may a reinstall legitimately forget" — everything except this
+# volume. Mounts at /var/mnt/media; the media PVs
+# (k8s/apps/storage/pvs.yaml) hostPath into it.
+#
+# Unencrypted by choice: ADR-0004 frames disk encryption here as
+# disposal/RMA protection only, and this volume holds re-downloadable
+# public media — not worth coupling the volume to serve-time key
+# derivation.
+#
+# Sizing: 476.9GiB disk - ~2.3GiB (EFI/META/STATE) - 160GiB EPHEMERAL
+# leaves ~314GiB; 300GiB fits with slack.
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: media
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 300GiB
+  maxSize: 300GiB
+filesystem:
+  type: xfs

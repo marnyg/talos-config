@@ -10,7 +10,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   hostPath:
-    path: /var/media/tv
+    path: /var/mnt/media/tv
     type: DirectoryOrCreate
   claimRef:
     name: media-tv
@@ -28,7 +28,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   hostPath:
-    path: /var/media/movies
+    path: /var/mnt/media/movies
     type: DirectoryOrCreate
   claimRef:
     name: media-movies
@@ -46,7 +46,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   hostPath:
-    path: /var/media/downloads
+    path: /var/mnt/media/downloads
     type: DirectoryOrCreate
   claimRef:
     name: media-downloads
