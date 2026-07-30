@@ -147,10 +147,35 @@ hub (see DNS bullet above).
   (no wipe, `/var/media` survives).
 - CA + cert derivation in the hub; compose-time injection of extension
   config; `nebup` enrollment.
-- Run nebula beside wg0. Dogfood ≥1 week; measure (nebula logs
-  direct-vs-relay per tunnel). Android TV sideload check.
-- The measurement window is the evaluation window — the go/no-go for
-  phase 2 lands before anything irreversible.
+- Run nebula beside wg0. Android TV sideload check.
+- **Phase-1 exit checks** _(replaced the ≥1-week dogfood window,
+  2026-07-30)_. Calendar time was a proxy for resilience events that
+  ordinary use would eventually trigger; naming them directly is both
+  faster and stricter, since a quiet week triggers none of them:
+  1. **Node reboot** — after a Talos reboot, `ext-nebula` restarts and
+     cp1 rejoins the mesh at the same address. Nodes reboot for
+     upgrades; failing this is a problem discovered at the worst moment.
+  2. **Hub re-seal** — after a fly deploy + wallet unseal, the mesh
+     comes back (lighthouse up, members reconverge). Guaranteed to
+     happen the moment the TV build ships, and never yet exercised
+     end-to-end.
+  3. **Roaming reconvergence** — a device that changes network
+     (LAN ↔ foreign) re-establishes without manual intervention.
+
+  Criteria 1–3 are settled (1 spike, 2 amended per ADR-0006, 3
+  measured). **Criterion 4 (mobile/TV UX) remains open and is not a
+  checklist item** — it needs either a measurement or an explicit
+  decision to drop driver 2, because ADR-0006 already narrowed driver 1
+  to LAN-only. See "Open decision" below.
+- The exit checks are the evaluation window — the go/no-go for phase 2
+  lands before anything irreversible.
+
+**Open decision (2026-07-30)** — with driver 1 narrowed to LAN-direct
+(ADR-0006), if criterion 4 also goes unmeasured then phase 2 is
+justified by LAN-direct plus consolidation (one overlay, one derivation
+tree, wg* code deleted) alone. That is defensible, but it should be
+chosen out loud rather than arrived at by attrition: the drivers have
+now been narrowed twice.
 
 **Phase 2 (uuid 1afafb50)** — cutover, in order:
 1. Add nebula name + IP to certSANs (additive, safe).

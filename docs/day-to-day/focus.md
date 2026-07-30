@@ -3,19 +3,19 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Mesh v2 **phase 1 dogfood** (uuid fca5be68). The verdict is in:
-criterion 2 resolved 2026-07-30 as *amended, not fired* (ADR-0006) —
+**Now:** Mesh v2 **phase 1 exit checks** (uuid fca5be68). The verdict is
+in: criterion 2 resolved 2026-07-30 as *amended, not fired* (ADR-0006) —
 remote paths are relay-by-default, which is wg0 parity, and LAN-direct
-at 1.785ms is the actual win. Criteria 1–3 settled; criterion 4
-(mobile/TV UX) remains open behind revocation policy. What's left of
-phase 1 is ordinary use for the ≥1wk window.
+at 1.785ms is the actual win. Criteria 1–3 settled. What's left is three
+concrete checks (node reboot, hub re-seal, roaming reconvergence, ~1hr)
+that replaced the ≥1wk dogfood window, plus a decision on criterion 4.
 
 **Toward goal:** "Mesh v2" in `desired-state/goals.md` — now honestly
 scoped: driver 1 is **LAN-direct peer paths**, remote P2P is a non-goal
 because the networks, not the config, forbid it.
 
 **Out of scope:**
-- Phase 2 cutover until the dogfood completes and certSANs land.
+- Phase 2 cutover until the exit checks pass and certSANs land.
   Invariant 5's dual-overlay exception is the running cost, no longer
   blocked on a punch verdict.
 - Chasing direct remote paths — needs native IPv6 (task 43) or spending
