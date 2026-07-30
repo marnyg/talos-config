@@ -128,12 +128,13 @@
   the laptop→cp1 mesh tunnel needs lighthouse re-registration + a
   fresh handshake after the hub restarts. Warm it with
   `ping 10.42.218.125`, then retry — succeeded on second attempt.
-- 2026-07-30 — the cached `~/.config/talos-mesh/laptop.yml` predates
+- 2026-07-30 — ~~the cached `~/.config/talos-mesh/laptop.yml` predates
   phase 2: it still carries the retired wg0 underlay-filter entry and a
   hand-set `tun.dev: nebula1` the hub never rendered. Harmless (nebup
   honors the existing dev name), but `nebup -reenroll` refreshes it —
   and split-DNS answers will then appear on `nebula0`, the name nebup
-  pins itself.
+  pins itself.~~ Re-enrolled 2026-07-31; split-DNS confirmed answering
+  on `nebula0` (scoped service names resolve in ~19ms).
 - 2026-07-30 — hub-redeploy mesh warmup reconfirmed on the plain
   deploy+unseal path (not just `apply`): cp1 unreachable over the mesh
   for ~45–60s after unseal, then recovers unaided — first pings
@@ -158,6 +159,21 @@
 - 2026-07-31 — the media library is **empty** post-migration (old
   `/var/media` went with the wipe, as agreed). u-media re-adoption
   across a reinstall is proven by mechanism but not yet exercised.
+- 2026-07-31 — **Talos enforces the `baseline` Pod Security Standard on
+  workload namespaces**: hostNetwork/hostPort pods are silently
+  forbidden (DaemonSet DESIRED 1, CURRENT 0; the error only shows in
+  `describe ds` events). Fix is a `pod-security.kubernetes.io/enforce:
+  privileged` namespace label — ingress-nginx carries it declaratively
+  via ArgoCD `managedNamespaceMetadata`. Any future hostNetwork
+  workload will hit the same wall.
+- 2026-07-31 — services are now `http://<name>.cp1.mesh.internal/`
+  (no ports); NodePorts remain only for LAN-direct access (TV →
+  jellyfin `10.0.0.x:30096`). The deployment guide still documents the
+  NodePort path as primary — flagged, not yet updated.
+- 2026-07-31 — deleting an ArgoCD Application without the
+  resources-finalizer still pruned its helm children cleanly in
+  practice (tailscale ns fully gone). Don't rely on it — but don't
+  assume orphan cleanup is always owed either.
 
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
@@ -167,10 +183,11 @@ ask before doing so.
 
 - Laptop WG config lives in `/tmp/wg-talos.conf` — move somewhere
   permanent + `chmod 600` (user action).
-- `argocd-dex-server` pod in Error — unused OIDC component; candidate
-  for disabling in the ArgoCD install.
-- `tailscale-operator` Application Degraded — never investigated. Worth
-  a look given it may be moot once the mesh lands.
+- ~~`argocd-dex-server` pod in Error — unused OIDC component; candidate
+  for disabling in the ArgoCD install.~~ Scoped 2026-07-31: dex gets
+  deleted as part of the ArgoCD→SIWE-OIDC switch (task 39).
+- ~~`tailscale-operator` Application Degraded — never investigated.~~
+  Moot 2026-07-31: tailscale removed entirely (ADR-0009).
 - KMS slot 0 is never used at boot (early-boot DNS loses the race).
   Accepted; a KMS endpoint by IP instead of hostname would dodge DNS.
 - Old kubeconfigs pointing at `10.0.0.x` are dead — regenerate.
