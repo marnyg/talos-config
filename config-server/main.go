@@ -23,8 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 
@@ -360,7 +358,7 @@ func main() {
 		meshCAPin    = flag.String("mesh-ca-pin", "", "pinned expected mesh CA fingerprint (hex); unseal fails on mismatch (wrong wallet or message)")
 		autoBoot     = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the mesh when its etcd waits for it")
 		kmsAdv       = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --mesh-port)")
-		kmsPort      = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared h2c port)")
+		kmsPort      = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared cleartext-h2 port)")
 	)
 	flag.Parse()
 
@@ -462,14 +460,17 @@ func main() {
 		s.kms = newKMSServer(*root, hub)
 		log.Printf("kms: serving disk unseal, advertised endpoint %s", *kmsAdv)
 		if *kmsPort > 0 {
-			// Dedicated listener for fly's gRPC port: the h2c handler
-			// speaks both prior-knowledge h2 and the Upgrade dialect,
-			// whichever the proxy uses.
+			// Dedicated listener for fly's gRPC port: fly's proxy
+			// (h2_backend) speaks prior-knowledge cleartext h2, which
+			// is all the stdlib UnencryptedHTTP2 server accepts — no
+			// client on this path uses the h2c Upgrade dialect (gRPC
+			// forbids it).
 			lis, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *bind, *kmsPort))
 			if err != nil {
 				log.Fatalf("kms listener: %v", err)
 			}
-			go func() { log.Fatal(http.Serve(lis, s.handler())) }()
+			kmsSrv := &http.Server{Handler: s.handler(), Protocols: cleartextH2Protocols()}
+			go func() { log.Fatal(kmsSrv.Serve(lis)) }()
 			log.Printf("kms: grpc listening on %s:%d", *bind, *kmsPort)
 		}
 	}
@@ -492,12 +493,25 @@ func main() {
 	for mac, m := range machines {
 		log.Printf("  %s -> %s", mac, m.Config)
 	}
-	log.Fatal(http.ListenAndServe(addr, s.handler()))
+	srv := &http.Server{Addr: addr, Handler: s.handler(), Protocols: cleartextH2Protocols()}
+	log.Fatal(srv.ListenAndServe())
 }
 
-// handler wraps the mux with the KMS gRPC service (h2c so fly's proxy
-// can speak HTTP/2 cleartext to us; gRPC requests are told apart by
-// their content type).
+// cleartextH2Protocols enables HTTP/1.1 plus prior-knowledge cleartext
+// HTTP/2 (the stdlib replacement for the deprecated x/net h2c handler,
+// distinguished by sniffing the client preface). Deliberately NOT the
+// h2c Upgrade dialect: fly's h2_backend proxy and every gRPC client
+// use prior knowledge only.
+func cleartextH2Protocols() *http.Protocols {
+	p := new(http.Protocols)
+	p.SetHTTP1(true)
+	p.SetUnencryptedHTTP2(true)
+	return p
+}
+
+// handler wraps the mux with the KMS gRPC service (served over
+// cleartext h2, see cleartextH2Protocols; gRPC requests are told apart
+// by their content type).
 func (s *server) handler() http.Handler {
 	if s.kms == nil {
 		return s.mux()
@@ -512,5 +526,5 @@ func (s *server) handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	})
-	return h2c.NewHandler(mixed, &http2.Server{})
+	return mixed
 }

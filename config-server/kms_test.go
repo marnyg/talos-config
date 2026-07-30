@@ -188,26 +188,29 @@ func TestDiskEncryptionInjection(t *testing.T) {
 	}
 }
 
-// TestKMSOverH2C exercises the real wire path: gRPC client → h2c
-// handler → KMS service, sharing the port with plain HTTP.
+// TestKMSOverH2C exercises the real wire path: gRPC client →
+// cleartext-h2 server → KMS service, sharing the port with plain HTTP
+// (same Protocols setup as main).
 func TestKMSOverH2C(t *testing.T) {
 	m, k := newTestKMS(t)
 	s := &server{root: m.root, store: deviceflow.NewStore(), hub: m, adminAddrs: m.adminAddrs, kms: k, kmsAdvertise: "grpc://ignored", sessions: newSessionStore()}
 
-	ts := httptest.NewServer(s.handler())
+	ts := httptest.NewUnstartedServer(s.handler())
+	ts.Config.Protocols = cleartextH2Protocols()
+	ts.Start()
 	defer ts.Close()
 
-	// Plain HTTP/1.1 still works through the wrapped handler.
+	// Plain HTTP/1.1 still works alongside cleartext h2.
 	resp, err := http.Get(ts.URL + "/sealed")
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("/sealed via h2c wrapper: got %d", resp.StatusCode)
+		t.Fatalf("/sealed via cleartext-h2 server: got %d", resp.StatusCode)
 	}
 
-	// gRPC over h2c.
+	// gRPC over prior-knowledge cleartext h2.
 	conn, err := grpcDialH2C(t, ts.URL)
 	if err != nil {
 		t.Fatal(err)
