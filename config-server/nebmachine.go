@@ -210,6 +210,11 @@ func nodeNebulaConfig(p nebNodeParams) ([]byte, error) {
 			ServeDNS:     false,
 			Interval:     60,
 			Hosts:        []string{hubIP.String()},
+			// A node holds several addresses that are not paths to it:
+			// wg0, the pod network, the mesh itself. Filter both
+			// directions so neither we nor our peers waste handshakes.
+			LocalAllowList:  nebUnderlayFilter(p.subnet),
+			RemoteAllowList: nebUnderlayFilter(p.subnet),
 		},
 		Listen: nebListenYAML{Host: "0.0.0.0", Port: nebNodeListenPort},
 		Tun: &nebTunYAML{

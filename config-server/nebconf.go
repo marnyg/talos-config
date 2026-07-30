@@ -107,6 +107,13 @@ type nebLighthouseYAML struct {
 	ServeDNS     bool     `yaml:"serve_dns"`
 	Interval     int      `yaml:"interval,omitempty"` // seconds between reports; lighthouses do not report
 	Hosts        []string `yaml:"hosts,omitempty"`    // must be empty on a lighthouse
+	// LocalAllowList filters which of this host's own interface addresses
+	// it reports to the lighthouse as underlay candidates.
+	LocalAllowList map[string]bool `yaml:"local_allow_list,omitempty"`
+	// RemoteAllowList filters which peer-reported addresses this host is
+	// willing to dial. The mirror of LocalAllowList: one stops us handing
+	// out useless candidates, the other stops us chasing them.
+	RemoteAllowList map[string]bool `yaml:"remote_allow_list,omitempty"`
 }
 
 type nebListenYAML struct {
@@ -126,9 +133,47 @@ type nebRelayYAML struct {
 }
 
 type nebTunYAML struct {
-	Disabled bool   `yaml:"disabled"`
-	Dev      string `yaml:"dev"`
-	MTU      int    `yaml:"mtu"`
+	Disabled bool `yaml:"disabled"`
+	// Dev is omitted when empty so a config can be portable: Darwin only
+	// accepts utun[0-9]+ and rejects anything else with "interface name
+	// must be utun[0-9]+ on Darwin, ignoring". Nodes (Linux, fixed OS)
+	// name their interface; roaming device configs leave it to the client.
+	Dev string `yaml:"dev,omitempty"`
+	MTU int    `yaml:"mtu"`
+}
+
+// Underlay ranges no mesh member should advertise or dial. Each is an
+// address a host may legitimately hold while being useless — or actively
+// harmful — as a path to that host:
+//
+//   - nebWGSubnet: the wg0 overlay. Advertising it lets a peer that also
+//     has wg0 up carry nebula over wireguard, which hairpins through the
+//     hub and silently poisons any direct-path measurement. That cost two
+//     invalid punch runs during the phase-1 dogfood. Transitional —
+//     phase 2 strips wg0 and this entry goes with it.
+//   - nebPodSubnet: the kubernetes pod network (podSubnets in
+//     talos/base/*.yaml). Flannel's VXLAN interface takes x.x.x.0 and
+//     cni0 takes x.x.x.1; neither is reachable from off-node, and both
+//     were observed as failed handshake targets.
+//   - the mesh CIDR itself: nebula over nebula.
+//
+// The LAN range is deliberately absent. Same-LAN direct paths are the
+// entire remaining value of the mesh (ADR-0006) and must keep working.
+const (
+	nebWGSubnet  = "10.99.0.0/24"
+	nebPodSubnet = "10.244.0.0/16"
+)
+
+// nebUnderlayFilter renders the shape nebula expects for both allow
+// lists: a default-allow rule plus explicit denials. Nebula resolves
+// these by longest prefix match, so map ordering is irrelevant.
+func nebUnderlayFilter(mesh netip.Prefix) map[string]bool {
+	return map[string]bool{
+		"0.0.0.0/0":   true,
+		nebWGSubnet:   false,
+		nebPodSubnet:  false,
+		mesh.String(): false,
+	}
 }
 
 type nebFirewallYAML struct {

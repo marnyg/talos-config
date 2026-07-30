@@ -447,3 +447,64 @@ func hasRule(rules []nebRuleYAML, want nebRuleYAML) bool {
 	}
 	return false
 }
+
+// TestNodeUnderlayFilterExcludesOverlaysNotLAN guards the fix for the
+// junk-candidate bug: a node used to advertise its wg0 address, its
+// flannel/cni pod-network addresses and (in principle) the mesh itself
+// as underlay candidates. Peers then wasted handshakes on them, and a
+// peer that also had wg0 up would carry nebula over wireguard and
+// hairpin through the hub — which silently invalidated two phase-1 punch
+// measurements before anyone noticed.
+//
+// The LAN assertion is the load-bearing half: same-LAN direct paths are
+// the entire remaining value of the mesh (ADR-0006), so a filter that
+// excluded the LAN would be a worse bug than the one being fixed.
+func TestNodeUnderlayFilterExcludesOverlaysNotLAN(t *testing.T) {
+	p := nodeParams(t, "b0:41:6f:15:3b:8f", machine{Name: "cp1"})
+	raw, err := nodeNebulaConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got nebConfigYAML
+	if err := yaml.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		list map[string]bool
+	}{
+		{"local_allow_list", got.Lighthouse.LocalAllowList},
+		{"remote_allow_list", got.Lighthouse.RemoteAllowList},
+	} {
+		if tc.list == nil {
+			t.Fatalf("%s: not set — junk underlay candidates are unfiltered", tc.name)
+		}
+		for _, denied := range []string{nebWGSubnet, nebPodSubnet, nebNodeSubnet.String()} {
+			allowed, ok := tc.list[denied]
+			if !ok {
+				t.Errorf("%s: %s missing — overlay/pod addresses would be used as underlay", tc.name, denied)
+				continue
+			}
+			if allowed {
+				t.Errorf("%s: %s allowed, want denied", tc.name, denied)
+			}
+		}
+		if allowed, ok := tc.list["0.0.0.0/0"]; !ok || !allowed {
+			t.Errorf("%s: no default-allow rule; the LAN and WAN would both be filtered out", tc.name)
+		}
+		// The LAN must not be denied by any rule, however written.
+		for cidr, allowed := range tc.list {
+			if allowed {
+				continue
+			}
+			pfx, err := netip.ParsePrefix(cidr)
+			if err != nil {
+				t.Fatalf("%s: unparseable rule %q: %v", tc.name, cidr, err)
+			}
+			if pfx.Contains(netip.MustParseAddr("10.0.0.30")) {
+				t.Errorf("%s: rule %s denies the LAN — this breaks LAN-direct paths (ADR-0006)", tc.name, cidr)
+			}
+		}
+	}
+}

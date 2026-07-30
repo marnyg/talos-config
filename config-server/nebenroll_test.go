@@ -347,3 +347,43 @@ func testMeshMaster(t *testing.T) []byte {
 	}
 	return master
 }
+
+// TestDeviceConfigOmitsTunDevAndFiltersRemotes covers the two portability
+// fixes to the enrolled device config.
+//
+// The dev name: a device config is meant to move by scp, clipboard or QR
+// to whatever client the owner has, and Darwin rejects any tun name that
+// is not utun[0-9]+ ("interface name must be utun[0-9]+ on Darwin,
+// ignoring"). Omitting it lets every client pick its own.
+//
+// The remote filter: a device must never dial a peer's wg0 or pod-network
+// address — that is how nebula ends up tunnelled inside wireguard.
+func TestDeviceConfigOmitsTunDevAndFiltersRemotes(t *testing.T) {
+	_, ts := newMeshEnrollServer(t)
+	code, body := meshEnroll(t, ts.URL, "laptop")
+	if code != http.StatusOK {
+		t.Fatalf("enroll: got %d: %s", code, body)
+	}
+
+	var got nebConfigYAML
+	if err := yaml.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Tun == nil {
+		t.Fatal("device config has no tun block")
+	}
+	if got.Tun.Dev != "" {
+		t.Errorf("tun.dev = %q, want unset: a named device is rejected on Darwin", got.Tun.Dev)
+	}
+	if strings.Contains(body, "dev:") {
+		t.Errorf("rendered config still carries a dev key:\n%s", body)
+	}
+	if got.Lighthouse.RemoteAllowList == nil {
+		t.Fatal("remote_allow_list not set — a device could dial a peer's wg0 address")
+	}
+	for _, denied := range []string{nebWGSubnet, nebPodSubnet} {
+		if allowed, ok := got.Lighthouse.RemoteAllowList[denied]; !ok || allowed {
+			t.Errorf("remote_allow_list: %s not denied", denied)
+		}
+	}
+}

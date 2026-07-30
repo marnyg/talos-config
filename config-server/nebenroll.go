@@ -37,11 +37,6 @@ import (
 // rather than a maintenance cliff (thread uuid dc04e3e8).
 const nebDeviceCertValidity = 90 * 24 * time.Hour
 
-// nebDeviceTunDev is the interface name a device's client creates.
-// Distinct from the nodes' so a machine that ever also enrolled as a
-// device could not collide with itself.
-const nebDeviceTunDev = "nebula1"
-
 // meshEnrollMessage is the canonical text the owner signs to enroll a
 // mesh device. Distinct prefix from the wg enrollment, approval, login
 // and master-key messages: a signature for one of those must never be
@@ -190,13 +185,21 @@ func (m *nebManager) deviceConfig(master []byte, d nebDevice) ([]byte, error) {
 		Lighthouse: nebLighthouseYAML{
 			Interval: 60,
 			Hosts:    []string{hubIP.String()},
+			// Devices roam, so their own addresses are not worth
+			// filtering — but a peer's wg0 or pod-network address must
+			// never be dialed: that is how nebula ends up tunnelled
+			// inside wireguard and hairpinning through the hub.
+			RemoteAllowList: nebUnderlayFilter(m.subnet),
 		},
 		// Port 0: devices roam. A fixed port buys a node the
 		// lighthouse-less LAN fallback (nebmachine.go), but a laptop that
 		// changes networks daily gains nothing from it and can lose to
 		// whatever else holds 4242 on a coffee-shop NAT.
 		Listen: nebListenYAML{Host: "0.0.0.0", Port: 0},
-		Tun:    &nebTunYAML{Dev: nebDeviceTunDev, MTU: nebNodeMTU},
+		// No dev name: device configs are portable by design (one file,
+		// moved by scp/clipboard/QR) and Darwin rejects any name that is
+		// not utun[0-9]+. Let each client pick its own.
+		Tun:    &nebTunYAML{MTU: nebNodeMTU},
 		Punchy: nebPunchyYAML{Punch: true, Respond: true},
 		Relay:  nebRelayYAML{UseRelays: true, Relays: []string{hubIP.String()}},
 		Firewall: nebFirewallYAML{
