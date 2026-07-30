@@ -1,6 +1,6 @@
 # ADR-0008: Media library on a preserved user volume outside EPHEMERAL
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-31
 
 ## Context and Problem Statement

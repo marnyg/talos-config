@@ -59,6 +59,11 @@ func TestMeshDNSOverOverlay(t *testing.T) {
 		wantErr dnsmessage.RCode
 	}{
 		{qname: "cp1." + nebderive.DNSZone, want: wantCP1},
+		// Scoped service names: <service>.<member> → the member; only
+		// one level deep, and only under real members.
+		{qname: "jellyfin.cp1." + nebderive.DNSZone, want: wantCP1},
+		{qname: "jellyfin.nope." + nebderive.DNSZone, wantErr: dnsmessage.RCodeNameError},
+		{qname: "a.b.cp1." + nebderive.DNSZone, wantErr: dnsmessage.RCodeNameError},
 		{qname: nebderive.HubName + "." + nebderive.DNSZone, want: hubAddr},
 		{qname: "nope." + nebderive.DNSZone, wantErr: dnsmessage.RCodeNameError},
 		{qname: "example.com", wantErr: dnsmessage.RCodeRefused},

@@ -1,15 +1,18 @@
+# Hostname routing over the mesh: <service>.cp1.mesh.internal resolves
+# to cp1 (hub DNS resolves any name scoped under a member — nothing to
+# declare), ingress-nginx on hostNetwork :80 routes by Host header.
+# Exposing a service = adding an Ingress here, nothing else.
+# Plain HTTP — nebula encrypts the wire; HTTPS lands with the
+# wallet-derived CA (deferred, refs 162c630d).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: jellyfin-tailscale
+  name: jellyfin
   namespace: media
 spec:
-  ingressClassName: tailscale
-  tls:
-    - hosts:
-        - jellyfin
+  ingressClassName: nginx
   rules:
-    - host: jellyfin
+    - host: jellyfin.cp1.mesh.internal
       http:
         paths:
           - path: /
@@ -23,15 +26,12 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: sonarr-tailscale
+  name: sonarr
   namespace: media
 spec:
-  ingressClassName: tailscale
-  tls:
-    - hosts:
-        - sonarr
+  ingressClassName: nginx
   rules:
-    - host: sonarr
+    - host: sonarr.cp1.mesh.internal
       http:
         paths:
           - path: /
@@ -45,15 +45,12 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: radarr-tailscale
+  name: radarr
   namespace: media
 spec:
-  ingressClassName: tailscale
-  tls:
-    - hosts:
-        - radarr
+  ingressClassName: nginx
   rules:
-    - host: radarr
+    - host: radarr.cp1.mesh.internal
       http:
         paths:
           - path: /
@@ -67,15 +64,12 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: nzbget-tailscale
+  name: nzbget
   namespace: media
 spec:
-  ingressClassName: tailscale
-  tls:
-    - hosts:
-        - nzbget
+  ingressClassName: nginx
   rules:
-    - host: nzbget
+    - host: nzbget.cp1.mesh.internal
       http:
         paths:
           - path: /
@@ -89,15 +83,12 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: transmission-tailscale
+  name: transmission
   namespace: media
 spec:
-  ingressClassName: tailscale
-  tls:
-    - hosts:
-        - transmission
+  ingressClassName: nginx
   rules:
-    - host: transmission
+    - host: transmission.cp1.mesh.internal
       http:
         paths:
           - path: /
@@ -111,15 +102,12 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: jackett-tailscale
+  name: jackett
   namespace: media
 spec:
-  ingressClassName: tailscale
-  tls:
-    - hosts:
-        - jackett
+  ingressClassName: nginx
   rules:
-    - host: jackett
+    - host: jackett.cp1.mesh.internal
       http:
         paths:
           - path: /

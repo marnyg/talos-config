@@ -7,7 +7,10 @@ package mesh
 //
 // The zone is a pure function of (git, master): machine labels come from
 // meta.yaml, device labels from the enrolled-device list, and every
-// address is derived. That makes it strictly stronger than nebula's
+// address is derived. Service names are not declared at all: any
+// <service>.<member> name resolves to the member's address (see
+// dnsRespond), so exposing a service is purely an Ingress in git —
+// vhosts behind the member's ingress, routed by Host header. That makes it strictly stronger than nebula's
 // lighthouse DNS, which can only answer for hosts that have reported in
 // — an unreachable machine still resolves here.
 //
@@ -139,7 +142,16 @@ func dnsRespond(zone map[string]netip.Addr, domain string, req []byte) []byte {
 	case !strings.HasSuffix(qname, "."+domain):
 		rcode = dnsmessage.RCodeRefused
 	default:
-		ip, ok := zone[strings.TrimSuffix(qname, "."+domain)]
+		rest := strings.TrimSuffix(qname, "."+domain)
+		ip, ok := zone[rest]
+		if !ok {
+			// Scoped service names: <service>.<member> resolves to the
+			// member. One extra label only, and an exact member match
+			// wins above, so a service name can never shadow a member.
+			if _, member, cut := strings.Cut(rest, "."); cut && !strings.Contains(member, ".") {
+				ip, ok = zone[member]
+			}
+		}
 		switch {
 		case !ok:
 			rcode = dnsmessage.RCodeNameError
