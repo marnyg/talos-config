@@ -3,19 +3,18 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Dogfood/upkeep mode — mesh v2, the media user volume, and a
-config-server foundation pass (ethsig + deviceflow packages, `888df71`)
-are done. Nothing is mid-flight; next work is picked, not owed.
+**Now:** Dogfood/upkeep mode — the config-server foundation pass is
+complete: ethsig, deviceflow, machines, and mesh packages extracted
+(`888df71` → `6e17f3f`), h2c migrated. main is now wiring + handlers.
+Nothing is mid-flight; next work is picked, not owed.
 
 **Toward goal:** "Provisioning plane stays minimal" in
-`desired-state/goals.md` — upkeep means keeping the hub small and
-legible rather than growing it; the package extractions serve that by
-making the seams (signature verification, device-flow grants) explicit.
+`desired-state/goals.md` — the extractions keep the hub small and
+legible by making its seams (signature verification, device-flow
+grants, machine composition, the overlay) explicit packages.
 
 **Out of scope:**
-- Stage-2 extraction (machines package + neb* cluster, task 7bf3b809)
-  — deferred until something touches that code anyway.
-- h2c migration (task 8b42f959) — its own change with kmsprobe
-  verification, not bundled work.
+- Further package-carving in config-server — the seams that mattered
+  are cut; don't extract for its own sake.
 - Phone onboarding UX / TV client — unchanged deferrals (5183f6ea,
   2e1bef85).
