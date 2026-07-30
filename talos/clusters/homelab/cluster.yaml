@@ -1,17 +1,16 @@
 cluster:
   clusterName: homelab
   controlPlane:
-    # Node's own derived tunnel IP (HKDF from MAC) — loopback-local on
-    # the node, independent of DHCP/router state. See decision in
-    # taskwarrior; laptop access rides task 27 (admin over tunnel).
-    endpoint: https://10.99.0.54:6443
+    # Node's own derived mesh address (HKDF from MAC) — loopback-local
+    # on the node, independent of DHCP/router state (invariant 7).
+    # Phase 2 step 2: moved off the wg0 address (10.99.0.54); wg0 SAN
+    # stays below until step 3 strips the dual overlay.
+    endpoint: https://10.42.218.125:6443
   apiServer:
     certSANs:
       - 10.99.0.54
       # cp1's nebula identity (HKDF-derived from the MAC; confirmed by
-      # the phase-1 reboot check). Additive ahead of the phase-2
-      # endpoint move — kubeconfigs can point at the mesh address as
-      # soon as this is applied, while wg0 still works.
+      # the phase-1 reboot check).
       - 10.42.218.125
       - cp1.mesh.internal
   proxy:
