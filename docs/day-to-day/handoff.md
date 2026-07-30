@@ -5,37 +5,38 @@
 
 ## Last session
 
-2026-07-31 — **Media volume carved out of EPHEMERAL; cp1 reprovisioned**
-(thread be79fbb1 closed). One commit (`88270bc`), hub redeployed,
-node wiped and rebuilt on the new layout.
+2026-07-31 — **config-server cleanup: packages extracted, dead code
+dropped** (`888df71`). Foundation pass now that features are at a good
+point; no behavior change, same vendorHash.
 
-- `machines/b0-…-8f/patch.yaml`: `VolumeConfig` caps EPHEMERAL at
-  160GiB; `UserVolumeConfig media` = 300GiB xfs at `/var/mnt/media`,
-  unencrypted by choice (ADR-0004 framing: disposal protection,
-  re-downloadable content). `pvs.yaml` hostPaths repointed.
-- Migration: `reset --system-labels-to-wipe STATE,EPHEMERAL` **deleted**
-  the partitions (bootloader survived — no USB needed); node returned in
-  maintenance mode on LAN, `apply-config --insecure` + `bootstrap`
-  rebuilt everything from git. Verified: STATE/EPHEMERAL luks, u-media
-  xfs ready, PVs bound at new paths, media stack Running, mesh direct
-  (~2ms), Jellyfin 302 on the NodePort.
-- New facts: node name `talos-ezw-edv`, LAN lease `10.0.0.32`.
+- New packages, following the masterderive/nebderive/walletsign
+  pattern: `ethsig/` (pure EIP-191 recovery — was the misnamed
+  `siwe.go`) and `deviceflow/` (RFC 8628 state machine, HTTP handlers
+  stay in main; `Store.Now` is the exported test clock, no test pokes
+  internals anymore).
+- Dead `nebManager.hubIP` removed; wg0-era comments fixed
+  (serveTunnelHTTP, "two overlays", "wg keys"). Verified with go vet,
+  staticcheck, deadcode, full tests, and `nix build`.
 
 ## Loose threads
 
-- **Media library starts empty** — old `/var/media` contents went with
-  the wipe (agreed). Partition re-adoption across a reinstall is proven
-  by mechanism (label `u-media`) but not yet exercised in anger.
-- **Plain `talosctl reset` now destroys the media library** (whole-disk
-  wipe). The label-scoped form is the standard reinstall command.
-- Cached `~/.config/talos-mesh/laptop.yml` still pre-phase-2; `nebup
-  -reenroll` refreshes. `argocd-dex-server` Error pod still unowned.
+- **ADR-0008 still Proposed** (media volume + invariant-2 amendment,
+  from the previous session) — review → Accepted.
+- **h2c deprecation deliberately not fixed** (task 8b42f959, +debt):
+  it's the KMS gRPC path; needs its own change verified with kmsprobe
+  post-deploy, not a cleanup-sweep edit.
+- **Stage-2 extraction designed but not started** (task 7bf3b809,
+  +debt +later): a `machines` package first, then the ~1900-line neb*
+  cluster out of main. Only worth doing when something touches that
+  code anyway.
+- Media library still empty; `argocd-dex-server` Error pod still
+  unowned; cached `~/.config/talos-mesh/laptop.yml` still pre-phase-2
+  (`nebup -reenroll`).
 
 ## Suggested next steps
 
-- Review ADR-0008 (Proposed → Accepted) — media-volume decision +
-  invariant-2 amendment landed at session close.
-- Refill the media library; a later reinstall then genuinely exercises
-  u-media re-adoption.
-- Or: deferred items — phone onboarding UX (5183f6ea), TV client
-  (2e1bef85).
+- Review ADR-0008 (Proposed → Accepted).
+- Refill the media library (a later reinstall then exercises u-media
+  re-adoption for real).
+- Or pick up the h2c migration (8b42f959) as a small deliberate change
+  with a kmsprobe verification step.
