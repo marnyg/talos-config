@@ -98,6 +98,18 @@
   at every 90-day device-cert renewal (`nebDeviceCertValidity`). A
   re-enroll mints the same identity, so renewal is re-entry, not
   re-approval of anything new.
+- 2026-07-31 — **the cluster endpoint is now cp1's mesh address**
+  (`10.42.218.125`): kube API reachability from a node rides nebula0
+  existing locally (`ext-nebula` extension service), not a native Talos
+  interface as with wg0. The tun comes up without lighthouse
+  reachability, and the LAN-address SANs keep `talosctl`/`kubectl`
+  recovery working at the DHCP address. An endpoint apply costs ~30s of
+  apiserver connection-refused; it reconverges unaided.
+- 2026-07-31 — anything cached that points at `10.99.0.54` (old
+  kubeconfigs, talosctl contexts, muscle memory) still works while the
+  dual overlay runs, and dies at step 3 when wg0 is stripped. The
+  checked-out `talos/talosconfig` + `kubeconfig` are already re-pointed
+  at `10.42.218.125`.
 - 2026-07-30 — **the hub re-mints its own nebula leaf at every unseal**:
   the hub's leaf fingerprint rotates per deploy+unseal cycle while the
   issuer (derived CA `b881d6ff…`) stays fixed. Never pin the hub's leaf

@@ -5,43 +5,46 @@
 
 ## Last session
 
-2026-07-30 (evening) — **Phase 1 is fully closed.** The last gate —
-criterion 4's phone half — was measured and passed (decision c4f07507).
+2026-07-31 — **Phase 2 steps 1 and 2 landed and verified** (task
+1afafb50). Two deploy+unseal cycles, both budgeted.
 
-- **Phone enrolled** as a media device (`fly.toml` `MESH_MEDIA_DEVICES`,
-  commit `4e8ef8e`): self-served through the `/mesh/tv` device flow on
-  the phone's own browser (QR → wallet approval → config over its own
-  TLS session). First real use of that flow for a phone.
-- **Verdict, out loud:** Mobile Nebula import UX is *bad* but the phone
-  is on the mesh — below criterion 4's "would stay off" bar. Driver 2
-  stands for phones. UX improvement filed as a `+later +nice` task
-  (recurs at the 90-day device-cert renewal, so it may earn priority).
-- **Office MacBook decided** (decision d8a8ed86): keeps the shared
-  `laptop` identity, leave as-is; revisit only if it becomes a problem.
-  Revocation route remains `talos/mesh-blocklist.txt`.
-- Closed threads: dba0c63d (TV onboarding — nothing left after the TV
-  decision + deploy), d14514fa (criterion-2 office punch test — resolved
-  into ADR-0006 earlier).
-- `docs/mesh-v2-nebula.md` updated: all four kill criteria settled, the
-  "open decision" paragraph resolved.
+- **Step 1, mesh certSANs** (`cf1de35`): `nebMachinePatch` now emits a
+  two-document patch — a `machine.certSANs` merge (overlay IP +
+  `<name>.mesh.internal`) ahead of the ExtensionServiceConfig — and
+  `apiServer.certSANs` gained cp1's mesh identity. Verified live: apid
+  and kube-apiserver certs carry `cp1.mesh.internal` + `10.42.218.125`;
+  `talosctl -e 10.42.218.125` verifies TLS over the overlay; mesh DNS
+  answers the name.
+- **Step 2, endpoint cutover** (`6131602`): `cluster.controlPlane.endpoint`
+  and cp1's `meta.yaml ip:` (the talosctl/apply dial target) moved to
+  `10.42.218.125`; local talosconfig/kubeconfig re-pointed. Apply went
+  through without reboot; apiserver refused connections ~30s and
+  reconverged; node Ready, workloads healthy. The lease-drift port-scan
+  dance is retired.
 
 ## Loose threads
 
-- A brief seal window per deploy: the phone-declaration deploys re-sealed
-  the hub twice; each needed a wallet unseal at `/status`. Known
-  behavior, but phase 2's early steps involve more deploys — budget the
-  unseals.
-- Thread a7920bda (wallet-authorized auto-enroll for undeclared names)
-  is untouched; today's flow — edit fly.toml, deploy, unseal, enroll —
-  is exactly the friction it describes.
+- **Laptop can't resolve `.mesh.internal`** (task 04126746, +nice): the
+  SAN is in the certs and the hub zone answers, but nothing split-DNSes
+  the suffix to `10.42.0.1` locally — `talosctl -e cp1.mesh.internal`
+  fails on resolution. IP endpoints everywhere meanwhile.
+- **Cluster API now rides `ext-nebula`** starting on the node (the
+  endpoint address lives on nebula0), where wg0 was a native Talos
+  interface. Local-only dependency (tun comes up without the
+  lighthouse); recovery via the LAN-address SANs is intact. Judged
+  consistent with invariant 4 — noted, not silently absorbed.
+- `argocd-dex-server` pod in Error is pre-existing (also in notes.md's
+  absorbed-handover list), not endpoint-move fallout.
 
 ## Suggested next steps
 
-- **Start phase 2** (task 1afafb50), in order: (1) certSANs (nebula
-  name + IP — additive, safe); (2) cluster endpoint → nebula IP,
-  re-point talosconfig/kubeconfig (retires the cp1 lease-drift scan
-  dance); (3) strip wg0 from compose, delete hub wg* code (closes
-  invariant 5's dual-overlay exception).
-- Verify the phone shows up in the `/status` mesh table and Jellyfin
-  plays over the overlay from a remote network (expect relay parity,
-  ADR-0006).
+- **Phase 2 step 3** — strip wg0 from compose, delete hub wg* code.
+  Scoped during this session: it is *not* just deletion — the hub's
+  `/config`-over-tunnel serving, ADR-0003's source-IP authentication,
+  and auto-bootstrap dials all ride `wg.tnet` and must move to the
+  nebula netstack (`nebstack.Listen` exists, unused for HTTP); main.go
+  couples `--mesh-port` to `--wg-port` for unsealing; `wgup`/wg admin
+  enrollment retire. Expect ADR-0003 to need superseding (mesh
+  source-IP or cert-name as authentication).
+- Closing invariant 5's dual-overlay exception is the payoff — if step
+  3 stalls, that exception is the thing to question.
