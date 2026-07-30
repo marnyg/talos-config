@@ -5,57 +5,52 @@
 
 ## Last session
 
-2026-07-29 (late evening) — **Criterion 2 remote case measured: the
-CGNAT-hotspot pair RELAYS. Verdict deferred pending one discriminating
-data point.**
+2026-07-30 (office) — **Kill criterion 2 resolved: amended, not fired
+(ADR-0006).** Phase 1's last open gate is now the dogfood window.
 
-- cp1 re-applied (`84d7ca5`): the `media` firewall rule (tcp/30096) is
-  now live on the node — five rules confirmed in `ext-nebula` logs,
-  applied without reboot, mesh reconverged direct. TV-path node blocker
-  cleared.
-- Criterion 2 remote (`d84026e`): laptop on phone hotspot ↔ home
-  router **does not punch** — handshake `(relayed)`, packet capture
-  shows all overlay traffic laptop↔fly, zero to the home WAN. Config
-  exonerated (punchy on both sides, rendezvous unconditional). Full
-  detail in `technical/guides/deployment.md`.
-- **Two earlier runs were invalid**: the wg tunnel (interface
-  `talos-laptop`, *not* `wg0`) was up, and nebula used it as underlay —
-  any measurement with wg up is poisoned.
-- Toolchain pin committed (`55a116a`): go 1.26 in Dockerfile matches
-  go.mod and `buildGo126Module`; all three move together.
-- **TV onboarding built + revocation decided** (`f2cc4b7`, after the
-  wrap): `/mesh/tv` device-flow page (QR → `/status` approval, media
-  group only, enforced twice), token kinds (machine|tv) closing a
-  cross-redemption hole, and `talos/mesh-blocklist.txt` →
-  `pki.blocklist` in every composed config. Revocation thread dc04e3e8
-  closed as +decision: git blocklist, 90d device certs stand. Tests
-  green, nix build green (new dep go-qrcode, vendorHash refreshed).
-  **Not deployed** — and deploying re-seals the hub, so do NOT deploy
-  before the office punch test unless you unseal right after (a sealed
-  hub takes the lighthouse down and the test would read as a false
-  relay/failure).
+- Office Wi-Fi punch test: **RELAYED**, and the run is **valid** —
+  Tailscale was up but split-tunnel with no exit node, and `route get`
+  for both cp1's WAN and fly showed egress on the physical `en0`.
+- NAT classified at both ends by STUN (one socket → several destination
+  IPs): home = endpoint-independent **and** port-preserving (cone);
+  office = **symmetric, random ports**; cellular = CGNAT symmetric.
+  Criterion 2's premise ("relay ⇒ home NAT is symmetric") is therefore
+  **falsified** — home was never the blocker, and no overlay punches
+  through two symmetric remote NATs.
+- Criterion 2 restated as a parity-plus-LAN test in `mesh-v2-nebula.md`
+  (canonical), cross-referenced from ADR-0002, recorded in ADR-0006.
+  `goals.md` now scopes driver 1 to **LAN-direct**, with remote P2P an
+  explicit non-goal.
+- Established while comparing against Tailscale: making the home side
+  reachable (UPnP/NAT-PMP/PCP or a static forward) **would** work — only
+  one side needs reachability, after which the remote symmetric NAT is
+  irrelevant. Rejected on **invariant 5**, not on capability. The earlier
+  claim that a port forward "cannot fix" this was wrong and is corrected
+  in ADR-0006.
 
 ## Loose threads
 
-- **Decision pending — criterion 2.** User chose "one more data point":
-  a punch test from office Wi-Fi (non-cellular foreign NAT), filed as a
-  `+next` task. Direct there ⇒ only cellular clients relay (amend
-  criterion, likely ADR). Relay there ⇒ home NAT is symmetric and the
-  criterion fires as written (keep wg0, LAN shortcut). Either outcome
-  probably wants an ADR against ADR-0002.
-- **Laptop state:** `talos-laptop` (wg) was deleted for the test and the
-  test nebula killed — run `wgup` to restore the admin path, `nebup` to
-  rejoin the mesh.
-- **Unfiled:** the dual-overlay underlay-poisoning finding — proposed as
-  a `+bug` task twice, no decision yet.
-- Revocation policy (thread dc04e3e8) still gates the TV build (task 36).
-- certSANs still absent (phase 2 step 1) — talosctl stays on wg.
+- **Criterion 2 no longer gates phase 2.** Remaining gates: the ≥1wk
+  dogfood and certSANs (phase 2 step 1). Invariant 5's dual-overlay
+  exception can close once phase 2 lands — it is no longer waiting on a
+  punch verdict.
+- **Criterion 4 (mobile/TV UX) still open**, behind the revocation policy
+  thread (uuid dc04e3e8).
+- **TV onboarding is built but NOT deployed** (`f2cc4b7`). Deploying
+  re-seals the hub, so it needs an unseal immediately after — but it is
+  no longer held back by a pending measurement.
+- **The office MacBook now holds a `laptop` mesh credential**, the same
+  derived identity as the home laptop (identity = f(master, name), and
+  both used the default name). Same key, same overlay address — do not
+  run nebula on both at once. Needs a decision (see next steps).
+- New tasks filed: **42** (`+bug`, nebup overlay-underlay guard) and
+  **43** (`+thread +later`, revisit direct remote paths if IPv6 lands).
 
 ## Suggested next steps
 
-- Office punch test (the `+next` task has the exact procedure — wg DOWN
-  first). Then decide: fire criterion 2, or amend it and draft the ADR.
-- Dogfood continues regardless — LAN use is unaffected and measured
-  good.
-- If continuing after the verdict: settle revocation (dc04e3e8), then
-  the TV path (task 36).
+- Decide the office-mac credential question: leave as-is, revoke via
+  `talos/mesh-blocklist.txt`, or re-enroll office machines under a
+  distinct name with a restricted group.
+- Continue the dogfood to the ≥1wk mark, then phase 2 starting with
+  certSANs.
+- Settle revocation policy (dc04e3e8) to unblock the TV path.

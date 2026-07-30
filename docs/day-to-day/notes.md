@@ -68,6 +68,25 @@
   `mesh: DOWN (<err>)` but still returns 200, because wg0 carries
   production traffic while the mesh is on trial.
 
+- 2026-07-30 — **Any overlay carrying the route to the hub/peer poisons a
+  punch measurement**: nebula will use it as underlay and hairpin. Bit us
+  twice with wg0; the office run survived only because Tailscale happened
+  to have no exit node set. Portable pre-flight before any punch test —
+  `netstat -rn` plus `route get <peer-ip>` (macOS) or `ip route get`
+  (Linux) — confirm egress is a physical NIC. The old `ip link` check
+  silently no-ops on macOS, which is where these tests actually run.
+  Guard filed as a bug against `nebup` (task 42).
+- 2026-07-30 — **The office MacBook is enrolled as device name `laptop`**,
+  the same default the home laptop used. Identity derives from (master,
+  name), so both machines hold the *same* mesh key and the same overlay
+  address — do not run nebula on both simultaneously. It also means a
+  corporate-managed machine holds an owner-device mesh credential;
+  revocation route is `talos/mesh-blocklist.txt`. Undecided as of this
+  writing.
+- 2026-07-30 — Home network has **no native IPv6** (no v6 default route;
+  the only global-scope v6 address is a Tailscale ULA). This is the
+  blocker on ADR-0006's revisit trigger for direct remote paths.
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have

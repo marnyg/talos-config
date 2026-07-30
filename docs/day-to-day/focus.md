@@ -3,20 +3,21 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Mesh v2 **phase 1 verdict** (uuid fca5be68). Everything is
-built and deployed; three of four kill criteria cleared. Criterion 2's
-remote case measured RELAYED on the CGNAT-hotspot pair — one
-discriminating test remains (punch from office Wi-Fi, `+next` task)
-before deciding: fire the criterion (keep wg0, LAN shortcut) or amend
-it (LAN-direct + wg0-parity remote + drivers 2/3 justify phase 2).
-That decision wants an ADR either way.
+**Now:** Mesh v2 **phase 1 dogfood** (uuid fca5be68). The verdict is in:
+criterion 2 resolved 2026-07-30 as *amended, not fired* (ADR-0006) —
+remote paths are relay-by-default, which is wg0 parity, and LAN-direct
+at 1.785ms is the actual win. Criteria 1–3 settled; criterion 4
+(mobile/TV UX) remains open behind revocation policy. What's left of
+phase 1 is ordinary use for the ≥1wk window.
 
-**Toward goal:** "Mesh v2" in `desired-state/goals.md` — but driver 1
-(direct peer paths) is now known to be LAN-only-at-best, so the goal's
-calculus is exactly what's being decided.
+**Toward goal:** "Mesh v2" in `desired-state/goals.md` — now honestly
+scoped: driver 1 is **LAN-direct peer paths**, remote P2P is a non-goal
+because the networks, not the config, forbid it.
 
 **Out of scope:**
-- Phase 2 cutover until the criterion 2 verdict and the ≥1wk dogfood.
-  Invariant 5's two-overlay exception is the running cost.
-- TV onboarding (task 36) until revocation policy (dc04e3e8) settles.
+- Phase 2 cutover until the dogfood completes and certSANs land.
+  Invariant 5's dual-overlay exception is the running cost, no longer
+  blocked on a punch verdict.
+- Chasing direct remote paths — needs native IPv6 (task 43) or spending
+  invariant 5. Both deliberately declined for now.
 - App SSO / OIDC; ENS commitment layer (+idea).

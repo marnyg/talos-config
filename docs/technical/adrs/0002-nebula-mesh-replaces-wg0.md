@@ -5,6 +5,9 @@
 - Amended by: ADR-0005 — refines this record's "TCP-only `nebula/service`"
   diagnosis (the body below is left as written; ADR-0005 has the accurate
   cause and the implementation)
+- Amended by: ADR-0006 — kill criterion 2 ("punch rate") is replaced by a
+  parity-plus-LAN test. Remote paths measured relay-by-default on
+  symmetric remote NATs; home NAT exonerated. Criteria 1, 3, 4 stand.
 
 ## Context and Problem Statement
 
@@ -69,8 +72,9 @@ endpoint moves to nebula IP, wg0 stripped, wg* hub code removed
 (task uuid 1afafb50).
 
 Kill criteria (any ⇒ revert to wg0 + LAN shortcut): spike fails; punch
-rate mostly-relay on real NAT pairs; direct LAN path can't sustain
-~80 Mbps; mobile/TV UX bad enough those devices stay off the mesh.
+rate mostly-relay on real NAT pairs _(amended by ADR-0006 → remote must
+be no worse than wg0, and LAN must be direct)_; direct LAN path can't
+sustain ~80 Mbps; mobile/TV UX bad enough those devices stay off the mesh.
 
 Full design record: [`../../mesh-v2-nebula.md`](../../mesh-v2-nebula.md).
 
@@ -109,3 +113,8 @@ hub→peer netstack TCP dial 39ms; relay verified with a UDP-locked peer
 ping 0% loss). Kill criteria 2–4 (punch rate, throughput floor,
 mobile/TV UX) are measured during the phase-1 dogfood window and can
 still revert this decision.
+
+Criterion 2 resolved 2026-07-30 (ADR-0006): amended rather than fired —
+remote is relay-by-default because both remote networks sampled are
+symmetric, LAN is direct at 1.785ms. Criterion 3 passed. Criterion 4 is
+still open pending the TV path.

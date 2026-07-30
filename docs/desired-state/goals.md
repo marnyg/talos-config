@@ -11,10 +11,14 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
 
 - **Blank metal → cluster member with one human act** (wallet signature).
   Everything else automatic, declarative, re-derivable from git + owner keys.
-- **Mesh v2**: nebula replaces wg0 — direct peer paths (LAN traffic never
-  hairpins through fly), phones/TV join the network, one overlay, one
-  derivation tree. Spike gate passed 2026-07-29 (ADR-0002 Accepted);
-  now in phase 1 (dual overlay). Full record in
+- **Mesh v2**: nebula replaces wg0 — **direct peer paths on the LAN**
+  (LAN traffic never hairpins through fly), phones/TV join the network,
+  one overlay, one derivation tree. Spike gate passed 2026-07-29
+  (ADR-0002 Accepted); now in phase 1 (dual overlay). Full record in
   [`../mesh-v2-nebula.md`](../mesh-v2-nebula.md).
+  _Remote_ peer paths are **not** a goal: measured 2026-07-30 as
+  relay-by-default because ordinary remote networks (cellular CGNAT,
+  corporate Wi-Fi) are symmetric NATs that no overlay can punch. Remote
+  is wg0 parity via the hub; the LAN shortcut is the win. See ADR-0006.
 - **Provisioning plane stays minimal** — the Omni line in `vision.md`:
   no fleet management, no upgrade orchestration, no multi-cluster.

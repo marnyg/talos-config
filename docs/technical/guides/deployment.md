@@ -57,7 +57,41 @@ trial — see the kill criteria in `../../mesh-v2-nebula.md`.
   NXDOMAIN.
 - Jellyfin reachable over the overlay: 302 in 5.4ms on
   `10.42.218.125:30096`.
-- **Kill criterion 2 (remote case): measured 2026-07-29 — RELAYED.**
+- **Kill criterion 2 (remote case): RESOLVED 2026-07-30 — relayed, and
+  the criterion is AMENDED not fired (ADR-0006).** NAT behaviour was
+  classified at both ends by STUN binding requests from one socket to
+  several distinct destination IPs (same external port ⇒
+  endpoint-independent "cone"; differing ⇒ symmetric):
+
+  | Endpoint | NAT behaviour | Punch |
+  |---|---|---|
+  | Home (cp1) | endpoint-independent + port-preserving (cone) | not the blocker |
+  | Cellular hotspot | symmetric CGNAT | relayed |
+  | Office Wi-Fi | symmetric, **random** ports (3 dests → 19586/51810/64036) | relayed |
+
+  Punching needs one predictable side. Home is predictable; neither
+  remote network is, and the office NAT's random allocation rules out
+  port prediction too. So remote relay is a property of the networks,
+  not of our config or our router — wg0 would not have punched either.
+  Hence parity, not regression. The office run's validity was confirmed
+  before drawing conclusions: Tailscale was up but split-tunnel with no
+  exit node, and `route get` for both cp1's WAN and fly showed egress on
+  the physical `en0`.
+
+  **Pre-flight for any future punch test** (portable — the old `ip link`
+  check silently no-ops on macOS, where these tests actually run):
+
+  ```bash
+  netstat -rn | head -5              # default route on a physical NIC?
+  route get <peer-wan-ip>            # macOS: "interface:" must not be utun/tun
+  ip route get <peer-wan-ip>         # Linux equivalent
+  ```
+
+  Any overlay (wg0, Tailscale exit node, corporate VPN) that carries the
+  route to the peer poisons the measurement — nebula will use it as
+  underlay and hairpin.
+
+  <details><summary>Original 2026-07-29 hotspot measurement</summary>
   Laptop on a phone hotspot (carrier CGNAT + tether NAT) against the
   home router: handshake completed `from="213.188.219.215:4242
   (relayed)"`, no roam to direct over several minutes, and a packet
@@ -74,6 +108,7 @@ trial — see the kill criteria in `../../mesh-v2-nebula.md`.
   CGNAT) is unresolved, and a punch test from ordinary foreign Wi-Fi
   (café/office) would discriminate. Cellular CGNATs are typically
   symmetric, which no amount of punching defeats.
+  </details>
 - **Kill criterion 3 (throughput): passes.** iperf3 against a temporary
   NodePort pod, laptop ↔ cp1:
 

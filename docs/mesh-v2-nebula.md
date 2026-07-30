@@ -163,9 +163,21 @@ hub (see DNS bullet above).
 ## Kill criteria (any one fires → stop, keep wg0, do the LAN shortcut)
 
 1. **Spike fails** — `nebula/service` can't lighthouse+relay+dial on fly.
-2. **Punch rate** — real NAT pairs (laptop on CGNAT hotspot ↔ home
-   router) mostly fall back to relay → we've rebuilt today's topology
-   with more moving parts. Measured, not vibed.
+2. **~~Punch rate~~ → Parity + LAN directness** _(amended 2026-07-30,
+   ADR-0006)_. Original form: real NAT pairs mostly fall back to relay →
+   we've rebuilt today's topology with more moving parts. **Amended
+   form:** remote paths must be *no worse than wg0* (relayed via the hub
+   is parity, not failure), **and** same-LAN paths must be direct; if LAN
+   traffic hairpins, the criterion fires.
+
+   Why amended: measured relay on both remote networks tested, but NAT
+   classification showed home is endpoint-independent + port-preserving
+   (cone) while both remote networks are symmetric — the office one with
+   random port allocation, which forecloses port prediction. Punching
+   needs one predictable side; neither remote network provides it, and
+   wg0 would not have punched either. The original criterion's implicit
+   causal claim (that relay indicts our side) was disproven, so firing it
+   on the symptom would revert a strictly-better system.
 3. **Throughput floor** — direct LAN path must trivially sustain
    ~80 Mbps (4K remux); remote direct must measurably beat today's
    fly-relay. Nebula is userspace on nodes (kernel wg0 today) — this
