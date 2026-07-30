@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
@@ -71,12 +72,12 @@ func (k *kmsServer) master() ([]byte, error) {
 
 // declared reports whether any machine's meta.yaml declares uuid.
 func (k *kmsServer) declared(uuid string) bool {
-	machines, err := loadMachines(filepath.Join(k.root, "machines"))
+	byMAC, err := machines.Load(filepath.Join(k.root, "machines"))
 	if err != nil {
 		log.Printf("kms: loading machines: %v", err)
 		return false
 	}
-	for _, m := range machines {
+	for _, m := range byMAC {
 		if m.UUID != "" && masterderive.NormalizeUUID(m.UUID) == uuid {
 			return true
 		}

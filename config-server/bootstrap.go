@@ -41,6 +41,7 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	"github.com/siderolabs/talos/pkg/machinery/role"
 
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/nebstack"
 )
 
@@ -202,12 +203,12 @@ func (b *bootstrapper) step(ctx context.Context) {
 		return
 	}
 
-	machines, err := loadMachines(filepath.Join(b.root, "machines"))
+	byMAC, err := machines.Load(filepath.Join(b.root, "machines"))
 	if err != nil {
 		log.Printf("auto-bootstrap: loading machines: %v", err)
 		return
 	}
-	cps := controlPlanes(b.root, machines)
+	cps := controlPlanes(b.root, byMAC)
 	if len(cps) == 0 {
 		b.setSnap(func(s *bootSnapshot) { s.State = "no-control-plane" })
 		return
@@ -253,7 +254,7 @@ func (b *bootstrapper) step(ctx context.Context) {
 }
 
 // observe dials the node over the mesh and inspects its services.
-func (b *bootstrapper) observe(ctx context.Context, svc *nebstack.Service, m machine, ip netip.Addr) etcdObservation {
+func (b *bootstrapper) observe(ctx context.Context, svc *nebstack.Service, m machines.Machine, ip netip.Addr) etcdObservation {
 	ctx, cancel := context.WithTimeout(ctx, bootstrapDialTimeout)
 	defer cancel()
 
@@ -283,7 +284,7 @@ func (b *bootstrapper) observe(ctx context.Context, svc *nebstack.Service, m mac
 }
 
 // bootstrap performs the one-shot Bootstrap call.
-func (b *bootstrapper) bootstrap(ctx context.Context, svc *nebstack.Service, mac string, m machine, ip netip.Addr) {
+func (b *bootstrapper) bootstrap(ctx context.Context, svc *nebstack.Service, mac string, m machines.Machine, ip netip.Addr) {
 	log.Printf("AUTO-BOOTSTRAP: calling Bootstrap on %s (%s) — etcd waited %d consecutive polls", mac, ip, b.st.waitingStreak)
 
 	ctx, cancel := context.WithTimeout(ctx, bootstrapDialTimeout)
@@ -310,7 +311,7 @@ func (b *bootstrapper) bootstrap(ctx context.Context, svc *nebstack.Service, mac
 // the cluster's OS CA (extracted from the machine's composed config).
 // The TLS dial verifies against the machine's overlay-address certSAN,
 // which nebMachinePatch injects for exactly this reason.
-func (b *bootstrapper) talosClient(ctx context.Context, svc *nebstack.Service, m machine, ip netip.Addr) (*client.Client, error) {
+func (b *bootstrapper) talosClient(ctx context.Context, svc *nebstack.Service, m machines.Machine, ip netip.Addr) (*client.Client, error) {
 	ca, err := b.issuingCA(m)
 	if err != nil {
 		return nil, err
@@ -329,11 +330,11 @@ func (b *bootstrapper) talosClient(ctx context.Context, svc *nebstack.Service, m
 
 // issuingCA extracts the Talos OS CA (cert + key) from the machine's
 // composed config. Only control-plane configs carry the CA key.
-func (b *bootstrapper) issuingCA(m machine) (*x509.PEMEncodedCertificateAndKey, error) {
-	if ca, ok := b.caCache[m.dir]; ok {
+func (b *bootstrapper) issuingCA(m machines.Machine) (*x509.PEMEncodedCertificateAndKey, error) {
+	if ca, ok := b.caCache[m.Dir]; ok {
 		return ca, nil
 	}
-	body, err := buildConfig(b.root, m)
+	body, err := machines.BuildConfig(b.root, m)
 	if err != nil {
 		return nil, fmt.Errorf("composing config for CA extraction: %w", err)
 	}
@@ -345,7 +346,7 @@ func (b *bootstrapper) issuingCA(m machine) (*x509.PEMEncodedCertificateAndKey, 
 	if ca == nil || len(ca.Key) == 0 {
 		return nil, fmt.Errorf("composed config has no OS CA key (not a control-plane config?)")
 	}
-	b.caCache[m.dir] = ca
+	b.caCache[m.Dir] = ca
 	return ca, nil
 }
 
@@ -354,9 +355,9 @@ func (b *bootstrapper) issuingCA(m machine) (*x509.PEMEncodedCertificateAndKey, 
 // lives; patches never change it in this repo. Parsing the declared
 // type — not the filename — keeps the single-CP guard honest if a
 // role file is ever renamed or added.
-func controlPlanes(root string, machines map[string]machine) map[string]machine {
-	cps := map[string]machine{}
-	for mac, m := range machines {
+func controlPlanes(root string, byMAC map[string]machines.Machine) map[string]machines.Machine {
+	cps := map[string]machines.Machine{}
+	for mac, m := range byMAC {
 		raw, err := os.ReadFile(filepath.Join(root, m.Config))
 		if err != nil {
 			log.Printf("auto-bootstrap: reading base config for %s: %v", mac, err)

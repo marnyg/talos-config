@@ -15,6 +15,7 @@ import (
 	"github.com/slackhq/nebula/cert"
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/machines"
 )
 
 // tvStart POSTs the name form and extracts the device code the ticket
@@ -238,12 +239,12 @@ func TestMeshBlocklistPropagates(t *testing.T) {
 	// Node config (via the compose-time patch).
 	mesh := s.hub.mesh
 	master := s.hub.current()
-	machines, err := loadMachines(mesh.machinesDir())
+	byMAC, err := machines.Load(mesh.machinesDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for mac, m := range machines {
-		patch, err := mesh.nebMachinePatch(master, mac, m, machines)
+	for mac, m := range byMAC {
+		patch, err := mesh.nebMachinePatch(master, mac, m, byMAC)
 		if err != nil {
 			t.Fatal(err)
 		}

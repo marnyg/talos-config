@@ -21,6 +21,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
@@ -89,11 +90,11 @@ const nebMachineCertValidity = 5 * 365 * 24 * time.Hour
 // builds mesh DNS. One source for both means a machine's cert can never
 // claim an address its DNS name does not resolve to, and a derived-address
 // collision is caught here (before a cert is minted) rather than after.
-func (n *nebManager) nebMachinePatch(master []byte, mac string, m machine, machines map[string]machine) (string, error) {
+func (n *nebManager) nebMachinePatch(master []byte, mac string, m machines.Machine, byMAC map[string]machines.Machine) (string, error) {
 	if n.endpoint == "" {
 		return "", fmt.Errorf("mesh endpoint is not configured (--mesh-endpoint)")
 	}
-	zone, err := buildMeshZone(master, n.subnet, machines, n.devices)
+	zone, err := buildMeshZone(master, n.subnet, byMAC, n.devices)
 	if err != nil {
 		return "", fmt.Errorf("building mesh zone: %w", err)
 	}

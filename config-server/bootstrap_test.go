@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
+
+	"github.com/marnyg/talos-config/config-server/machines"
 )
 
 func svc(id, state string) *machineapi.ServiceInfo {
@@ -105,12 +107,12 @@ func TestControlPlanesFilter(t *testing.T) {
 	write("controlplane.yaml", "worker")
 	write("worker.yaml", "controlplane")
 
-	machines := map[string]machine{
+	byMAC := map[string]machines.Machine{
 		"aa:aa:aa:aa:aa:aa": {Config: "worker.yaml"},
 		"bb:bb:bb:bb:bb:bb": {Config: "controlplane.yaml"},
 		"cc:cc:cc:cc:cc:cc": {Config: "missing.yaml"}, // unreadable: skipped
 	}
-	cps := controlPlanes(root, machines)
+	cps := controlPlanes(root, byMAC)
 	if len(cps) != 1 {
 		t.Fatalf("got %d control planes, want 1", len(cps))
 	}

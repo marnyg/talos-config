@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
@@ -11,11 +12,11 @@ var nebDNSSubnet = netip.MustParsePrefix("10.42.0.0/16")
 
 func TestBuildMeshZone(t *testing.T) {
 	master := []byte("mesh-zone-test-master-key-32byte")
-	machines := map[string]machine{
+	byMAC := map[string]machines.Machine{
 		"aa:bb:cc:dd:ee:01": {Name: "cp1"},
 		"aa:bb:cc:dd:ee:02": {}, // no name: label is the MAC with dashes
 	}
-	zone, err := buildMeshZone(master, nebDNSSubnet, machines, adminDevices("laptop", "phone"))
+	zone, err := buildMeshZone(master, nebDNSSubnet, byMAC, adminDevices("laptop", "phone"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestBuildMeshZoneRejectsHubAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = buildMeshZone(master, nebDNSSubnet, map[string]machine{
+	_, err = buildMeshZone(master, nebDNSSubnet, map[string]machines.Machine{
 		"aa:bb:cc:dd:ee:01": {Name: "cp1", MeshIP: hubIP.String()},
 	}, nil)
 	if err == nil {
@@ -72,7 +73,7 @@ func TestBuildMeshZoneRejectsHubAddress(t *testing.T) {
 
 func TestBuildMeshZoneRejectsDuplicateLabels(t *testing.T) {
 	master := []byte("mesh-zone-test-master-key-32byte")
-	_, err := buildMeshZone(master, nebDNSSubnet, map[string]machine{
+	_, err := buildMeshZone(master, nebDNSSubnet, map[string]machines.Machine{
 		"aa:bb:cc:dd:ee:01": {Name: "cp1"},
 		"aa:bb:cc:dd:ee:02": {Name: "cp1"},
 	}, nil)
@@ -85,7 +86,7 @@ func TestBuildMeshZoneRejectsAddressCollision(t *testing.T) {
 	master := []byte("mesh-zone-test-master-key-32byte")
 	// Two machines pinned to the same override address: the shape a
 	// derived collision takes, made deterministic.
-	_, err := buildMeshZone(master, nebDNSSubnet, map[string]machine{
+	_, err := buildMeshZone(master, nebDNSSubnet, map[string]machines.Machine{
 		"aa:bb:cc:dd:ee:01": {Name: "cp1", MeshIP: "10.42.7.7"},
 		"aa:bb:cc:dd:ee:02": {Name: "cp2", MeshIP: "10.42.7.7"},
 	}, nil)
@@ -97,7 +98,7 @@ func TestBuildMeshZoneRejectsAddressCollision(t *testing.T) {
 func TestBuildMeshZoneRejectsInvalidLabels(t *testing.T) {
 	master := []byte("mesh-zone-test-master-key-32byte")
 	for _, name := range []string{"Not_A_Label", "-leading", "a..b"} {
-		if _, err := buildMeshZone(master, nebDNSSubnet, map[string]machine{
+		if _, err := buildMeshZone(master, nebDNSSubnet, map[string]machines.Machine{
 			"aa:bb:cc:dd:ee:01": {Name: name},
 		}, nil); err == nil {
 			t.Errorf("accepted invalid label %q", name)
@@ -109,7 +110,7 @@ func TestMachineMeshIPOverride(t *testing.T) {
 	master := []byte("mesh-zone-test-master-key-32byte")
 	const mac = "aa:bb:cc:dd:ee:01"
 
-	got, err := machineMeshIP(master, mac, machine{MeshIP: "10.42.5.5"}, nebDNSSubnet)
+	got, err := machineMeshIP(master, mac, machines.Machine{MeshIP: "10.42.5.5"}, nebDNSSubnet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestMachineMeshIPOverride(t *testing.T) {
 		t.Errorf("override ignored: got %s, want %s", got, want)
 	}
 
-	got, err = machineMeshIP(master, mac, machine{}, nebDNSSubnet)
+	got, err = machineMeshIP(master, mac, machines.Machine{}, nebDNSSubnet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,10 +132,10 @@ func TestMachineMeshIPOverride(t *testing.T) {
 
 	// An override outside the subnet would mint a cert nebula routes
 	// nowhere, so it must fail at config time.
-	if _, err := machineMeshIP(master, mac, machine{MeshIP: "10.99.0.5"}, nebDNSSubnet); err == nil {
+	if _, err := machineMeshIP(master, mac, machines.Machine{MeshIP: "10.99.0.5"}, nebDNSSubnet); err == nil {
 		t.Error("accepted a meshIP outside the mesh subnet")
 	}
-	if _, err := machineMeshIP(master, mac, machine{MeshIP: "not-an-ip"}, nebDNSSubnet); err == nil {
+	if _, err := machineMeshIP(master, mac, machines.Machine{MeshIP: "not-an-ip"}, nebDNSSubnet); err == nil {
 		t.Error("accepted a malformed meshIP")
 	}
 }

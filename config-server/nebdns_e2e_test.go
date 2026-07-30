@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/net/dns/dnsmessage"
 
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nebstack"
 	"github.com/marnyg/talos-config/config-server/nebtest"
@@ -27,8 +28,8 @@ func TestMeshDNSOverOverlay(t *testing.T) {
 	subnet := netip.MustParsePrefix("10.42.0.0/16")
 	const lighthousePort = 24243
 
-	machines := map[string]machine{"aa:bb:cc:dd:ee:01": {Name: "cp1"}}
-	zone, err := buildMeshZone(master, subnet, machines, adminDevices("laptop"))
+	byMAC := map[string]machines.Machine{"aa:bb:cc:dd:ee:01": {Name: "cp1"}}
+	zone, err := buildMeshZone(master, subnet, byMAC, adminDevices("laptop"))
 	if err != nil {
 		t.Fatal(err)
 	}

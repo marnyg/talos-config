@@ -20,6 +20,7 @@ import (
 	"github.com/slackhq/nebula/logging"
 	"github.com/slackhq/nebula/overlay"
 
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
@@ -33,14 +34,14 @@ func nebTestManager(root string) *nebManager {
 
 // nebTestMachines is a machine set with one named control plane, mirroring
 // talos/machines/.
-func nebTestMachines() map[string]machine {
-	return map[string]machine{
+func nebTestMachines() map[string]machines.Machine {
+	return map[string]machines.Machine{
 		"b0:41:6f:15:3b:8f": {Name: "cp1"},
 	}
 }
 
 // nodeParams renders a node config for the derived identity of mac.
-func nodeParams(t *testing.T, mac string, m machine) nebNodeParams {
+func nodeParams(t *testing.T, mac string, m machines.Machine) nebNodeParams {
 	t.Helper()
 	addr, err := machineMeshIP(nebTestMaster, mac, m, nebNodeSubnet)
 	if err != nil {
@@ -66,7 +67,7 @@ func nodeParams(t *testing.T, mac string, m machine) nebNodeParams {
 // free of a knob only tests use.
 func TestNodeNebulaConfigValidates(t *testing.T) {
 	mac := "b0:41:6f:15:3b:8f"
-	m := machine{Name: "cp1"}
+	m := machines.Machine{Name: "cp1"}
 	p := nodeParams(t, mac, m)
 
 	dir := t.TempDir()
@@ -127,7 +128,7 @@ func TestNodeNebulaConfigValidates(t *testing.T) {
 // is its only lighthouse, its only relay and its only static host — a
 // node pins nothing about the home network (invariants 5 and 7).
 func TestNodeNebulaConfigTopology(t *testing.T) {
-	raw, err := nodeNebulaConfig(nodeParams(t, "b0:41:6f:15:3b:8f", machine{Name: "cp1"}))
+	raw, err := nodeNebulaConfig(nodeParams(t, "b0:41:6f:15:3b:8f", machines.Machine{Name: "cp1"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +175,7 @@ func TestNodeNebulaConfigTopology(t *testing.T) {
 // too, and a machine reaching another machine's apid is exactly what the
 // group split is for.
 func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
-	raw, err := nodeNebulaConfig(nodeParams(t, "b0:41:6f:15:3b:8f", machine{Name: "cp1"}))
+	raw, err := nodeNebulaConfig(nodeParams(t, "b0:41:6f:15:3b:8f", machines.Machine{Name: "cp1"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,10 +259,10 @@ func certSANsOf(t *testing.T, doc map[string]any) []string {
 // mesh DNS name) so TLS dials over the overlay verify.
 func TestNebMachinePatchIdentity(t *testing.T) {
 	mac := "b0:41:6f:15:3b:8f"
-	machines := nebTestMachines()
+	byMAC := nebTestMachines()
 	n := nebTestManager(t.TempDir())
 
-	raw, err := n.nebMachinePatch(nebTestMaster, mac, machines[mac], machines)
+	raw, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,10 +331,10 @@ func TestNebMachinePatchIdentity(t *testing.T) {
 // nothing answers on.
 func TestNebMachinePatchAgreesWithMeshDNS(t *testing.T) {
 	mac := "b0:41:6f:15:3b:8f"
-	machines := nebTestMachines()
+	byMAC := nebTestMachines()
 	n := nebTestManager(t.TempDir())
 
-	raw, err := n.nebMachinePatch(nebTestMaster, mac, machines[mac], machines)
+	raw, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +349,7 @@ func TestNebMachinePatchAgreesWithMeshDNS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	zone, err := buildMeshZone(nebTestMaster, nebNodeSubnet, machines, n.devices)
+	zone, err := buildMeshZone(nebTestMaster, nebNodeSubnet, byMAC, n.devices)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,15 +365,15 @@ func TestNebMachinePatchAgreesWithMeshDNS(t *testing.T) {
 // caught before a cert claims a duplicate address, since certs bake it.
 func TestNebMachinePatchRejectsCollision(t *testing.T) {
 	mac := "b0:41:6f:15:3b:8f"
-	machines := nebTestMachines()
+	byMAC := nebTestMachines()
 	other, err := nebderive.MachineIP(nebTestMaster, mac, nebNodeSubnet)
 	if err != nil {
 		t.Fatal(err)
 	}
-	machines["aa:bb:cc:dd:ee:ff"] = machine{Name: "cp2", MeshIP: other.String()}
+	byMAC["aa:bb:cc:dd:ee:ff"] = machines.Machine{Name: "cp2", MeshIP: other.String()}
 
 	n := nebTestManager(t.TempDir())
-	if _, err := n.nebMachinePatch(nebTestMaster, mac, machines[mac], machines); err == nil {
+	if _, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC); err == nil {
 		t.Fatal("expected a collision error, got none")
 	}
 }
@@ -382,10 +383,10 @@ func TestNebMachinePatchRejectsCollision(t *testing.T) {
 // worse than no config.
 func TestNebMachinePatchNeedsEndpoint(t *testing.T) {
 	mac := "b0:41:6f:15:3b:8f"
-	machines := nebTestMachines()
+	byMAC := nebTestMachines()
 	n := nebTestManager(t.TempDir())
 	n.endpoint = ""
-	if _, err := n.nebMachinePatch(nebTestMaster, mac, machines[mac], machines); err == nil {
+	if _, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC); err == nil {
 		t.Fatal("expected an error without --mesh-endpoint, got none")
 	}
 }
@@ -403,14 +404,14 @@ func TestNebMachinePatchComposes(t *testing.T) {
 		t.Fatal(err)
 	}
 	mac := "b0:41:6f:15:3b:8f"
-	machines := map[string]machine{mac: {Name: "cp1", Config: "base.yaml", dir: root}}
+	byMAC := map[string]machines.Machine{mac: {Name: "cp1", Config: "base.yaml", Dir: root}}
 	n := nebTestManager(root)
 
-	patch, err := n.nebMachinePatch(nebTestMaster, mac, machines[mac], machines)
+	patch, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
 	if err != nil {
 		t.Fatal(err)
 	}
-	composed, err := buildConfig(root, machines[mac], patch)
+	composed, err := machines.BuildConfig(root, byMAC[mac], patch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +508,7 @@ func hasRule(rules []nebRuleYAML, want nebRuleYAML) bool {
 // the entire remaining value of the mesh (ADR-0006), so a filter that
 // excluded the LAN would be a worse bug than the one being fixed.
 func TestNodeUnderlayFilterExcludesOverlaysNotLAN(t *testing.T) {
-	p := nodeParams(t, "b0:41:6f:15:3b:8f", machine{Name: "cp1"})
+	p := nodeParams(t, "b0:41:6f:15:3b:8f", machines.Machine{Name: "cp1"})
 	raw, err := nodeNebulaConfig(p)
 	if err != nil {
 		t.Fatal(err)

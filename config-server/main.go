@@ -8,10 +8,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -24,13 +22,12 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"gopkg.in/yaml.v3"
 
 	kmsapi "github.com/siderolabs/kms-client/api/kms"
-	"github.com/siderolabs/talos/pkg/machinery/config/configpatcher"
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/ethsig"
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
@@ -41,29 +38,6 @@ import (
 // tooling.
 const masterKeyEnv = "WG_MASTER_KEY"
 
-// machine is the parsed form of talos/machines/<mac>/meta.yaml.
-type machine struct {
-	IP      string   `yaml:"ip"`
-	Config  string   `yaml:"config"`
-	Patches []string `yaml:"patches"`
-	// MeshIP is the nebula overlay address override, for derived-address
-	// collisions. Load-bearing beyond DNS: mesh certs bake the address,
-	// so a collision must be resolvable without re-rooting anything.
-	MeshIP string `yaml:"meshIP"`
-	// Name is the machine's tunnel DNS label (<name>.<domain>);
-	// defaults to the MAC with dashes.
-	Name string `yaml:"name"`
-	// UUID is the node's SMBIOS UUID (shown on /status at approval).
-	// It is the durable KMS unseal allowlist: deleting it revokes.
-	UUID string `yaml:"uuid"`
-	// DiskEncryption injects systemDiskEncryption (KMS + recovery
-	// passphrase) into the served config. Takes effect at install
-	// time only — an existing machine needs a wipe to encrypt.
-	DiskEncryption bool `yaml:"diskEncryption"`
-
-	dir string // machines/<mac> directory, absolute
-}
-
 // talosRoot returns the talos/ directory of the enclosing git repo.
 func talosRoot() (string, error) {
 	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
@@ -73,82 +47,11 @@ func talosRoot() (string, error) {
 	return filepath.Join(strings.TrimSpace(string(out)), "talos"), nil
 }
 
-// normalizeMAC lowercases and converts dashes to colons.
-func normalizeMAC(mac string) string {
-	return strings.ToLower(strings.ReplaceAll(mac, "-", ":"))
-}
-
-// loadMachines scans machinesDir for <mac>/meta.yaml, returns MAC → machine.
-func loadMachines(machinesDir string) (map[string]machine, error) {
-	entries, err := os.ReadDir(machinesDir)
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", machinesDir, err)
-	}
-
-	machines := make(map[string]machine)
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		dir := filepath.Join(machinesDir, e.Name())
-		raw, err := os.ReadFile(filepath.Join(dir, "meta.yaml"))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("reading meta for %s: %w", e.Name(), err)
-		}
-
-		var m machine
-		if err := yaml.Unmarshal(raw, &m); err != nil {
-			return nil, fmt.Errorf("parsing %s/meta.yaml: %w", e.Name(), err)
-		}
-		m.dir = dir
-		machines[normalizeMAC(e.Name())] = m
-	}
-	return machines, nil
-}
-
-// buildConfig composes the base config with all patches for the
-// machine, plus any literal extra patches (applied last; used for
-// serve-time mesh/disk-key injection so key material never hits disk).
-func buildConfig(root string, m machine, extra ...string) ([]byte, error) {
-	base, err := os.ReadFile(filepath.Join(root, m.Config))
-	if err != nil {
-		return nil, fmt.Errorf("reading base config: %w", err)
-	}
-
-	patchRefs := make([]string, 0, len(m.Patches)+len(extra)+1)
-	for _, p := range m.Patches {
-		patchRefs = append(patchRefs, "@"+filepath.Join(root, p))
-	}
-	if machinePatch := filepath.Join(m.dir, "patch.yaml"); fileExists(machinePatch) {
-		patchRefs = append(patchRefs, "@"+machinePatch)
-	}
-	patchRefs = append(patchRefs, extra...)
-
-	patches, err := configpatcher.LoadPatches(patchRefs)
-	if err != nil {
-		return nil, fmt.Errorf("loading patches: %w", err)
-	}
-
-	out, err := configpatcher.Apply(configpatcher.WithBytes(base), patches)
-	if err != nil {
-		return nil, fmt.Errorf("applying patches: %w", err)
-	}
-	return out.Bytes()
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 // serveTimePatches renders the patches that never touch disk: everything
 // keyed off the unsealed master. They share one shape — derive, and
 // refuse the serve if the derivation says no, because a machine is
 // better off retrying than installing a config it cannot use.
-func (s *server) serveTimePatches(mac string, m machine, machines map[string]machine) ([]string, int, string) {
+func (s *server) serveTimePatches(mac string, m machines.Machine, byMAC map[string]machines.Machine) ([]string, int, string) {
 	if s.hub == nil {
 		if m.DiskEncryption {
 			// Disk keys derive from the master; without the hub there is none.
@@ -182,7 +85,7 @@ func (s *server) serveTimePatches(mac string, m machine, machines map[string]mac
 	// mesh when the hub returns. A failure here is a repo mistake
 	// (address collision, bad meshIP), not a runtime condition.
 	if mesh := s.hub.mesh; mesh != nil {
-		p, err := mesh.nebMachinePatch(master, mac, m, machines)
+		p, err := mesh.nebMachinePatch(master, mac, m, byMAC)
 		if err != nil {
 			log.Printf("error building mesh patch for %s: %v", mac, err)
 			return nil, http.StatusInternalServerError, "internal error"
@@ -235,23 +138,23 @@ func (s *server) lastFetch(mac string) (time.Time, bool) {
 // certSANs, disk encryption). On failure it returns a
 // non-200 status with a client-safe message; details go to the log.
 func (s *server) composeFor(mac string) ([]byte, int, string) {
-	machines, err := loadMachines(filepath.Join(s.root, "machines"))
+	byMAC, err := machines.Load(filepath.Join(s.root, "machines"))
 	if err != nil {
 		log.Printf("error loading machines: %v", err)
 		return nil, http.StatusInternalServerError, "internal error"
 	}
 
-	m, ok := machines[mac]
+	m, ok := byMAC[mac]
 	if !ok {
 		return nil, http.StatusNotFound, fmt.Sprintf("no config for MAC %s", mac)
 	}
 
-	extra, status, msg := s.serveTimePatches(mac, m, machines)
+	extra, status, msg := s.serveTimePatches(mac, m, byMAC)
 	if status != http.StatusOK {
 		return nil, status, msg
 	}
 
-	body, err := buildConfig(s.root, m, extra...)
+	body, err := machines.BuildConfig(s.root, m, extra...)
 	if err != nil {
 		log.Printf("error building config for %s: %v", mac, err)
 		return nil, http.StatusInternalServerError, "internal error"
@@ -265,7 +168,7 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing mac parameter", http.StatusBadRequest)
 		return
 	}
-	mac = normalizeMAC(mac)
+	mac = machines.NormalizeMAC(mac)
 
 	token := bearerToken(r)
 	if s.requireAuth {
@@ -305,7 +208,7 @@ func (s *server) handleTunnelConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing mac parameter", http.StatusBadRequest)
 		return
 	}
-	mac = normalizeMAC(mac)
+	mac = machines.NormalizeMAC(mac)
 
 	body, status, msg := s.composeFor(mac)
 	if status != http.StatusOK {
@@ -475,7 +378,7 @@ func main() {
 		}
 	}
 
-	machines, err := loadMachines(filepath.Join(s.root, "machines"))
+	byMAC, err := machines.Load(filepath.Join(s.root, "machines"))
 	if err != nil {
 		log.Fatalf("loading machines: %v", err)
 	}
@@ -490,7 +393,7 @@ func main() {
 
 	addr := fmt.Sprintf("%s:%d", *bind, *port)
 	log.Printf("serving configs on %s (auth required: %v)", addr, *requireAuth)
-	for mac, m := range machines {
+	for mac, m := range byMAC {
 		log.Printf("  %s -> %s", mac, m.Config)
 	}
 	srv := &http.Server{Addr: addr, Handler: s.handler(), Protocols: cleartextH2Protocols()}

@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/net/dns/dnsmessage"
 
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nebstack"
 )
@@ -33,7 +34,7 @@ var dnsLabelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // machineDNSName returns the machine's mesh DNS label: the meta.yaml
 // name if set, else the MAC with dashes.
-func machineDNSName(mac string, m machine) string {
+func machineDNSName(mac string, m machines.Machine) string {
 	if m.Name != "" {
 		return strings.ToLower(strings.TrimSpace(m.Name))
 	}
@@ -51,7 +52,7 @@ const meshDNSZone = nebderive.DNSZone
 // collision on wg0 is a config edit away from fixed; on the mesh it
 // also invalidates a minted cert, so the escape hatch has to be there
 // before the first collision, not after.
-func machineMeshIP(master []byte, mac string, m machine, subnet netip.Prefix) (netip.Addr, error) {
+func machineMeshIP(master []byte, mac string, m machines.Machine, subnet netip.Prefix) (netip.Addr, error) {
 	if m.MeshIP != "" {
 		ip, err := netip.ParseAddr(m.MeshIP)
 		if err != nil {
@@ -72,7 +73,7 @@ func machineMeshIP(master []byte, mac string, m machine, subnet netip.Prefix) (n
 // deliberately leaves that to the caller, and this is the one place that
 // sees every member at once, so an unseal fails loudly here rather than
 // minting two certs that claim the same address.
-func buildMeshZone(master []byte, subnet netip.Prefix, machines map[string]machine, devices []nebDevice) (map[string]netip.Addr, error) {
+func buildMeshZone(master []byte, subnet netip.Prefix, byMAC map[string]machines.Machine, devices []nebDevice) (map[string]netip.Addr, error) {
 	hubIP, err := nebderive.HubIP(subnet)
 	if err != nil {
 		return nil, err
@@ -98,8 +99,8 @@ func buildMeshZone(master []byte, subnet netip.Prefix, machines map[string]machi
 		return nil
 	}
 
-	for _, mac := range slices.Sorted(maps.Keys(machines)) {
-		m := machines[mac]
+	for _, mac := range slices.Sorted(maps.Keys(byMAC)) {
+		m := byMAC[mac]
 		ip, err := machineMeshIP(master, mac, m, subnet)
 		if err != nil {
 			return nil, err

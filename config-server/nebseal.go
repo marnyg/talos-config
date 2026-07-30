@@ -30,6 +30,7 @@ import (
 	"github.com/slackhq/nebula/logging"
 	"github.com/slackhq/nebula/overlay"
 
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nebstack"
 )
@@ -117,11 +118,11 @@ func (m *nebManager) unsealWithMaster(master []byte) error {
 	// than after certs have been minted against it.
 	var zone map[string]netip.Addr
 	if m.dnsZone != "" {
-		machines, err := loadMachines(m.machinesDir())
+		byMAC, err := machines.Load(m.machinesDir())
 		if err != nil {
 			return m.fail(fmt.Errorf("loading machines: %w", err))
 		}
-		if zone, err = buildMeshZone(master, m.subnet, machines, m.devices); err != nil {
+		if zone, err = buildMeshZone(master, m.subnet, byMAC, m.devices); err != nil {
 			return m.fail(fmt.Errorf("building mesh zone: %w", err))
 		}
 	}

@@ -28,6 +28,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/marnyg/talos-config/config-server/ethsig"
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
@@ -138,11 +139,11 @@ func (m *nebManager) deviceConfig(master []byte, d nebDevice) ([]byte, error) {
 	if m.endpoint == "" {
 		return nil, fmt.Errorf("mesh endpoint is not configured (--mesh-endpoint)")
 	}
-	machines, err := loadMachines(m.machinesDir())
+	byMAC, err := machines.Load(m.machinesDir())
 	if err != nil {
 		return nil, fmt.Errorf("loading machines: %w", err)
 	}
-	zone, err := buildMeshZone(master, m.subnet, machines, m.devices)
+	zone, err := buildMeshZone(master, m.subnet, byMAC, m.devices)
 	if err != nil {
 		return nil, fmt.Errorf("building mesh zone: %w", err)
 	}

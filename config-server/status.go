@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/ethsig"
+	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
@@ -507,7 +508,7 @@ type statusData struct {
 }
 
 func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
-	machines, err := loadMachines(filepath.Join(s.root, "machines"))
+	byMAC, err := machines.Load(filepath.Join(s.root, "machines"))
 	if err != nil {
 		log.Printf("status: loading machines: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -527,8 +528,8 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 
 	now := time.Now()
 	var rows []statusRow
-	for _, mac := range slices.Sorted(maps.Keys(machines)) {
-		m := machines[mac]
+	for _, mac := range slices.Sorted(maps.Keys(byMAC)) {
+		m := byMAC[mac]
 		row := statusRow{
 			MAC:       mac,
 			DNS:       "—",
