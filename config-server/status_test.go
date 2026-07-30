@@ -343,3 +343,57 @@ func TestStatusLoginNonceSingleUse(t *testing.T) {
 		t.Fatalf("replayed login succeeded: got %d, cookie %q", replay.StatusCode, replay.Header.Get("Set-Cookie"))
 	}
 }
+
+// TestStatusShowsMeshMembers: with the mesh configured, the dashboard
+// carries a mesh seal-state line and, once unsealed, the full derived
+// membership — offline members included. Also pins the soft-refresh
+// contract: a #live region and no meta-refresh reload.
+func TestStatusShowsMeshMembers(t *testing.T) {
+	m := testWGManager(t, []string{wellKnownAddr}, "")
+	mesh, _ := testNebManager(t, m.root, []string{"laptop"})
+	m.mesh = mesh
+	s := &server{
+		root:       m.root,
+		store:      newAuthStore(),
+		sessions:   newSessionStore(),
+		adminAddrs: []string{wellKnownAddr},
+		wgm:        m,
+	}
+	ts := httptest.NewServer(s.mux())
+	defer ts.Close()
+
+	client := login(t, ts)
+	code, body := get(t, client, ts.URL+"/status")
+	if code != http.StatusOK {
+		t.Fatalf("status: got %d", code)
+	}
+	if !strings.Contains(body, ">mesh</th>") || !strings.Contains(body, "sealed") {
+		t.Error("sealed page should carry the mesh seal-state line")
+	}
+	if strings.Contains(body, "<h2>Mesh</h2>") && strings.Contains(body, "laptop") {
+		t.Error("sealed page must not list mesh members")
+	}
+
+	if resp, err := client.PostForm(ts.URL+"/unseal", url.Values{"signature": {unsealSig(t)}}); err != nil {
+		t.Fatal(err)
+	} else {
+		readBody(t, resp)
+	}
+
+	code, body = get(t, client, ts.URL+"/status")
+	if code != http.StatusOK {
+		t.Fatalf("status after unseal: got %d", code)
+	}
+	// "+" renders as &#43; under html/template's text escaping.
+	for _, want := range []string{"<h2>Mesh</h2>", "laptop", "lighthouse&#43;relay", "aa-bb-cc-dd-ee-ff"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("unsealed page missing %q", want)
+		}
+	}
+	if !strings.Contains(body, `id="live"`) {
+		t.Error("dynamic region #live missing")
+	}
+	if strings.Contains(body, `http-equiv="refresh"`) {
+		t.Error("meta refresh should be gone — the poller replaced it")
+	}
+}

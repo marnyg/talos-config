@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/slackhq/nebula"
 	"gopkg.in/yaml.v3"
 
 	"github.com/marnyg/talos-config/config-server/nebderive"
@@ -261,5 +262,78 @@ func TestParseMeshDevices(t *testing.T) {
 func TestParseMeshDevicesRejectsBothGroups(t *testing.T) {
 	if _, err := parseMeshDevices("laptop,androidtv", "androidtv"); err == nil {
 		t.Fatal("expected an error for a device declared in both groups, got none")
+	}
+}
+
+// TestMeshMemberRows: the pure join of derived membership × live
+// hostmap. The hub is self, a live member shows its WAN endpoint and
+// who it relays to (by name), and an offline member still appears —
+// membership comes from derivation, not from who is connected.
+func TestMeshMemberRows(t *testing.T) {
+	hubIP := netip.MustParseAddr("10.42.0.1")
+	cp1IP := netip.MustParseAddr("10.42.218.125")
+	lapIP := netip.MustParseAddr("10.42.117.202")
+	tvIP := netip.MustParseAddr("10.42.33.44")
+	zone := map[string]netip.Addr{
+		nebderive.HubName: hubIP,
+		"cp1":             cp1IP,
+		"laptop":          lapIP,
+		"androidtv":       tvIP,
+	}
+	devices := []nebDevice{
+		{name: "laptop", group: nebGroupAdmins},
+		{name: "androidtv", group: nebGroupMedia},
+	}
+	live := []nebula.ControlHostInfo{
+		{
+			VpnAddrs:               []netip.Addr{lapIP},
+			CurrentRemote:          netip.MustParseAddrPort("198.51.100.7:4242"),
+			CurrentRelaysThroughMe: []netip.Addr{cp1IP},
+		},
+	}
+
+	got := meshMemberRows(zone, devices, "hub.example:4242", live)
+	want := []meshMemberRow{
+		{Name: "androidtv", Group: nebGroupMedia, Addr: tvIP.String(), Tunnel: "—", Endpoint: "—", Relays: "—"},
+		{Name: "cp1", Group: nebGroupMachines, Addr: cp1IP.String(), Tunnel: "—", Endpoint: "—", Relays: "—"},
+		{Name: "hub", Group: "lighthouse+relay", Addr: hubIP.String(), Tunnel: "self", Endpoint: "hub.example:4242", Relays: "—"},
+		{Name: "laptop", Group: nebGroupAdmins, Addr: lapIP.String(), Tunnel: "up", Endpoint: "198.51.100.7:4242", Relays: "cp1"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d rows (%v), want %d", len(got), got, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestNebManagerMembers: before unseal there is no zone and therefore
+// no membership; after unseal every derived member is listed even with
+// nebula stubbed out (nothing is live, everything still appears).
+func TestNebManagerMembers(t *testing.T) {
+	root := testTalosTree(t)
+	m, _ := testNebManager(t, root, []string{"laptop"})
+
+	if rows := m.members(); rows != nil {
+		t.Fatalf("sealed manager should report no members, got %v", rows)
+	}
+	if err := m.unsealWithMaster([]byte("neb-seal-test-master-key-32bytes")); err != nil {
+		t.Fatal(err)
+	}
+	rows := m.members()
+	byName := map[string]meshMemberRow{}
+	for _, r := range rows {
+		byName[r.Name] = r
+	}
+	if r := byName["hub"]; r.Tunnel != "self" || r.Endpoint != nebTestEndpoint {
+		t.Errorf("hub row = %+v", r)
+	}
+	if r := byName["cp1"]; r.Group != nebGroupMachines || r.Tunnel != "—" {
+		t.Errorf("cp1 row = %+v", r)
+	}
+	if r := byName["laptop"]; r.Group != nebGroupAdmins || r.Tunnel != "—" {
+		t.Errorf("laptop row = %+v", r)
 	}
 }

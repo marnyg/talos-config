@@ -215,6 +215,14 @@ func (s *Service) OverlayAddr() netip.Addr {
 	return s.networks[0].Addr()
 }
 
+// Peers reports the live hostmap: one entry per established tunnel.
+// Read-only introspection — the hub's /status joins this with the
+// derived membership to show who is actually connected, and how
+// (direct remote vs relayed, and who relays through us).
+func (s *Service) Peers() []nebula.ControlHostInfo {
+	return s.control.ListHostmapHosts(false)
+}
+
 func getProtocolNumber(addr netip.Addr) tcpip.NetworkProtocolNumber {
 	if addr.Is6() {
 		return ipv6.ProtocolNumber

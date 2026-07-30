@@ -311,7 +311,6 @@ func (s *server) renderLogin(w http.ResponseWriter, msg string) {
 var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
 <html>
 <head><title>Cluster status</title>
-{{if .Refresh}}<meta http-equiv="refresh" content="30">{{end}}
 <style>` + statusStyle + `</style></head>
 <body>
 <h1>Cluster status</h1>
@@ -321,13 +320,14 @@ var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
 {{if .Message}}<div class="msg">{{.Message}}</div>
 <script>history.replaceState(null, '', '/status');</script>
 {{end}}
+<div id="live">
 {{if .Sealed}}
 <div class="msg warn">
  <strong>⚠ WireGuard control channel is SEALED</strong> — config serving is paused.
  <p>Unsealing signs the master-key derivation message. <strong>This signature IS the
  fleet master key.</strong> Only ever sign it on this page or offline via
  <code>cast wallet sign</code> — never on any other site.</p>
- <form method="POST" action="/unseal" id="unseal-form">
+ <form method="POST" action="/unseal" id="unseal-form" data-msg="{{.MasterMessage}}">
  {{if .WalletEnabled}}<button type="button" id="unseal-wallet">Unseal with wallet</button>{{end}}
   <details>
    <summary>Sign manually (e.g. cast wallet sign)</summary>
@@ -341,6 +341,7 @@ var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
 <table>
  <tr><th>server</th><td>{{.Version}}{{if .Started}} — up since {{.Started}}{{end}}</td></tr>
  <tr><th>control channel</th><td{{if .Sealed}} class="warn"{{end}}>{{.Seal}}</td></tr>
+ {{if .Mesh}}<tr><th>mesh</th><td{{if .MeshWarn}} class="warn"{{end}}>{{.Mesh}}</td></tr>{{end}}
  {{with .Boot}}
  <tr><th>auto-bootstrap</th><td>{{.State}}{{if .Target}} — target {{.Target}} ({{.TunnelIP}}){{end}}{{if .Done}} — cluster bootstrapped, idle{{else if .Attempted}} — Bootstrap called, watching etcd{{end}}{{if .LastErr}} — last error: {{.LastErr}}{{end}}</td></tr>
  {{else}}
@@ -391,41 +392,79 @@ server restart or it will not be able to unlock its disks.</div>
  <tr><th>mac</th><th>dns</th><th>role</th><th>lan ip</th><th>tunnel ip</th><th>handshake</th><th>rx</th><th>tx</th><th>wan endpoint</th><th>last config fetch</th></tr>
 {{range .Rows}} <tr><td>{{.MAC}}</td><td>{{.DNS}}</td><td>{{.Role}}</td><td>{{.IP}}</td><td>{{.TunnelIP}}</td><td>{{.Handshake}}</td><td>{{.Rx}}</td><td>{{.Tx}}</td><td>{{.Endpoint}}</td><td>{{.LastFetch}}</td></tr>
 {{end}}</table>
-{{if .WalletEnabled}}
+{{if .Mesh}}
+<h2>Mesh</h2>
+{{if .MeshRows}}
+<table>
+ <tr><th>name</th><th>group</th><th>mesh ip</th><th>tunnel</th><th>wan endpoint</th><th>relaying via hub to</th></tr>
+{{range .MeshRows}} <tr><td>{{.Name}}</td><td>{{.Group}}</td><td>{{.Addr}}</td><td>{{.Tunnel}}</td><td>{{.Endpoint}}</td><td>{{.Relays}}</td></tr>
+{{end}}</table>
+{{else}}<p>Membership appears after unseal.</p>{{end}}
+{{end}}
+</div>
 <script>
 (function () {
-  var btn = document.getElementById('unseal-wallet');
-  if (!btn) return;
-  btn.addEventListener('click', async function () {
-    if (!window.ethereum) { alert('no wallet found'); return; }
-    try {
-      var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-      var sig = await ethereum.request({ method: 'personal_sign', params: [{{.MasterMessage}}, accounts[0]] });
-      var form = document.getElementById('unseal-form');
-      form.querySelector('input[name=signature]').value = sig;
-      form.submit();
-    } catch (e) { alert('signing failed: ' + (e.message || e)); }
-  });
-})();
-document.querySelectorAll('button.wallet').forEach(function (btn) {
-  btn.addEventListener('click', async function () {
+  async function walletSign(msg) {
+    if (!window.ethereum) { alert('no wallet found'); return null; }
+    var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+    return await ethereum.request({ method: 'personal_sign', params: [msg, accounts[0]] });
+  }
+  // Delegated, not per-node: the live region below is re-rendered by
+  // the poller, and per-node listeners would die with their nodes.
+  document.addEventListener('click', async function (ev) {
+    var btn = ev.target.closest('button');
+    if (!btn) return;
     var form = btn.closest('form');
-    var action = btn.dataset.action;
-    var msg = action === 'approve' ? form.dataset.msgApprove : form.dataset.msgDeny;
-    if (!window.ethereum) { alert('no wallet found'); return; }
+    var msg, action = null;
+    if (btn.id === 'unseal-wallet') {
+      msg = form.dataset.msg;
+    } else if (btn.classList.contains('wallet') && btn.dataset.action) {
+      action = btn.dataset.action;
+      msg = action === 'approve' ? form.dataset.msgApprove : form.dataset.msgDeny;
+    } else {
+      return;
+    }
+    ev.preventDefault();
     try {
-      var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-      var sig = await ethereum.request({ method: 'personal_sign', params: [msg, accounts[0]] });
+      var sig = await walletSign(msg);
+      if (!sig) return;
       form.querySelector('input[name=signature]').value = sig;
-      var act = document.createElement('input');
-      act.type = 'hidden'; act.name = 'action'; act.value = action;
-      form.appendChild(act);
+      if (action) {
+        var act = document.createElement('input');
+        act.type = 'hidden'; act.name = 'action'; act.value = action;
+        form.appendChild(act);
+      }
       form.submit();
     } catch (e) { alert('signing failed: ' + (e.message || e)); }
   });
-});
+
+  // Soft refresh: re-fetch the page and swap only #live, so an update
+  // never wipes a half-typed signature. Backs off while the operator
+  // is interacting (focus in the region, text in any input, an open
+  // details) and falls back to a full reload once the session expires.
+  function busy() {
+    var live = document.getElementById('live');
+    if (document.activeElement !== document.body && live.contains(document.activeElement)) return true;
+    if (live.querySelector('details[open]')) return true;
+    var inputs = live.querySelectorAll('input[type=text], input[type=password]');
+    for (var i = 0; i < inputs.length; i++) if (inputs[i].value) return true;
+    return false;
+  }
+  setInterval(async function () {
+    if (busy()) return;
+    try {
+      var resp = await fetch('/status');
+      if (!resp.ok) return;
+      var doc = new DOMParser().parseFromString(await resp.text(), 'text/html');
+      var next = doc.getElementById('live');
+      if (!next) { location.reload(); return; }
+      if (busy()) return;
+      var cur = document.getElementById('live');
+      if (cur.innerHTML !== next.innerHTML) cur.innerHTML = next.innerHTML;
+    } catch (e) { /* transient; try again next tick */ }
+  }, 10000);
+})();
 </script>
-{{end}}
 </body></html>`))
 
 type statusRow struct {
@@ -441,7 +480,9 @@ type statusData struct {
 	Started       string
 	Seal          string
 	Sealed        bool
-	Refresh       bool
+	Mesh          string // mesh seal-state line ("" = mesh disabled)
+	MeshWarn      bool
+	MeshRows      []meshMemberRow
 	Boot          *bootSnapshot
 	Pending       []verifyEntry
 	UndeclaredKMS []string
@@ -531,6 +572,20 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		TokenEnabled:  s.adminToken != "",
 		MasterMessage: wgderive.MasterMessage,
 	}
+	if mesh := s.mesh(); mesh != nil {
+		svc, _, meshErr := mesh.state()
+		switch {
+		case svc != nil:
+			data.Mesh = "up — lighthouse+relay, endpoint " + mesh.endpoint
+		case meshErr != nil:
+			data.Mesh, data.MeshWarn = "DOWN — "+meshErr.Error(), true
+		case data.Sealed:
+			data.Mesh = "sealed"
+		default:
+			data.Mesh = "down"
+		}
+		data.MeshRows = mesh.members()
+	}
 	if !s.started.IsZero() {
 		data.Started = s.started.UTC().Format("2006-01-02 15:04 MST")
 	}
@@ -548,10 +603,6 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 	if s.kms != nil {
 		data.UndeclaredKMS = s.kms.undeclaredSealed()
 	}
-	// Auto-refresh only when idle: a refresh would wipe a half-filled
-	// signature field on the unseal/approval forms.
-	data.Refresh = !data.Sealed && len(data.Pending) == 0
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := statusTemplate.Execute(w, data); err != nil {
 		log.Printf("rendering status page: %v", err)

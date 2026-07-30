@@ -13,9 +13,11 @@ package main
 import (
 	"fmt"
 	"log"
+	"maps"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -173,6 +175,95 @@ func (m *nebManager) unsealWithMaster(master []byte) error {
 		log.Printf("mesh device %q (%s): overlay address %s", d.name, d.group, ip)
 	}
 	return nil
+}
+
+// meshMemberRow is one /status mesh-table line: a derived member joined
+// with its live tunnel state from the embedded nebula hostmap.
+type meshMemberRow struct {
+	Name, Group, Addr, Tunnel, Endpoint, Relays string
+}
+
+// members lists every derived mesh member with live tunnel state.
+// Offline members still appear: membership is derived from git +
+// declarations, not from who happens to be connected. Nil until the
+// zone exists (built at unseal), so a sealed hub shows nothing — the
+// same rule the DNS zone follows.
+func (m *nebManager) members() []meshMemberRow {
+	svc, zone, _ := m.state()
+	if zone == nil {
+		return nil
+	}
+	var live []nebula.ControlHostInfo
+	if svc != nil {
+		live = svc.Peers()
+	}
+	return meshMemberRows(zone, m.devices, m.endpoint, live)
+}
+
+// meshMemberRows is the pure join: derived membership × live hostmap.
+// Separated from nebManager so tests can fabricate hostmap entries
+// without a running nebula.
+func meshMemberRows(zone map[string]netip.Addr, devices []nebDevice, hubEndpoint string, live []nebula.ControlHostInfo) []meshMemberRow {
+	groups := map[string]string{}
+	for _, d := range devices {
+		groups[d.name] = d.group
+	}
+	// Reverse zone, so relay targets render as names, not addresses.
+	names := map[netip.Addr]string{}
+	for n, a := range zone {
+		names[a] = n
+	}
+	byAddr := map[netip.Addr]nebula.ControlHostInfo{}
+	for _, hi := range live {
+		if len(hi.VpnAddrs) > 0 {
+			byAddr[hi.VpnAddrs[0]] = hi
+		}
+	}
+
+	var rows []meshMemberRow
+	for _, n := range slices.Sorted(maps.Keys(zone)) {
+		addr := zone[n]
+		row := meshMemberRow{Name: n, Addr: addr.String(), Tunnel: "—", Endpoint: "—", Relays: "—"}
+		if n == nebderive.HubName {
+			// The hub is this process: no tunnel to itself, and its
+			// endpoint is configuration, not hostmap observation.
+			row.Group = "lighthouse+relay"
+			row.Tunnel = "self"
+			row.Endpoint = hubEndpoint
+			rows = append(rows, row)
+			continue
+		}
+		row.Group = groups[n]
+		if row.Group == "" {
+			row.Group = nebGroupMachines
+		}
+		if hi, ok := byAddr[addr]; ok {
+			row.Tunnel = "up"
+			if len(hi.CurrentRelaysToMe) > 0 {
+				// The hub needs a relay to reach this member — should
+				// never happen while the hub is the only relay, so it
+				// is worth surfacing loudly if it does.
+				row.Tunnel = "up (via relay)"
+			}
+			if hi.CurrentRemote.IsValid() {
+				row.Endpoint = hi.CurrentRemote.String()
+			}
+			if len(hi.CurrentRelaysThroughMe) > 0 {
+				var ts []string
+				for _, a := range hi.CurrentRelaysThroughMe {
+					if peer, ok := names[a]; ok {
+						ts = append(ts, peer)
+					} else {
+						ts = append(ts, a.String())
+					}
+				}
+				slices.Sort(ts)
+				row.Relays = strings.Join(ts, ", ")
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 // fail records and returns err, so a later /status or /sealed can say
