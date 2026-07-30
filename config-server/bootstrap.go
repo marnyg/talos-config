@@ -1,8 +1,9 @@
 package main
 
-// Auto-bootstrap: the server watches the WG tunnel for the approved
+// Auto-bootstrap: the server watches the mesh for the approved
 // control-plane node and, when its etcd is waiting for bootstrap, calls
-// the machinery Bootstrap API over the tunnel. No trust escalation: the
+// the machinery Bootstrap API over the overlay (phase 2 step 3 moved
+// the dial from wg0's netstack to the mesh's). No trust escalation: the
 // server already composes configs from the cluster secrets, so it holds
 // the OS CA and can mint its own short-lived os:admin client cert.
 //
@@ -39,6 +40,8 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/config/configloader"
 	"github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	"github.com/siderolabs/talos/pkg/machinery/role"
+
+	"github.com/marnyg/talos-config/config-server/nebstack"
 )
 
 const (
@@ -116,9 +119,9 @@ func observeEtcd(services []*machineapi.ServiceInfo) etcdObservation {
 // the only bootstrapper state shared across goroutines.
 type bootSnapshot struct {
 	LastPoll  time.Time
-	State     string // sealed | no-control-plane | multi-cp-refused | <observation>
+	State     string // sealed | mesh-down | no-control-plane | multi-cp-refused | <observation>
 	Target    string // control-plane MAC
-	TunnelIP  string
+	MeshIP    string // target's overlay address
 	Done      bool   // cluster confirmed bootstrapped
 	Attempted bool   // a Bootstrap call succeeded this lifetime
 	LastErr   string // last RPC failure, "" when healthy
@@ -180,9 +183,23 @@ func (b *bootstrapper) step(ctx context.Context) {
 	b.setSnap(func(s *bootSnapshot) { s.LastPoll = time.Now() })
 
 	wg := b.wgm.current()
-	if wg == nil || wg.tnet == nil {
+	if wg == nil {
 		b.setSnap(func(s *bootSnapshot) { s.State = "sealed" })
-		return // sealed (or tests): nothing to dial through
+		return // sealed: no master, nothing to derive or dial
+	}
+
+	// The control channel rides the mesh: an unsealed hub whose mesh
+	// failed to start has nothing to dial through. Kept distinct from
+	// "sealed" so /status says which of the two it is.
+	var svc *nebstack.Service
+	var meshSubnet netip.Prefix
+	if mesh := b.wgm.mesh; mesh != nil {
+		svc, _, _ = mesh.state()
+		meshSubnet = mesh.subnet
+	}
+	if svc == nil {
+		b.setSnap(func(s *bootSnapshot) { s.State = "mesh-down" })
+		return
 	}
 
 	machines, err := loadMachines(filepath.Join(b.root, "machines"))
@@ -209,38 +226,38 @@ func (b *bootstrapper) step(ctx context.Context) {
 		mac = m
 	}
 	m := cps[mac]
-	ip, err := wg.machineTunnelIP(mac, m)
+	ip, err := machineMeshIP(wg.master, mac, m, meshSubnet)
 	if err != nil {
-		log.Printf("auto-bootstrap: tunnel ip for %s: %v", mac, err)
+		log.Printf("auto-bootstrap: mesh address for %s: %v", mac, err)
 		return
 	}
 
-	obs := b.observe(ctx, wg, m, ip)
+	obs := b.observe(ctx, svc, m, ip)
 	if obs != b.lastObs || !b.obsLogged {
-		log.Printf("auto-bootstrap: %s (%s over tunnel): %s", mac, ip, obs)
+		log.Printf("auto-bootstrap: %s (%s over mesh): %s", mac, ip, obs)
 		b.lastObs, b.obsLogged = obs, true
 	}
 
 	action := b.st.next(obs)
 	b.setSnap(func(s *bootSnapshot) {
-		s.State, s.Target, s.TunnelIP = obs.String(), mac, ip.String()
+		s.State, s.Target, s.MeshIP = obs.String(), mac, ip.String()
 		s.Done, s.Attempted, s.LastErr = b.st.done, b.st.attempted, b.lastFail
 	})
 
 	switch action {
 	case actBootstrap:
-		b.bootstrap(ctx, wg, mac, m, ip)
+		b.bootstrap(ctx, svc, mac, m, ip)
 	case actDone:
 		log.Printf("auto-bootstrap: cluster is bootstrapped (etcd running on %s); going idle", mac)
 	}
 }
 
-// observe dials the node over the tunnel and inspects its services.
-func (b *bootstrapper) observe(ctx context.Context, wg *wgSettings, m machine, ip netip.Addr) etcdObservation {
+// observe dials the node over the mesh and inspects its services.
+func (b *bootstrapper) observe(ctx context.Context, svc *nebstack.Service, m machine, ip netip.Addr) etcdObservation {
 	ctx, cancel := context.WithTimeout(ctx, bootstrapDialTimeout)
 	defer cancel()
 
-	c, err := b.talosClient(ctx, wg, m, ip)
+	c, err := b.talosClient(ctx, svc, m, ip)
 	if err != nil {
 		log.Printf("auto-bootstrap: building client: %v", err)
 		return etcdUnreachable
@@ -249,10 +266,10 @@ func (b *bootstrapper) observe(ctx context.Context, wg *wgSettings, m machine, i
 
 	resp, err := c.ServiceList(ctx)
 	if err != nil {
-		// "unreachable" alone hides whether the tunnel or TLS failed;
+		// "unreachable" alone hides whether the overlay or TLS failed;
 		// log the underlying error whenever it changes.
 		if msg := err.Error(); msg != b.lastFail {
-			log.Printf("auto-bootstrap: service list via tunnel failed: %v", err)
+			log.Printf("auto-bootstrap: service list via mesh failed: %v", err)
 			b.lastFail = msg
 		}
 		return etcdUnreachable
@@ -266,12 +283,12 @@ func (b *bootstrapper) observe(ctx context.Context, wg *wgSettings, m machine, i
 }
 
 // bootstrap performs the one-shot Bootstrap call.
-func (b *bootstrapper) bootstrap(ctx context.Context, wg *wgSettings, mac string, m machine, ip netip.Addr) {
+func (b *bootstrapper) bootstrap(ctx context.Context, svc *nebstack.Service, mac string, m machine, ip netip.Addr) {
 	log.Printf("AUTO-BOOTSTRAP: calling Bootstrap on %s (%s) — etcd waited %d consecutive polls", mac, ip, b.st.waitingStreak)
 
 	ctx, cancel := context.WithTimeout(ctx, bootstrapDialTimeout)
 	defer cancel()
-	c, err := b.talosClient(ctx, wg, m, ip)
+	c, err := b.talosClient(ctx, svc, m, ip)
 	if err != nil {
 		log.Printf("auto-bootstrap: building client: %v", err)
 		return
@@ -288,10 +305,12 @@ func (b *bootstrapper) bootstrap(ctx context.Context, wg *wgSettings, mac string
 	log.Printf("AUTO-BOOTSTRAP: Bootstrap accepted by %s — watching for etcd to come up", mac)
 }
 
-// talosClient builds a machinery client that dials through the tunnel
+// talosClient builds a machinery client that dials through the mesh
 // netstack, authenticating with a short-lived os:admin cert minted from
 // the cluster's OS CA (extracted from the machine's composed config).
-func (b *bootstrapper) talosClient(ctx context.Context, wg *wgSettings, m machine, ip netip.Addr) (*client.Client, error) {
+// The TLS dial verifies against the machine's overlay-address certSAN,
+// which nebMachinePatch injects for exactly this reason.
+func (b *bootstrapper) talosClient(ctx context.Context, svc *nebstack.Service, m machine, ip netip.Addr) (*client.Client, error) {
 	ca, err := b.issuingCA(m)
 	if err != nil {
 		return nil, err
@@ -303,11 +322,7 @@ func (b *bootstrapper) talosClient(ctx context.Context, wg *wgSettings, m machin
 	cfg := clientconfig.NewConfig("auto-bootstrap", []string{ip.String()}, ca.Crt, admin)
 
 	dialer := grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-		ap, err := netip.ParseAddrPort(addr)
-		if err != nil {
-			return nil, fmt.Errorf("parsing dial address %q: %w", addr, err)
-		}
-		return wg.tnet.DialContextTCPAddrPort(ctx, ap)
+		return svc.DialContext(ctx, "tcp", addr)
 	})
 	return client.New(ctx, client.WithConfig(cfg), client.WithGRPCDialOptions(dialer))
 }

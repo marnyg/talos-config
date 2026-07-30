@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -43,6 +44,12 @@ type nebManager struct {
 
 	// start is startMeshNebula, stubbed in tests.
 	start func(cfg []byte) (*nebstack.Service, error)
+
+	// tunnelConfig serves GET /config on the overlay listener to admin
+	// devices (set by main; nil disables the route). Same handler the
+	// wg0 tunnel listener mounts — one composition path, two overlays,
+	// until phase 2 deletes wg0's.
+	tunnelConfig http.Handler
 
 	mu   sync.Mutex
 	svc  *nebstack.Service // nil until unsealed
@@ -151,6 +158,12 @@ func (m *nebManager) unsealWithMaster(master []byte) error {
 	if svc != nil && zone != nil {
 		if err := serveMeshDNS(svc, zone, m.dnsZone); err != nil {
 			return m.fail(fmt.Errorf("starting mesh dns: %w", err))
+		}
+	}
+
+	if svc != nil {
+		if err := m.serveMeshHTTP(svc, master); err != nil {
+			return m.fail(fmt.Errorf("starting mesh http: %w", err))
 		}
 	}
 

@@ -133,12 +133,13 @@
           };
 
           # nix run .#apply [-- <mac>] — fetch the hub-composed config
-          # over the wg tunnel and apply it. Never composes locally:
-          # the hub injects wg0, certSANs, and disk encryption at serve
-          # time, so a locally composed config would strip that state
-          # from a running machine. Requires being on the tunnel as an
-          # admin peer (the hub's /config tunnel route refuses others).
-          # Override the hub with APPLY_HUB (default http://10.99.0.1).
+          # over the mesh and apply it. Never composes locally: the hub
+          # injects overlay identity, certSANs, and disk encryption at
+          # serve time, so a locally composed config would strip that
+          # state from a running machine. Requires being on the mesh as
+          # an admin device (the hub's overlay /config route refuses
+          # others — nebup enrolls). Override the hub with APPLY_HUB
+          # (default http://10.42.0.1, the hub's mesh address).
           apps.apply = {
             type = "app";
             program = toString (pkgs.writeShellScript "apply" ''
@@ -146,7 +147,7 @@
               cd "$(git rev-parse --show-toplevel)/talos"
 
               YQ="${pkgs.yq-go}/bin/yq"
-              HUB="''${APPLY_HUB:-http://10.99.0.1}"
+              HUB="''${APPLY_HUB:-http://10.42.0.1}"
               FILTER="''${1:-}"
 
               apply_machine() {
@@ -160,8 +161,8 @@
 
                 if ! composed=$(${pkgs.curl}/bin/curl -fsS --connect-timeout 10 "$HUB/config?mac=$mac"); then
                   echo "ERROR: could not fetch hub-composed config for $mac from $HUB." >&2
-                  echo "Local composing is not a fallback: it would strip serve-time state (wg0, certSANs, disk encryption)." >&2
-                  echo "Check: are you on the tunnel as an admin peer (wgup)? Is the hub unsealed (/status)?" >&2
+                  echo "Local composing is not a fallback: it would strip serve-time state (overlay identity, certSANs, disk encryption)." >&2
+                  echo "Check: are you on the mesh as an admin device (nebup)? Is the hub unsealed (/status)?" >&2
                   exit 1
                 fi
 

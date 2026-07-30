@@ -297,11 +297,13 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	log.Printf("served config for %s", mac)
 }
 
-// handleTunnelConfig serves hub-composed configs over the tunnel
-// listener for `nix run .#apply`. No bearer token: the route is only
-// reachable on the tunnel and gated to admin peer source addresses
-// (serveTunnelHTTP), whose membership is wallet-rooted via /wg/enroll.
-// It does not consume device-flow tokens or record fetches — the
+// handleTunnelConfig serves hub-composed configs over the overlay
+// listeners for `nix run .#apply`. No bearer token: the route is only
+// reachable on an overlay — the mesh (serveMeshHTTP, gated by derived
+// admin device addresses under the cert-group firewall) and, until
+// phase 2 finishes, wg0 (serveTunnelHTTP, gated by derived admin peer
+// addresses) — and membership is wallet-rooted via enrollment either
+// way. It does not consume device-flow tokens or record fetches — the
 // machine itself is not fetching.
 func (s *server) handleTunnelConfig(w http.ResponseWriter, r *http.Request) {
 	mac := r.URL.Query().Get("mac")
@@ -472,9 +474,14 @@ func main() {
 	}
 
 	if wgm != nil {
-		// The tunnel /config route serves hub-composed configs to admin
+		// The overlay /config route serves hub-composed configs to admin
 		// peers; wired here because the handler needs the full server.
+		// Mounted on both overlays while the dual overlay lasts — the
+		// mesh listener is the one `apply` uses (phase 2 step 3).
 		wgm.tunnelConfig = http.HandlerFunc(s.handleTunnelConfig)
+		if wgm.mesh != nil {
+			wgm.mesh.tunnelConfig = wgm.tunnelConfig
+		}
 		if wgMasterEnv != "" {
 			master, err := wgderive.MasterFromHex(wgMasterEnv)
 			if err != nil {
@@ -512,8 +519,8 @@ func main() {
 	}
 
 	if *autoBoot {
-		if wgm == nil {
-			log.Fatal("--auto-bootstrap requires --wg-port (it works over the tunnel)")
+		if wgm == nil || wgm.mesh == nil {
+			log.Fatal("--auto-bootstrap requires --mesh-port (it dials nodes over the mesh)")
 		}
 		s.boot = newBootstrapper(*root, wgm)
 		go s.boot.run(context.Background())
