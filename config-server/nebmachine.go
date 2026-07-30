@@ -79,7 +79,15 @@ const nebMachineCertValidity = 5 * 365 * 24 * time.Hour
 
 // nebMachinePatch renders the strategic-merge patch that gives a machine
 // its mesh identity: an ExtensionServiceConfig document carrying the
-// nebula config plus the derived CA, cert and key.
+// nebula config plus the derived CA, cert and key, preceded by a
+// machine.certSANs merge adding the overlay address and mesh DNS name.
+//
+// The SANs mirror wg0's machinePatch, and for the same reason: apid's
+// node-address discovery does not pick up nebula0, so without them a
+// TLS dial to the machine over the mesh (talosconfig pointed at the
+// overlay address, the hub's auto-bootstrap in phase 2) is rejected.
+// Additive and safe while wg0 still carries the control channel —
+// phase 2 step 1 in docs/mesh-v2-nebula.md.
 //
 // machines is the full machine set, not just this one, because the
 // overlay address comes from buildMeshZone — the same function that
@@ -147,9 +155,14 @@ func (n *nebManager) nebMachinePatch(master []byte, mac string, m machine, machi
 	if err != nil {
 		return "", fmt.Errorf("marshalling extension config for %s: %w", mac, err)
 	}
-	// The leading separator makes this a *document* patch: configpatcher
-	// merges it as a new document instead of into machine:.
-	return "---\n" + string(out), nil
+	// Two documents: the machine.certSANs merge, then the extension
+	// config. The separator matters — configpatcher merges the first
+	// into machine: and appends the second as its own document.
+	sans := "machine:\n  certSANs:\n    - " + addr.String() + "\n"
+	if n.dnsZone != "" {
+		sans += "    - " + name + "." + n.dnsZone + "\n"
+	}
+	return sans + "---\n" + string(out), nil
 }
 
 // nebExtSvcYAML is Talos's ExtensionServiceConfig document.

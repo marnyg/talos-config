@@ -8,6 +8,12 @@ cluster:
   apiServer:
     certSANs:
       - 10.99.0.54
+      # cp1's nebula identity (HKDF-derived from the MAC; confirmed by
+      # the phase-1 reboot check). Additive ahead of the phase-2
+      # endpoint move — kubeconfigs can point at the mesh address as
+      # soon as this is applied, while wg0 still works.
+      - 10.42.218.125
+      - cp1.mesh.internal
   proxy:
     # kube-proxy in nftables mode serves NodePorts only on the primary
     # node IP by default — which would exclude wg0. Serve them on all

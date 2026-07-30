@@ -216,10 +216,46 @@ func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
 	}
 }
 
+// splitNebPatch decodes the two documents of the machine mesh patch:
+// the machine.certSANs merge and the ExtensionServiceConfig.
+func splitNebPatch(t *testing.T, raw string) (map[string]any, nebExtSvcYAML) {
+	t.Helper()
+	dec := yaml.NewDecoder(strings.NewReader(raw))
+	var machineDoc map[string]any
+	if err := dec.Decode(&machineDoc); err != nil {
+		t.Fatalf("decoding machine document: %v\n%s", err, raw)
+	}
+	var ext nebExtSvcYAML
+	if err := dec.Decode(&ext); err != nil {
+		t.Fatalf("decoding extension document: %v\n%s", err, raw)
+	}
+	return machineDoc, ext
+}
+
+// certSANsOf digs machine.certSANs out of a decoded YAML document.
+func certSANsOf(t *testing.T, doc map[string]any) []string {
+	t.Helper()
+	m, ok := doc["machine"].(map[string]any)
+	if !ok {
+		t.Fatalf("no machine: section in %v", doc)
+	}
+	raw, ok := m["certSANs"].([]any)
+	if !ok {
+		t.Fatalf("no certSANs in machine: %v", m)
+	}
+	sans := make([]string, 0, len(raw))
+	for _, s := range raw {
+		sans = append(sans, s.(string))
+	}
+	return sans
+}
+
 // TestNebMachinePatchIdentity is the end-to-end check on the injected
 // document: it is an ExtensionServiceConfig for the nebula service, and
 // the cert it carries is the derived machine identity — right name,
-// right address, machines group, signed by the derived CA.
+// right address, machines group, signed by the derived CA. The
+// accompanying certSANs merge must carry the same identity (address and
+// mesh DNS name) so TLS dials over the overlay verify.
 func TestNebMachinePatchIdentity(t *testing.T) {
 	mac := "b0:41:6f:15:3b:8f"
 	machines := nebTestMachines()
@@ -229,13 +265,7 @@ func TestNebMachinePatchIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(raw, "---\n") {
-		t.Fatalf("patch must be a separate document, got:\n%s", raw)
-	}
-	var doc nebExtSvcYAML
-	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
-		t.Fatal(err)
-	}
+	machineDoc, doc := splitNebPatch(t, raw)
 	if doc.Kind != "ExtensionServiceConfig" || doc.Name != nebNodeService {
 		t.Errorf("doc = %s/%s, want ExtensionServiceConfig/%s", doc.Kind, doc.Name, nebNodeService)
 	}
@@ -275,6 +305,9 @@ func TestNebMachinePatchIdentity(t *testing.T) {
 	if nets := crt.Networks(); len(nets) != 1 || nets[0].Addr() != wantIP || nets[0].Bits() != nebNodeSubnet.Bits() {
 		t.Errorf("cert networks = %v, want %s/%d", crt.Networks(), wantIP, nebNodeSubnet.Bits())
 	}
+	if got, want := certSANsOf(t, machineDoc), []string{wantIP.String(), "cp1." + meshDNSZone}; !equalStrings(got, want) {
+		t.Errorf("machine.certSANs = %v, want %v", got, want)
+	}
 	if groups := crt.Groups(); len(groups) != 1 || groups[0] != nebGroupMachines {
 		t.Errorf("cert groups = %v, want [%s]", groups, nebGroupMachines)
 	}
@@ -304,10 +337,7 @@ func TestNebMachinePatchAgreesWithMeshDNS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc nebExtSvcYAML
-	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
-		t.Fatal(err)
-	}
+	machineDoc, doc := splitNebPatch(t, raw)
 	var certPEM string
 	for _, f := range doc.ConfigFiles {
 		if f.MountPath == nebNodeCertPath {
@@ -324,6 +354,9 @@ func TestNebMachinePatchAgreesWithMeshDNS(t *testing.T) {
 	}
 	if got, want := crt.Networks()[0].Addr(), zone["cp1"]; got != want {
 		t.Errorf("cert address %s but mesh DNS answers %s", got, want)
+	}
+	if got, want := certSANsOf(t, machineDoc)[0], zone["cp1"].String(); got != want {
+		t.Errorf("certSAN address %s but mesh DNS answers %s", got, want)
 	}
 }
 
@@ -365,7 +398,7 @@ func TestNebMachinePatchNeedsEndpoint(t *testing.T) {
 // Talos rejects would strand the node.
 func TestNebMachinePatchComposes(t *testing.T) {
 	root := t.TempDir()
-	base := "version: v1alpha1\nmachine:\n  type: worker\n  token: aa.bbbbbbbbbbbbbbbb\ncluster:\n  clusterName: test\n"
+	base := "version: v1alpha1\nmachine:\n  type: worker\n  token: aa.bbbbbbbbbbbbbbbb\n  certSANs:\n    - 10.0.0.20\ncluster:\n  clusterName: test\n"
 	if err := os.WriteFile(filepath.Join(root, "base.yaml"), []byte(base), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -416,6 +449,20 @@ func TestNebMachinePatchComposes(t *testing.T) {
 	// both, and wg0 is the one carrying production traffic.
 	if ifaces := provider.Machine().Network().Devices(); len(ifaces) != 0 {
 		t.Errorf("mesh patch touched machine.network.interfaces: %#v", ifaces)
+	}
+	// The certSANs merge must APPEND to the repo's own SANs — replacing
+	// them would break whatever those SANs are for — and both mesh
+	// identities (overlay address, mesh DNS name) must land.
+	wantIP, err := nebderive.MachineIP(nebTestMaster, mac, nebNodeSubnet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var composedDoc map[string]any
+	if err := yaml.NewDecoder(strings.NewReader(string(composed))).Decode(&composedDoc); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := certSANsOf(t, composedDoc), []string{"10.0.0.20", wantIP.String(), "cp1." + meshDNSZone}; !equalStrings(got, want) {
+		t.Errorf("composed certSANs = %v, want %v", got, want)
 	}
 }
 
