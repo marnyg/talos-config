@@ -20,6 +20,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/masterderive"
+	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
@@ -28,12 +29,11 @@ import (
 func newMeshEnrollServer(t *testing.T) (*server, *httptest.Server) {
 	t.Helper()
 	m := testHubManager(t, []string{wellKnownAddr}, "")
-	mesh, _ := testNebManager(t, m.root, nil)
-	mesh.devices = []nebDevice{
-		{name: "laptop", group: nebGroupAdmins},
-		{name: "androidtv", group: nebGroupMedia},
-	}
-	m.mesh = mesh
+	nm, _ := testNebManager(t, m.root, []mesh.Device{
+		{Name: "laptop", Group: mesh.GroupAdmins},
+		{Name: "androidtv", Group: mesh.GroupMedia},
+	})
+	m.mesh = nm
 	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestMeshEnrollIssuesDeviceIdentity(t *testing.T) {
 		t.Fatalf("enroll: got %d: %s", code, body)
 	}
 
-	var got nebConfigYAML
+	var got mesh.ConfigYAML
 	if err := yaml.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -105,8 +105,8 @@ func TestMeshEnrollIssuesDeviceIdentity(t *testing.T) {
 	if crt.Name() != "laptop" {
 		t.Errorf("cert name = %q, want laptop", crt.Name())
 	}
-	if groups := crt.Groups(); len(groups) != 1 || groups[0] != nebGroupAdmins {
-		t.Errorf("cert groups = %v, want [%s]", groups, nebGroupAdmins)
+	if groups := crt.Groups(); len(groups) != 1 || groups[0] != mesh.GroupAdmins {
+		t.Errorf("cert groups = %v, want [%s]", groups, mesh.GroupAdmins)
 	}
 	wantIP, err := nebderive.DeviceIP(testMeshMaster(t), "laptop", nebSealSubnet)
 	if err != nil {
@@ -126,8 +126,8 @@ func TestMeshEnrollIssuesDeviceIdentity(t *testing.T) {
 	if _, err := pool.VerifyCertificate(time.Now(), crt); err != nil {
 		t.Errorf("issued cert does not verify against the derived CA: %v", err)
 	}
-	if want := crt.NotBefore().Add(nebClockSkew + nebDeviceCertValidity); !crt.NotAfter().Equal(want) {
-		t.Errorf("validity window = %s..%s, want %s wide", crt.NotBefore(), crt.NotAfter(), nebDeviceCertValidity)
+	if want := crt.NotBefore().Add(mesh.ClockSkew + mesh.DeviceCertValidity); !crt.NotAfter().Equal(want) {
+		t.Errorf("validity window = %s..%s, want %s wide", crt.NotBefore(), crt.NotAfter(), mesh.DeviceCertValidity)
 	}
 }
 
@@ -161,7 +161,7 @@ func TestMeshEnrollGroupFollowsDeclaration(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("enroll: got %d: %s", code, body)
 	}
-	var got nebConfigYAML
+	var got mesh.ConfigYAML
 	if err := yaml.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -169,8 +169,8 @@ func TestMeshEnrollGroupFollowsDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if groups := crt.Groups(); len(groups) != 1 || groups[0] != nebGroupMedia {
-		t.Fatalf("cert groups = %v, want [%s] \u2014 a shared-space device must not be an admin", groups, nebGroupMedia)
+	if groups := crt.Groups(); len(groups) != 1 || groups[0] != mesh.GroupMedia {
+		t.Fatalf("cert groups = %v, want [%s] \u2014 a shared-space device must not be an admin", groups, mesh.GroupMedia)
 	}
 }
 
@@ -286,9 +286,8 @@ func TestMeshEnrollRejects(t *testing.T) {
 // nothing to derive an identity from — say so rather than 500.
 func TestMeshEnrollSealed(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr}, "")
-	mesh, _ := testNebManager(t, m.root, nil)
-	mesh.devices = adminDevices("laptop")
-	m.mesh = mesh
+	nm, _ := testNebManager(t, m.root, adminDevices("laptop"))
+	m.mesh = nm
 	s := &server{
 		root:       m.root,
 		store:      deviceflow.NewStore(),
@@ -326,13 +325,13 @@ func TestMeshEnrollDisabled(t *testing.T) {
 	}
 }
 
-func mustEnroll(t *testing.T, base, name string) nebConfigYAML {
+func mustEnroll(t *testing.T, base, name string) mesh.ConfigYAML {
 	t.Helper()
 	code, body := meshEnroll(t, base, name)
 	if code != http.StatusOK {
 		t.Fatalf("enroll %q: got %d: %s", name, code, body)
 	}
-	var got nebConfigYAML
+	var got mesh.ConfigYAML
 	if err := yaml.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +366,7 @@ func TestDeviceConfigOmitsTunDevAndFiltersRemotes(t *testing.T) {
 		t.Fatalf("enroll: got %d: %s", code, body)
 	}
 
-	var got nebConfigYAML
+	var got mesh.ConfigYAML
 	if err := yaml.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +382,9 @@ func TestDeviceConfigOmitsTunDevAndFiltersRemotes(t *testing.T) {
 	if got.Lighthouse.RemoteAllowList == nil {
 		t.Fatal("remote_allow_list not set — a device could dial a peer's pod-network address")
 	}
-	for _, denied := range []string{nebPodSubnet} {
+	// The pod-network CIDR (podSubnets in talos/base/*.yaml), pinned
+	// independently of the mesh package's own copy.
+	for _, denied := range []string{"10.244.0.0/16"} {
 		if allowed, ok := got.Lighthouse.RemoteAllowList[denied]; !ok || allowed {
 			t.Errorf("remote_allow_list: %s not denied", denied)
 		}

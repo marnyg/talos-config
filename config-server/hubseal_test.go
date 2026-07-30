@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,8 +13,39 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/masterderive"
+	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebderive"
+	"github.com/marnyg/talos-config/config-server/nebstack"
 )
+
+var nebSealSubnet = netip.MustParsePrefix("10.42.0.0/16")
+
+const nebTestEndpoint = "203.0.113.7:4242"
+
+// adminDevices is the common case in tests: named devices, all in the
+// admins group.
+func adminDevices(names ...string) []mesh.Device {
+	var out []mesh.Device
+	for _, n := range names {
+		out = append(out, mesh.Device{Name: n, Group: mesh.GroupAdmins})
+	}
+	return out
+}
+
+// testNebManager returns a mesh manager whose nebula start is stubbed:
+// everything up to and including config rendering runs for real, only
+// the UDP socket is skipped. (The mesh package has its own twin; this
+// one exists for the hub- and server-level tests in package main.)
+func testNebManager(t *testing.T, root string, devices []mesh.Device) (*mesh.Manager, *[]byte) {
+	t.Helper()
+	var rendered []byte
+	m := mesh.NewManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root, devices)
+	m.Start = func(cfg []byte) (*nebstack.Service, error) {
+		rendered = cfg
+		return nil, nil
+	}
+	return m, &rendered
+}
 
 // testHubManager builds a sealed hub over a throwaway talos tree with
 // one declared machine and a stub-started mesh (no real overlay).
@@ -32,8 +65,8 @@ func testHubManager(t *testing.T, adminAddrs []string, pinnedCAFP string) *hubMa
 		t.Fatal(err)
 	}
 
-	mesh, _ := testNebManager(t, root, []string{"laptop"})
-	return newHubManager(root, adminAddrs, pinnedCAFP, mesh)
+	nm, _ := testNebManager(t, root, adminDevices("laptop"))
+	return newHubManager(root, adminAddrs, pinnedCAFP, nm)
 }
 
 // unsealSig produces the well-known test key's signature over the
@@ -80,21 +113,74 @@ func TestUnsealWithSignature(t *testing.T) {
 func meshRendered(t *testing.T, m *hubManager) *[]byte {
 	t.Helper()
 	// The stub in testNebManager captures into its closure; re-render
-	// deterministically instead of reaching into it.
+	// deterministically instead of reaching into it. The subnet and port
+	// are testNebManager's fixed values.
 	master := m.current()
 	if master == nil {
 		t.Fatal("hub is sealed")
 	}
-	cfg, err := hubNebulaConfig(nebHubParams{
-		master:     master,
-		subnet:     m.mesh.subnet,
-		listenHost: "0.0.0.0",
-		listenPort: m.mesh.port,
+	cfg, err := mesh.HubConfig(mesh.HubParams{
+		Master:     master,
+		Subnet:     m.mesh.Subnet(),
+		ListenHost: "0.0.0.0",
+		ListenPort: 4242,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return &cfg
+}
+
+// A mesh that cannot start must not take the unseal with it: KMS disk
+// unlocks ride the WAN listener and must not depend on the overlay
+// (invariant 4). The failure is recorded, not swallowed.
+func TestMeshFailureDoesNotBreakHubUnseal(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr}, "")
+	nm, _ := testNebManager(t, m.root, nil)
+	nm.Start = func([]byte) (*nebstack.Service, error) {
+		return nil, errors.New("simulated mesh failure")
+	}
+	m.mesh = nm
+
+	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
+		t.Fatalf("mesh failure broke the hub unseal: %v", err)
+	}
+	if m.sealed() {
+		t.Fatal("hub still sealed after a mesh-only failure")
+	}
+	if _, _, err := nm.State(); err == nil {
+		t.Error("mesh failure was not recorded")
+	}
+}
+
+// /sealed pages on a mesh startup failure — the phase-2 inversion: the
+// mesh is the control channel now, so "unsealed but mesh down" is an
+// incident, not a footnote.
+func TestSealedEndpointPagesOnMeshFailure(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr}, "")
+	nm, _ := testNebManager(t, m.root, nil)
+	nm.Start = func([]byte) (*nebstack.Service, error) {
+		return nil, errors.New("simulated mesh failure")
+	}
+	m.mesh = nm
+	s := &server{root: m.root, hub: m}
+
+	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleSealed(rec, httptest.NewRequest("GET", "/sealed", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503 (a mesh failure must page)", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "hub: unsealed") {
+		t.Errorf("body does not report hub state: %q", body)
+	}
+	if !strings.Contains(body, "mesh: DOWN") || !strings.Contains(body, "simulated mesh failure") {
+		t.Errorf("body does not report why the mesh is down: %q", body)
+	}
 }
 
 func TestUnsealRejectsUnknownWallet(t *testing.T) {

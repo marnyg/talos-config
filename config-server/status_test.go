@@ -352,8 +352,8 @@ func TestStatusLoginNonceSingleUse(t *testing.T) {
 // contract: a #live region and no meta-refresh reload.
 func TestStatusShowsMeshMembers(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr}, "")
-	mesh, _ := testNebManager(t, m.root, []string{"laptop"})
-	m.mesh = mesh
+	nm, _ := testNebManager(t, m.root, adminDevices("laptop"))
+	m.mesh = nm
 	s := &server{
 		root:       m.root,
 		store:      deviceflow.NewStore(),

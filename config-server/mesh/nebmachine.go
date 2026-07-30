@@ -1,4 +1,4 @@
-package main
+package mesh
 
 // The node side of the mesh: a machine's nebula identity and config,
 // injected into its Talos machine config at serve time.
@@ -75,7 +75,7 @@ const nebMediaPort = 30096
 // thread uuid dc04e3e8) requires a config-refresh mechanism first.
 const nebMachineCertValidity = 5 * 365 * 24 * time.Hour
 
-// nebMachinePatch renders the strategic-merge patch that gives a machine
+// MachinePatch renders the strategic-merge patch that gives a machine
 // its mesh identity: an ExtensionServiceConfig document carrying the
 // nebula config plus the derived CA, cert and key, preceded by a
 // machine.certSANs merge adding the overlay address and mesh DNS name.
@@ -90,7 +90,7 @@ const nebMachineCertValidity = 5 * 365 * 24 * time.Hour
 // builds mesh DNS. One source for both means a machine's cert can never
 // claim an address its DNS name does not resolve to, and a derived-address
 // collision is caught here (before a cert is minted) rather than after.
-func (n *nebManager) nebMachinePatch(master []byte, mac string, m machines.Machine, byMAC map[string]machines.Machine) (string, error) {
+func (n *Manager) MachinePatch(master []byte, mac string, m machines.Machine, byMAC map[string]machines.Machine) (string, error) {
 	if n.endpoint == "" {
 		return "", fmt.Errorf("mesh endpoint is not configured (--mesh-endpoint)")
 	}
@@ -98,13 +98,13 @@ func (n *nebManager) nebMachinePatch(master []byte, mac string, m machines.Machi
 	if err != nil {
 		return "", fmt.Errorf("building mesh zone: %w", err)
 	}
-	name := machineDNSName(mac, m)
+	name := MachineDNSName(mac, m)
 	addr, ok := zone[name]
 	if !ok {
 		return "", fmt.Errorf("machine %s (%q) is not in the mesh zone", mac, name)
 	}
 
-	blocklist, err := loadMeshBlocklist(n.root)
+	blocklist, err := LoadBlocklist(n.root)
 	if err != nil {
 		return "", fmt.Errorf("loading mesh blocklist: %w", err)
 	}
@@ -127,7 +127,7 @@ func (n *nebManager) nebMachinePatch(master []byte, mac string, m machines.Machi
 	priv, pub := nebderive.MachineKey(master, mac)
 	now := time.Now()
 	crt, err := nebderive.HostCert(master, name, pub, addr, n.subnet,
-		[]string{nebGroupMachines}, now.Add(-nebClockSkew), now.Add(nebMachineCertValidity))
+		[]string{GroupMachines}, now.Add(-ClockSkew), now.Add(nebMachineCertValidity))
 	if err != nil {
 		return "", fmt.Errorf("minting cert for %s: %w", mac, err)
 	}
@@ -206,7 +206,7 @@ func nodeNebulaConfig(p nebNodeParams) ([]byte, error) {
 		return nil, fmt.Errorf("node %q would take the hub's address %s", p.name, hubIP)
 	}
 
-	cfg := nebConfigYAML{
+	cfg := ConfigYAML{
 		// Paths, not inline PEM (the hub's own config inlines it): the
 		// key material is mounted beside the config by the same
 		// ExtensionServiceConfig document.
@@ -259,10 +259,10 @@ func nodeNebulaConfig(p nebNodeParams) ([]byte, error) {
 				// narrowing it here would be a regression dressed as
 				// hardening. What the rule does buy is that *machines*
 				// and the media group are not in it.
-				{Port: "any", Proto: "any", Group: nebGroupAdmins},
+				{Port: "any", Proto: "any", Group: GroupAdmins},
 				// Shared-space appliances: the media they are for, and
 				// nothing else. No apid, no kube API, no other NodePort.
-				{Port: strconv.Itoa(nebMediaPort), Proto: "tcp", Group: nebGroupMedia},
+				{Port: strconv.Itoa(nebMediaPort), Proto: "tcp", Group: GroupMedia},
 			},
 		},
 		Logging: nebLoggingYAML{Level: "info", Format: "text"},

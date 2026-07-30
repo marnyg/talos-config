@@ -1,4 +1,4 @@
-package main
+package mesh
 
 import (
 	"context"
@@ -33,12 +33,12 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 	admin := nebtest.Device(t, master, subnet, "laptop", lighthousePort)
 	tv := nebtest.Device(t, master, subnet, "tv", lighthousePort)
 
-	devices := []nebDevice{
-		{name: "laptop", group: nebGroupAdmins},
-		{name: "tv", group: nebGroupMedia},
+	devices := []Device{
+		{Name: "laptop", Group: GroupAdmins},
+		{Name: "tv", Group: GroupMedia},
 	}
-	m := newNebManager(lighthousePort, subnet, nebtest.Loopback, "hub.example:4242", "", t.TempDir(), devices)
-	m.tunnelConfig = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	m := NewManager(lighthousePort, subnet, nebtest.Loopback, "hub.example:4242", "", t.TempDir(), devices)
+	m.TunnelConfig = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "composed-config")
 	})
 	if err := m.serveMeshHTTP(hub, master); err != nil {

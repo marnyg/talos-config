@@ -5,7 +5,7 @@
 //
 // The configs here are deliberately minimal: enough to get two members
 // talking, and nothing else. They are NOT the hub's real config. What
-// the hub actually ships is rendered by hubNebulaConfig and validated
+// the hub actually ships is rendered by mesh.HubConfig and validated
 // against nebula's own config checks in nebconf_test.go; if you find
 // yourself adding hub-like settings here, that is the sign a test
 // belongs over there instead.

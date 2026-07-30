@@ -1,4 +1,4 @@
-package main
+package mesh
 
 import (
 	"io"
@@ -28,8 +28,8 @@ var nebNodeSubnet = netip.MustParsePrefix("10.42.0.0/16")
 
 const nebTestEndpoint = "203.0.113.7:4242"
 
-func nebTestManager(root string) *nebManager {
-	return newNebManager(4242, nebNodeSubnet, "0.0.0.0", nebTestEndpoint, meshDNSZone, root, adminDevices("laptop"))
+func nebTestManager(root string) *Manager {
+	return NewManager(4242, nebNodeSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root, adminDevices("laptop"))
 }
 
 // nebTestMachines is a machine set with one named control plane, mirroring
@@ -43,13 +43,13 @@ func nebTestMachines() map[string]machines.Machine {
 // nodeParams renders a node config for the derived identity of mac.
 func nodeParams(t *testing.T, mac string, m machines.Machine) nebNodeParams {
 	t.Helper()
-	addr, err := machineMeshIP(nebTestMaster, mac, m, nebNodeSubnet)
+	addr, err := MachineMeshIP(nebTestMaster, mac, m, nebNodeSubnet)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return nebNodeParams{
 		master:   nebTestMaster,
-		name:     machineDNSName(mac, m),
+		name:     MachineDNSName(mac, m),
 		addr:     addr,
 		subnet:   nebNodeSubnet,
 		endpoint: nebTestEndpoint,
@@ -77,7 +77,7 @@ func TestNodeNebulaConfigValidates(t *testing.T) {
 	}
 	priv, pub := nebderive.MachineKey(p.master, mac)
 	crt, err := nebderive.HostCert(p.master, p.name, pub, p.addr, p.subnet,
-		[]string{nebGroupMachines}, time.Now().Add(-nebClockSkew), time.Now().Add(nebMachineCertValidity))
+		[]string{GroupMachines}, time.Now().Add(-ClockSkew), time.Now().Add(nebMachineCertValidity))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestNodeNebulaConfigValidates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var parsed nebConfigYAML
+	var parsed ConfigYAML
 	if err := yaml.Unmarshal(raw, &parsed); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestNodeNebulaConfigTopology(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got nebConfigYAML
+	var got ConfigYAML
 	if err := yaml.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got nebConfigYAML
+	var got ConfigYAML
 	if err := yaml.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
@@ -190,9 +190,9 @@ func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
 		switch {
 		case r.Proto == "icmp":
 			continue // reachability from any member
-		case r.Host == nebderive.HubName, r.Group == nebGroupAdmins:
+		case r.Host == nebderive.HubName, r.Group == GroupAdmins:
 			continue
-		case r.Group == nebGroupMedia:
+		case r.Group == GroupMedia:
 			// The media group's whole point is that it is narrow: one
 			// port, one protocol. "any" here would hand a shared-space
 			// appliance the node.
@@ -200,19 +200,19 @@ func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
 				t.Errorf("media rule %+v is wider than %d/tcp", r, nebMediaPort)
 			}
 		default:
-			t.Errorf("unexpected inbound rule %+v: only icmp, the hub, %q and %q may reach a node", r, nebGroupAdmins, nebGroupMedia)
+			t.Errorf("unexpected inbound rule %+v: only icmp, the hub, %q and %q may reach a node", r, GroupAdmins, GroupMedia)
 		}
 	}
-	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: strconv.Itoa(nebMediaPort), Proto: "tcp", Group: nebGroupMedia}) {
+	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: strconv.Itoa(nebMediaPort), Proto: "tcp", Group: GroupMedia}) {
 		t.Errorf("the media group must reach jellyfin on %d", nebMediaPort)
 	}
 	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "any", Proto: "any", Host: nebderive.HubName}) {
 		t.Error("the hub must be able to dial apid (auto-bootstrap, status probes)")
 	}
-	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "any", Proto: "any", Group: nebGroupAdmins}) {
+	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "any", Proto: "any", Group: GroupAdmins}) {
 		t.Errorf("admin devices must keep the access wg0 already grants them")
 	}
-	if hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "any", Proto: "any", Group: nebGroupMachines}) {
+	if hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "any", Proto: "any", Group: GroupMachines}) {
 		t.Error("machines must not reach each other's control surfaces over the mesh")
 	}
 }
@@ -262,7 +262,7 @@ func TestNebMachinePatchIdentity(t *testing.T) {
 	byMAC := nebTestMachines()
 	n := nebTestManager(t.TempDir())
 
-	raw, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
+	raw, err := n.MachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,11 +306,11 @@ func TestNebMachinePatchIdentity(t *testing.T) {
 	if nets := crt.Networks(); len(nets) != 1 || nets[0].Addr() != wantIP || nets[0].Bits() != nebNodeSubnet.Bits() {
 		t.Errorf("cert networks = %v, want %s/%d", crt.Networks(), wantIP, nebNodeSubnet.Bits())
 	}
-	if got, want := certSANsOf(t, machineDoc), []string{wantIP.String(), "cp1." + meshDNSZone}; !equalStrings(got, want) {
+	if got, want := certSANsOf(t, machineDoc), []string{wantIP.String(), "cp1." + nebderive.DNSZone}; !equalStrings(got, want) {
 		t.Errorf("machine.certSANs = %v, want %v", got, want)
 	}
-	if groups := crt.Groups(); len(groups) != 1 || groups[0] != nebGroupMachines {
-		t.Errorf("cert groups = %v, want [%s]", groups, nebGroupMachines)
+	if groups := crt.Groups(); len(groups) != 1 || groups[0] != GroupMachines {
+		t.Errorf("cert groups = %v, want [%s]", groups, GroupMachines)
 	}
 	ca, err := nebderive.CACert(nebTestMaster)
 	if err != nil {
@@ -325,7 +325,7 @@ func TestNebMachinePatchIdentity(t *testing.T) {
 	}
 }
 
-// TestNebMachinePatchAgreesWithMeshDNS is the reason nebMachinePatch takes
+// TestNebMachinePatchAgreesWithMeshDNS is the reason MachinePatch takes
 // the whole machine set: the address in the cert must be the address the
 // mesh DNS zone hands out, or `cp1.mesh.internal` resolves to an address
 // nothing answers on.
@@ -334,7 +334,7 @@ func TestNebMachinePatchAgreesWithMeshDNS(t *testing.T) {
 	byMAC := nebTestMachines()
 	n := nebTestManager(t.TempDir())
 
-	raw, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
+	raw, err := n.MachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestNebMachinePatchRejectsCollision(t *testing.T) {
 	byMAC["aa:bb:cc:dd:ee:ff"] = machines.Machine{Name: "cp2", MeshIP: other.String()}
 
 	n := nebTestManager(t.TempDir())
-	if _, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC); err == nil {
+	if _, err := n.MachinePatch(nebTestMaster, mac, byMAC[mac], byMAC); err == nil {
 		t.Fatal("expected a collision error, got none")
 	}
 }
@@ -386,7 +386,7 @@ func TestNebMachinePatchNeedsEndpoint(t *testing.T) {
 	byMAC := nebTestMachines()
 	n := nebTestManager(t.TempDir())
 	n.endpoint = ""
-	if _, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC); err == nil {
+	if _, err := n.MachinePatch(nebTestMaster, mac, byMAC[mac], byMAC); err == nil {
 		t.Fatal("expected an error without --mesh-endpoint, got none")
 	}
 }
@@ -407,7 +407,7 @@ func TestNebMachinePatchComposes(t *testing.T) {
 	byMAC := map[string]machines.Machine{mac: {Name: "cp1", Config: "base.yaml", Dir: root}}
 	n := nebTestManager(root)
 
-	patch, err := n.nebMachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
+	patch, err := n.MachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +462,7 @@ func TestNebMachinePatchComposes(t *testing.T) {
 	if err := yaml.NewDecoder(strings.NewReader(string(composed))).Decode(&composedDoc); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := certSANsOf(t, composedDoc), []string{"10.0.0.20", wantIP.String(), "cp1." + meshDNSZone}; !equalStrings(got, want) {
+	if got, want := certSANsOf(t, composedDoc), []string{"10.0.0.20", wantIP.String(), "cp1." + nebderive.DNSZone}; !equalStrings(got, want) {
 		t.Errorf("composed certSANs = %v, want %v", got, want)
 	}
 }
@@ -513,7 +513,7 @@ func TestNodeUnderlayFilterExcludesOverlaysNotLAN(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got nebConfigYAML
+	var got ConfigYAML
 	if err := yaml.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}

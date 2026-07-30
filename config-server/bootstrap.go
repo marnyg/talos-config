@@ -42,6 +42,7 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/role"
 
 	"github.com/marnyg/talos-config/config-server/machines"
+	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebstack"
 )
 
@@ -194,9 +195,9 @@ func (b *bootstrapper) step(ctx context.Context) {
 	// "sealed" so /status says which of the two it is.
 	var svc *nebstack.Service
 	var meshSubnet netip.Prefix
-	if mesh := b.hub.mesh; mesh != nil {
-		svc, _, _ = mesh.state()
-		meshSubnet = mesh.subnet
+	if nm := b.hub.mesh; nm != nil {
+		svc, _, _ = nm.State()
+		meshSubnet = nm.Subnet()
 	}
 	if svc == nil {
 		b.setSnap(func(s *bootSnapshot) { s.State = "mesh-down" })
@@ -227,7 +228,7 @@ func (b *bootstrapper) step(ctx context.Context) {
 		mac = m
 	}
 	m := cps[mac]
-	ip, err := machineMeshIP(master, mac, m, meshSubnet)
+	ip, err := mesh.MachineMeshIP(master, mac, m, meshSubnet)
 	if err != nil {
 		log.Printf("auto-bootstrap: mesh address for %s: %v", mac, err)
 		return
@@ -310,7 +311,7 @@ func (b *bootstrapper) bootstrap(ctx context.Context, svc *nebstack.Service, mac
 // netstack, authenticating with a short-lived os:admin cert minted from
 // the cluster's OS CA (extracted from the machine's composed config).
 // The TLS dial verifies against the machine's overlay-address certSAN,
-// which nebMachinePatch injects for exactly this reason.
+// which mesh.MachinePatch injects for exactly this reason.
 func (b *bootstrapper) talosClient(ctx context.Context, svc *nebstack.Service, m machines.Machine, ip netip.Addr) (*client.Client, error) {
 	ca, err := b.issuingCA(m)
 	if err != nil {

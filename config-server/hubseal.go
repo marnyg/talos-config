@@ -21,6 +21,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/masterderive"
+	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
@@ -41,14 +42,14 @@ type hubManager struct {
 	// mesh is the overlay the control channel rides. Never nil in
 	// production (main refuses the combination); nil only in tests
 	// that exercise seal state alone.
-	mesh *nebManager
+	mesh *mesh.Manager
 
 	mu     sync.Mutex
 	master []byte // nil while sealed
 }
 
-func newHubManager(root string, adminAddrs []string, pinnedCAFP string, mesh *nebManager) *hubManager {
-	return &hubManager{root: root, adminAddrs: adminAddrs, pinnedCAFP: pinnedCAFP, mesh: mesh}
+func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh.Manager) *hubManager {
+	return &hubManager{root: root, adminAddrs: adminAddrs, pinnedCAFP: pinnedCAFP, mesh: nm}
 }
 
 // current returns the unsealed master key, or nil while sealed.
@@ -126,7 +127,7 @@ func (m *hubManager) unsealWithMaster(master []byte) error {
 	log.Printf("hub unsealed: mesh CA %s", fp)
 
 	if m.mesh != nil {
-		if err := m.mesh.unsealWithMaster(master); err != nil {
+		if err := m.mesh.UnsealWithMaster(master); err != nil {
 			log.Printf("MESH DOWN: %v", err)
 		}
 	}
@@ -168,10 +169,10 @@ func (s *server) handleUnseal(w http.ResponseWriter, r *http.Request) {
 // startMeshNebula never does.
 func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 	sealed := s.hub != nil && s.hub.sealed()
-	mesh := s.mesh()
+	nm := s.mesh()
 	var meshErr error
-	if mesh != nil {
-		_, _, meshErr = mesh.state()
+	if nm != nil {
+		_, _, meshErr = nm.State()
 	}
 
 	if sealed || meshErr != nil {
@@ -189,9 +190,9 @@ func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	switch {
-	case mesh == nil:
+	case nm == nil:
 		fmt.Fprintln(w, "mesh: disabled")
-	case mesh.up():
+	case nm.Up():
 		fmt.Fprintln(w, "mesh: up")
 	case meshErr != nil:
 		fmt.Fprintf(w, "mesh: DOWN (%v)\n", meshErr)
@@ -203,7 +204,7 @@ func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 }
 
 // mesh returns the mesh manager, or nil when the mesh is disabled.
-func (s *server) mesh() *nebManager {
+func (s *server) mesh() *mesh.Manager {
 	if s.hub == nil {
 		return nil
 	}

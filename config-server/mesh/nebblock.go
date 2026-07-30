@@ -1,4 +1,4 @@
-package main
+package mesh
 
 // Mesh cert revocation (decision closing thread uuid dc04e3e8): a
 // git-managed blocklist of certificate fingerprints, compiled into
@@ -20,22 +20,22 @@ import (
 	"strings"
 )
 
-// nebBlocklistFile lives beside machines/ under the talos tree, so the
+// BlocklistFile lives beside machines/ under the talos tree, so the
 // hub image and any checkout agree on where revocations are declared.
-const nebBlocklistFile = "mesh-blocklist.txt"
+const BlocklistFile = "mesh-blocklist.txt"
 
-// loadMeshBlocklist reads the blocklist: one lowercase hex SHA-256
+// LoadBlocklist reads the blocklist: one lowercase hex SHA-256
 // fingerprint per line, '#' comments and blank lines ignored. A missing
 // file is an empty list (nothing revoked yet); a malformed entry is an
 // error, because silently skipping a typoed fingerprint would leave a
 // revoked cert accepted — the failure mode the file exists to prevent.
-func loadMeshBlocklist(root string) ([]string, error) {
-	raw, err := os.ReadFile(filepath.Join(root, nebBlocklistFile))
+func LoadBlocklist(root string) ([]string, error) {
+	raw, err := os.ReadFile(filepath.Join(root, BlocklistFile))
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", nebBlocklistFile, err)
+		return nil, fmt.Errorf("reading %s: %w", BlocklistFile, err)
 	}
 	var out []string
 	for i, line := range strings.Split(string(raw), "\n") {
@@ -49,7 +49,7 @@ func loadMeshBlocklist(root string) ([]string, error) {
 		if len(fp) != 64 || strings.IndexFunc(fp, func(r rune) bool {
 			return !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f')
 		}) >= 0 {
-			return nil, fmt.Errorf("%s:%d: %q is not a hex sha256 cert fingerprint", nebBlocklistFile, i+1, fp)
+			return nil, fmt.Errorf("%s:%d: %q is not a hex sha256 cert fingerprint", BlocklistFile, i+1, fp)
 		}
 		out = append(out, fp)
 	}

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// hubRendered mimics the shape deviceConfig emits (yaml.v3, 4-space
+// hubRendered mimics the shape mesh.DeviceConfig emits (yaml.v3, 4-space
 // indent, no tun.dev — device configs are portable by design).
 const hubRendered = `pki:
     ca: |

@@ -1,4 +1,4 @@
-package main
+package mesh
 
 // The hub's nebula configuration, rendered from derived state. Nothing
 // here is read from disk or remembered: given the master, the config is
@@ -36,9 +36,9 @@ import (
 // regrouping a device means re-enrolling it. It is *not* part of the
 // derivation: a regrouped device keeps its key and address.
 const (
-	nebGroupMachines = "machines"
-	nebGroupAdmins   = "admins"
-	nebGroupMedia    = "media"
+	GroupMachines = "machines"
+	GroupAdmins   = "admins"
+	GroupMedia    = "media"
 )
 
 // nebFlyListenHost is the hostname nebula binds on fly.io. Fly's UDP
@@ -56,32 +56,32 @@ const nebFlyListenHost = "fly-global-services"
 // lighthouse would take the whole mesh down.
 const nebHubCertValidity = 365 * 24 * time.Hour
 
-// nebClockSkew backdates notBefore so a hub whose clock runs slightly
+// ClockSkew backdates notBefore so a hub whose clock runs slightly
 // ahead of a peer's does not mint certs the peer rejects as future.
-const nebClockSkew = time.Hour
+const ClockSkew = time.Hour
 
-// nebHubParams is everything needed to render the hub's config.
-type nebHubParams struct {
-	master     []byte
-	subnet     netip.Prefix // mesh CIDR, e.g. 10.42.0.0/16
-	listenHost string       // nebFlyListenHost on fly, "0.0.0.0" locally
-	listenPort int          // public UDP port
-	serveDNS   bool         // hub answers overlay DNS (nebdns, not nebula's)
-	logLevel   string       // nebula log level ("" = info)
-	blocklist  []string     // revoked cert fingerprints (mesh-blocklist.txt)
-	now        func() time.Time
+// HubParams is everything needed to render the hub's config.
+type HubParams struct {
+	Master     []byte
+	Subnet     netip.Prefix // mesh CIDR, e.g. 10.42.0.0/16
+	ListenHost string       // nebFlyListenHost on fly, "0.0.0.0" locally
+	ListenPort int          // public UDP port
+	ServeDNS   bool         // hub answers overlay DNS (nebdns, not nebula's)
+	LogLevel   string       // nebula log level ("" = info)
+	Blocklist  []string     // revoked cert fingerprints (mesh-blocklist.txt)
+	Now        func() time.Time
 }
 
 // YAML shapes. Written as structs rather than assembled by string
 // formatting because the pki block carries multi-line PEM: yaml.Marshal
 // gets the block scalars right, hand-indented Sprintf eventually does
 // not.
-// One shape serves both the hub (hubNebulaConfig) and the nodes
+// One shape serves both the hub (HubConfig) and the nodes
 // (nodeNebulaConfig) so the two configs cannot drift in what a field
 // means. The fields only one side uses are omitempty; the fields both
 // sides set are always written, because "nebula's default" is not a
 // thing this repo wants to depend on silently.
-type nebConfigYAML struct {
+type ConfigYAML struct {
 	PKI           nebPKIYAML          `yaml:"pki"`
 	StaticHostMap map[string][]string `yaml:"static_host_map"`
 	Lighthouse    nebLighthouseYAML   `yaml:"lighthouse"`
@@ -190,7 +190,7 @@ type nebLoggingYAML struct {
 	Format string `yaml:"format"`
 }
 
-// hubNebulaConfig renders the hub's nebula config from derived state.
+// HubConfig renders the hub's nebula config from derived state.
 //
 // serve_dns is always false: nebula's built-in lighthouse DNS binds a
 // kernel socket and needs a TUN, which the TUN-less hub does not have.
@@ -201,29 +201,29 @@ type nebLoggingYAML struct {
 // holds no peer list: peers announce themselves, and membership is
 // decided by the CA signature on their cert, not by a registry
 // (invariant 1).
-func hubNebulaConfig(p nebHubParams) ([]byte, error) {
-	if p.listenPort <= 0 || p.listenPort > 65535 {
-		return nil, fmt.Errorf("mesh listen port %d out of range", p.listenPort)
+func HubConfig(p HubParams) ([]byte, error) {
+	if p.ListenPort <= 0 || p.ListenPort > 65535 {
+		return nil, fmt.Errorf("mesh listen port %d out of range", p.ListenPort)
 	}
-	if p.listenHost == "" {
+	if p.ListenHost == "" {
 		return nil, fmt.Errorf("mesh listen host must be set")
 	}
 	now := time.Now
-	if p.now != nil {
-		now = p.now
+	if p.Now != nil {
+		now = p.Now
 	}
 
-	hubIP, err := nebderive.HubIP(p.subnet)
+	hubIP, err := nebderive.HubIP(p.Subnet)
 	if err != nil {
 		return nil, err
 	}
-	caPEM, err := nebderive.CACertPEM(p.master)
+	caPEM, err := nebderive.CACertPEM(p.Master)
 	if err != nil {
 		return nil, fmt.Errorf("deriving mesh CA: %w", err)
 	}
-	priv, pub := nebderive.HubKey(p.master)
-	crt, err := nebderive.HostCert(p.master, nebderive.HubName, pub, hubIP, p.subnet,
-		nil, now().Add(-nebClockSkew), now().Add(nebHubCertValidity))
+	priv, pub := nebderive.HubKey(p.Master)
+	crt, err := nebderive.HostCert(p.Master, nebderive.HubName, pub, hubIP, p.Subnet,
+		nil, now().Add(-ClockSkew), now().Add(nebHubCertValidity))
 	if err != nil {
 		return nil, fmt.Errorf("minting hub cert: %w", err)
 	}
@@ -232,24 +232,24 @@ func hubNebulaConfig(p nebHubParams) ([]byte, error) {
 		return nil, fmt.Errorf("marshalling hub cert: %w", err)
 	}
 
-	level := p.logLevel
+	level := p.LogLevel
 	if level == "" {
 		level = "info"
 	}
 
-	cfg := nebConfigYAML{
+	cfg := ConfigYAML{
 		PKI: nebPKIYAML{
 			CA:        string(caPEM),
 			Cert:      string(crtPEM),
 			Key:       string(nebderive.HostKeyPEM(priv)),
-			Blocklist: p.blocklist,
+			Blocklist: p.Blocklist,
 		},
 		StaticHostMap: map[string][]string{},
 		Lighthouse: nebLighthouseYAML{
 			AmLighthouse: true,
 			ServeDNS:     false,
 		},
-		Listen: nebListenYAML{Host: p.listenHost, Port: p.listenPort},
+		Listen: nebListenYAML{Host: p.ListenHost, Port: p.ListenPort},
 		// Both off, and neither costs us the direct paths driver 1 is
 		// about: the rendezvous that gets two NATed peers punched
 		// together is a *lighthouse* function, not a punchy one —
@@ -280,7 +280,7 @@ func hubNebulaConfig(p nebHubParams) ([]byte, error) {
 		},
 		Logging: nebLoggingYAML{Level: level, Format: "text"},
 	}
-	if p.serveDNS {
+	if p.ServeDNS {
 		// Every member resolves mesh names, machines included.
 		cfg.Firewall.Inbound = append(cfg.Firewall.Inbound,
 			nebRuleYAML{Port: "53", Proto: "udp", Host: "any"})
@@ -291,7 +291,7 @@ func hubNebulaConfig(p nebHubParams) ([]byte, error) {
 	// check in serveMeshHTTP stays as the second layer (ADR-0007,
 	// carrying ADR-0003's property onto the mesh).
 	cfg.Firewall.Inbound = append(cfg.Firewall.Inbound,
-		nebRuleYAML{Port: "80", Proto: "tcp", Group: nebGroupAdmins})
+		nebRuleYAML{Port: "80", Proto: "tcp", Group: GroupAdmins})
 
 	out, err := yaml.Marshal(cfg)
 	if err != nil {

@@ -1,4 +1,4 @@
-package main
+package mesh
 
 import (
 	"net"
@@ -37,7 +37,7 @@ func TestMeshDNSOverOverlay(t *testing.T) {
 	hub := nebtest.Hub(t, master, subnet, lighthousePort)
 	dev := nebtest.Device(t, master, subnet, "laptop", lighthousePort)
 
-	if err := serveMeshDNS(hub, zone, meshDNSZone); err != nil {
+	if err := serveMeshDNS(hub, zone, nebderive.DNSZone); err != nil {
 		t.Fatal(err)
 	}
 
@@ -58,9 +58,9 @@ func TestMeshDNSOverOverlay(t *testing.T) {
 		want    netip.Addr
 		wantErr dnsmessage.RCode
 	}{
-		{qname: "cp1." + meshDNSZone, want: wantCP1},
-		{qname: nebderive.HubName + "." + meshDNSZone, want: hubAddr},
-		{qname: "nope." + meshDNSZone, wantErr: dnsmessage.RCodeNameError},
+		{qname: "cp1." + nebderive.DNSZone, want: wantCP1},
+		{qname: nebderive.HubName + "." + nebderive.DNSZone, want: hubAddr},
+		{qname: "nope." + nebderive.DNSZone, wantErr: dnsmessage.RCodeNameError},
 		{qname: "example.com", wantErr: dnsmessage.RCodeRefused},
 	}
 
@@ -68,7 +68,7 @@ func TestMeshDNSOverOverlay(t *testing.T) {
 	deadline := time.Now().Add(30 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		_, lastErr = resolve(dev, hubAddr, "cp1."+meshDNSZone)
+		_, lastErr = resolve(dev, hubAddr, "cp1."+nebderive.DNSZone)
 		if lastErr == nil {
 			break
 		}

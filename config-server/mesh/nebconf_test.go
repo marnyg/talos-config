@@ -1,4 +1,4 @@
-package main
+package mesh
 
 import (
 	"io"
@@ -20,13 +20,13 @@ import (
 
 var nebTestMaster = []byte("nebconf-test-master-key-32-bytes")
 
-func nebTestParams() nebHubParams {
-	return nebHubParams{
-		master:     nebTestMaster,
-		subnet:     netip.MustParsePrefix("10.42.0.0/16"),
-		listenHost: "0.0.0.0",
-		listenPort: 4242,
-		serveDNS:   true,
+func nebTestParams() HubParams {
+	return HubParams{
+		Master:     nebTestMaster,
+		Subnet:     netip.MustParsePrefix("10.42.0.0/16"),
+		ListenHost: "0.0.0.0",
+		ListenPort: 4242,
+		ServeDNS:   true,
 		// Real clock on purpose: nebula validates the cert's window
 		// against wall time, so a frozen clock would either be rejected
 		// as future-dated or quietly stop testing anything. The window
@@ -40,12 +40,12 @@ func nebTestParams() nebHubParams {
 func TestHubCertValidityWindow(t *testing.T) {
 	frozen := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	p := nebTestParams()
-	p.now = func() time.Time { return frozen }
-	raw, err := hubNebulaConfig(p)
+	p.Now = func() time.Time { return frozen }
+	raw, err := HubConfig(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got nebConfigYAML
+	var got ConfigYAML
 	if err := yaml.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestHubCertValidityWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := frozen.Add(-nebClockSkew); !crt.NotBefore().Equal(want) {
+	if want := frozen.Add(-ClockSkew); !crt.NotBefore().Equal(want) {
 		t.Errorf("notBefore = %s, want %s (frozen now minus skew)", crt.NotBefore(), want)
 	}
 	if want := frozen.Add(nebHubCertValidity); !crt.NotAfter().Equal(want) {
@@ -67,7 +67,7 @@ func TestHubCertValidityWindow(t *testing.T) {
 // without starting the tunnel, so a typo'd key or a malformed rule fails
 // here rather than at unseal time on fly.
 func TestHubNebulaConfigValidates(t *testing.T) {
-	raw, err := hubNebulaConfig(nebTestParams())
+	raw, err := HubConfig(nebTestParams())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,24 +87,24 @@ func TestHubNebulaConfigValidates(t *testing.T) {
 // derived CA.
 func TestHubNebulaConfigDerivedValues(t *testing.T) {
 	p := nebTestParams()
-	raw, err := hubNebulaConfig(p)
+	raw, err := HubConfig(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var got nebConfigYAML
+	var got ConfigYAML
 	if err := yaml.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
 
-	wantCA, err := nebderive.CACertPEM(p.master)
+	wantCA, err := nebderive.CACertPEM(p.Master)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.PKI.CA != string(wantCA) {
 		t.Error("pki.ca is not the derived CA")
 	}
-	priv, _ := nebderive.HubKey(p.master)
+	priv, _ := nebderive.HubKey(p.Master)
 	if got.PKI.Key != string(nebderive.HostKeyPEM(priv)) {
 		t.Error("pki.key is not the derived hub key")
 	}
@@ -113,17 +113,17 @@ func TestHubNebulaConfigDerivedValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hubIP, err := nebderive.HubIP(p.subnet)
+	hubIP, err := nebderive.HubIP(p.Subnet)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if crt.Name() != nebderive.HubName {
 		t.Errorf("hub cert name = %q, want %q", crt.Name(), nebderive.HubName)
 	}
-	if nets := crt.Networks(); len(nets) != 1 || nets[0] != netip.PrefixFrom(hubIP, p.subnet.Bits()) {
-		t.Errorf("hub cert networks = %v, want [%s/%d]", crt.Networks(), hubIP, p.subnet.Bits())
+	if nets := crt.Networks(); len(nets) != 1 || nets[0] != netip.PrefixFrom(hubIP, p.Subnet.Bits()) {
+		t.Errorf("hub cert networks = %v, want [%s/%d]", crt.Networks(), hubIP, p.Subnet.Bits())
 	}
-	ca, err := nebderive.CACert(p.master)
+	ca, err := nebderive.CACert(p.Master)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,11 +141,11 @@ func TestHubNebulaConfigDerivedValues(t *testing.T) {
 // nebconf.go and would be easy to flip by accident.
 func TestHubNebulaConfigInvariants(t *testing.T) {
 	p := nebTestParams()
-	raw, err := hubNebulaConfig(p)
+	raw, err := HubConfig(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got nebConfigYAML
+	var got ConfigYAML
 	if err := yaml.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
@@ -178,8 +178,8 @@ func TestHubNebulaConfigInvariants(t *testing.T) {
 	if httpRule == nil {
 		t.Fatal("no inbound rule for tunnel http")
 	}
-	if httpRule.Group != nebGroupAdmins {
-		t.Errorf("tunnel http rule group = %q, want %q", httpRule.Group, nebGroupAdmins)
+	if httpRule.Group != GroupAdmins {
+		t.Errorf("tunnel http rule group = %q, want %q", httpRule.Group, GroupAdmins)
 	}
 	if httpRule.Host == "any" {
 		t.Error("tunnel http must not be open to any host")
@@ -189,12 +189,12 @@ func TestHubNebulaConfigInvariants(t *testing.T) {
 func TestHubNebulaConfigServeDNSGatesRule(t *testing.T) {
 	for _, serve := range []bool{true, false} {
 		p := nebTestParams()
-		p.serveDNS = serve
-		raw, err := hubNebulaConfig(p)
+		p.ServeDNS = serve
+		raw, err := HubConfig(p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var got nebConfigYAML
+		var got ConfigYAML
 		if err := yaml.Unmarshal(raw, &got); err != nil {
 			t.Fatal(err)
 		}
@@ -211,18 +211,18 @@ func TestHubNebulaConfigServeDNSGatesRule(t *testing.T) {
 }
 
 func TestHubNebulaConfigRejectsBadParams(t *testing.T) {
-	tests := map[string]func(*nebHubParams){
-		"zero port":       func(p *nebHubParams) { p.listenPort = 0 },
-		"port too large":  func(p *nebHubParams) { p.listenPort = 70000 },
-		"empty host":      func(p *nebHubParams) { p.listenHost = "" },
-		"bad subnet":      func(p *nebHubParams) { p.subnet = netip.Prefix{} },
-		"subnet too tiny": func(p *nebHubParams) { p.subnet = netip.MustParsePrefix("10.42.0.0/31") },
+	tests := map[string]func(*HubParams){
+		"zero port":       func(p *HubParams) { p.ListenPort = 0 },
+		"port too large":  func(p *HubParams) { p.ListenPort = 70000 },
+		"empty host":      func(p *HubParams) { p.ListenHost = "" },
+		"bad subnet":      func(p *HubParams) { p.Subnet = netip.Prefix{} },
+		"subnet too tiny": func(p *HubParams) { p.Subnet = netip.MustParsePrefix("10.42.0.0/31") },
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
 			p := nebTestParams()
 			mutate(&p)
-			if _, err := hubNebulaConfig(p); err == nil {
+			if _, err := HubConfig(p); err == nil {
 				t.Error("expected an error")
 			}
 		})
@@ -236,8 +236,8 @@ func TestHubNebulaConfigRejectsBadParams(t *testing.T) {
 // wildcard bind.
 func TestFlyListenHostIsResolvedByNebula(t *testing.T) {
 	p := nebTestParams()
-	p.listenHost = nebFlyListenHost
-	raw, err := hubNebulaConfig(p)
+	p.ListenHost = nebFlyListenHost
+	raw, err := HubConfig(p)
 	if err != nil {
 		t.Fatal(err)
 	}

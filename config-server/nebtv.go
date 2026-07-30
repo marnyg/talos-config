@@ -30,6 +30,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/mesh"
 )
 
 // nebTVClientID labels TV enrollment flows in logs and on the approval
@@ -55,8 +56,8 @@ func (s *server) handleMeshTVPage(w http.ResponseWriter, r *http.Request) {
 // poller). POST rather than GET so crawlers cannot litter the approval
 // dashboard with pending flows.
 func (s *server) handleMeshTVStart(w http.ResponseWriter, r *http.Request) {
-	mesh := s.mesh()
-	if mesh == nil {
+	nm := s.mesh()
+	if nm == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -64,12 +65,12 @@ func (s *server) handleMeshTVStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	d, ok := mesh.device(r.FormValue("name"))
+	d, ok := nm.Device(r.FormValue("name"))
 	if !ok {
 		http.Error(w, "unknown device name (declare it in MESH_MEDIA_DEVICES)", http.StatusNotFound)
 		return
 	}
-	if d.group != nebGroupMedia {
+	if d.Group != mesh.GroupMedia {
 		// Admin devices enroll via nebup, where the wallet signs for the
 		// device name itself. Refusing here keeps this page from ever
 		// minting an admins cert off a scanned QR.
@@ -81,20 +82,20 @@ func (s *server) handleMeshTVStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	da := s.store.Begin(deviceflow.KindTV, nebTVClientID, map[string]string{"mesh_device": d.name})
+	da := s.store.Begin(deviceflow.KindTV, nebTVClientID, map[string]string{"mesh_device": d.Name})
 	approveURL := externalBase(r) + "/status?user_code=" + da.UserCode
 
 	png, err := qrcode.Encode(approveURL, qrcode.Medium, 256)
 	if err != nil {
-		log.Printf("tv enroll %q: qr encode: %v", d.name, err)
+		log.Printf("tv enroll %q: qr encode: %v", d.Name, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("tv enroll started: device=%q user_code=%s", d.name, da.UserCode)
+	log.Printf("tv enroll started: device=%q user_code=%s", d.Name, da.UserCode)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	err = tvTicketTemplate.Execute(w, map[string]any{
-		"Name":       d.name,
+		"Name":       d.Name,
 		"UserCode":   da.UserCode,
 		"DeviceCode": da.DeviceCode,
 		"ApproveURL": approveURL,
@@ -111,8 +112,8 @@ func (s *server) handleMeshTVStart(w http.ResponseWriter, r *http.Request) {
 // approved TV token for the device's self-contained nebula config. The
 // token is consumed only after a successful serve, mirroring /config.
 func (s *server) handleMeshTVConfig(w http.ResponseWriter, r *http.Request) {
-	mesh := s.mesh()
-	if mesh == nil {
+	nm := s.mesh()
+	if nm == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -127,8 +128,8 @@ func (s *server) handleMeshTVConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	d, ok := mesh.device(name)
-	if !ok || d.group != nebGroupMedia {
+	d, ok := nm.Device(name)
+	if !ok || d.Group != mesh.GroupMedia {
 		// The declared lists changed between approval and redemption.
 		log.Printf("tv config: %q is no longer a declared media device", name)
 		http.Error(w, "forbidden", http.StatusForbidden)
@@ -139,16 +140,16 @@ func (s *server) handleMeshTVConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "sealed: an admin must unseal the hub at /status", http.StatusServiceUnavailable)
 		return
 	}
-	cfg, err := mesh.deviceConfig(master, d)
+	cfg, err := nm.DeviceConfig(master, d)
 	if err != nil {
 		log.Printf("tv config %q: %v", name, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	s.store.Consume(token)
-	log.Printf("tv enroll: served mesh config for %q (group %s)", d.name, d.group)
+	log.Printf("tv enroll: served mesh config for %q (group %s)", d.Name, d.Group)
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", d.name+".yml"))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", d.Name+".yml"))
 	_, _ = w.Write(cfg)
 }
 

@@ -29,6 +29,8 @@ import (
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/masterderive"
+	"github.com/marnyg/talos-config/config-server/mesh"
+	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
 // masterKeyEnv is the dev/testing escape hatch that auto-unseals the
@@ -84,8 +86,8 @@ func (s *server) serveTimePatches(mac string, m machines.Machine, byMAC map[stri
 	// gets a correct config while the hub's mesh is down, and reaches the
 	// mesh when the hub returns. A failure here is a repo mistake
 	// (address collision, bad meshIP), not a runtime condition.
-	if mesh := s.hub.mesh; mesh != nil {
-		p, err := mesh.nebMachinePatch(master, mac, m, byMAC)
+	if nm := s.hub.mesh; nm != nil {
+		p, err := nm.MachinePatch(master, mac, m, byMAC)
 		if err != nil {
 			log.Printf("error building mesh patch for %s: %v", mac, err)
 			return nil, http.StatusInternalServerError, "internal error"
@@ -255,7 +257,7 @@ func main() {
 		meshSubnet   = flag.String("mesh-subnet", "10.42.0.0/16", "mesh overlay CIDR; the hub takes the first host address (derived, not configurable)")
 		meshHost     = flag.String("mesh-listen-host", "", "address nebula binds (default: fly-global-services on fly, 0.0.0.0 elsewhere)")
 		meshEndpoint = flag.String("mesh-endpoint", "", "public host:port mesh members dial to reach the hub lighthouse (required with --mesh-port)")
-		meshZone     = flag.String("mesh-dns-zone", meshDNSZone, "DNS zone the hub serves on the mesh (empty = no mesh DNS)")
+		meshZone     = flag.String("mesh-dns-zone", nebderive.DNSZone, "DNS zone the hub serves on the mesh (empty = no mesh DNS)")
 		meshDevices  = flag.String("mesh-devices", "", "comma-separated owner devices in the mesh admins group (e.g. laptop,phone); identities derived from the master")
 		meshMedia    = flag.String("mesh-media-devices", "", "comma-separated shared-space devices in the mesh media group (e.g. androidtv); reach media only, never node control surfaces")
 		meshCAPin    = flag.String("mesh-ca-pin", "", "pinned expected mesh CA fingerprint (hex); unseal fails on mismatch (wrong wallet or message)")
@@ -305,14 +307,14 @@ func main() {
 		}
 		listenHost := *meshHost
 		if listenHost == "" {
-			listenHost = resolveMeshListenHost()
+			listenHost = mesh.ResolveListenHost()
 		}
-		devices, err := parseMeshDevices(*meshDevices, *meshMedia)
+		devices, err := mesh.ParseDevices(*meshDevices, *meshMedia)
 		if err != nil {
 			log.Fatalf("--mesh-devices/--mesh-media-devices: %v", err)
 		}
-		mesh := newNebManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root, devices)
-		hub = newHubManager(*root, addrs, *meshCAPin, mesh)
+		nm := mesh.NewManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root, devices)
+		hub = newHubManager(*root, addrs, *meshCAPin, nm)
 		log.Printf("mesh enabled: %s on udp/%d, binding %s (unseals with the hub)", subnet, *meshPort, listenHost)
 
 		// Dev/testing escape hatch: the master env auto-unseals — but
@@ -343,7 +345,7 @@ func main() {
 	if hub != nil {
 		// The overlay /config route serves hub-composed configs to admin
 		// devices; wired here because the handler needs the full server.
-		hub.mesh.tunnelConfig = http.HandlerFunc(s.handleTunnelConfig)
+		hub.mesh.TunnelConfig = http.HandlerFunc(s.handleTunnelConfig)
 		if masterEnv != "" {
 			master, err := masterderive.MasterFromHex(masterEnv)
 			if err != nil {

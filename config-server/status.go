@@ -27,6 +27,7 @@ import (
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/masterderive"
+	"github.com/marnyg/talos-config/config-server/mesh"
 )
 
 const sessionCookieName = "talos_status_session"
@@ -497,7 +498,7 @@ type statusData struct {
 	Sealed        bool
 	Mesh          string // mesh seal-state line ("" = mesh disabled)
 	MeshWarn      bool
-	MeshRows      []meshMemberRow
+	MeshRows      []mesh.MemberRow
 	Boot          *bootSnapshot
 	Pending       []verifyEntry
 	UndeclaredKMS []string
@@ -539,8 +540,8 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		}
 		// DNS names are derived from meta.yaml + the configured zone,
 		// so they are known even while the hub is sealed.
-		if mesh := s.mesh(); mesh != nil && mesh.dnsZone != "" {
-			row.DNS = machineDNSName(mac, m) + "." + mesh.dnsZone
+		if nm := s.mesh(); nm != nil && nm.DNSZone() != "" {
+			row.DNS = mesh.MachineDNSName(mac, m) + "." + nm.DNSZone()
 		}
 		if t, ok := s.lastFetch(mac); ok {
 			row.LastFetch = ago(now, t)
@@ -559,11 +560,11 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		TokenEnabled:  s.adminToken != "",
 		MasterMessage: masterderive.MasterMessage,
 	}
-	if mesh := s.mesh(); mesh != nil {
-		svc, _, meshErr := mesh.state()
+	if nm := s.mesh(); nm != nil {
+		svc, _, meshErr := nm.State()
 		switch {
 		case svc != nil:
-			data.Mesh = "up — lighthouse+relay, endpoint " + mesh.endpoint
+			data.Mesh = "up — lighthouse+relay, endpoint " + nm.Endpoint()
 		case meshErr != nil:
 			data.Mesh, data.MeshWarn = "DOWN — "+meshErr.Error(), true
 		case data.Sealed:
@@ -571,7 +572,7 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		default:
 			data.Mesh = "down"
 		}
-		data.MeshRows = mesh.members()
+		data.MeshRows = nm.Members()
 	}
 	if !s.started.IsZero() {
 		data.Started = s.started.UTC().Format("2006-01-02 15:04 MST")

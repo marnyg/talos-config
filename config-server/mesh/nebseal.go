@@ -1,14 +1,21 @@
-package main
+// Package mesh owns the hub's overlay network: the nebula lifecycle
+// (Manager), the hub/node/device config renderers, mesh DNS, the
+// git-managed cert blocklist, and the overlay HTTP surface. Everything
+// is derived — given the master, every config is a pure function of
+// (git, master), so nothing here is stored or remembered (invariant 2).
+// The wallet-gated HTTP handlers that hand these configs out stay with
+// the server in package main.
+package mesh
 
 // Mesh lifecycle. The mesh unseals from the hub's one master — one
 // derivation tree, one overlay — so there is no second unseal flow and
-// no second secret. nebManager owns only what nebula needs: the config,
+// no second secret. Manager owns only what nebula needs: the config,
 // the netstack, and the DNS listener.
 //
 // The mesh is the control channel (phase 2 deleted wg0). A mesh that
 // fails to start does not take the unseal with it — KMS disk unlocks
 // must not depend on the overlay (invariant 4) — but it does turn
-// /sealed into a 503: see hubManager.unsealWithMaster.
+// /sealed into a 503: see hubManager.unsealWithMaster in main.
 
 import (
 	"context"
@@ -35,41 +42,43 @@ import (
 	"github.com/marnyg/talos-config/config-server/nebstack"
 )
 
-// nebManager owns the mesh side of an unseal. Created when the mesh is
+// Manager owns the mesh side of an unseal. Created when the mesh is
 // enabled (--mesh-port) and idle until the hub is unsealed.
-type nebManager struct {
+type Manager struct {
 	port       int
 	subnet     netip.Prefix // mesh CIDR; the hub's address is derived, not configured
 	listenHost string
-	endpoint   string      // hub's public host:port, injected into node configs
-	dnsZone    string      // "" = no mesh DNS
-	devices    []nebDevice // named devices whose identities are derived
-	root       string      // talos/ directory
+	endpoint   string   // hub's public host:port, injected into node configs
+	dnsZone    string   // "" = no mesh DNS
+	devices    []Device // named devices whose identities are derived
+	root       string   // talos/ directory
 
-	// start is startMeshNebula, stubbed in tests.
-	start func(cfg []byte) (*nebstack.Service, error)
+	// Start boots nebula from a rendered config. Defaults to
+	// startMeshNebula; exported so tests can stub the socket away (the
+	// deviceflow.Store.Now pattern).
+	Start func(cfg []byte) (*nebstack.Service, error)
 
-	// tunnelConfig serves GET /config on the overlay listener to admin
+	// TunnelConfig serves GET /config on the overlay listener to admin
 	// devices (set by main; nil disables the route).
-	tunnelConfig http.Handler
+	TunnelConfig http.Handler
 
 	mu   sync.Mutex
 	svc  *nebstack.Service // nil until unsealed
 	zone map[string]netip.Addr
-	err  error // last startup failure, surfaced by state()
+	err  error // last startup failure, surfaced by State()
 }
 
-// nebDevice is one enrollable device: a derived identity plus the group
+// Device is one enrollable device: a derived identity plus the group
 // its certificate will carry. Declared, not registered — the list says
 // which names are allowed to enroll and what access they get, and the
 // identity itself is a pure function of (master, name).
-type nebDevice struct {
-	name  string
-	group string // nebGroupAdmins or nebGroupMedia
+type Device struct {
+	Name  string
+	Group string // GroupAdmins or GroupMedia
 }
 
-func newNebManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone, root string, devices []nebDevice) *nebManager {
-	return &nebManager{
+func NewManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone, root string, devices []Device) *Manager {
+	return &Manager{
 		port:       port,
 		subnet:     subnet,
 		listenHost: listenHost,
@@ -77,34 +86,43 @@ func newNebManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone,
 		dnsZone:    dnsZone,
 		devices:    devices,
 		root:       root,
-		start:      startMeshNebula,
+		Start:      startMeshNebula,
 	}
 }
 
+// Endpoint is the hub's public host:port mesh members dial.
+func (m *Manager) Endpoint() string { return m.endpoint }
+
+// Subnet is the mesh overlay CIDR.
+func (m *Manager) Subnet() netip.Prefix { return m.subnet }
+
+// DNSZone is the zone the hub serves on the mesh ("" = no mesh DNS).
+func (m *Manager) DNSZone() string { return m.dnsZone }
+
 // machinesDir is where declared machines live under the talos tree.
-func (m *nebManager) machinesDir() string {
+func (m *Manager) machinesDir() string {
 	return filepath.Join(m.root, "machines")
 }
 
-// state reports the live service, the zone, and the last startup error.
-func (m *nebManager) state() (*nebstack.Service, map[string]netip.Addr, error) {
+// State reports the live service, the zone, and the last startup error.
+func (m *Manager) State() (*nebstack.Service, map[string]netip.Addr, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.svc, m.zone, m.err
 }
 
-func (m *nebManager) up() bool {
-	svc, _, _ := m.state()
+func (m *Manager) Up() bool {
+	svc, _, _ := m.State()
 	return svc != nil
 }
 
-// unsealWithMaster renders the hub's config from the master, brings the
+// UnsealWithMaster renders the hub's config from the master, brings the
 // mesh up, and starts mesh DNS and HTTP. Idempotent: nebula cannot be
 // restarted in-process, so a second call is a no-op.
 //
 // Errors are returned for the caller to decide on; see the fan-out in
-// hubManager.unsealWithMaster for why they do not fail the unseal.
-func (m *nebManager) unsealWithMaster(master []byte) error {
+// main's hubManager.unsealWithMaster for why they do not fail the unseal.
+func (m *Manager) UnsealWithMaster(master []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.svc != nil {
@@ -127,24 +145,24 @@ func (m *nebManager) unsealWithMaster(master []byte) error {
 		}
 	}
 
-	blocklist, err := loadMeshBlocklist(m.root)
+	blocklist, err := LoadBlocklist(m.root)
 	if err != nil {
 		return m.fail(fmt.Errorf("loading mesh blocklist: %w", err))
 	}
 
-	cfg, err := hubNebulaConfig(nebHubParams{
-		master:     master,
-		subnet:     m.subnet,
-		listenHost: m.listenHost,
-		listenPort: m.port,
-		serveDNS:   m.dnsZone != "",
-		blocklist:  blocklist,
+	cfg, err := HubConfig(HubParams{
+		Master:     master,
+		Subnet:     m.subnet,
+		ListenHost: m.listenHost,
+		ListenPort: m.port,
+		ServeDNS:   m.dnsZone != "",
+		Blocklist:  blocklist,
 	})
 	if err != nil {
 		return m.fail(fmt.Errorf("rendering mesh config: %w", err))
 	}
 
-	svc, err := m.start(cfg)
+	svc, err := m.Start(cfg)
 	if err != nil {
 		return m.fail(fmt.Errorf("starting mesh: %w", err))
 	}
@@ -176,28 +194,28 @@ func (m *nebManager) unsealWithMaster(master []byte) error {
 		log.Printf("mesh configured (start stubbed): %s on udp/%d, CA %s", hubIP, m.port, fp)
 	}
 	for _, d := range m.devices {
-		ip, err := nebderive.DeviceIP(master, d.name, m.subnet)
+		ip, err := nebderive.DeviceIP(master, d.Name, m.subnet)
 		if err != nil {
 			continue
 		}
-		log.Printf("mesh device %q (%s): overlay address %s", d.name, d.group, ip)
+		log.Printf("mesh device %q (%s): overlay address %s", d.Name, d.Group, ip)
 	}
 	return nil
 }
 
-// meshMemberRow is one /status mesh-table line: a derived member joined
+// MemberRow is one /status mesh-table line: a derived member joined
 // with its live tunnel state from the embedded nebula hostmap.
-type meshMemberRow struct {
+type MemberRow struct {
 	Name, Group, Addr, Tunnel, Endpoint, Relays string
 }
 
-// members lists every derived mesh member with live tunnel state.
+// Members lists every derived mesh member with live tunnel state.
 // Offline members still appear: membership is derived from git +
 // declarations, not from who happens to be connected. Nil until the
 // zone exists (built at unseal), so a sealed hub shows nothing — the
 // same rule the DNS zone follows.
-func (m *nebManager) members() []meshMemberRow {
-	svc, zone, _ := m.state()
+func (m *Manager) Members() []MemberRow {
+	svc, zone, _ := m.State()
 	if zone == nil {
 		return nil
 	}
@@ -205,16 +223,16 @@ func (m *nebManager) members() []meshMemberRow {
 	if svc != nil {
 		live = svc.Peers()
 	}
-	return meshMemberRows(zone, m.devices, m.endpoint, live)
+	return memberRows(zone, m.devices, m.endpoint, live)
 }
 
-// meshMemberRows is the pure join: derived membership × live hostmap.
-// Separated from nebManager so tests can fabricate hostmap entries
+// memberRows is the pure join: derived membership × live hostmap.
+// Separated from the Manager so tests can fabricate hostmap entries
 // without a running nebula.
-func meshMemberRows(zone map[string]netip.Addr, devices []nebDevice, hubEndpoint string, live []nebula.ControlHostInfo) []meshMemberRow {
+func memberRows(zone map[string]netip.Addr, devices []Device, hubEndpoint string, live []nebula.ControlHostInfo) []MemberRow {
 	groups := map[string]string{}
 	for _, d := range devices {
-		groups[d.name] = d.group
+		groups[d.Name] = d.Group
 	}
 	// Reverse zone, so relay targets render as names, not addresses.
 	names := map[netip.Addr]string{}
@@ -228,10 +246,10 @@ func meshMemberRows(zone map[string]netip.Addr, devices []nebDevice, hubEndpoint
 		}
 	}
 
-	var rows []meshMemberRow
+	var rows []MemberRow
 	for _, n := range slices.Sorted(maps.Keys(zone)) {
 		addr := zone[n]
-		row := meshMemberRow{Name: n, Addr: addr.String(), Tunnel: "—", Endpoint: "—", Relays: "—"}
+		row := MemberRow{Name: n, Addr: addr.String(), Tunnel: "—", Endpoint: "—", Relays: "—"}
 		if n == nebderive.HubName {
 			// The hub is this process: no tunnel to itself, and its
 			// endpoint is configuration, not hostmap observation.
@@ -243,7 +261,7 @@ func meshMemberRows(zone map[string]netip.Addr, devices []nebDevice, hubEndpoint
 		}
 		row.Group = groups[n]
 		if row.Group == "" {
-			row.Group = nebGroupMachines
+			row.Group = GroupMachines
 		}
 		if hi, ok := byAddr[addr]; ok {
 			row.Tunnel = "up"
@@ -276,7 +294,7 @@ func meshMemberRows(zone map[string]netip.Addr, devices []nebDevice, hubEndpoint
 
 // fail records and returns err, so a later /status or /sealed can say
 // why the mesh is down instead of only that it is.
-func (m *nebManager) fail(err error) error {
+func (m *Manager) fail(err error) error {
 	m.err = err
 	return err
 }
@@ -310,7 +328,7 @@ func startMeshNebula(cfg []byte) (*nebstack.Service, error) {
 // meshBuildVersion is what the hub reports to peers in handshakes.
 const meshBuildVersion = "talos-config-hub"
 
-// parseMeshDevices splits the two device lists into one declared set,
+// ParseDevices splits the two device lists into one declared set,
 // normalizing names the same way the derivation does so a stray capital
 // cannot produce a different identity than the one an enrolled device
 // holds.
@@ -319,13 +337,13 @@ const meshBuildVersion = "talos-config-hub"
 // group is signed into the cert, so "which group did laptop get?" must
 // have one answer, and guessing it silently is how a TV ends up with
 // admin access.
-func parseMeshDevices(admins, media string) ([]nebDevice, error) {
-	var out []nebDevice
+func ParseDevices(admins, media string) ([]Device, error) {
+	var out []Device
 	seen := map[string]string{}
 	for _, spec := range []struct {
 		list  string
 		group string
-	}{{admins, nebGroupAdmins}, {media, nebGroupMedia}} {
+	}{{admins, GroupAdmins}, {media, GroupMedia}} {
 		for _, name := range strings.Split(spec.list, ",") {
 			n := nebderive.Normalize(name)
 			if n == "" {
@@ -335,33 +353,33 @@ func parseMeshDevices(admins, media string) ([]nebDevice, error) {
 				return nil, fmt.Errorf("device %q is declared in both the %s and %s groups", n, prev, spec.group)
 			}
 			seen[n] = spec.group
-			out = append(out, nebDevice{name: n, group: spec.group})
+			out = append(out, Device{Name: n, Group: spec.group})
 		}
 	}
 	return out, nil
 }
 
-// device returns the declared device with this name. Enrollment refuses
+// Device returns the declared device with this name. Enrollment refuses
 // anything else: a name that is not declared has no group, and a cert
 // without a group reaches nothing.
-func (m *nebManager) device(name string) (nebDevice, bool) {
+func (m *Manager) Device(name string) (Device, bool) {
 	name = nebderive.Normalize(name)
 	for _, d := range m.devices {
-		if d.name == name {
+		if d.Name == name {
 			return d, true
 		}
 	}
-	return nebDevice{}, false
+	return Device{}, false
 }
 
-// resolveMeshListenHost picks the address nebula binds.
+// ResolveListenHost picks the address nebula binds.
 //
 // On fly the hostname is passed through verbatim: fly's UDP proxy only
 // delivers to that address, and nebula resolves listen.host itself, so
 // unlike wireguard-go there is no bind shim. Off fly the name does not
 // exist, and passing it would fail the start, so fall back to the
 // wildcard for local runs.
-func resolveMeshListenHost() string {
+func ResolveListenHost() string {
 	if !resolveFlyGlobalServices().IsUnspecified() {
 		return nebFlyListenHost
 	}

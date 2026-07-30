@@ -1,9 +1,6 @@
-package main
+package mesh
 
 import (
-	"errors"
-	"net/http"
-	"net/http/httptest"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -42,11 +39,11 @@ func testTalosTree(t *testing.T) string {
 // testNebManager returns a mesh manager whose nebula start is stubbed:
 // everything up to and including config rendering runs for real, only
 // the UDP socket is skipped.
-func testNebManager(t *testing.T, root string, devices []string) (*nebManager, *[]byte) {
+func testNebManager(t *testing.T, root string, devices []string) (*Manager, *[]byte) {
 	t.Helper()
 	var rendered []byte
-	m := newNebManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, meshDNSZone, root, adminDevices(devices...))
-	m.start = func(cfg []byte) (*nebstack.Service, error) {
+	m := NewManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root, adminDevices(devices...))
+	m.Start = func(cfg []byte) (*nebstack.Service, error) {
 		rendered = cfg
 		return nil, nil
 	}
@@ -58,10 +55,10 @@ func TestNebManagerUnseal(t *testing.T) {
 	m, rendered := testNebManager(t, root, []string{"laptop", "phone"})
 	master := []byte("neb-seal-test-master-key-32bytes")
 
-	if m.up() {
+	if m.Up() {
 		t.Fatal("mesh should not be up before unseal")
 	}
-	if err := m.unsealWithMaster(master); err != nil {
+	if err := m.UnsealWithMaster(master); err != nil {
 		t.Fatal(err)
 	}
 
@@ -76,7 +73,7 @@ func TestNebManagerUnseal(t *testing.T) {
 	}
 	// Compare through the YAML, not as a substring: the PEM is emitted as
 	// an indented block scalar, so the raw bytes never appear verbatim.
-	var cfg nebConfigYAML
+	var cfg ConfigYAML
 	if err := yaml.Unmarshal(*rendered, &cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +84,7 @@ func TestNebManagerUnseal(t *testing.T) {
 		t.Error("hub did not render as lighthouse + relay")
 	}
 
-	_, zone, err := m.state()
+	_, zone, err := m.State()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,12 +109,12 @@ func TestNebManagerZoneFailsBeforeStart(t *testing.T) {
 	root := testTalosTree(t)
 	m, rendered := testNebManager(t, root, []string{"cp1"}) // collides with the machine's name
 	started := false
-	m.start = func(cfg []byte) (*nebstack.Service, error) {
+	m.Start = func(cfg []byte) (*nebstack.Service, error) {
 		started = true
 		return nil, nil
 	}
 
-	err := m.unsealWithMaster([]byte("neb-seal-test-master-key-32bytes"))
+	err := m.UnsealWithMaster([]byte("neb-seal-test-master-key-32bytes"))
 	if err == nil {
 		t.Fatal("expected a zone collision error")
 	}
@@ -127,7 +124,7 @@ func TestNebManagerZoneFailsBeforeStart(t *testing.T) {
 	if len(*rendered) != 0 {
 		t.Error("config was rendered despite an invalid zone")
 	}
-	if _, _, stored := m.state(); stored == nil {
+	if _, _, stored := m.State(); stored == nil {
 		t.Error("failure was not recorded on the manager")
 	}
 }
@@ -139,10 +136,10 @@ func TestNebManagerWithoutDNS(t *testing.T) {
 	m, rendered := testNebManager(t, root, nil)
 	m.dnsZone = ""
 
-	if err := m.unsealWithMaster([]byte("neb-seal-test-master-key-32bytes")); err != nil {
+	if err := m.UnsealWithMaster([]byte("neb-seal-test-master-key-32bytes")); err != nil {
 		t.Fatal(err)
 	}
-	if _, zone, _ := m.state(); zone != nil {
+	if _, zone, _ := m.State(); zone != nil {
 		t.Errorf("zone built despite mesh DNS being off: %v", zone)
 	}
 	if strings.Contains(string(*rendered), `port: "53"`) {
@@ -157,18 +154,18 @@ func TestNebManagerUnsealIsIdempotent(t *testing.T) {
 	// A non-nil service is needed for the idempotence guard to engage,
 	// and Service is opaque, so drive it through the field directly after
 	// the first unseal.
-	m.start = func(cfg []byte) (*nebstack.Service, error) {
+	m.Start = func(cfg []byte) (*nebstack.Service, error) {
 		calls++
 		return nil, nil
 	}
 	master := []byte("neb-seal-test-master-key-32bytes")
-	if err := m.unsealWithMaster(master); err != nil {
+	if err := m.UnsealWithMaster(master); err != nil {
 		t.Fatal(err)
 	}
 	m.mu.Lock()
 	m.svc = &nebstack.Service{} // stand in for a running mesh
 	m.mu.Unlock()
-	if err := m.unsealWithMaster(master); err != nil {
+	if err := m.UnsealWithMaster(master); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 {
@@ -176,77 +173,25 @@ func TestNebManagerUnsealIsIdempotent(t *testing.T) {
 	}
 }
 
-// A mesh that cannot start must not take the unseal with it: KMS disk
-// unlocks ride the WAN listener and must not depend on the overlay
-// (invariant 4). The failure is recorded, not swallowed.
-func TestMeshFailureDoesNotBreakHubUnseal(t *testing.T) {
-	m := testHubManager(t, []string{wellKnownAddr}, "")
-	mesh, _ := testNebManager(t, m.root, nil)
-	mesh.start = func([]byte) (*nebstack.Service, error) {
-		return nil, errors.New("simulated mesh failure")
-	}
-	m.mesh = mesh
-
-	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
-		t.Fatalf("mesh failure broke the hub unseal: %v", err)
-	}
-	if m.sealed() {
-		t.Fatal("hub still sealed after a mesh-only failure")
-	}
-	if _, _, err := mesh.state(); err == nil {
-		t.Error("mesh failure was not recorded")
-	}
-}
-
-// /sealed pages on a mesh startup failure — the phase-2 inversion: the
-// mesh is the control channel now, so "unsealed but mesh down" is an
-// incident, not a footnote.
-func TestSealedEndpointPagesOnMeshFailure(t *testing.T) {
-	m := testHubManager(t, []string{wellKnownAddr}, "")
-	mesh, _ := testNebManager(t, m.root, nil)
-	mesh.start = func([]byte) (*nebstack.Service, error) {
-		return nil, errors.New("simulated mesh failure")
-	}
-	m.mesh = mesh
-	s := &server{root: m.root, hub: m}
-
-	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
-		t.Fatal(err)
-	}
-
-	rec := httptest.NewRecorder()
-	s.handleSealed(rec, httptest.NewRequest("GET", "/sealed", nil))
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503 (a mesh failure must page)", rec.Code)
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "hub: unsealed") {
-		t.Errorf("body does not report hub state: %q", body)
-	}
-	if !strings.Contains(body, "mesh: DOWN") || !strings.Contains(body, "simulated mesh failure") {
-		t.Errorf("body does not report why the mesh is down: %q", body)
-	}
-}
-
 // adminDevices is the common case in tests: named devices, all in the
 // admins group.
-func adminDevices(names ...string) []nebDevice {
-	var out []nebDevice
+func adminDevices(names ...string) []Device {
+	var out []Device
 	for _, n := range names {
-		out = append(out, nebDevice{name: nebderive.Normalize(n), group: nebGroupAdmins})
+		out = append(out, Device{Name: nebderive.Normalize(n), Group: GroupAdmins})
 	}
 	return out
 }
 
 func TestParseMeshDevices(t *testing.T) {
-	got, err := parseMeshDevices(" Laptop , ,phone ", "ANDROIDTV")
+	got, err := ParseDevices(" Laptop , ,phone ", "ANDROIDTV")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []nebDevice{
-		{name: "laptop", group: nebGroupAdmins},
-		{name: "phone", group: nebGroupAdmins},
-		{name: "androidtv", group: nebGroupMedia},
+	want := []Device{
+		{Name: "laptop", Group: GroupAdmins},
+		{Name: "phone", Group: GroupAdmins},
+		{Name: "androidtv", Group: GroupMedia},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -262,7 +207,7 @@ func TestParseMeshDevices(t *testing.T) {
 // cert, so a name in both lists has no single answer and must not get a
 // guessed one — guessing is how a shared-space TV ends up an admin.
 func TestParseMeshDevicesRejectsBothGroups(t *testing.T) {
-	if _, err := parseMeshDevices("laptop,androidtv", "androidtv"); err == nil {
+	if _, err := ParseDevices("laptop,androidtv", "androidtv"); err == nil {
 		t.Fatal("expected an error for a device declared in both groups, got none")
 	}
 }
@@ -282,9 +227,9 @@ func TestMeshMemberRows(t *testing.T) {
 		"laptop":          lapIP,
 		"androidtv":       tvIP,
 	}
-	devices := []nebDevice{
-		{name: "laptop", group: nebGroupAdmins},
-		{name: "androidtv", group: nebGroupMedia},
+	devices := []Device{
+		{Name: "laptop", Group: GroupAdmins},
+		{Name: "androidtv", Group: GroupMedia},
 	}
 	live := []nebula.ControlHostInfo{
 		{
@@ -294,12 +239,12 @@ func TestMeshMemberRows(t *testing.T) {
 		},
 	}
 
-	got := meshMemberRows(zone, devices, "hub.example:4242", live)
-	want := []meshMemberRow{
-		{Name: "androidtv", Group: nebGroupMedia, Addr: tvIP.String(), Tunnel: "—", Endpoint: "—", Relays: "—"},
-		{Name: "cp1", Group: nebGroupMachines, Addr: cp1IP.String(), Tunnel: "—", Endpoint: "—", Relays: "—"},
+	got := memberRows(zone, devices, "hub.example:4242", live)
+	want := []MemberRow{
+		{Name: "androidtv", Group: GroupMedia, Addr: tvIP.String(), Tunnel: "—", Endpoint: "—", Relays: "—"},
+		{Name: "cp1", Group: GroupMachines, Addr: cp1IP.String(), Tunnel: "—", Endpoint: "—", Relays: "—"},
 		{Name: "hub", Group: "lighthouse+relay", Addr: hubIP.String(), Tunnel: "self", Endpoint: "hub.example:4242", Relays: "—"},
-		{Name: "laptop", Group: nebGroupAdmins, Addr: lapIP.String(), Tunnel: "up", Endpoint: "198.51.100.7:4242", Relays: "cp1"},
+		{Name: "laptop", Group: GroupAdmins, Addr: lapIP.String(), Tunnel: "up", Endpoint: "198.51.100.7:4242", Relays: "cp1"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d rows (%v), want %d", len(got), got, len(want))
@@ -318,24 +263,24 @@ func TestNebManagerMembers(t *testing.T) {
 	root := testTalosTree(t)
 	m, _ := testNebManager(t, root, []string{"laptop"})
 
-	if rows := m.members(); rows != nil {
+	if rows := m.Members(); rows != nil {
 		t.Fatalf("sealed manager should report no members, got %v", rows)
 	}
-	if err := m.unsealWithMaster([]byte("neb-seal-test-master-key-32bytes")); err != nil {
+	if err := m.UnsealWithMaster([]byte("neb-seal-test-master-key-32bytes")); err != nil {
 		t.Fatal(err)
 	}
-	rows := m.members()
-	byName := map[string]meshMemberRow{}
+	rows := m.Members()
+	byName := map[string]MemberRow{}
 	for _, r := range rows {
 		byName[r.Name] = r
 	}
 	if r := byName["hub"]; r.Tunnel != "self" || r.Endpoint != nebTestEndpoint {
 		t.Errorf("hub row = %+v", r)
 	}
-	if r := byName["cp1"]; r.Group != nebGroupMachines || r.Tunnel != "—" {
+	if r := byName["cp1"]; r.Group != GroupMachines || r.Tunnel != "—" {
 		t.Errorf("cp1 row = %+v", r)
 	}
-	if r := byName["laptop"]; r.Group != nebGroupAdmins || r.Tunnel != "—" {
+	if r := byName["laptop"]; r.Group != GroupAdmins || r.Tunnel != "—" {
 		t.Errorf("laptop row = %+v", r)
 	}
 }

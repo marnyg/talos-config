@@ -1,4 +1,4 @@
-package main
+package mesh
 
 // Mesh control-channel HTTP: the hub's overlay HTTP surface, served on
 // the nebula netstack. "/" is a hello (liveness through a real
@@ -7,7 +7,7 @@ package main
 //
 // The auth carries ADR-0003's property onto the mesh, with one layer
 // added. Nebula's firewall admits tcp/80 only from certs carrying the
-// admins group (hubNebulaConfig) — a predicate the CA signed, which a
+// admins group (HubConfig) — a predicate the CA signed, which a
 // peer that merely reaches us cannot spoof. The source-IP gate below is
 // the second layer: a cert's overlay address is bound at mint time to a
 // wallet-derived identity, so "request from a derived admin address"
@@ -32,15 +32,15 @@ import (
 // for the same reason as on wg0 — served configs carry other machines'
 // secrets, and a machine must never read a config it didn't earn a
 // device-flow token for.
-func (m *nebManager) adminMeshIPs(master []byte) (map[netip.Addr]bool, error) {
+func (m *Manager) adminMeshIPs(master []byte) (map[netip.Addr]bool, error) {
 	ips := map[netip.Addr]bool{}
 	for _, d := range m.devices {
-		if d.group != nebGroupAdmins {
+		if d.Group != GroupAdmins {
 			continue
 		}
-		ip, err := nebderive.DeviceIP(master, d.name, m.subnet)
+		ip, err := nebderive.DeviceIP(master, d.Name, m.subnet)
 		if err != nil {
-			return nil, fmt.Errorf("deriving mesh address for admin device %q: %w", d.name, err)
+			return nil, fmt.Errorf("deriving mesh address for admin device %q: %w", d.Name, err)
 		}
 		ips[ip] = true
 	}
@@ -50,7 +50,7 @@ func (m *nebManager) adminMeshIPs(master []byte) (map[netip.Addr]bool, error) {
 // serveMeshHTTP starts the overlay HTTP listener. The netstack owns
 // only the hub's overlay address, so the wildcard listen cannot expose
 // the routes anywhere but on the mesh.
-func (m *nebManager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
+func (m *Manager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
 	admins, err := m.adminMeshIPs(master)
 	if err != nil {
 		return err
@@ -60,8 +60,8 @@ func (m *nebManager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "hello from the mesh: %s\n", svc.OverlayAddr())
 	})
-	if m.tunnelConfig != nil {
-		mux.Handle("GET /config", requireAdminPeer(admins, m.tunnelConfig))
+	if m.TunnelConfig != nil {
+		mux.Handle("GET /config", requireAdminPeer(admins, m.TunnelConfig))
 	}
 
 	listener, err := svc.Listen("tcp", ":80")

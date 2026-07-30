@@ -16,6 +16,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/machines"
+	"github.com/marnyg/talos-config/config-server/mesh"
 )
 
 // tvStart POSTs the name form and extracts the device code the ticket
@@ -141,7 +142,7 @@ func TestMeshTVFlow(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("config fetch = %d: %s", code, body)
 	}
-	var cfg nebConfigYAML
+	var cfg mesh.ConfigYAML
 	if err := yaml.Unmarshal([]byte(body), &cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -152,8 +153,8 @@ func TestMeshTVFlow(t *testing.T) {
 	if crt.Name() != "androidtv" {
 		t.Fatalf("cert name = %q, want androidtv", crt.Name())
 	}
-	if g := crt.Groups(); len(g) != 1 || g[0] != nebGroupMedia {
-		t.Fatalf("cert groups = %v, want [%s]", g, nebGroupMedia)
+	if g := crt.Groups(); len(g) != 1 || g[0] != mesh.GroupMedia {
+		t.Fatalf("cert groups = %v, want [%s]", g, mesh.GroupMedia)
 	}
 
 	// Single-use: the same token must not serve twice.
@@ -218,7 +219,7 @@ func TestMeshTVKindSeparation(t *testing.T) {
 func TestMeshBlocklistPropagates(t *testing.T) {
 	s, ts := newMeshEnrollServer(t)
 	fp := strings.Repeat("ab", 32)
-	blockfile := filepath.Join(s.root, nebBlocklistFile)
+	blockfile := filepath.Join(s.root, mesh.BlocklistFile)
 	if err := os.WriteFile(blockfile, []byte("# revoked\n"+fp+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +229,7 @@ func TestMeshBlocklistPropagates(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("enroll = %d: %s", code, body)
 	}
-	var cfg nebConfigYAML
+	var cfg mesh.ConfigYAML
 	if err := yaml.Unmarshal([]byte(body), &cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -237,14 +238,14 @@ func TestMeshBlocklistPropagates(t *testing.T) {
 	}
 
 	// Node config (via the compose-time patch).
-	mesh := s.hub.mesh
+	nm := s.hub.mesh
 	master := s.hub.current()
-	byMAC, err := machines.Load(mesh.machinesDir())
+	byMAC, err := machines.Load(filepath.Join(s.root, "machines"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for mac, m := range byMAC {
-		patch, err := mesh.nebMachinePatch(master, mac, m, byMAC)
+		patch, err := nm.MachinePatch(master, mac, m, byMAC)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -254,13 +255,13 @@ func TestMeshBlocklistPropagates(t *testing.T) {
 	}
 
 	// Hub config.
-	blocklist, err := loadMeshBlocklist(s.root)
+	blocklist, err := mesh.LoadBlocklist(s.root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hubCfg, err := hubNebulaConfig(nebHubParams{
-		master: master, subnet: mesh.subnet,
-		listenHost: "0.0.0.0", listenPort: 4242, blocklist: blocklist,
+	hubCfg, err := mesh.HubConfig(mesh.HubParams{
+		Master: master, Subnet: nm.Subnet(),
+		ListenHost: "0.0.0.0", ListenPort: 4242, Blocklist: blocklist,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +274,7 @@ func TestMeshBlocklistPropagates(t *testing.T) {
 	if err := os.WriteFile(blockfile, []byte("not-a-fingerprint\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadMeshBlocklist(s.root); err == nil {
+	if _, err := mesh.LoadBlocklist(s.root); err == nil {
 		t.Fatal("malformed blocklist entry loaded without error")
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package mesh
 
 import (
 	"net/netip"
@@ -110,7 +110,7 @@ func TestMachineMeshIPOverride(t *testing.T) {
 	master := []byte("mesh-zone-test-master-key-32byte")
 	const mac = "aa:bb:cc:dd:ee:01"
 
-	got, err := machineMeshIP(master, mac, machines.Machine{MeshIP: "10.42.5.5"}, nebDNSSubnet)
+	got, err := MachineMeshIP(master, mac, machines.Machine{MeshIP: "10.42.5.5"}, nebDNSSubnet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestMachineMeshIPOverride(t *testing.T) {
 		t.Errorf("override ignored: got %s, want %s", got, want)
 	}
 
-	got, err = machineMeshIP(master, mac, machines.Machine{}, nebDNSSubnet)
+	got, err = MachineMeshIP(master, mac, machines.Machine{}, nebDNSSubnet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,10 +132,10 @@ func TestMachineMeshIPOverride(t *testing.T) {
 
 	// An override outside the subnet would mint a cert nebula routes
 	// nowhere, so it must fail at config time.
-	if _, err := machineMeshIP(master, mac, machines.Machine{MeshIP: "10.99.0.5"}, nebDNSSubnet); err == nil {
+	if _, err := MachineMeshIP(master, mac, machines.Machine{MeshIP: "10.99.0.5"}, nebDNSSubnet); err == nil {
 		t.Error("accepted a meshIP outside the mesh subnet")
 	}
-	if _, err := machineMeshIP(master, mac, machines.Machine{MeshIP: "not-an-ip"}, nebDNSSubnet); err == nil {
+	if _, err := MachineMeshIP(master, mac, machines.Machine{MeshIP: "not-an-ip"}, nebDNSSubnet); err == nil {
 		t.Error("accepted a malformed meshIP")
 	}
 }

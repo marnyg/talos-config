@@ -1,4 +1,4 @@
-package main
+package mesh
 
 // Mesh tunnel DNS: the hub answers A queries for <name>.<zone> on its
 // overlay address (udp/53), served over the nebula netstack rather than
@@ -32,27 +32,23 @@ const dnsTTL = 300 // seconds; records only change on redeploy+unseal
 
 var dnsLabelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// machineDNSName returns the machine's mesh DNS label: the meta.yaml
+// MachineDNSName returns the machine's mesh DNS label: the meta.yaml
 // name if set, else the MAC with dashes.
-func machineDNSName(mac string, m machines.Machine) string {
+func MachineDNSName(mac string, m machines.Machine) string {
 	if m.Name != "" {
 		return strings.ToLower(strings.TrimSpace(m.Name))
 	}
 	return strings.ReplaceAll(mac, ":", "-")
 }
 
-// meshDNSZone is the on-mesh DNS zone; the constant (and the rationale
-// for `.internal`) lives in nebderive.DNSZone so nebup shares it.
-const meshDNSZone = nebderive.DNSZone
-
-// machineMeshIP returns the machine's overlay address: the explicit
+// MachineMeshIP returns the machine's overlay address: the explicit
 // meta.yaml meshIP override if set, else derived from the MAC.
 //
 // The override exists because certificates bake the address. A derived
 // collision on wg0 is a config edit away from fixed; on the mesh it
 // also invalidates a minted cert, so the escape hatch has to be there
 // before the first collision, not after.
-func machineMeshIP(master []byte, mac string, m machines.Machine, subnet netip.Prefix) (netip.Addr, error) {
+func MachineMeshIP(master []byte, mac string, m machines.Machine, subnet netip.Prefix) (netip.Addr, error) {
 	if m.MeshIP != "" {
 		ip, err := netip.ParseAddr(m.MeshIP)
 		if err != nil {
@@ -73,7 +69,7 @@ func machineMeshIP(master []byte, mac string, m machines.Machine, subnet netip.P
 // deliberately leaves that to the caller, and this is the one place that
 // sees every member at once, so an unseal fails loudly here rather than
 // minting two certs that claim the same address.
-func buildMeshZone(master []byte, subnet netip.Prefix, byMAC map[string]machines.Machine, devices []nebDevice) (map[string]netip.Addr, error) {
+func buildMeshZone(master []byte, subnet netip.Prefix, byMAC map[string]machines.Machine, devices []Device) (map[string]netip.Addr, error) {
 	hubIP, err := nebderive.HubIP(subnet)
 	if err != nil {
 		return nil, err
@@ -101,20 +97,20 @@ func buildMeshZone(master []byte, subnet netip.Prefix, byMAC map[string]machines
 
 	for _, mac := range slices.Sorted(maps.Keys(byMAC)) {
 		m := byMAC[mac]
-		ip, err := machineMeshIP(master, mac, m, subnet)
+		ip, err := MachineMeshIP(master, mac, m, subnet)
 		if err != nil {
 			return nil, err
 		}
-		if err := claim(machineDNSName(mac, m), "machine "+mac, ip); err != nil {
+		if err := claim(MachineDNSName(mac, m), "machine "+mac, ip); err != nil {
 			return nil, err
 		}
 	}
 	for _, d := range devices {
-		ip, err := nebderive.DeviceIP(master, d.name, subnet)
+		ip, err := nebderive.DeviceIP(master, d.Name, subnet)
 		if err != nil {
 			return nil, err
 		}
-		if err := claim(d.name, "device "+d.name, ip); err != nil {
+		if err := claim(d.Name, "device "+d.Name, ip); err != nil {
 			return nil, err
 		}
 	}
