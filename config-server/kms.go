@@ -20,9 +20,10 @@ package main
 //     closes the grace window)
 //
 // The KMS endpoint must be WAN-reachable: STATE-partition unlock runs
-// before the machine config (and thus wg0) exists — Talos reads the
-// encryption config from META and dials with early kernel-arg/DHCP
-// networking only.
+// before the machine config (and thus the mesh) exists — Talos reads
+// the encryption config from META and dials with early kernel-arg/DHCP
+// networking only (invariant 4: nothing on the boot path may depend on
+// the overlay).
 
 import (
 	"context"
@@ -39,33 +40,33 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/marnyg/talos-config/config-server/wgderive"
+	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
 type kmsServer struct {
 	kmsapi.UnimplementedKMSServiceServer
 
 	root string
-	wgm  *wgManager
+	hub  *hubManager
 
 	mu            sync.Mutex
 	sessionSealed map[string]bool // UUIDs sealed this server lifetime
 }
 
-func newKMSServer(root string, wgm *wgManager) *kmsServer {
+func newKMSServer(root string, hub *hubManager) *kmsServer {
 	return &kmsServer{
 		root:          root,
-		wgm:           wgm,
+		hub:           hub,
 		sessionSealed: map[string]bool{},
 	}
 }
 
 // master returns the unsealed master key, or a gRPC error while sealed.
 func (k *kmsServer) master() ([]byte, error) {
-	if wg := k.wgm.current(); wg != nil {
-		return wg.master, nil
+	if master := k.hub.current(); master != nil {
+		return master, nil
 	}
-	return nil, status.Error(codes.Unavailable, "control channel is sealed; an admin must unseal at /status")
+	return nil, status.Error(codes.Unavailable, "hub is sealed; an admin must unseal at /status")
 }
 
 // declared reports whether any machine's meta.yaml declares uuid.
@@ -76,7 +77,7 @@ func (k *kmsServer) declared(uuid string) bool {
 		return false
 	}
 	for _, m := range machines {
-		if m.UUID != "" && wgderive.NormalizeUUID(m.UUID) == uuid {
+		if m.UUID != "" && masterderive.NormalizeUUID(m.UUID) == uuid {
 			return true
 		}
 	}
@@ -110,12 +111,12 @@ func (k *kmsServer) Seal(_ context.Context, req *kmsapi.Request) (*kmsapi.Respon
 	if err != nil {
 		return nil, err
 	}
-	uuid := wgderive.NormalizeUUID(req.GetNodeUuid())
+	uuid := masterderive.NormalizeUUID(req.GetNodeUuid())
 	if uuid == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing node UUID")
 	}
 
-	blob, err := sealBlob(wgderive.KMSSealKey(master, uuid), req.GetData())
+	blob, err := sealBlob(masterderive.KMSSealKey(master, uuid), req.GetData())
 	if err != nil {
 		return nil, status.Error(codes.Internal, "sealing failed")
 	}
@@ -138,7 +139,7 @@ func (k *kmsServer) Unseal(_ context.Context, req *kmsapi.Request) (*kmsapi.Resp
 	if err != nil {
 		return nil, err
 	}
-	uuid := wgderive.NormalizeUUID(req.GetNodeUuid())
+	uuid := masterderive.NormalizeUUID(req.GetNodeUuid())
 	if uuid == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing node UUID")
 	}
@@ -151,7 +152,7 @@ func (k *kmsServer) Unseal(_ context.Context, req *kmsapi.Request) (*kmsapi.Resp
 		return nil, status.Error(codes.PermissionDenied, "unknown node")
 	}
 
-	data, err := unsealBlob(wgderive.KMSSealKey(master, uuid), req.GetData())
+	data, err := unsealBlob(masterderive.KMSSealKey(master, uuid), req.GetData())
 	if err != nil {
 		// Wrong master, wrong UUID, or a forged/corrupt blob — GCM
 		// authentication failed either way.
@@ -161,6 +162,37 @@ func (k *kmsServer) Unseal(_ context.Context, req *kmsapi.Request) (*kmsapi.Resp
 
 	log.Printf("kms: unsealed disk key for %s", uuid)
 	return &kmsapi.Response{Data: data}, nil
+}
+
+// diskEncryptionPatch renders the strategic-merge patch enabling
+// system disk encryption: slot 0 unseals via the network KMS on every
+// boot (per-boot auth, revocable server-side), slot 1 is the derived
+// break-glass passphrase (recoverable offline from the master
+// signature via `recover -recovery`; stored nowhere). Applies at
+// install time only — partitions encrypt when they are created.
+func diskEncryptionPatch(master []byte, mac, kmsEndpoint string) string {
+	pass := masterderive.RecoveryPassphrase(master, mac)
+	return fmt.Sprintf(`machine:
+  systemDiskEncryption:
+    state:
+      provider: luks2
+      keys:
+        - slot: 0
+          kms:
+            endpoint: %[1]s
+        - slot: 1
+          static:
+            passphrase: %[2]s
+    ephemeral:
+      provider: luks2
+      keys:
+        - slot: 0
+          kms:
+            endpoint: %[1]s
+        - slot: 1
+          static:
+            passphrase: %[2]s
+`, kmsEndpoint, pass)
 }
 
 // sealBlob AES-256-GCM encrypts plaintext: random nonce || ciphertext.

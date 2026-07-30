@@ -1,6 +1,8 @@
 # ADR-0003: Tunnel source IP as authentication for admin routes
 
-- Status: Accepted _(records a decision implemented and deployed 2026-07-29)_
+- Status: Superseded by [ADR-0007](0007-mesh-cert-group-plus-source-ip-as-authentication.md)
+  _(recorded a decision implemented and deployed 2026-07-29; phase 2
+  step 3 deleted wg0 and moved the property onto the mesh)_
 - Date: 2026-07-29
 
 ## Context and Problem Statement

@@ -1,5 +1,5 @@
-// Command nebup is the owner entrypoint to the nebula mesh — the wgup
-// pattern, one overlay over. On first run it enrolls this device against
+// Command nebup is the owner entrypoint to the nebula mesh. On first
+// run it enrolls this device against
 // the hub: the hub issues a single-use challenge, the owner signs it with
 // an allowlisted wallet (EIP-191 personal_sign — an ordinary auth
 // message, NOT the fleet master message), and the hub returns a

@@ -31,18 +31,24 @@ import (
 	kmsapi "github.com/siderolabs/kms-client/api/kms"
 	"github.com/siderolabs/talos/pkg/machinery/config/configpatcher"
 
-	"github.com/marnyg/talos-config/config-server/wgderive"
+	"github.com/marnyg/talos-config/config-server/masterderive"
 )
+
+// masterKeyEnv is the dev/testing escape hatch that auto-unseals the
+// hub. The "WG" is historical (see masterderive.MasterMessage): the
+// value is the same 32-byte master the wallet signature derives, and
+// renaming the variable would only invite a mismatch with deployed
+// tooling.
+const masterKeyEnv = "WG_MASTER_KEY"
 
 // machine is the parsed form of talos/machines/<mac>/meta.yaml.
 type machine struct {
 	IP      string   `yaml:"ip"`
 	Config  string   `yaml:"config"`
 	Patches []string `yaml:"patches"`
-	WGIP    string   `yaml:"wgIP"` // optional explicit tunnel address (collision override)
-	// MeshIP is the nebula overlay address override. Same purpose as
-	// WGIP, but load-bearing sooner: mesh certs bake the address, so a
-	// derived collision must be resolvable without re-rooting anything.
+	// MeshIP is the nebula overlay address override, for derived-address
+	// collisions. Load-bearing beyond DNS: mesh certs bake the address,
+	// so a collision must be resolvable without re-rooting anything.
 	MeshIP string `yaml:"meshIP"`
 	// Name is the machine's tunnel DNS label (<name>.<domain>);
 	// defaults to the MAC with dashes.
@@ -105,7 +111,7 @@ func loadMachines(machinesDir string) (map[string]machine, error) {
 
 // buildConfig composes the base config with all patches for the
 // machine, plus any literal extra patches (applied last; used for
-// serve-time WireGuard injection so key material never hits disk).
+// serve-time mesh/disk-key injection so key material never hits disk).
 func buildConfig(root string, m machine, extra ...string) ([]byte, error) {
 	base, err := os.ReadFile(filepath.Join(root, m.Config))
 	if err != nil {
@@ -143,44 +149,31 @@ func fileExists(path string) bool {
 // refuse the serve if the derivation says no, because a machine is
 // better off retrying than installing a config it cannot use.
 func (s *server) serveTimePatches(mac string, m machine, machines map[string]machine) ([]string, int, string) {
-	if s.wgm == nil {
+	if s.hub == nil {
 		if m.DiskEncryption {
-			// Disk keys derive from the master; without WG there is none.
-			log.Printf("refusing config for %s: diskEncryption requires the wireguard control channel", mac)
+			// Disk keys derive from the master; without the hub there is none.
+			log.Printf("refusing config for %s: diskEncryption requires the hub control channel", mac)
 			return nil, http.StatusInternalServerError, "internal error"
 		}
 		return nil, http.StatusOK, ""
 	}
 
-	wg := s.wgm.current()
-	if wg == nil {
-		// Serving a config without the tunnel would strand the machine
-		// outside the control channel — refuse instead.
-		log.Printf("refusing config for %s: wireguard is sealed", mac)
-		return nil, http.StatusServiceUnavailable, "sealed: an admin must unseal the control channel at /status"
+	master := s.hub.current()
+	if master == nil {
+		// Serving a config without the master would strand the machine
+		// outside the mesh (no identity, no disk keys) — refuse instead.
+		log.Printf("refusing config for %s: hub is sealed", mac)
+		return nil, http.StatusServiceUnavailable, "sealed: an admin must unseal the hub at /status"
 	}
 
 	var extra []string
-	add := func(what string, p string, err error) bool {
-		if err != nil {
-			log.Printf("error building %s patch for %s: %v", what, mac, err)
-			return false
-		}
-		extra = append(extra, p)
-		return true
-	}
-
-	// wg0 control channel: the tunnel interface and its certSANs.
-	if p, err := wg.machinePatch(mac, m); !add("wg", p, err) {
-		return nil, http.StatusInternalServerError, "internal error"
-	}
 
 	if m.DiskEncryption {
 		if s.kmsAdvertise == "" {
 			log.Printf("refusing config for %s: diskEncryption set but no --kms-advertise endpoint", mac)
 			return nil, http.StatusInternalServerError, "internal error"
 		}
-		extra = append(extra, wg.diskEncryptionPatch(mac, s.kmsAdvertise))
+		extra = append(extra, diskEncryptionPatch(master, mac, s.kmsAdvertise))
 	}
 
 	// Mesh identity. Derivation only needs the master, so this does not
@@ -188,10 +181,13 @@ func (s *server) serveTimePatches(mac string, m machine, machines map[string]mac
 	// gets a correct config while the hub's mesh is down, and reaches the
 	// mesh when the hub returns. A failure here is a repo mistake
 	// (address collision, bad meshIP), not a runtime condition.
-	if mesh := s.wgm.mesh; mesh != nil {
-		if p, err := mesh.nebMachinePatch(wg.master, mac, m, machines); !add("mesh", p, err) {
+	if mesh := s.hub.mesh; mesh != nil {
+		p, err := mesh.nebMachinePatch(master, mac, m, machines)
+		if err != nil {
+			log.Printf("error building mesh patch for %s: %v", mac, err)
 			return nil, http.StatusInternalServerError, "internal error"
 		}
+		extra = append(extra, p)
 	}
 
 	return extra, http.StatusOK, ""
@@ -207,7 +203,7 @@ type server struct {
 	clientID     string        // expected OAuth client_id ("" = accept any)
 	adminToken   string        // break-glass fallback for approval/login
 	adminAddrs   []string      // allowlisted wallet addresses (lowercase 0x)
-	wgm          *wgManager    // nil = WireGuard disabled entirely
+	hub          *hubManager   // nil = seal/mesh machinery disabled entirely
 	boot         *bootstrapper // nil unless --auto-bootstrap
 	kms          *kmsServer    // nil unless KMS enabled
 	kmsAdvertise string        // endpoint machines dial for disk unseal
@@ -235,8 +231,8 @@ func (s *server) lastFetch(mac string) (time.Time, bool) {
 }
 
 // composeFor builds the fully-injected config for mac: base config,
-// repo patches, and the serve-time injections (wg0 control channel,
-// certSANs, disk encryption, mesh identity). On failure it returns a
+// repo patches, and the serve-time injections (mesh identity,
+// certSANs, disk encryption). On failure it returns a
 // non-200 status with a client-safe message; details go to the log.
 func (s *server) composeFor(mac string) ([]byte, int, string) {
 	machines, err := loadMachines(filepath.Join(s.root, "machines"))
@@ -334,8 +330,6 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("GET /verify", s.handleVerifyPage)
 	mux.HandleFunc("POST /verify", s.handleVerifyPost)
 	mux.HandleFunc("POST /unseal", s.handleUnseal)
-	mux.HandleFunc("GET /wg/enroll", s.handleEnrollChallenge)
-	mux.HandleFunc("POST /wg/enroll", s.handleEnroll)
 	mux.HandleFunc("GET /mesh/enroll", s.handleMeshEnrollChallenge)
 	mux.HandleFunc("POST /mesh/enroll", s.handleMeshEnroll)
 	mux.HandleFunc("GET /mesh/tv", s.handleMeshTVPage)
@@ -356,21 +350,16 @@ func main() {
 		requireAuth  = flag.Bool("require-auth", false, "require OAuth device-flow bearer token on /config")
 		clientID     = flag.String("client-id", "talos-pxe", "expected OAuth client_id (empty = accept any)")
 		adminAddrs   = flag.String("admin-address", "", "comma-separated wallet addresses allowed to approve machines")
-		wgPort       = flag.Int("wg-port", 0, "WireGuard UDP listen port (0 = disabled; starts sealed)")
-		wgAddr       = flag.String("wg-address", "10.99.0.1/24", "server tunnel address with subnet")
-		wgEndpoint   = flag.String("wg-endpoint", "", "public ip:port machines dial to reach the tunnel (required with --wg-port)")
-		wgPubkey     = flag.String("wg-server-pubkey", "", "pinned expected server pubkey (base64 or hex); unseal fails on mismatch")
-		wgAdmins     = flag.String("wg-admin-peers", "", "comma-separated named admin WG peers (e.g. laptop); keys derived from the master, config via /wg/enroll (wgup) or wgping -admin")
-		wgDNS        = flag.String("wg-dns-domain", "talos.wg", "DNS domain the hub serves on the tunnel (empty = no tunnel DNS)")
-		meshPort     = flag.Int("mesh-port", 0, "nebula UDP listen port (0 = disabled); the hub is the mesh lighthouse + relay")
+		meshPort     = flag.Int("mesh-port", 0, "nebula UDP listen port (0 = disabled; the hub starts sealed); the hub is the mesh lighthouse + relay")
 		meshSubnet   = flag.String("mesh-subnet", "10.42.0.0/16", "mesh overlay CIDR; the hub takes the first host address (derived, not configurable)")
 		meshHost     = flag.String("mesh-listen-host", "", "address nebula binds (default: fly-global-services on fly, 0.0.0.0 elsewhere)")
 		meshEndpoint = flag.String("mesh-endpoint", "", "public host:port mesh members dial to reach the hub lighthouse (required with --mesh-port)")
 		meshZone     = flag.String("mesh-dns-zone", meshDNSZone, "DNS zone the hub serves on the mesh (empty = no mesh DNS)")
 		meshDevices  = flag.String("mesh-devices", "", "comma-separated owner devices in the mesh admins group (e.g. laptop,phone); identities derived from the master")
 		meshMedia    = flag.String("mesh-media-devices", "", "comma-separated shared-space devices in the mesh media group (e.g. androidtv); reach media only, never node control surfaces")
-		autoBoot     = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the tunnel when its etcd waits for it")
-		kmsAdv       = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --wg-port)")
+		meshCAPin    = flag.String("mesh-ca-pin", "", "pinned expected mesh CA fingerprint (hex); unseal fails on mismatch (wrong wallet or message)")
+		autoBoot     = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the mesh when its etcd waits for it")
+		kmsAdv       = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --mesh-port)")
 		kmsPort      = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared h2c port)")
 	)
 	flag.Parse()
@@ -400,64 +389,41 @@ func main() {
 		log.Fatal("--require-auth needs --admin-address and/or CONFIG_SERVER_ADMIN_TOKEN (something must gate machine approval)")
 	}
 
-	var wgm *wgManager
-	var wgMasterEnv string
-	if *wgPort > 0 {
-		if *wgEndpoint == "" {
-			log.Fatal("--wg-port needs --wg-endpoint (the public ip:port machines dial)")
-		}
-		serverPrefix, err := netip.ParsePrefix(*wgAddr)
+	var hub *hubManager
+	var masterEnv string
+	if *meshPort > 0 {
+		subnet, err := netip.ParsePrefix(*meshSubnet)
 		if err != nil {
-			log.Fatalf("--wg-address: %v", err)
+			log.Fatalf("--mesh-subnet: %v", err)
 		}
-		var adminPeers []string
-		for _, name := range strings.Split(*wgAdmins, ",") {
-			if n := strings.TrimSpace(name); n != "" {
-				adminPeers = append(adminPeers, n)
-			}
+		if subnet.Addr() != subnet.Masked().Addr() {
+			log.Fatalf("--mesh-subnet %s is not a network address (did you mean %s?)", subnet, subnet.Masked())
 		}
-		wgm = newWGManager(*wgPort, serverPrefix, *wgEndpoint, *wgPubkey, *wgDNS, *root, addrs, adminPeers)
+		if *meshEndpoint == "" {
+			log.Fatal("--mesh-port needs --mesh-endpoint (the public host:port members dial to find the lighthouse)")
+		}
+		listenHost := *meshHost
+		if listenHost == "" {
+			listenHost = resolveMeshListenHost()
+		}
+		devices, err := parseMeshDevices(*meshDevices, *meshMedia)
+		if err != nil {
+			log.Fatalf("--mesh-devices/--mesh-media-devices: %v", err)
+		}
+		mesh := newNebManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root, devices)
+		hub = newHubManager(*root, addrs, *meshCAPin, mesh)
+		log.Printf("mesh enabled: %s on udp/%d, binding %s (unseals with the hub)", subnet, *meshPort, listenHost)
 
-		// The mesh unseals from the same master, so for now it hangs off
-		// the wg manager. Phase 2 deletes wg0 and the dependency inverts.
-		if *meshPort > 0 {
-			subnet, err := netip.ParsePrefix(*meshSubnet)
-			if err != nil {
-				log.Fatalf("--mesh-subnet: %v", err)
-			}
-			if subnet.Addr() != subnet.Masked().Addr() {
-				log.Fatalf("--mesh-subnet %s is not a network address (did you mean %s?)", subnet, subnet.Masked())
-			}
-			if subnet.Overlaps(serverPrefix) {
-				log.Fatalf("--mesh-subnet %s overlaps the wg0 subnet %s; phase 1 runs both overlays at once", subnet, serverPrefix)
-			}
-			if *meshEndpoint == "" {
-				log.Fatal("--mesh-port needs --mesh-endpoint (the public host:port members dial to find the lighthouse)")
-			}
-			listenHost := *meshHost
-			if listenHost == "" {
-				listenHost = resolveMeshListenHost()
-			}
-			devices, err := parseMeshDevices(*meshDevices, *meshMedia)
-			if err != nil {
-				log.Fatalf("--mesh-devices/--mesh-media-devices: %v", err)
-			}
-			wgm.mesh = newNebManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root, devices)
-			log.Printf("mesh enabled: %s on udp/%d, binding %s (unseals with wireguard)", subnet, *meshPort, listenHost)
-		}
-
-		// Dev/testing escape hatch: WG_MASTER_KEY auto-unseals — but
+		// Dev/testing escape hatch: the master env auto-unseals — but
 		// the unseal itself runs after the server is built, so the
-		// tunnel /config route is wired before the tunnel comes up.
-		wgMasterEnv = os.Getenv("WG_MASTER_KEY")
-		if wgMasterEnv == "" {
+		// overlay /config route is wired before the mesh comes up.
+		masterEnv = os.Getenv(masterKeyEnv)
+		if masterEnv == "" {
 			if len(addrs) == 0 {
-				log.Fatal("sealed wireguard needs --admin-address (a wallet must be able to unseal)")
+				log.Fatal("a sealed hub needs --admin-address (a wallet must be able to unseal)")
 			}
-			log.Printf("wireguard SEALED: an admin must sign %q at /status to unseal", wgderive.MasterMessage)
+			log.Printf("hub SEALED: an admin must sign %q at /status to unseal", masterderive.MasterMessage)
 		}
-	} else if *meshPort > 0 {
-		log.Fatal("--mesh-port requires --wg-port: phase 1 is a dual overlay and both unseal from the same master")
 	}
 
 	s := &server{
@@ -468,37 +434,32 @@ func main() {
 		clientID:     *clientID,
 		adminToken:   adminToken,
 		adminAddrs:   addrs,
-		wgm:          wgm,
+		hub:          hub,
 		kmsAdvertise: *kmsAdv,
 		started:      time.Now(),
 	}
 
-	if wgm != nil {
+	if hub != nil {
 		// The overlay /config route serves hub-composed configs to admin
-		// peers; wired here because the handler needs the full server.
-		// Mounted on both overlays while the dual overlay lasts — the
-		// mesh listener is the one `apply` uses (phase 2 step 3).
-		wgm.tunnelConfig = http.HandlerFunc(s.handleTunnelConfig)
-		if wgm.mesh != nil {
-			wgm.mesh.tunnelConfig = wgm.tunnelConfig
-		}
-		if wgMasterEnv != "" {
-			master, err := wgderive.MasterFromHex(wgMasterEnv)
+		// devices; wired here because the handler needs the full server.
+		hub.mesh.tunnelConfig = http.HandlerFunc(s.handleTunnelConfig)
+		if masterEnv != "" {
+			master, err := masterderive.MasterFromHex(masterEnv)
 			if err != nil {
-				log.Fatalf("WG_MASTER_KEY: %v", err)
+				log.Fatalf("%s: %v", masterKeyEnv, err)
 			}
-			if err := wgm.unsealWithMaster(master); err != nil {
-				log.Fatalf("unsealing from WG_MASTER_KEY: %v", err)
+			if err := hub.unsealWithMaster(master); err != nil {
+				log.Fatalf("unsealing from %s: %v", masterKeyEnv, err)
 			}
-			log.Print("wireguard unsealed from WG_MASTER_KEY env (dev mode)")
+			log.Printf("hub unsealed from %s env (dev mode)", masterKeyEnv)
 		}
 	}
 
 	if *kmsAdv != "" {
-		if wgm == nil {
-			log.Fatal("--kms-advertise requires --wg-port (disk keys derive from the same master)")
+		if hub == nil {
+			log.Fatal("--kms-advertise requires --mesh-port (disk keys derive from the same master)")
 		}
-		s.kms = newKMSServer(*root, wgm)
+		s.kms = newKMSServer(*root, hub)
 		log.Printf("kms: serving disk unseal, advertised endpoint %s", *kmsAdv)
 		if *kmsPort > 0 {
 			// Dedicated listener for fly's gRPC port: the h2c handler
@@ -519,10 +480,10 @@ func main() {
 	}
 
 	if *autoBoot {
-		if wgm == nil || wgm.mesh == nil {
+		if hub == nil {
 			log.Fatal("--auto-bootstrap requires --mesh-port (it dials nodes over the mesh)")
 		}
-		s.boot = newBootstrapper(*root, wgm)
+		s.boot = newBootstrapper(*root, hub)
 		go s.boot.run(context.Background())
 	}
 

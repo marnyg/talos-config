@@ -58,7 +58,7 @@ func (s *server) handleMeshEnrollChallenge(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unknown device name (declare it in MESH_DEVICES or MESH_MEDIA_DEVICES)", http.StatusNotFound)
 		return
 	}
-	if s.wgm.sealed() {
+	if s.hub.sealed() {
 		http.Error(w, "sealed: an admin must unseal the hub at /status", http.StatusServiceUnavailable)
 		return
 	}
@@ -106,13 +106,13 @@ func (s *server) handleMeshEnroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	wg := s.wgm.current()
-	if wg == nil {
+	master := s.hub.current()
+	if master == nil {
 		http.Error(w, "sealed: an admin must unseal the hub at /status", http.StatusServiceUnavailable)
 		return
 	}
 
-	cfg, err := mesh.deviceConfig(wg.master, d)
+	cfg, err := mesh.deviceConfig(master, d)
 	if err != nil {
 		log.Printf("mesh enroll %q: %v", d.name, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

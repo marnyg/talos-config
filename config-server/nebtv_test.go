@@ -234,14 +234,14 @@ func TestMeshBlocklistPropagates(t *testing.T) {
 	}
 
 	// Node config (via the compose-time patch).
-	mesh := s.wgm.mesh
-	wg := s.wgm.current()
+	mesh := s.hub.mesh
+	master := s.hub.current()
 	machines, err := loadMachines(mesh.machinesDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for mac, m := range machines {
-		patch, err := mesh.nebMachinePatch(wg.master, mac, m, machines)
+		patch, err := mesh.nebMachinePatch(master, mac, m, machines)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -256,7 +256,7 @@ func TestMeshBlocklistPropagates(t *testing.T) {
 		t.Fatal(err)
 	}
 	hubCfg, err := hubNebulaConfig(nebHubParams{
-		master: wg.master, subnet: mesh.subnet,
+		master: master, subnet: mesh.subnet,
 		listenHost: "0.0.0.0", listenPort: 4242, blocklist: blocklist,
 	})
 	if err != nil {

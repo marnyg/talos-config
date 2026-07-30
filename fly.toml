@@ -8,28 +8,20 @@ dockerfile = "Dockerfile"
 
 [env]
 ADMIN_ADDRESSES = "0xf56863bF40A75dC3c632C17fc65AA2EB06a89406"
-# Public tunnel endpoint machines dial (dedicated IPv4, UDP).
-WG_ENDPOINT = "213.188.219.215:51820"
-# Pinned server WG pubkey (public; derived from the admin wallet's
-# unseal signature). Unseal fails if a signature derives anything else.
-WG_SERVER_PUBKEY = "uNUI+XlWP/1Q+byYzpl1BBP28o6owEATBU3LwV43xl0="
 # Disk-unseal KMS endpoint advertised to machines (fly terminates TLS
 # on the dedicated gRPC port below, raw h2 to the backend). STATE
-# unlock happens before the tunnel exists, so this must be
-# WAN-reachable.
+# unlock happens before the mesh exists, so this must be WAN-reachable
+# (invariant 4).
 KMS_ADVERTISE = "https://marnyg-talos-config.fly.dev:8443"
-# Named admin WG peers: keys/IPs derived from the wallet master, no
-# registry. Connect with `wgup -name <name>` (enrolls via /wg/enroll —
-# wallet signs a device-bound nonce, NOT the master message). Offline
-# fallback: wgping -admin <name> -sig <unseal-sig> -wgquick \
-#   -endpoint 213.188.219.215:51820
-WG_ADMIN_PEERS = "laptop"
-# Mesh v2 (nebula) — phase 1 runs it beside wg0. Public endpoint every
-# mesh member dials to find the lighthouse; same dedicated IPv4, second
-# UDP port (see the bounded invariant-5 exception in
-# docs/desired-state/invariants.md). Members are injected/enrolled with
-# this value, so changing it re-issues configs, not certs.
+# Nebula mesh — the single overlay (wg0 deleted in phase 2). Public
+# endpoint every mesh member dials to find the lighthouse (dedicated
+# IPv4, UDP). Members are injected/enrolled with this value, so
+# changing it re-issues configs, not certs.
 MESH_ENDPOINT = "213.188.219.215:4242"
+# Pinned mesh CA fingerprint (public; derived from the admin wallet's
+# unseal signature — `recover -ca-fingerprint -sig <unseal-sig>`).
+# Unseal fails if a signature derives anything else.
+MESH_CA_PIN = "b881d6ffb00822272d6937fd2eb033f6253edc0c1716104bf467cd1be6177527"
 # Named mesh devices: identities derived from the same master as wg0's,
 # no registry. The list decides two things — which names may enroll at
 # /mesh/enroll, and which resolve in mesh DNS.
@@ -67,20 +59,11 @@ internal_port = 8081
     [services.ports.http_options]
     h2_backend = true
 
-# WireGuard control channel. UDP on fly requires a dedicated IPv4 and
-# binding fly-global-services; machines dial out, so the app can no
-# longer scale to zero. No key secret at rest: the server starts
-# sealed and an admin wallet-signature unseals it at /status.
-[[services]]
-protocol = "udp"
-internal_port = 51820
-
-  [[services.ports]]
-  port = 51820
-
-# Nebula mesh: lighthouse + relay for nodes and owner devices. Same
-# dedicated IPv4 and the same fly-global-services bind requirement as
-# wg0 above; nebula resolves listen.host itself, so no bind shim.
+# Nebula mesh: lighthouse + relay for nodes and owner devices. UDP on
+# fly requires a dedicated IPv4 and binding fly-global-services (nebula
+# resolves listen.host itself, so no bind shim); members dial out, so
+# the app cannot scale to zero. No key secret at rest: the server
+# starts sealed and an admin wallet-signature unseals it at /status.
 [[services]]
 protocol = "udp"
 internal_port = 4242

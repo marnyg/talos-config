@@ -130,7 +130,7 @@ type bootSnapshot struct {
 // bootstrapper runs the auto-bootstrap loop.
 type bootstrapper struct {
 	root string
-	wgm  *wgManager
+	hub  *hubManager
 
 	snapMu sync.Mutex
 	snap   bootSnapshot
@@ -143,10 +143,10 @@ type bootstrapper struct {
 	caCache       map[string]*x509.PEMEncodedCertificateAndKey // machine dir -> OS CA
 }
 
-func newBootstrapper(root string, wgm *wgManager) *bootstrapper {
+func newBootstrapper(root string, hub *hubManager) *bootstrapper {
 	return &bootstrapper{
 		root:    root,
-		wgm:     wgm,
+		hub:     hub,
 		caCache: map[string]*x509.PEMEncodedCertificateAndKey{},
 	}
 }
@@ -182,8 +182,8 @@ func (b *bootstrapper) run(ctx context.Context) {
 func (b *bootstrapper) step(ctx context.Context) {
 	b.setSnap(func(s *bootSnapshot) { s.LastPoll = time.Now() })
 
-	wg := b.wgm.current()
-	if wg == nil {
+	master := b.hub.current()
+	if master == nil {
 		b.setSnap(func(s *bootSnapshot) { s.State = "sealed" })
 		return // sealed: no master, nothing to derive or dial
 	}
@@ -193,7 +193,7 @@ func (b *bootstrapper) step(ctx context.Context) {
 	// "sealed" so /status says which of the two it is.
 	var svc *nebstack.Service
 	var meshSubnet netip.Prefix
-	if mesh := b.wgm.mesh; mesh != nil {
+	if mesh := b.hub.mesh; mesh != nil {
 		svc, _, _ = mesh.state()
 		meshSubnet = mesh.subnet
 	}
@@ -226,7 +226,7 @@ func (b *bootstrapper) step(ctx context.Context) {
 		mac = m
 	}
 	m := cps[mac]
-	ip, err := machineMeshIP(wg.master, mac, m, meshSubnet)
+	ip, err := machineMeshIP(master, mac, m, meshSubnet)
 	if err != nil {
 		log.Printf("auto-bootstrap: mesh address for %s: %v", mac, err)
 		return

@@ -44,8 +44,9 @@ const (
 // nebFlyListenHost is the hostname nebula binds on fly.io. Fly's UDP
 // proxy only delivers to sockets bound to this address, and nebula
 // resolves listen.host itself (main.go:145 in 1.11.0), so unlike
-// wireguard-go — which needed the whole flyBind shim in wgbind.go —
-// there is no custom bind code here. Verified in the 2026-07-29 spike.
+// wireguard-go — which needed a whole custom bind shim while wg0
+// existed — there is no bind code here. Verified in the 2026-07-29
+// spike.
 const nebFlyListenHost = "fly-global-services"
 
 // nebHubCertValidity bounds the hub's own leaf certificate. The hub
@@ -146,23 +147,18 @@ type nebTunYAML struct {
 // address a host may legitimately hold while being useless — or actively
 // harmful — as a path to that host:
 //
-//   - nebWGSubnet: the wg0 overlay. Advertising it lets a peer that also
-//     has wg0 up carry nebula over wireguard, which hairpins through the
-//     hub and silently poisons any direct-path measurement. That cost two
-//     invalid punch runs during the phase-1 dogfood. Transitional —
-//     phase 2 strips wg0 and this entry goes with it.
 //   - nebPodSubnet: the kubernetes pod network (podSubnets in
 //     talos/base/*.yaml). Flannel's VXLAN interface takes x.x.x.0 and
 //     cni0 takes x.x.x.1; neither is reachable from off-node, and both
 //     were observed as failed handshake targets.
 //   - the mesh CIDR itself: nebula over nebula.
 //
+// wg0's subnet (10.99.0.0/24) was a third entry until phase 2 deleted
+// the overlay it named — nebula riding the wg tunnel as underlay
+// hairpinned through the hub and poisoned two punch measurements.
 // The LAN range is deliberately absent. Same-LAN direct paths are the
 // entire remaining value of the mesh (ADR-0006) and must keep working.
-const (
-	nebWGSubnet  = "10.99.0.0/24"
-	nebPodSubnet = "10.244.0.0/16"
-)
+const nebPodSubnet = "10.244.0.0/16"
 
 // nebUnderlayFilter renders the shape nebula expects for both allow
 // lists: a default-allow rule plus explicit denials. Nebula resolves
@@ -170,7 +166,6 @@ const (
 func nebUnderlayFilter(mesh netip.Prefix) map[string]bool {
 	return map[string]bool{
 		"0.0.0.0/0":   true,
-		nebWGSubnet:   false,
 		nebPodSubnet:  false,
 		mesh.String(): false,
 	}
@@ -290,11 +285,11 @@ func hubNebulaConfig(p nebHubParams) ([]byte, error) {
 		cfg.Firewall.Inbound = append(cfg.Firewall.Inbound,
 			nebRuleYAML{Port: "53", Proto: "udp", Host: "any"})
 	}
-	// The tunnel HTTP surface (/config) is admin-only. Under wg0 that is
-	// enforced by source address (ADR-0003); here the group is signed
-	// into the peer's certificate, so the firewall drops machines before
-	// a request is even accepted. The source-address check stays as the
-	// second layer.
+	// The overlay HTTP surface (/config) is admin-only. The group is
+	// signed into the peer's certificate, so the firewall drops machines
+	// before a request is even accepted; the derived source-address
+	// check in serveMeshHTTP stays as the second layer (ADR-0007,
+	// carrying ADR-0003's property onto the mesh).
 	cfg.Firewall.Inbound = append(cfg.Firewall.Inbound,
 		nebRuleYAML{Port: "80", Proto: "tcp", Group: nebGroupAdmins})
 

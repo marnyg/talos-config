@@ -3,12 +3,12 @@ package main
 // The operator dashboard at /status, behind a SIWE session login (or
 // the break-glass admin token). Zero information is rendered before
 // the operator authenticates: the logged-out page is only the sign-in
-// prompt. Shows per-machine tunnel liveness (WG handshake/traffic),
-// last config fetch, auto-bootstrap state, and seal state, and hosts
+// prompt. Shows seal state, mesh membership with live tunnel state,
+// per-machine last config fetch, and auto-bootstrap state, and hosts
 // the unseal form and pending machine approvals. The session only
 // gates *viewing* — approve/deny/unseal remain per-action wallet
 // signatures (POST /verify, POST /unseal); a stolen session cookie
-// cannot approve a machine or unseal the tunnel.
+// cannot approve a machine or unseal the hub.
 
 import (
 	"cmp"
@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marnyg/talos-config/config-server/wgderive"
+	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
 const sessionCookieName = "talos_status_session"
@@ -323,7 +323,7 @@ var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
 <div id="live">
 {{if .Sealed}}
 <div class="msg warn">
- <strong>⚠ WireGuard control channel is SEALED</strong> — config serving is paused.
+ <strong>⚠ Hub is SEALED</strong> — config serving is paused.
  <p>Unsealing signs the master-key derivation message. <strong>This signature IS the
  fleet master key.</strong> Only ever sign it on this page or offline via
  <code>cast wallet sign</code> — never on any other site.</p>
@@ -340,7 +340,7 @@ var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
 {{end}}
 <table>
  <tr><th>server</th><td>{{.Version}}{{if .Started}} — up since {{.Started}}{{end}}</td></tr>
- <tr><th>control channel</th><td{{if .Sealed}} class="warn"{{end}}>{{.Seal}}</td></tr>
+ <tr><th>hub</th><td{{if .Sealed}} class="warn"{{end}}>{{.Seal}}</td></tr>
  {{if .Mesh}}<tr><th>mesh</th><td{{if .MeshWarn}} class="warn"{{end}}>{{.Mesh}}</td></tr>{{end}}
  {{with .Boot}}
  <tr><th>auto-bootstrap</th><td>{{.State}}{{if .Target}} — target {{.Target}} ({{.MeshIP}}){{end}}{{if .Done}} — cluster bootstrapped, idle{{else if .Attempted}} — Bootstrap called, watching etcd{{end}}{{if .LastErr}} — last error: {{.LastErr}}{{end}}</td></tr>
@@ -389,8 +389,8 @@ server restart or it will not be able to unlock its disks.</div>
 {{end}}
 <h2>Machines</h2>
 <table>
- <tr><th>mac</th><th>dns</th><th>role</th><th>lan ip</th><th>tunnel ip</th><th>handshake</th><th>rx</th><th>tx</th><th>wan endpoint</th><th>last config fetch</th></tr>
-{{range .Rows}} <tr><td>{{.MAC}}</td><td>{{.DNS}}</td><td>{{.Role}}</td><td>{{.IP}}</td><td>{{.TunnelIP}}</td><td>{{.Handshake}}</td><td>{{.Rx}}</td><td>{{.Tx}}</td><td>{{.Endpoint}}</td><td>{{.LastFetch}}</td></tr>
+ <tr><th>mac</th><th>dns</th><th>role</th><th>lan ip</th><th>last config fetch</th></tr>
+{{range .Rows}} <tr><td>{{.MAC}}</td><td>{{.DNS}}</td><td>{{.Role}}</td><td>{{.IP}}</td><td>{{.LastFetch}}</td></tr>
 {{end}}</table>
 {{if .Mesh}}
 <h2>Mesh</h2>
@@ -467,10 +467,13 @@ server restart or it will not be able to unlock its disks.</div>
 </script>
 </body></html>`))
 
+// statusRow is one machines-table line. Live overlay state (tunnel
+// up/down, endpoint, relays) lives in the mesh table — the hostmap
+// join in nebseal.go — so this row only carries what is knowable from
+// the repo plus the fetch log.
 type statusRow struct {
-	MAC, DNS, Role, IP, TunnelIP string
-	Handshake, Rx, Tx, Endpoint  string
-	LastFetch                    string
+	MAC, DNS, Role, IP string
+	LastFetch          string
 }
 
 type statusData struct {
@@ -500,20 +503,14 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		return
 	}
 
-	var wg *wgSettings
-	seal := "wireguard disabled"
-	if s.wgm != nil {
-		if wg = s.wgm.current(); wg == nil {
+	sealed := false
+	seal := "hub disabled"
+	if s.hub != nil {
+		if s.hub.sealed() {
+			sealed = true
 			seal = "SEALED — config serving paused; unseal above"
 		} else {
-			seal = "unsealed — endpoint " + wg.endpoint
-		}
-	}
-
-	var stats map[string]wgPeerStat
-	if wg != nil {
-		if stats, err = wg.peerStats(); err != nil {
-			log.Printf("status: reading peer stats: %v", err)
+			seal = "unsealed"
 		}
 	}
 
@@ -526,34 +523,12 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 			DNS:       "—",
 			Role:      strings.TrimSuffix(filepath.Base(m.Config), filepath.Ext(m.Config)),
 			IP:        m.IP,
-			TunnelIP:  "—",
-			Handshake: "—",
-			Rx:        "—",
-			Tx:        "—",
-			Endpoint:  "—",
 			LastFetch: "never",
 		}
-		// DNS names are derived from meta.yaml + the configured domain,
-		// so they are known even while the tunnel is sealed.
-		if s.wgm != nil && s.wgm.dnsDomain != "" {
-			row.DNS = machineDNSName(mac, m) + "." + s.wgm.dnsDomain
-		}
-		if wg != nil {
-			if ip, err := wg.machineTunnelIP(mac, m); err == nil {
-				row.TunnelIP = ip.String()
-				pub := wgderive.KeyHex(wgderive.PublicKey(wgderive.MachineKey(wg.master, mac)))
-				if st, ok := stats[pub]; ok {
-					if st.lastHandshake.IsZero() {
-						row.Handshake = "never"
-					} else {
-						row.Handshake = ago(now, st.lastHandshake)
-					}
-					row.Rx, row.Tx = fmtBytes(st.rxBytes), fmtBytes(st.txBytes)
-					if st.endpoint != "" {
-						row.Endpoint = st.endpoint
-					}
-				}
-			}
+		// DNS names are derived from meta.yaml + the configured zone,
+		// so they are known even while the hub is sealed.
+		if mesh := s.mesh(); mesh != nil && mesh.dnsZone != "" {
+			row.DNS = machineDNSName(mac, m) + "." + mesh.dnsZone
 		}
 		if t, ok := s.lastFetch(mac); ok {
 			row.LastFetch = ago(now, t)
@@ -566,11 +541,11 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		Message:       msg,
 		Version:       cmp.Or(os.Getenv("FLY_IMAGE_REF"), "dev"),
 		Seal:          seal,
-		Sealed:        s.wgm != nil && wg == nil,
+		Sealed:        sealed,
 		Rows:          rows,
 		WalletEnabled: len(s.adminAddrs) > 0,
 		TokenEnabled:  s.adminToken != "",
-		MasterMessage: wgderive.MasterMessage,
+		MasterMessage: masterderive.MasterMessage,
 	}
 	if mesh := s.mesh(); mesh != nil {
 		svc, _, meshErr := mesh.state()
@@ -625,18 +600,4 @@ func ago(now, t time.Time) string {
 	default:
 		return t.Format("2006-01-02 15:04")
 	}
-}
-
-// fmtBytes renders a byte count with a binary unit.
-func fmtBytes(n uint64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := uint64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

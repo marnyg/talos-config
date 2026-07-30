@@ -527,7 +527,7 @@ func TestNodeUnderlayFilterExcludesOverlaysNotLAN(t *testing.T) {
 		if tc.list == nil {
 			t.Fatalf("%s: not set — junk underlay candidates are unfiltered", tc.name)
 		}
-		for _, denied := range []string{nebWGSubnet, nebPodSubnet, nebNodeSubnet.String()} {
+		for _, denied := range []string{nebPodSubnet, nebNodeSubnet.String()} {
 			allowed, ok := tc.list[denied]
 			if !ok {
 				t.Errorf("%s: %s missing — overlay/pod addresses would be used as underlay", tc.name, denied)

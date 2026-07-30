@@ -3,17 +3,15 @@ package main
 // The node side of the mesh: a machine's nebula identity and config,
 // injected into its Talos machine config at serve time.
 //
-// Same trust chain as the wg0 key injection in wgkeys.go — key material
-// is derived from the master and handed to the machine that just proved
-// (device flow) it is that machine. Nothing is stored: the cert is
-// minted per serve, and re-minting never changes who the machine is
-// (nebderive's leaf identities are byte-stable).
+// Key material is derived from the master and handed to the machine
+// that just proved (device flow) it is that machine. Nothing is
+// stored: the cert is minted per serve, and re-minting never changes
+// who the machine is (nebderive's leaf identities are byte-stable).
 //
-// The transport differs from wg0's, though. wg0 is a Talos *network
-// interface*, so it goes in machine.network.interfaces. Nebula runs as
-// a system extension service, which is configured by a separate
+// Nebula runs as a system extension service, configured by a separate
 // ExtensionServiceConfig document — so this patch adds a document to
-// the config rather than merging into machine:.
+// the config rather than merging into machine: (unlike wg0, which was
+// a Talos network interface).
 
 import (
 	"fmt"
@@ -51,8 +49,7 @@ const nebNodeService = "nebula"
 const nebNodeListenPort = 4242
 
 // nebNodeTunDev is the interface name nebula creates on the node. Named
-// explicitly so `talosctl get links` output is readable and so it can
-// never collide with wg0 while both overlays run.
+// explicitly so `talosctl get links` output is readable.
 const nebNodeTunDev = "nebula0"
 
 // nebNodeMTU is nebula's default overlay MTU (1300), stated rather than
@@ -82,12 +79,10 @@ const nebMachineCertValidity = 5 * 365 * 24 * time.Hour
 // nebula config plus the derived CA, cert and key, preceded by a
 // machine.certSANs merge adding the overlay address and mesh DNS name.
 //
-// The SANs mirror wg0's machinePatch, and for the same reason: apid's
-// node-address discovery does not pick up nebula0, so without them a
-// TLS dial to the machine over the mesh (talosconfig pointed at the
-// overlay address, the hub's auto-bootstrap in phase 2) is rejected.
-// Additive and safe while wg0 still carries the control channel —
-// phase 2 step 1 in docs/mesh-v2-nebula.md.
+// The SANs exist because apid's node-address discovery does not pick
+// up nebula0: without them a TLS dial to the machine over the mesh
+// (talosconfig pointed at the overlay address, the hub's
+// auto-bootstrap) is rejected.
 //
 // machines is the full machine set, not just this one, because the
 // overlay address comes from buildMeshZone — the same function that

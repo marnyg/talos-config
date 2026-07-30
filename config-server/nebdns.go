@@ -11,22 +11,34 @@ package main
 // lighthouse DNS, which can only answer for hosts that have reported in
 // — an unreachable machine still resolves here.
 //
-// The query/response logic itself is shared with wg0's tunnel DNS
-// (dnsRespond in wgdns.go): one implementation, so the two overlays
-// cannot drift in what they answer while both are running (phase 1 is a
-// dual overlay). Only the zone contents and the listener differ.
-
 import (
 	"fmt"
 	"log"
 	"maps"
 	"net"
 	"net/netip"
+	"regexp"
 	"slices"
+	"strings"
+
+	"golang.org/x/net/dns/dnsmessage"
 
 	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nebstack"
 )
+
+const dnsTTL = 300 // seconds; records only change on redeploy+unseal
+
+var dnsLabelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// machineDNSName returns the machine's mesh DNS label: the meta.yaml
+// name if set, else the MAC with dashes.
+func machineDNSName(mac string, m machine) string {
+	if m.Name != "" {
+		return strings.ToLower(strings.TrimSpace(m.Name))
+	}
+	return strings.ReplaceAll(mac, ":", "-")
+}
 
 // meshDNSZone is the on-mesh DNS zone. `.internal` is ICANN-reserved
 // for private use, so it can never collide with a real delegation —
@@ -109,6 +121,71 @@ func buildMeshZone(master []byte, subnet netip.Prefix, machines map[string]machi
 		}
 	}
 	return zone, nil
+}
+
+// dnsRespond answers one raw DNS query against the zone. Pure function
+// (tested without the netstack). Returns nil for unanswerable input.
+func dnsRespond(zone map[string]netip.Addr, domain string, req []byte) []byte {
+	var p dnsmessage.Parser
+	hdr, err := p.Start(req)
+	if err != nil || hdr.Response {
+		return nil
+	}
+	q, err := p.Question()
+	if err != nil {
+		return nil
+	}
+
+	qname := strings.ToLower(strings.TrimSuffix(q.Name.String(), "."))
+	rcode := dnsmessage.RCodeSuccess
+	var answer netip.Addr
+	switch {
+	case qname == domain:
+		// The apex exists but has no records.
+	case !strings.HasSuffix(qname, "."+domain):
+		rcode = dnsmessage.RCodeRefused
+	default:
+		ip, ok := zone[strings.TrimSuffix(qname, "."+domain)]
+		switch {
+		case !ok:
+			rcode = dnsmessage.RCodeNameError
+		case q.Type == dnsmessage.TypeA && q.Class == dnsmessage.ClassINET:
+			answer = ip
+			// Known name, other type: NOERROR with an empty answer.
+		}
+	}
+
+	b := dnsmessage.NewBuilder(make([]byte, 0, 512), dnsmessage.Header{
+		ID:               hdr.ID,
+		Response:         true,
+		Authoritative:    true,
+		RecursionDesired: hdr.RecursionDesired,
+		RCode:            rcode,
+	})
+	b.EnableCompression()
+	if err := b.StartQuestions(); err != nil {
+		return nil
+	}
+	if err := b.Question(q); err != nil {
+		return nil
+	}
+	if answer.IsValid() {
+		if err := b.StartAnswers(); err != nil {
+			return nil
+		}
+		err := b.AResource(
+			dnsmessage.ResourceHeader{Name: q.Name, Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: dnsTTL},
+			dnsmessage.AResource{A: answer.As4()},
+		)
+		if err != nil {
+			return nil
+		}
+	}
+	out, err := b.Finish()
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
 // serveMeshDNS starts the overlay UDP/53 listener and answers queries

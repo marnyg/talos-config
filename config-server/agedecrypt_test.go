@@ -14,12 +14,12 @@ import (
 
 	"filippo.io/age"
 
-	"github.com/marnyg/talos-config/config-server/wgderive"
+	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
 func testAgeMaster(t *testing.T) []byte {
 	t.Helper()
-	m, err := wgderive.MasterFromHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+	m, err := masterderive.MasterFromHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func testAgeMaster(t *testing.T) []byte {
 }
 
 func TestAgeIdentityParsesAndMatches(t *testing.T) {
-	idStr, recipStr := wgderive.AgeIdentity(testAgeMaster(t))
+	idStr, recipStr := masterderive.AgeIdentity(testAgeMaster(t))
 
 	id, err := age.ParseX25519Identity(idStr)
 	if err != nil {
@@ -39,7 +39,7 @@ func TestAgeIdentityParsesAndMatches(t *testing.T) {
 }
 
 func TestAgeEncryptDecryptRoundTrip(t *testing.T) {
-	idStr, recipStr := wgderive.AgeIdentity(testAgeMaster(t))
+	idStr, recipStr := masterderive.AgeIdentity(testAgeMaster(t))
 	id, err := age.ParseX25519Identity(idStr)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +76,7 @@ func TestAgeEncryptDecryptRoundTrip(t *testing.T) {
 
 func TestDecryptAgeSecrets(t *testing.T) {
 	master := testAgeMaster(t)
-	_, recipStr := wgderive.AgeIdentity(master)
+	_, recipStr := masterderive.AgeIdentity(master)
 	recip, err := age.ParseX25519Recipient(recipStr)
 	if err != nil {
 		t.Fatal(err)

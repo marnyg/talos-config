@@ -5,15 +5,17 @@ package main
 // no second secret. nebManager owns only what nebula needs: the config,
 // the netstack, and the DNS listener.
 //
-// Phase 1 runs the mesh beside wg0, which still carries production
-// traffic (talosconfig, KMS, auto-bootstrap). That asymmetry decides the
-// failure policy below: a mesh that fails to start must not take the
-// unseal with it.
+// The mesh is the control channel (phase 2 deleted wg0). A mesh that
+// fails to start does not take the unseal with it — KMS disk unlocks
+// must not depend on the overlay (invariant 4) — but it does turn
+// /sealed into a 503: see hubManager.unsealWithMaster.
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"maps"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -21,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/slackhq/nebula"
 	"github.com/slackhq/nebula/config"
@@ -46,9 +49,7 @@ type nebManager struct {
 	start func(cfg []byte) (*nebstack.Service, error)
 
 	// tunnelConfig serves GET /config on the overlay listener to admin
-	// devices (set by main; nil disables the route). Same handler the
-	// wg0 tunnel listener mounts — one composition path, two overlays,
-	// until phase 2 deletes wg0's.
+	// devices (set by main; nil disables the route).
 	tunnelConfig http.Handler
 
 	mu   sync.Mutex
@@ -104,11 +105,11 @@ func (m *nebManager) up() bool {
 }
 
 // unsealWithMaster renders the hub's config from the master, brings the
-// mesh up, and starts mesh DNS. Idempotent: nebula cannot be restarted
-// in-process, so a second call is a no-op.
+// mesh up, and starts mesh DNS and HTTP. Idempotent: nebula cannot be
+// restarted in-process, so a second call is a no-op.
 //
 // Errors are returned for the caller to decide on; see the fan-out in
-// wgManager.unsealWithMaster for why phase 1 treats them as non-fatal.
+// hubManager.unsealWithMaster for why they do not fail the unseal.
 func (m *nebManager) unsealWithMaster(master []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -371,4 +372,22 @@ func resolveMeshListenHost() string {
 		return nebFlyListenHost
 	}
 	return "0.0.0.0"
+}
+
+// resolveFlyGlobalServices returns the address of fly's UDP routing,
+// or the unspecified address when not running on fly. The lookup is
+// bounded: off-fly the name doesn't exist and some resolvers take ~20s
+// to say so, which would stall every local mesh-enabled start.
+func resolveFlyGlobalServices() netip.Addr {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", "fly-global-services")
+	if err == nil {
+		for _, ip := range ips {
+			if a, ok := netip.AddrFromSlice(ip.To4()); ok && ip.To4() != nil {
+				return a
+			}
+		}
+	}
+	return netip.IPv4Unspecified()
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"net/netip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -122,10 +121,27 @@ func TestControlPlanesFilter(t *testing.T) {
 
 // TestStepSealed: the loop must be inert while the server is sealed.
 func TestStepSealed(t *testing.T) {
-	wgm := newWGManager(51820, netip.MustParsePrefix("10.99.0.1/24"), "203.0.113.7:51820", "", "talos.wg", t.TempDir(), nil, nil)
-	b := newBootstrapper(t.TempDir(), wgm)
+	hub := testHubManager(t, nil, "")
+	b := newBootstrapper(t.TempDir(), hub)
 	b.step(t.Context()) // must not panic or act
 	if b.st.attempted || b.st.done {
 		t.Fatal("sealed step must not change state")
+	}
+	if got := b.status().State; got != "sealed" {
+		t.Fatalf("state = %q, want sealed", got)
+	}
+}
+
+// TestStepMeshDown: an unsealed hub whose mesh never came up must
+// report mesh-down, not dial anything.
+func TestStepMeshDown(t *testing.T) {
+	hub := testHubManager(t, nil, "")
+	if err := hub.unsealWithMaster([]byte("bootstrap-test-master-32-bytes!!")); err != nil {
+		t.Fatal(err)
+	}
+	b := newBootstrapper(t.TempDir(), hub)
+	b.step(t.Context())
+	if got := b.status().State; got != "mesh-down" {
+		t.Fatalf("state = %q, want mesh-down", got)
 	}
 }

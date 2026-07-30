@@ -18,15 +18,15 @@ import (
 	"github.com/slackhq/nebula/logging"
 	"github.com/slackhq/nebula/overlay"
 
+	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/nebderive"
-	"github.com/marnyg/talos-config/config-server/wgderive"
 )
 
 // newMeshEnrollServer returns an unsealed server whose mesh declares one
 // admin device (laptop) and one media device (androidtv).
 func newMeshEnrollServer(t *testing.T) (*server, *httptest.Server) {
 	t.Helper()
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	mesh, _ := testNebManager(t, m.root, nil)
 	mesh.devices = []nebDevice{
 		{name: "laptop", group: nebGroupAdmins},
@@ -41,7 +41,7 @@ func newMeshEnrollServer(t *testing.T) (*server, *httptest.Server) {
 		store:      newAuthStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
-		wgm:        m,
+		hub:        m,
 	}
 	ts := httptest.NewServer(s.mux())
 	t.Cleanup(ts.Close)
@@ -284,7 +284,7 @@ func TestMeshEnrollRejects(t *testing.T) {
 // TestMeshEnrollSealed: while sealed there is no master, so there is
 // nothing to derive an identity from — say so rather than 500.
 func TestMeshEnrollSealed(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	mesh, _ := testNebManager(t, m.root, nil)
 	mesh.devices = adminDevices("laptop")
 	m.mesh = mesh
@@ -293,7 +293,7 @@ func TestMeshEnrollSealed(t *testing.T) {
 		store:      newAuthStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
-		wgm:        m,
+		hub:        m,
 	}
 	ts := httptest.NewServer(s.mux())
 	defer ts.Close()
@@ -305,7 +305,8 @@ func TestMeshEnrollSealed(t *testing.T) {
 
 // TestMeshEnrollDisabled: no mesh, no route.
 func TestMeshEnrollDisabled(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr}, "")
+	m.mesh = nil // hub without a mesh (tests only; main refuses this)
 	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +315,7 @@ func TestMeshEnrollDisabled(t *testing.T) {
 		store:      newAuthStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
-		wgm:        m,
+		hub:        m,
 	}
 	ts := httptest.NewServer(s.mux())
 	defer ts.Close()
@@ -341,7 +342,7 @@ func mustEnroll(t *testing.T, base, name string) nebConfigYAML {
 // signature derives.
 func testMeshMaster(t *testing.T) []byte {
 	t.Helper()
-	master, err := wgderive.MasterFromSignatureHex(unsealSig(t))
+	master, err := masterderive.MasterFromSignatureHex(unsealSig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,9 +380,9 @@ func TestDeviceConfigOmitsTunDevAndFiltersRemotes(t *testing.T) {
 		t.Errorf("rendered config still carries a dev key:\n%s", body)
 	}
 	if got.Lighthouse.RemoteAllowList == nil {
-		t.Fatal("remote_allow_list not set — a device could dial a peer's wg0 address")
+		t.Fatal("remote_allow_list not set — a device could dial a peer's pod-network address")
 	}
-	for _, denied := range []string{nebWGSubnet, nebPodSubnet} {
+	for _, denied := range []string{nebPodSubnet} {
 		if allowed, ok := got.Lighthouse.RemoteAllowList[denied]; !ok || allowed {
 			t.Errorf("remote_allow_list: %s not denied", denied)
 		}

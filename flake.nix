@@ -47,7 +47,7 @@
             # store path matching the hash, so a stale-but-matching vendor
             # dir survives `go mod tidy`. Force a recompute by setting a
             # bogus hash and reading nix's "got:" line.
-            vendorHash = "sha256-Jm1E850P4cnxZEUBgOD99nUonyKrp2rkGcUW63ODu2w=";
+            vendorHash = "sha256-5lgHHR0qN2btn7uY21ho9018PaKKhcLRL8y1dmfmjTg=";
           };
 
           packages.config-server = pkgs.writeShellApplication {
@@ -67,7 +67,7 @@
               cd "$(git rev-parse --show-toplevel)/talos"
               # Cluster secrets are additionally encrypted to the
               # wallet-derived age recipient (public, committed — derive
-              # with `wgping -age-recipient -sig <unseal-sig>`) so the
+              # with `recover -age-recipient -sig <unseal-sig>`) so the
               # config server can decrypt them at unseal time. The ssh
               # key stays as a second recipient for break-glass.
               FLY_RECIP=""

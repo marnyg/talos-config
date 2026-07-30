@@ -1,4 +1,4 @@
-package wgderive
+package masterderive
 
 // Wallet-derived age identity: the fleet master (itself derived from
 // the admin wallet's unseal signature) yields an X25519 age identity

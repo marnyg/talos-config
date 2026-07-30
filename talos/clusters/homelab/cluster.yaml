@@ -3,20 +3,18 @@ cluster:
   controlPlane:
     # Node's own derived mesh address (HKDF from MAC) — loopback-local
     # on the node, independent of DHCP/router state (invariant 7).
-    # Phase 2 step 2: moved off the wg0 address (10.99.0.54); wg0 SAN
-    # stays below until step 3 strips the dual overlay.
     endpoint: https://10.42.218.125:6443
   apiServer:
     certSANs:
-      - 10.99.0.54
       # cp1's nebula identity (HKDF-derived from the MAC; confirmed by
-      # the phase-1 reboot check).
+      # the phase-1 reboot check). The wg0 SAN (10.99.0.54) left with
+      # phase 2 step 3.
       - 10.42.218.125
       - cp1.mesh.internal
   proxy:
     # kube-proxy in nftables mode serves NodePorts only on the primary
-    # node IP by default — which would exclude wg0. Serve them on all
-    # addresses so admin peers reach apps over the tunnel.
+    # node IP by default — which would exclude nebula0. Serve them on
+    # all addresses so mesh members reach apps over the overlay.
     extraArgs:
       nodeport-addresses: 0.0.0.0/0
   inlineManifests:

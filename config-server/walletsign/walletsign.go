@@ -4,15 +4,14 @@
 //
 // The signature is always over an ordinary auth message — never the
 // fleet master message, which is signed only at /status or offline with
-// wgping. The hub side of the exchange lives in wgenroll.go (wg0) and
-// nebenroll.go (mesh); this package knows only the shape, so both
-// clients share one implementation of the part that is fiddly and
-// security-relevant: rendering a signing page no other local process can
-// reach, and never letting a signature touch a file or an argv.
+// `cast wallet sign`. The hub side of the exchange lives in
+// nebenroll.go; this package knows only the shape, and keeps the part
+// that is fiddly and security-relevant in one place: rendering a
+// signing page no other local process can reach, and never letting a
+// signature touch a file or an argv.
 //
-// Extracted from wgup, which had it first. Phase 2 deletes wg0 and with
-// it wgup; this package is the part that survives, which is why it is a
-// package rather than a copy.
+// Extracted from wg0-era wgup, which had it first; phase 2 deleted that
+// tool and this package is the part that survived.
 package walletsign
 
 import (

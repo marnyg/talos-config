@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"os"
@@ -175,11 +176,11 @@ func TestNebManagerUnsealIsIdempotent(t *testing.T) {
 	}
 }
 
-// The phase-1 failure policy, asserted rather than commented: wg0 carries
-// production traffic while the mesh is on trial, so a mesh that cannot
-// start must not fail the unseal.
-func TestMeshFailureDoesNotBreakWGUnseal(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+// A mesh that cannot start must not take the unseal with it: KMS disk
+// unlocks ride the WAN listener and must not depend on the overlay
+// (invariant 4). The failure is recorded, not swallowed.
+func TestMeshFailureDoesNotBreakHubUnseal(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	mesh, _ := testNebManager(t, m.root, nil)
 	mesh.start = func([]byte) (*nebstack.Service, error) {
 		return nil, errors.New("simulated mesh failure")
@@ -187,26 +188,27 @@ func TestMeshFailureDoesNotBreakWGUnseal(t *testing.T) {
 	m.mesh = mesh
 
 	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
-		t.Fatalf("mesh failure broke the wireguard unseal: %v", err)
+		t.Fatalf("mesh failure broke the hub unseal: %v", err)
 	}
 	if m.sealed() {
-		t.Fatal("wireguard still sealed after a mesh-only failure")
+		t.Fatal("hub still sealed after a mesh-only failure")
 	}
 	if _, _, err := mesh.state(); err == nil {
 		t.Error("mesh failure was not recorded")
 	}
 }
 
-// /sealed reports mesh state but never lets it drive the status code:
-// paging on an overlay that is explicitly on trial would be noise.
-func TestSealedEndpointReportsMeshWithoutPaging(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+// /sealed pages on a mesh startup failure — the phase-2 inversion: the
+// mesh is the control channel now, so "unsealed but mesh down" is an
+// incident, not a footnote.
+func TestSealedEndpointPagesOnMeshFailure(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	mesh, _ := testNebManager(t, m.root, nil)
 	mesh.start = func([]byte) (*nebstack.Service, error) {
 		return nil, errors.New("simulated mesh failure")
 	}
 	m.mesh = mesh
-	s := &server{root: m.root, wgm: m}
+	s := &server{root: m.root, hub: m}
 
 	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
 		t.Fatal(err)
@@ -214,12 +216,12 @@ func TestSealedEndpointReportsMeshWithoutPaging(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	s.handleSealed(rec, httptest.NewRequest("GET", "/sealed", nil))
-	if rec.Code != 200 {
-		t.Errorf("status = %d, want 200 (a mesh failure must not page)", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503 (a mesh failure must page)", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "wireguard: unsealed") {
-		t.Errorf("body does not report wireguard state: %q", body)
+	if !strings.Contains(body, "hub: unsealed") {
+		t.Errorf("body does not report hub state: %q", body)
 	}
 	if !strings.Contains(body, "mesh: DOWN") || !strings.Contains(body, "simulated mesh failure") {
 		t.Errorf("body does not report why the mesh is down: %q", body)

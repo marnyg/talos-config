@@ -136,7 +136,7 @@ trial — see the kill criteria in `../../mesh-v2-nebula.md`.
   `clusters/**/*.age` into tmpfs, and — since 2026-07-29 — the nebula
   mesh CA and all mesh identities.
 - Public age recipient is committed at `talos/age-recipient.txt`
-  (re-derive with `wgping -age-recipient -sig <unseal-sig>`). The SSH key
+  (re-derive with `recover -age-recipient -sig <unseal-sig>`). The SSH key
   remains a break-glass recipient.
 - An unseal that cannot decrypt the secrets fails loudly rather than
   serving broken configs.

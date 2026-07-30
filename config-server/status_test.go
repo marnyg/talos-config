@@ -264,13 +264,13 @@ func TestStatusShowsPendingApprovals(t *testing.T) {
 }
 
 func TestStatusShowsUnsealFormWhenSealed(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	s := &server{
 		root:       m.root,
 		store:      newAuthStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
-		wgm:        m,
+		hub:        m,
 	}
 	ts := httptest.NewServer(s.mux())
 	defer ts.Close()
@@ -295,7 +295,7 @@ func TestStatusShowsUnsealFormWhenSealed(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unseal: got %d", resp.StatusCode)
 	}
-	if !strings.Contains(body, "control channel unsealed") || strings.Contains(body, `action="/unseal"`) {
+	if !strings.Contains(body, "hub unsealed") || strings.Contains(body, `action="/unseal"`) {
 		t.Error("post-unseal page should confirm and drop the unseal form")
 	}
 }
@@ -349,7 +349,7 @@ func TestStatusLoginNonceSingleUse(t *testing.T) {
 // membership — offline members included. Also pins the soft-refresh
 // contract: a #live region and no meta-refresh reload.
 func TestStatusShowsMeshMembers(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	mesh, _ := testNebManager(t, m.root, []string{"laptop"})
 	m.mesh = mesh
 	s := &server{
@@ -357,7 +357,7 @@ func TestStatusShowsMeshMembers(t *testing.T) {
 		store:      newAuthStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
-		wgm:        m,
+		hub:        m,
 	}
 	ts := httptest.NewServer(s.mux())
 	defer ts.Close()

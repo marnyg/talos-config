@@ -11,8 +11,9 @@ package main
 // peer that merely reaches us cannot spoof. The source-IP gate below is
 // the second layer: a cert's overlay address is bound at mint time to a
 // wallet-derived identity, so "request from a derived admin address"
-// still maps to exactly one wallet-authorized device — the same
-// property the wg0 gate enforces (requireAdminPeer, wg.go).
+// still maps to exactly one wallet-authorized device — ADR-0007, which
+// carries ADR-0003's property from wg0's cryptokey routing onto the
+// mesh's CA-signed certs.
 
 import (
 	"fmt"
@@ -74,4 +75,20 @@ func (m *nebManager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
 	}()
 	log.Printf("mesh http: hello + /config on %s:80, %d admin address(es)", svc.OverlayAddr(), len(admins))
 	return nil
+}
+
+// requireAdminPeer gates an overlay route to admin device source
+// addresses. Machines are mesh members too, and served configs carry
+// other machines' secrets — a machine must never read a config it
+// didn't earn a device-flow token for.
+func requireAdminPeer(admins map[netip.Addr]bool, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ap, err := netip.ParseAddrPort(r.RemoteAddr)
+		if err != nil || !admins[ap.Addr().Unmap()] {
+			log.Printf("mesh %s %s: refused non-admin peer %s", r.Method, r.URL.Path, r.RemoteAddr)
+			http.Error(w, "forbidden: admin devices only", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

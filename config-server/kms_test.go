@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
-	"github.com/marnyg/talos-config/config-server/wgderive"
+	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
 const (
@@ -26,9 +26,9 @@ const (
 
 // newTestKMS returns an unsealed manager + KMS server whose single
 // machine declares declaredUUID.
-func newTestKMS(t *testing.T) (*wgManager, *kmsServer) {
+func newTestKMS(t *testing.T) (*hubManager, *kmsServer) {
 	t.Helper()
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	meta := "ip: 127.0.0.1\nconfig: base.yaml\npatches: []\nuuid: " + strings.ToUpper(declaredUUID) + "\n"
 	if err := os.WriteFile(filepath.Join(m.root, "machines", "aa-bb-cc-dd-ee-ff", "meta.yaml"), []byte(meta), 0o644); err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestKMSUnsealRejectsForgedBlob(t *testing.T) {
 }
 
 func TestKMSSealedServerRefuses(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	k := newKMSServer(m.root, m) // manager never unsealed
 
 	_, err := k.Seal(context.Background(), &kmsapi.Request{NodeUuid: declaredUUID, Data: []byte("key")})
@@ -146,7 +146,7 @@ func TestKMSMissingUUID(t *testing.T) {
 // recovery passphrase; the WG-only output stays free of it.
 func TestDiskEncryptionInjection(t *testing.T) {
 	m, _ := newTestKMS(t)
-	s := &server{root: m.root, store: newAuthStore(), wgm: m, adminAddrs: m.adminAddrs, kmsAdvertise: "https://kms.example:443"}
+	s := &server{root: m.root, store: newAuthStore(), hub: m, adminAddrs: m.adminAddrs, kmsAdvertise: "https://kms.example:443"}
 
 	fetch := func() (int, string) {
 		rec := httptest.NewRecorder()
@@ -172,7 +172,7 @@ func TestDiskEncryptionInjection(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("got %d: %s", code, body)
 	}
-	wantPass := wgderive.RecoveryPassphrase(m.current().master, "aa:bb:cc:dd:ee:ff")
+	wantPass := masterderive.RecoveryPassphrase(m.current(), "aa:bb:cc:dd:ee:ff")
 	for _, want := range []string{"systemDiskEncryption", "https://kms.example:443", wantPass, "luks2"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("composed config missing %q", want)
@@ -191,7 +191,7 @@ func TestDiskEncryptionInjection(t *testing.T) {
 // handler → KMS service, sharing the port with plain HTTP.
 func TestKMSOverH2C(t *testing.T) {
 	m, k := newTestKMS(t)
-	s := &server{root: m.root, store: newAuthStore(), wgm: m, adminAddrs: m.adminAddrs, kms: k, kmsAdvertise: "grpc://ignored", sessions: newSessionStore()}
+	s := &server{root: m.root, store: newAuthStore(), hub: m, adminAddrs: m.adminAddrs, kms: k, kmsAdvertise: "grpc://ignored", sessions: newSessionStore()}
 
 	ts := httptest.NewServer(s.handler())
 	defer ts.Close()

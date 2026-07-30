@@ -28,13 +28,9 @@ this list is the checkable form.
 5. **Single public entrypoint.** The hub is the only public surface
    (HTTPS + its UDP overlay port). No second entrypoint, no home-IP
    pinning into device configs.
-   _Temporarily two overlay ports_ (wg0 51820 + nebula 4242) for the
-   phase-1 dual overlay — the migration window ADR-0002 accepted, kept
-   because the kill criteria need a dogfooding period before anything
-   irreversible. This is a bounded exception, not a relaxation: it is
-   still one host, one hostname, no new kind of entrypoint, and it ends
-   when phase 2 strips wg0. If phase 2 stalls, the exception is the
-   thing to question. _(Noted 2026-07-29.)_
+   _(The phase-1 dual-overlay exception — wg0 51820 beside nebula 4242
+   — closed 2026-07-30 when phase 2 step 3 stripped wg0; the invariant
+   holds unqualified again.)_
 6. **Machine identity is hardware-anchored and human-ratified.**
    Approval is per-machine, single-use, identity-bound.
 7. **Ephemeral facts are never baked into durable identity.** A DHCP

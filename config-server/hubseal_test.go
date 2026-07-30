@@ -3,22 +3,19 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"golang.zx2c4.com/wireguard/device"
-
-	"github.com/marnyg/talos-config/config-server/wgderive"
-	"github.com/marnyg/talos-config/config-server/wgstack"
+	"github.com/marnyg/talos-config/config-server/masterderive"
+	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
-// testWGManager returns a sealed manager with a stubbed WG start and a
-// minimal machines tree.
-func testWGManager(t *testing.T, adminAddrs []string, pinnedPub string) *wgManager {
+// testHubManager builds a sealed hub over a throwaway talos tree with
+// one declared machine and a stub-started mesh (no real overlay).
+func testHubManager(t *testing.T, adminAddrs []string, pinnedCAFP string) *hubManager {
 	t.Helper()
 	root := t.TempDir()
 	machineDir := filepath.Join(root, "machines", "aa-bb-cc-dd-ee-ff")
@@ -34,20 +31,19 @@ func testWGManager(t *testing.T, adminAddrs []string, pinnedPub string) *wgManag
 		t.Fatal(err)
 	}
 
-	m := newWGManager(51820, netip.MustParsePrefix("10.99.0.1/24"), "203.0.113.7:51820", pinnedPub, "talos.wg", root, adminAddrs, []string{"laptop"})
-	m.start = func([32]byte, int, netip.Addr, []wgPeer) (*wgstack.Net, *device.Device, error) { return nil, nil, nil } // no real socket
-	return m
+	mesh, _ := testNebManager(t, root, []string{"laptop"})
+	return newHubManager(root, adminAddrs, pinnedCAFP, mesh)
 }
 
 // unsealSig produces the well-known test key's signature over the
 // master message.
 func unsealSig(t *testing.T) string {
 	t.Helper()
-	return personalSign(t, testKey(t), wgderive.MasterMessage)
+	return personalSign(t, testKey(t), masterderive.MasterMessage)
 }
 
 func TestUnsealWithSignature(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	if !m.sealed() {
 		t.Fatal("manager should start sealed")
 	}
@@ -58,14 +54,18 @@ func TestUnsealWithSignature(t *testing.T) {
 		t.Fatal("still sealed after valid unseal")
 	}
 
-	// The derived master must match deriving directly from the sig.
-	master, err := wgderive.MasterFromSignatureHex(unsealSig(t))
+	// The held master must match deriving directly from the sig.
+	master, err := masterderive.MasterFromSignatureHex(unsealSig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantPub := wgderive.PublicKey(wgderive.ServerKey(master))
-	if m.current().serverPub != wantPub {
-		t.Error("server pubkey does not match signature-derived master")
+	if string(m.current()) != string(master) {
+		t.Error("held master does not match signature-derived master")
+	}
+
+	// The mesh must have been fanned out to.
+	if !strings.Contains(string(*meshRendered(t, m)), "pki") {
+		t.Error("mesh config was not rendered at unseal")
 	}
 
 	// Idempotent re-unseal.
@@ -74,8 +74,30 @@ func TestUnsealWithSignature(t *testing.T) {
 	}
 }
 
+// meshRendered digs the rendered mesh config out of the stub. Small
+// helper so tests read as intent, not plumbing.
+func meshRendered(t *testing.T, m *hubManager) *[]byte {
+	t.Helper()
+	// The stub in testNebManager captures into its closure; re-render
+	// deterministically instead of reaching into it.
+	master := m.current()
+	if master == nil {
+		t.Fatal("hub is sealed")
+	}
+	cfg, err := hubNebulaConfig(nebHubParams{
+		master:     master,
+		subnet:     m.mesh.subnet,
+		listenHost: "0.0.0.0",
+		listenPort: m.mesh.port,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &cfg
+}
+
 func TestUnsealRejectsUnknownWallet(t *testing.T) {
-	m := testWGManager(t, []string{"0x0000000000000000000000000000000000000001"}, "")
+	m := testHubManager(t, []string{"0x0000000000000000000000000000000000000001"}, "")
 	if err := m.unsealWithSignature(unsealSig(t)); err == nil {
 		t.Fatal("expected rejection for non-allowlisted wallet")
 	}
@@ -85,7 +107,7 @@ func TestUnsealRejectsUnknownWallet(t *testing.T) {
 }
 
 func TestUnsealRejectsGarbageSignature(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr}, "")
 	for _, sig := range []string{"", "0xdeadbeef", "not-hex"} {
 		if err := m.unsealWithSignature(sig); err == nil {
 			t.Errorf("expected rejection for signature %q", sig)
@@ -93,21 +115,27 @@ func TestUnsealRejectsGarbageSignature(t *testing.T) {
 	}
 }
 
-func TestUnsealPinnedPubkey(t *testing.T) {
+// TestUnsealPinnedCAFingerprint: the pin catches a wrong wallet (or a
+// subtly different message) before anything derives from the bogus
+// master — the phase-2 successor to the wg server-pubkey pin.
+func TestUnsealPinnedCAFingerprint(t *testing.T) {
 	// Correct pin: compute from the signature, then unseal.
-	master, err := wgderive.MasterFromSignatureHex(unsealSig(t))
+	master, err := masterderive.MasterFromSignatureHex(unsealSig(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	pin := wgderive.KeyBase64(wgderive.PublicKey(wgderive.ServerKey(master)))
+	pin, err := nebderive.CAFingerprint(master)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	m := testWGManager(t, []string{wellKnownAddr}, pin)
+	m := testHubManager(t, []string{wellKnownAddr}, pin)
 	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
 		t.Fatalf("unseal with correct pin: %v", err)
 	}
 
 	// Wrong pin: must fail and stay sealed.
-	m = testWGManager(t, []string{wellKnownAddr}, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	m = testHubManager(t, []string{wellKnownAddr}, strings.Repeat("00", 32))
 	if err := m.unsealWithSignature(unsealSig(t)); err == nil {
 		t.Fatal("expected pin mismatch error")
 	}
@@ -117,8 +145,8 @@ func TestUnsealPinnedPubkey(t *testing.T) {
 }
 
 func TestConfigRefusedWhileSealed(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
-	s := &server{root: m.root, store: newAuthStore(), wgm: m, adminAddrs: m.adminAddrs}
+	m := testHubManager(t, []string{wellKnownAddr}, "")
+	s := &server{root: m.root, store: newAuthStore(), hub: m, adminAddrs: m.adminAddrs}
 
 	req := httptest.NewRequest("GET", "/config?mac=aa-bb-cc-dd-ee-ff", nil)
 	rec := httptest.NewRecorder()
@@ -135,14 +163,17 @@ func TestConfigRefusedWhileSealed(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("unsealed /config: got %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "wg0") {
-		t.Error("unsealed config missing injected wg0 interface")
+	if !strings.Contains(rec.Body.String(), "ExtensionServiceConfig") {
+		t.Error("unsealed config missing injected mesh identity")
+	}
+	if strings.Contains(rec.Body.String(), "wg0") {
+		t.Error("served config still injects wg0 — phase 2 removed it")
 	}
 }
 
 func TestUnsealEndpoint(t *testing.T) {
-	m := testWGManager(t, []string{wellKnownAddr}, "")
-	s := &server{root: m.root, store: newAuthStore(), wgm: m, adminAddrs: m.adminAddrs}
+	m := testHubManager(t, []string{wellKnownAddr}, "")
+	s := &server{root: m.root, store: newAuthStore(), hub: m, adminAddrs: m.adminAddrs}
 
 	// Sealed status endpoint.
 	rec := httptest.NewRecorder()

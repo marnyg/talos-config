@@ -1,7 +1,7 @@
 package main
 
 // Unseal-time secrets decryption: the image ships only .age
-// ciphertext; the wallet-derived age identity (wgderive.AgeIdentity,
+// ciphertext; the wallet-derived age identity (masterderive.AgeIdentity,
 // same master as everything else) decrypts the cluster secrets into
 // the (tmpfs) tree when the admin unseals. Until then not even the
 // server process can read them — strictly better than the old
@@ -19,7 +19,7 @@ import (
 
 	"filippo.io/age"
 
-	"github.com/marnyg/talos-config/config-server/wgderive"
+	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
 // decryptAgeSecrets walks root's clusters/ tree and decrypts every
@@ -29,7 +29,7 @@ import (
 // decryption failure aborts — an unseal that cannot produce the
 // secrets must fail loudly, not serve broken configs.
 func decryptAgeSecrets(root string, master []byte) error {
-	idStr, _ := wgderive.AgeIdentity(master)
+	idStr, _ := masterderive.AgeIdentity(master)
 	id, err := age.ParseX25519Identity(idStr)
 	if err != nil {
 		return fmt.Errorf("parsing derived age identity: %w", err)
