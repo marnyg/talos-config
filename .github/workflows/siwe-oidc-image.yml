@@ -1,0 +1,44 @@
+# Builds and pushes the SIWE→OIDC bridge image to ghcr on every push
+# to main that touches it. The cluster pulls :latest with
+# imagePullPolicy Always — rolling the deployment picks up the new
+# image; the :<sha> tag exists for pinning/rollback. ghcr here is
+# trusted infrastructure like fly (invariant 3), not a root of trust:
+# the image contains no secrets and every identity decision it makes
+# reduces to wallet signature verification against git-declared
+# addresses.
+name: siwe-oidc-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "config-server/siweoidc/**"
+      - "config-server/cmd/siweoidc/**"
+      - "config-server/ethsig/**"
+      - "config-server/go.mod"
+      - "config-server/go.sum"
+      - "Dockerfile.siweoidc"
+      - ".github/workflows/siwe-oidc-image.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.siweoidc
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/siwe-oidc:latest
+            ghcr.io/${{ github.repository_owner }}/siwe-oidc:${{ github.sha }}

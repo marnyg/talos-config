@@ -1,0 +1,18 @@
+# SIWE→OIDC bridge (config-server/cmd/siweoidc), deployed in-cluster —
+# built and pushed to ghcr by .github/workflows/siwe-oidc-image.yml.
+# Static binary, FROM scratch: the service holds no secrets, reads no
+# files, and dials nothing out (per-boot key, in-memory state), so the
+# image is the binary and nothing else. Toolchain tag follows go.mod —
+# bump together with the root Dockerfile and flake.nix (see the note
+# there).
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY config-server/go.mod config-server/go.sum ./
+RUN go mod download
+COPY config-server/ ./
+RUN CGO_ENABLED=0 go build -trimpath -o /out/siweoidc ./cmd/siweoidc
+
+FROM scratch
+COPY --from=build /out/siweoidc /siweoidc
+USER 65534:65534
+ENTRYPOINT ["/siweoidc"]

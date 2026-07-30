@@ -1,0 +1,90 @@
+# The SIWE→OIDC bridge (config-server/cmd/siweoidc): every OIDC relying
+# party in the cluster authenticates against the wallet through this
+# service. All configuration is right here in the args — clients and
+# admin wallets are git-declared (invariant 2); auth codes, tokens, and
+# the JWKS signing key are in-memory and per-boot, so a pod restart
+# logs everyone out and nothing is lost.
+#
+# Runs in-cluster rather than on the hub deliberately: SSO must not
+# depend on the hub's seal state, and a fly redeploy must not log the
+# cluster out. Mesh-only by construction — reachable solely through
+# ingress-nginx on the overlay (ADR-0009), plain HTTP until the
+# wallet-derived CA lands (refs 162c630d).
+#
+# New relying party = new -client arg here + the client-side config.
+# Image: built by .github/workflows/siwe-oidc-image.yml; :latest +
+# imagePullPolicy Always, so a rollout restart picks up a new build.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: siwe-oidc
+  namespace: sso
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: siwe-oidc
+  template:
+    metadata:
+      labels:
+        app: siwe-oidc
+    spec:
+      containers:
+        - name: siwe-oidc
+          image: ghcr.io/marnyg/siwe-oidc:latest
+          imagePullPolicy: Always
+          args:
+            - -issuer=http://auth.cp1.mesh.internal
+            - -listen=:8080
+            - -admin=0xf56863bF40A75dC3c632C17fc65AA2EB06a89406=mar
+            - -client=argocd=http://argocd.cp1.mesh.internal/auth/callback
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: siwe-oidc
+  namespace: sso
+spec:
+  selector:
+    app: siwe-oidc
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: siwe-oidc
+  namespace: sso
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: auth.cp1.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: siwe-oidc
+                port:
+                  number: 80
