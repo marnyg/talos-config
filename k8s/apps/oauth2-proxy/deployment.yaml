@@ -1,0 +1,115 @@
+# One oauth2-proxy gates every non-OIDC web UI (sonarr/radarr/nzbget/
+# jackett/transmission) via ingress-nginx auth_request: their Ingresses
+# carry auth-url/auth-signin annotations pointing here, so protecting a
+# service is two annotations in git — the app itself stays untouched.
+#
+# Identity comes from the SIWE→OIDC bridge (public client, PKCE — the
+# client_secret below is a required-but-ignored placeholder, not a
+# secret). The session rides one cookie scoped to .cp1.mesh.internal,
+# so a single wallet signature opens all gated services. Cookie secret
+# is sealed (sealed-secret.yaml) so sessions survive pod restarts;
+# cookie-secure=false is the ADR-0009 plain-HTTP posture — the mesh
+# encrypts the wire.
+#
+# hostAliases: pods cannot resolve .mesh.internal (Talos host DNS
+# serves no /etc/hosts entries to kube-dns — siderolabs/talos#9822);
+# the issuer is pinned to cp1's derived mesh address (invariant 7),
+# same as argocd-server in the installer job.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  namespace: sso
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy
+    spec:
+      hostAliases:
+        - ip: 10.42.218.125
+          hostnames: [auth.cp1.mesh.internal]
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.13.0
+          args:
+            - --http-address=0.0.0.0:4180
+            - --reverse-proxy=true
+            - --provider=oidc
+            - --provider-display-name=wallet
+            - --oidc-issuer-url=http://auth.cp1.mesh.internal
+            - --client-id=oauth2-proxy
+            - --client-secret=public-client-pkce-only
+            - --code-challenge-method=S256
+            - --scope=openid profile email groups
+            - --email-domain=*
+            - --allowed-group=admins
+            - --redirect-url=http://oauth2.cp1.mesh.internal/oauth2/callback
+            - --cookie-secure=false
+            - --cookie-samesite=lax
+            - --cookie-domain=.cp1.mesh.internal
+            - --whitelist-domain=.cp1.mesh.internal
+            - --skip-provider-button=true
+          env:
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy
+                  key: cookie-secret
+          ports:
+            - containerPort: 4180
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy
+  namespace: sso
+spec:
+  selector:
+    app: oauth2-proxy
+  ports:
+    - port: 80
+      targetPort: 4180
+---
+# The sign-in/callback surface needs its own hostname: the auth_request
+# subrequest goes service-to-service, but the browser redirect
+# (/oauth2/start → bridge → /oauth2/callback) must ride the mesh.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oauth2-proxy
+  namespace: sso
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: oauth2.cp1.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: oauth2-proxy
+                port:
+                  number: 80

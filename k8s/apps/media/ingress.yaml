@@ -4,6 +4,15 @@
 # Exposing a service = adding an Ingress here, nothing else.
 # Plain HTTP — nebula encrypts the wire; HTTPS lands with the
 # wallet-derived CA (deferred, refs 162c630d).
+#
+# The auth-url/auth-signin annotations gate a service behind the wallet
+# (oauth2-proxy in the sso namespace → SIWE→OIDC bridge): nginx makes an
+# auth_request subrequest per request; 401s bounce the browser through
+# one wallet signature, and the session cookie (domain
+# .cp1.mesh.internal) then opens every gated service. Jellyfin is
+# deliberately ungated here: it gets native OIDC via jellyfin-plugin-sso
+# (refs 162c630d), and the TV reaches it LAN-direct on NodePort 30096
+# outside the ingress path anyway.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -28,6 +37,9 @@ kind: Ingress
 metadata:
   name: sonarr
   namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
@@ -47,6 +59,9 @@ kind: Ingress
 metadata:
   name: radarr
   namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
@@ -66,6 +81,9 @@ kind: Ingress
 metadata:
   name: nzbget
   namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
@@ -85,6 +103,9 @@ kind: Ingress
 metadata:
   name: transmission
   namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
@@ -104,6 +125,9 @@ kind: Ingress
 metadata:
   name: jackett
   namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
