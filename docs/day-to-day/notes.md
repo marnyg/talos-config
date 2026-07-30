@@ -128,6 +128,17 @@
   the laptop→cp1 mesh tunnel needs lighthouse re-registration + a
   fresh handshake after the hub restarts. Warm it with
   `ping 10.42.218.125`, then retry — succeeded on second attempt.
+- 2026-07-30 — the cached `~/.config/talos-mesh/laptop.yml` predates
+  phase 2: it still carries the retired wg0 underlay-filter entry and a
+  hand-set `tun.dev: nebula1` the hub never rendered. Harmless (nebup
+  honors the existing dev name), but `nebup -reenroll` refreshes it —
+  and split-DNS answers will then appear on `nebula0`, the name nebup
+  pins itself.
+- 2026-07-30 — hub-redeploy mesh warmup reconfirmed on the plain
+  deploy+unseal path (not just `apply`): cp1 unreachable over the mesh
+  for ~45–60s after unseal, then recovers unaided — first pings
+  relayed/lost, then 1.2ms direct. Don't page on the first failed ping
+  after a deploy.
 - 2026-07-30 — `MESH_CA_PIN` in fly.toml pins the derived mesh CA
   (`b881d6ff…`); a wrong-wallet unseal now fails loudly instead of
   bringing up an untrusted mesh. Re-derive offline with
