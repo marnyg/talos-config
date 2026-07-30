@@ -19,10 +19,17 @@
 //	nebup -paste                   # headless: paste the signature instead
 //	nebup -dns off                 # no split DNS — mesh names won't resolve
 //
-// On Linux with systemd-resolved, nebup sets up split DNS for the run:
-// only *.mesh.internal is routed to the hub's overlay resolver, the
-// rest of the machine's DNS is untouched. The per-link resolved config
-// dies with the TUN device, so Ctrl-C is also the DNS teardown.
+// nebup sets up split DNS for the run: only *.mesh.internal is routed
+// to the hub's overlay resolver, the rest of the machine's DNS is
+// untouched.
+//   - Linux (systemd-resolved): a per-link resolvectl config that dies
+//     with the TUN device, so Ctrl-C is also the DNS teardown.
+//   - macOS: an /etc/resolver/mesh.internal file. It outlives the TUN
+//     device, so nebup removes it on exit — which is why the run absorbs
+//     Ctrl-C (nebula still gets the same signal and shuts down) instead
+//     of dying before the teardown runs.
+//
+// Other platforms fall back to overlay IPs (nebup -print).
 //
 // The device name must be declared on the hub (MESH_DEVICES for owner
 // devices, MESH_MEDIA_DEVICES for shared-space appliances). The hub
@@ -37,8 +44,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -55,7 +66,7 @@ func main() {
 		reenroll = flag.Bool("reenroll", false, "discard the cached config and enroll again")
 		printCfg = flag.Bool("print", false, "enroll if needed and print the config path instead of running nebula")
 		paste    = flag.Bool("paste", false, "paste a signature instead of signing in the browser (headless)")
-		dnsMode  = flag.String("dns", "auto", "mesh DNS: auto (split DNS for ."+nebderive.DNSZone+" via resolvectl when available), off")
+		dnsMode  = flag.String("dns", "auto", "mesh DNS: auto (split DNS for ."+nebderive.DNSZone+": resolvectl on Linux, /etc/resolver on macOS), off")
 	)
 	flag.Parse()
 
@@ -86,6 +97,12 @@ func main() {
 		if err := os.WriteFile(path, cfg, 0o600); err != nil {
 			log.Fatal(err)
 		}
+		// Enrolling under `sudo -E nebup` would leave the cache
+		// root-owned, locking out a later non-root run. Hand it back to
+		// the invoking user so both flows work; no-op when not under sudo.
+		if err := reownToSudoUser(filepath.Dir(path), path); err != nil {
+			log.Printf("warning: could not hand cache to invoking user (a later non-root nebup may re-enroll): %v", err)
+		}
 		log.Printf("enrolled %q — config cached at %s", dev, path)
 	}
 
@@ -107,6 +124,34 @@ func confPath(name string) (string, error) {
 	return filepath.Join(dir, "talos-mesh", name+".yml"), nil
 }
 
+// reownToSudoUser hands paths back to the user behind a sudo invocation
+// (SUDO_UID/SUDO_GID) so a cache written while root does not lock out a
+// later non-root run. No-op when not running as root, or when running as
+// genuine root rather than via sudo.
+func reownToSudoUser(paths ...string) error {
+	if os.Geteuid() != 0 {
+		return nil
+	}
+	uidStr, gidStr := os.Getenv("SUDO_UID"), os.Getenv("SUDO_GID")
+	if uidStr == "" || gidStr == "" {
+		return nil
+	}
+	uid, err := strconv.Atoi(uidStr)
+	if err != nil {
+		return fmt.Errorf("SUDO_UID %q: %w", uidStr, err)
+	}
+	gid, err := strconv.Atoi(gidStr)
+	if err != nil {
+		return fmt.Errorf("SUDO_GID %q: %w", gidStr, err)
+	}
+	for _, p := range paths {
+		if err := os.Chown(p, uid, gid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // runNebula runs nebula in the foreground, via sudo when not already
 // root: nebula needs a TUN device, and there is no daemon to talk to.
 // Foreground on purpose — Ctrl-C is the disconnect, which is the right
@@ -125,19 +170,55 @@ func runNebula(path, dnsMode string) error {
 	if err != nil {
 		return err
 	}
-	adapted, dev, hub, note := adaptSplitDNS(raw, dnsMode, haveResolvectl())
-	if note != "" {
-		log.Print(note)
-	}
-	if string(adapted) != string(raw) {
-		if err := os.WriteFile(path, adapted, 0o600); err != nil {
-			return err
+	var stop func() // DNS teardown, nil when there is nothing to undo
+	switch runtime.GOOS {
+	case "linux":
+		adapted, dev, hub, note := adaptSplitDNS(raw, dnsMode, haveResolvectl())
+		if note != "" {
+			log.Print(note)
+		}
+		if string(adapted) != string(raw) {
+			if err := os.WriteFile(path, adapted, 0o600); err != nil {
+				return err
+			}
+		}
+		if dev != "" {
+			go pointSplitDNS(dev, hub, nebderive.DNSZone)
+		}
+	case "darwin":
+		file, contents, note := darwinResolverPlan(raw, dnsMode, nebderive.DNSZone)
+		if note != "" {
+			log.Print(note)
+		}
+		if file != "" {
+			if err := writeResolverFile(file, contents); err != nil {
+				log.Printf("split DNS: %v", err)
+			} else {
+				stop = func() { removeResolverFile(file) }
+			}
+		}
+	default:
+		if dnsMode != "off" {
+			log.Printf("mesh DNS disabled (split DNS unsupported on %s) — use overlay IPs (nebup -print; the address is in the cert)", runtime.GOOS)
 		}
 	}
-	if dev != "" {
-		go pointSplitDNS(dev, hub, nebderive.DNSZone)
+
+	if stop != nil {
+		defer stop()
+		// Absorb Ctrl-C in nebup so the resolver-file teardown runs: the
+		// same SIGINT still reaches nebula (shared process group), which
+		// shuts down; cmd.Run returns; the deferred stop() cleans up.
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+		defer signal.Stop(sigs)
+		go func() {
+			for range sigs {
+			}
+		}()
 	}
-	warnOverlayUnderlay(adapted)
+	// raw, not the linux-only adapted config: the tun-dev pin never
+	// touches the static host map this reads.
+	warnOverlayUnderlay(raw)
 
 	argv := []string{bin, "-config", path}
 	if os.Geteuid() != 0 {
@@ -335,4 +416,93 @@ func pointSplitDNS(dev, hub, zone string) {
 var haveResolvectl = func() bool {
 	_, err := exec.LookPath("resolvectl")
 	return err == nil
+}
+
+// meshResolver reads the hub's overlay resolver address out of the
+// cached config (its lighthouse address doubles as the mesh resolver).
+// Pure. Returns ("", note) when the config carries no lighthouse host.
+func meshResolver(cfg []byte) (hub, note string) {
+	var mc meshConfYAML
+	if err := yaml.Unmarshal(cfg, &mc); err != nil || len(mc.Lighthouse.Hosts) == 0 {
+		return "", "mesh DNS disabled (no lighthouse address in the cached config — nebup -reenroll to refresh it)"
+	}
+	return mc.Lighthouse.Hosts[0], ""
+}
+
+// darwinResolverPlan decides the macOS /etc/resolver split-DNS action
+// for this run. Pure. Returns the target file, its contents, and a user
+// note. An empty file path means no split DNS (mode off, or the config
+// names no resolver). No TUN device is pinned: a resolver file points
+// at the hub's overlay IP, not a link, and Darwin only accepts utun.
+func darwinResolverPlan(cfg []byte, mode, zone string) (file, contents, note string) {
+	if mode == "off" {
+		return "", "", ""
+	}
+	hub, note := meshResolver(cfg)
+	if hub == "" {
+		return "", "", note
+	}
+	file = filepath.Join("/etc/resolver", zone)
+	contents = "# talos-mesh split DNS — managed by nebup, removed on exit\nnameserver " + hub + "\n"
+	note = fmt.Sprintf("split DNS: *.%s → %s via %s (removed on exit)", zone, hub, file)
+	return file, contents, note
+}
+
+// writeResolverFile installs the macOS resolver file, using sudo when
+// nebup is not already root (same credential nebula's own sudo caches),
+// then flushes the DNS cache so mDNSResponder picks it up.
+func writeResolverFile(path, contents string) error {
+	dir := filepath.Dir(path)
+	if os.Geteuid() == 0 {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", dir, err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", path, err)
+		}
+	} else {
+		if out, err := exec.Command("sudo", "mkdir", "-p", dir).CombinedOutput(); err != nil {
+			return fmt.Errorf("mkdir %s: %v: %s", dir, err, strings.TrimSpace(string(out)))
+		}
+		c := exec.Command("sudo", "tee", path)
+		c.Stdin = strings.NewReader(contents)
+		if out, err := c.CombinedOutput(); err != nil {
+			return fmt.Errorf("write %s: %v: %s", path, err, strings.TrimSpace(string(out)))
+		}
+	}
+	flushDarwinDNS()
+	return nil
+}
+
+// removeResolverFile is the exit teardown: drop the resolver file and
+// flush the cache. Best-effort — a leftover file would only re-route a
+// dead resolver, which fails closed.
+func removeResolverFile(path string) {
+	var err error
+	if os.Geteuid() == 0 {
+		err = os.Remove(path)
+	} else {
+		err = exec.Command("sudo", "rm", "-f", path).Run()
+	}
+	if err != nil {
+		log.Printf("split DNS: removing %s: %v", path, err)
+		return
+	}
+	flushDarwinDNS()
+	log.Printf("split DNS: removed %s", path)
+}
+
+// flushDarwinDNS nudges mDNSResponder to re-read /etc/resolver.
+// Best-effort: modern macOS re-reads on change, and a stale cache only
+// delays resolution briefly.
+func flushDarwinDNS() {
+	for _, args := range [][]string{
+		{"dscacheutil", "-flushcache"},
+		{"killall", "-HUP", "mDNSResponder"},
+	} {
+		if os.Geteuid() != 0 {
+			args = append([]string{"sudo"}, args...)
+		}
+		_ = exec.Command(args[0], args[1:]...).Run()
+	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -95,6 +96,45 @@ func TestAdaptSplitDNSGarbageConfig(t *testing.T) {
 	}
 	if !strings.Contains(note, "-reenroll") {
 		t.Fatalf("note = %q, want a reenroll hint", note)
+	}
+}
+
+func TestDarwinResolverPlan(t *testing.T) {
+	file, contents, note := darwinResolverPlan([]byte(hubRendered), "auto", "mesh.internal")
+	if file != "/etc/resolver/mesh.internal" {
+		t.Fatalf("file = %q", file)
+	}
+	if !strings.Contains(contents, "nameserver 10.42.0.1") {
+		t.Fatalf("contents missing hub resolver:\n%s", contents)
+	}
+	if !strings.Contains(note, "10.42.0.1") || !strings.Contains(note, "removed on exit") {
+		t.Fatalf("note = %q", note)
+	}
+}
+
+func TestDarwinResolverPlanOff(t *testing.T) {
+	file, contents, note := darwinResolverPlan([]byte(hubRendered), "off", "mesh.internal")
+	if file != "" || contents != "" || note != "" {
+		t.Fatalf("off mode must be a no-op: file=%q note=%q", file, note)
+	}
+}
+
+func TestDarwinResolverPlanNoLighthouse(t *testing.T) {
+	file, _, note := darwinResolverPlan([]byte("tun:\n    mtu: 1300\n"), "auto", "mesh.internal")
+	if file != "" {
+		t.Fatalf("want no resolver file without a lighthouse host, got %q", file)
+	}
+	if !strings.Contains(note, "-reenroll") {
+		t.Fatalf("note = %q, want a reenroll hint", note)
+	}
+}
+
+func TestReownToSudoUserNoopWhenNotRoot(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: the no-op guard under test does not apply")
+	}
+	if err := reownToSudoUser("/nonexistent/should/not/be/touched"); err != nil {
+		t.Fatalf("want no-op when not root, got %v", err)
 	}
 }
 
