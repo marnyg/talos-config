@@ -39,8 +39,12 @@ trial — see the kill criteria in `../../mesh-v2-nebula.md`.
   `hub`, everything from group `admins`, and — since the 2026-07-29
   re-apply — Jellyfin's NodePort (tcp/30096) from group `media`.
   Machines are not in that list.
-- **No mesh certSANs yet** (phase 2 step 1), so `talosctl -e
-  cp1.mesh.internal` fails TLS. Use wg0 for talosctl until then.
+- **Mesh certSANs live** _(phase 2 step 1, verified 2026-07-31)_: apid
+  and kube-apiserver certs carry `cp1.mesh.internal` + `10.42.218.125`.
+  `talosctl -e 10.42.218.125` and the kube API verify over the mesh.
+  `-e cp1.mesh.internal` still needs the laptop resolver to split-DNS
+  `.mesh.internal` → `10.42.0.1` (the hub zone answers it; local
+  resolution is the missing piece).
 - The CA fingerprint is re-derived on every unseal and is the value
   members pin; it was `b881d6ff…` on the 2026-07-29 unseal. A *different*
   fingerprint after an unseal means a different wallet signed — not a
