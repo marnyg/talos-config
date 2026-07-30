@@ -42,3 +42,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+    # Talos enforces the baseline PSS on workload namespaces; hostNetwork
+    # needs privileged. Scoped to this namespace only.
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
