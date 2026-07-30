@@ -98,6 +98,44 @@ func TestAdaptSplitDNSGarbageConfig(t *testing.T) {
 	}
 }
 
+func TestRouteDev(t *testing.T) {
+	for _, tc := range []struct {
+		route, want string
+	}{
+		{"1.2.3.4 via 10.0.0.1 dev wlp3s0 src 10.0.0.42 uid 1000\n    cache\n", "wlp3s0"},
+		{"1.2.3.4 dev tailscale0 table 52 src 100.100.1.2 uid 1000", "tailscale0"},
+		{"unreachable 1.2.3.4", ""},
+		{"", ""},
+	} {
+		if got := routeDev(tc.route); got != tc.want {
+			t.Errorf("routeDev(%q) = %q, want %q", tc.route, got, tc.want)
+		}
+	}
+}
+
+func TestOverlayLink(t *testing.T) {
+	for _, tc := range []struct {
+		dev, detail string
+		want        bool
+	}{
+		// Physical links, with realistic `ip -d -o link show` detail.
+		{"wlp3s0", "3: wlp3s0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DORMANT ... addrgenmode none numtxqueues 1", false},
+		{"enp0s31f6", "2: enp0s31f6: <BROADCAST,MULTICAST> mtu 1500 ... link/ether aa:bb:cc:dd:ee:ff", false},
+		// Tunnels by link kind.
+		{"corp0", "14: corp0: <POINTOPOINT,...> mtu 1420 ... link/none  promiscuity 0 allmulti 0 minmtu 0 maxmtu 2147483552 wireguard addrgenmode eui64", true},
+		{"corp1", "15: corp1: <POINTOPOINT,...> mtu 1500 ... link/none  promiscuity 0 tun type tun pi off vnet_hdr off persist off", true},
+		// Tunnels by name when the detail carries no kind.
+		{"tailscale0", "", true},
+		{"wg0", "", true},
+		{"tun0", "", true},
+		{"nebula1", "", true},
+	} {
+		if got := overlayLink(tc.dev, tc.detail); got != tc.want {
+			t.Errorf("overlayLink(%q, …) = %v, want %v", tc.dev, got, tc.want)
+		}
+	}
+}
+
 func TestPinTunDevNoTunBlock(t *testing.T) {
 	if _, err := pinTunDev([]byte("lighthouse:\n    hosts:\n        - 10.42.0.1\n"), nebTunDev); err == nil {
 		t.Fatal("want an error when the config has no tun block")

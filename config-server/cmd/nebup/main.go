@@ -137,6 +137,7 @@ func runNebula(path, dnsMode string) error {
 	if dev != "" {
 		go pointSplitDNS(dev, hub, nebderive.DNSZone)
 	}
+	warnOverlayUnderlay(adapted)
 
 	argv := []string{bin, "-config", path}
 	if os.Geteuid() != 0 {
@@ -156,15 +157,95 @@ func runNebula(path, dnsMode string) error {
 const nebTunDev = "nebula0"
 
 // meshConfYAML is the slice of the hub-rendered config nebup reads (the
-// hub's overlay address doubles as the mesh resolver) and writes (the
-// TUN device name resolvectl needs as its handle).
+// hub's overlay address doubles as the mesh resolver, the host map
+// carries its public endpoint) and writes (the TUN device name
+// resolvectl needs as its handle).
 type meshConfYAML struct {
-	Lighthouse struct {
+	StaticHostMap map[string][]string `yaml:"static_host_map"`
+	Lighthouse    struct {
 		Hosts []string `yaml:"hosts"`
 	} `yaml:"lighthouse"`
 	Tun struct {
 		Dev string `yaml:"dev"`
 	} `yaml:"tun"`
+}
+
+// warnOverlayUnderlay checks which link would carry this machine's
+// traffic to the hub's public endpoint and warns when that link is
+// itself an overlay (Tailscale exit node, corporate VPN, …). Nebula
+// happily uses such a link as underlay: everything hairpins through the
+// VPN's exit, direct LAN paths are lost, and any punch measurement is
+// invalid — this bit us twice while wg0 existed. A warning, not a
+// refusal: full-tunnel VPN can be deliberate, and the mesh still works
+// through it (relayed).
+//
+// Best-effort by design: no `ip` binary (Darwin), an unresolvable
+// endpoint, or an unparsable route just skip the check — nebula's own
+// errors cover those cases better.
+func warnOverlayUnderlay(cfg []byte) {
+	var mc meshConfYAML
+	if err := yaml.Unmarshal(cfg, &mc); err != nil {
+		return
+	}
+	for _, endpoints := range mc.StaticHostMap {
+		for _, ep := range endpoints {
+			host, _, err := net.SplitHostPort(ep)
+			if err != nil {
+				continue
+			}
+			ips, err := net.LookupIP(host)
+			if err != nil || len(ips) == 0 {
+				continue
+			}
+			ipBin, err := exec.LookPath("ip")
+			if err != nil {
+				return // no iproute2 (Darwin): skip the check
+			}
+			route, err := exec.Command(ipBin, "-o", "route", "get", ips[0].String()).Output()
+			if err != nil {
+				continue
+			}
+			dev := routeDev(string(route))
+			if dev == "" {
+				continue
+			}
+			detail, _ := exec.Command(ipBin, "-d", "-o", "link", "show", "dev", dev).Output()
+			if overlayLink(dev, string(detail)) {
+				log.Printf("WARNING: the route to the hub (%s → %s) goes over %q, which looks like another overlay (VPN/exit node).", ep, ips[0], dev)
+				log.Printf("WARNING: nebula will use it as underlay — traffic hairpins through that tunnel and direct LAN paths are lost. Disconnect it for direct paths.")
+			}
+			return // one endpoint decides; the hub has exactly one
+		}
+	}
+}
+
+// routeDev extracts the outgoing device from `ip -o route get` output,
+// e.g. "1.2.3.4 via 10.0.0.1 dev wlp3s0 src 10.0.0.42 uid 1000".
+func routeDev(route string) string {
+	fields := strings.Fields(route)
+	for i, f := range fields {
+		if f == "dev" && i+1 < len(fields) {
+			return fields[i+1]
+		}
+	}
+	return ""
+}
+
+// overlayLink reports whether a link is itself a tunnel, judged by its
+// `ip -d -o link show` detail (link kind: tun, wireguard, …) with the
+// device name as a fallback for kinds iproute2 renders unhelpfully.
+func overlayLink(dev, detail string) bool {
+	for _, kind := range []string{" tun ", " tap ", " wireguard ", " ipip ", " gre ", " vti ", " ip6tnl ", " ppp "} {
+		if strings.Contains(detail, kind) {
+			return true
+		}
+	}
+	for _, prefix := range []string{"tun", "tap", "wg", "tailscale", "nebula", "utun", "zt", "ppp", "vpn"} {
+		if strings.HasPrefix(dev, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // adaptSplitDNS decides whether this run gets split DNS and pins the
