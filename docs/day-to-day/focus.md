@@ -3,20 +3,20 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Mesh v2 **phase 2 step 3** (task 1afafb50): move the hub's
-control-channel duties (config-over-tunnel serving, source-IP auth,
-auto-bootstrap dials) from `wg.tnet` to the nebula netstack, then strip
-wg0 from compose and delete the hub's wg* code. Steps 1–2 landed
-2026-07-31: mesh certSANs live, cluster endpoint is cp1's mesh address,
-talosconfig/kubeconfig re-pointed.
+**Now:** Mesh v2 phase 2 is **complete** (2026-07-30): wg0 deleted,
+one overlay, one derivation tree, invariant 5 unqualified. No active
+build focus — next is either quality-of-life on the mesh (laptop
+split-DNS, task 04126746) or leaving the mesh to dogfood and picking
+up deferred debt (sealed-secrets upgrade 4d6d9e26, EPHEMERAL media
+disk be79fbb1).
 
-**Toward goal:** "Mesh v2" in `desired-state/goals.md` — one overlay,
-one derivation tree, LAN-direct peer paths. Step 3 closes invariant 5's
-bounded dual-overlay exception; the DHCP-lease-drift failure class
-(invariant 7's live example) is already retired by step 2.
+**Toward goal:** "Mesh v2" in `desired-state/goals.md` — achieved in
+its committed scope (LAN-direct peer paths, phone on the mesh, single
+overlay). TV client and remote-direct paths remain explicitly deferred
+(ADR-0006, task 2e1bef85).
 
 **Out of scope:**
-- Laptop `.mesh.internal` split-DNS (task 04126746, +nice).
 - Phone onboarding UX (+later; recurs at 90-day cert renewal).
-- TV APK (2e1bef85), direct remote paths (ADR-0006, IPv6 trigger),
-  auto-enroll for undeclared names (thread a7920bda).
+- Auto-enroll for undeclared device names (thread a7920bda — needs an
+  invariant-1 decision first).
+- KMS-only disk encryption (ADR-0004 posture stands).

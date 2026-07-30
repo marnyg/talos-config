@@ -199,13 +199,18 @@ and passed** (decision c4f07507) — enrollment via the device flow
 worked, the import UX is poor but workable at a 90-day cadence. Phase 2
 proceeds on drivers 1 (LAN), 2 (phones), and 3 (consolidation).
 
-**Phase 2 (uuid 1afafb50)** — cutover, in order:
-1. Add nebula name + IP to certSANs (additive, safe).
+**Phase 2 (uuid 1afafb50)** — cutover, in order. **COMPLETE
+2026-07-30**: steps 1–2 landed 2026-07-31 (sic — tracker dates),
+step 3 landed 2026-07-30 in two commits (`2fd66df` control channel
+onto the mesh, `c9c7360` wg0 deleted; ADR-0007 supersedes ADR-0003,
+invariant 5's dual-overlay exception closed).
+1. Add nebula name + IP to certSANs (additive, safe). ✓
 2. Move cluster endpoint to the node's nebula IP; re-point
-   talosconfig/kubeconfig.
-3. Strip wg0 from compose; remove wg* code from the hub
-   (wgbind/wgstack/wgdns/wgenroll/wgup — the derivation pattern
-   survives in the nebula code).
+   talosconfig/kubeconfig. ✓
+3. Strip wg0 from compose; remove wg* code from the hub ✓
+   (wgbind/wgstack/wgdns/wgenroll/wgup deleted — the derivation
+   pattern survives as `masterderive` + `nebderive`; offline
+   break-glass moved to `cmd/recover`).
 
 ## Kill criteria (any one fires → stop, keep wg0, do the LAN shortcut)
 

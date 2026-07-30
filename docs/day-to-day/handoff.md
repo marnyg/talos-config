@@ -5,46 +5,44 @@
 
 ## Last session
 
-2026-07-31 — **Phase 2 steps 1 and 2 landed and verified** (task
-1afafb50). Two deploy+unseal cycles, both budgeted.
+2026-07-30 — **Phase 2 step 3 landed, deployed, verified: wg0 is gone.
+Mesh v2 phase 2 is complete** (task 1afafb50). Three commits, two
+deploy+unseal cycles, one node apply.
 
-- **Step 1, mesh certSANs** (`cf1de35`): `nebMachinePatch` now emits a
-  two-document patch — a `machine.certSANs` merge (overlay IP +
-  `<name>.mesh.internal`) ahead of the ExtensionServiceConfig — and
-  `apiServer.certSANs` gained cp1's mesh identity. Verified live: apid
-  and kube-apiserver certs carry `cp1.mesh.internal` + `10.42.218.125`;
-  `talosctl -e 10.42.218.125` verifies TLS over the overlay; mesh DNS
-  answers the name.
-- **Step 2, endpoint cutover** (`6131602`): `cluster.controlPlane.endpoint`
-  and cp1's `meta.yaml ip:` (the talosctl/apply dial target) moved to
-  `10.42.218.125`; local talosconfig/kubeconfig re-pointed. Apply went
-  through without reboot; apiserver refused connections ~30s and
-  reconverged; node Ready, workloads healthy. The lease-drift port-scan
-  dance is retired.
+- **Part 1** (`2fd66df`): control channel dual-homed onto the mesh —
+  `serveMeshHTTP` (hello + admin-gated `/config` on the overlay,
+  tcp/80), auto-bootstrap dials via the mesh netstack, `apply` fetches
+  from `http://10.42.0.1`. Verified live before anything was deleted.
+- **Part 2** (`c9c7360`, −2179 lines): unseal inverted into a new
+  `hubManager` (master + age decrypt + KMS + mesh fan-out);
+  `MESH_CA_PIN` replaces `WG_SERVER_PUBKEY`; all wg* code, `cmd/wgup`,
+  `cmd/wgping`, udp/51820 deleted; `wgderive` → `masterderive` (HKDF
+  info strings FROZEN — they still say "wg", renaming re-keys the
+  fleet); new `cmd/recover` for offline break-glass; ADR-0007
+  supersedes ADR-0003; invariant 5's dual-overlay exception closed.
+- **Verified on cp1**: only `nebula0` link remains; apid SANs are LAN
+  (10.0.0.31) + mesh identity only; node Ready after the expected ~30s
+  apiserver blip; auto-bootstrap reports etcd-running over the mesh;
+  `/sealed` = `hub: unsealed / mesh: up`.
 
 ## Loose threads
 
-- **Laptop can't resolve `.mesh.internal`** (task 04126746, +nice): the
-  SAN is in the certs and the hub zone answers, but nothing split-DNSes
-  the suffix to `10.42.0.1` locally — `talosctl -e cp1.mesh.internal`
-  fails on resolution. IP endpoints everywhere meanwhile.
-- **Cluster API now rides `ext-nebula`** starting on the node (the
-  endpoint address lives on nebula0), where wg0 was a native Talos
-  interface. Local-only dependency (tun comes up without the
-  lighthouse); recovery via the LAN-address SANs is intact. Judged
-  consistent with invariant 4 — noted, not silently absorbed.
-- `argocd-dex-server` pod in Error is pre-existing (also in notes.md's
-  absorbed-handover list), not endpoint-move fallout.
+- **First `apply` after a hub redeploy can time out**: laptop→cp1
+  tunnel needs lighthouse re-registration + handshake. A ping to the
+  node's mesh address warms it; retry then succeeds. Candidate for a
+  retry loop in the apply script if it recurs.
+- `/sealed` now 503s on mesh startup failure (phase-2 inversion) — an
+  external pinger pointed at it will page for mesh-down, not just
+  sealed. Nothing is pointed at it yet.
+- Laptop `.mesh.internal` split-DNS still missing (task 04126746) —
+  bites slightly harder now that the mesh is the only overlay.
+- `argocd-dex-server` Error pod: pre-existing, still unowned.
 
 ## Suggested next steps
 
-- **Phase 2 step 3** — strip wg0 from compose, delete hub wg* code.
-  Scoped during this session: it is *not* just deletion — the hub's
-  `/config`-over-tunnel serving, ADR-0003's source-IP authentication,
-  and auto-bootstrap dials all ride `wg.tnet` and must move to the
-  nebula netstack (`nebstack.Listen` exists, unused for HTTP); main.go
-  couples `--mesh-port` to `--wg-port` for unsealing; `wgup`/wg admin
-  enrollment retire. Expect ADR-0003 to need superseding (mesh
-  source-IP or cert-name as authentication).
-- Closing invariant 5's dual-overlay exception is the payoff — if step
-  3 stalls, that exception is the thing to question.
+- Close out phase 2 in the task tracker (task 1afafb50) and close the
+  self-resolved items: 30 (wg0/service-CIDR overlap), 31 (wgderive
+  divergence), 32 (dual-overlay hairpin).
+- Push — main is ~14 commits ahead of origin.
+- Pick next focus: laptop split-DNS (small), sealed-secrets upgrade
+  (debt 4d6d9e26), or the EPHEMERAL media-disk thread (be79fbb1).

@@ -5,30 +5,35 @@ legacy `docs/handover.md` so it survives that file's deletion. Facts here
 decay — each block carries the date it was last confirmed. If you verify
 or change something, update the date.
 
-## Cluster — _last verified 2026-07-24_
+## Cluster — _last verified 2026-07-30_
 
 - Single control plane `b0:41:6f:15:3b:8f`, Talos v1.12.6, k8s v1.32.3.
 - LUKS2 on STATE + EPHEMERAL.
-- Cluster endpoint `https://10.99.0.54:6443` — the node's **derived
-  tunnel IP**, deliberately not its DHCP LAN address (invariant 7; DHCP
-  handed out four leases in one day before this moved).
-- Media stack 6/6 Running. SealedSecrets (`newshosting`, `nzbgeek`)
+- Cluster endpoint `https://10.42.218.125:6443` — the node's **derived
+  mesh address**, deliberately not its DHCP LAN address (invariant 7;
+  DHCP handed out four leases in one day before this moved off the LAN,
+  and the wg0 address it moved to next died with phase 2).
+- Media stack Running. SealedSecrets (`newshosting`, `nzbgeek`)
   unseal via the inlineManifest-provisioned key pair.
-- Admin access is tunnel-only: `talos/talosconfig` (local, gitignored)
-  points at 10.99.0.54; NodePorts serve on wg0 (Jellyfin
-  `10.99.0.54:30096`).
+- Admin access is mesh-only: `talos/talosconfig` + `kubeconfig` (local,
+  gitignored) point at 10.42.218.125; NodePorts serve on the overlay
+  (Jellyfin `10.42.218.125:30096`). Recovery path: LAN address SANs
+  (`talosctl -e 10.0.0.<lease>`) with owner keys.
+- The node's only overlay link is `nebula0` (`ext-nebula` extension);
+  wg0 was removed by the 2026-07-30 apply.
 - _2026-07-29_: upgraded in place to the nebula schematic (see Mesh
   below). EPHEMERAL survived, as expected since Talos 1.5 — etcd and
   `/var/media` intact, media stack unaffected.
 
-## Mesh (nebula, phase 1) — _last verified 2026-07-29_
+## Mesh (nebula) — _last verified 2026-07-30_
 
-Both overlays run at once; **wg0 still carries production traffic**
-(talosconfig, KMS, auto-bootstrap, `nix run .#apply`). The mesh is on
-trial — see the kill criteria in `../../mesh-v2-nebula.md`.
+**The mesh is the only overlay and the control channel** (phase 2
+complete 2026-07-30): talosconfig, `nix run .#apply` (over
+`http://10.42.0.1`), auto-bootstrap dials, and mesh DNS all ride it.
+wg0 is deleted — hub code, udp/51820, and the node interface.
 
-- Hub is lighthouse + relay on `10.42.0.1`, fly udp/4242, same dedicated
-  IPv4 as wg0 (`213.188.219.215`).
+- Hub is lighthouse + relay on `10.42.0.1`, fly udp/4242, dedicated
+  IPv4 `213.188.219.215`.
 - cp1 runs `siderolabs/nebula` 1.10.3 from factory schematic
   `011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598`,
   service `ext-nebula`, interface `nebula0`, overlay `10.42.218.125/16`.
@@ -128,13 +133,15 @@ trial — see the kill criteria in `../../mesh-v2-nebula.md`.
   retransmits against the mesh's 4 and came out *slower*, which is
   underlay noise rather than the overlay winning.
 
-## Hub on fly — _last verified 2026-07-29_
+## Hub on fly — _last verified 2026-07-30_
 
 - `fly secrets list` is **empty**. Everything derives from the wallet
-  signature at unseal: wg keys (server/machine/admin), tunnel IPs, KMS
-  seal keys, recovery passphrases, the age identity that decrypts
-  `clusters/**/*.age` into tmpfs, and — since 2026-07-29 — the nebula
-  mesh CA and all mesh identities.
+  signature at unseal: the nebula mesh CA and all mesh identities, KMS
+  seal keys, recovery passphrases, and the age identity that decrypts
+  `clusters/**/*.age` into tmpfs (`masterderive` + `nebderive`).
+- `MESH_CA_PIN` (fly.toml, public) pins the derived CA fingerprint
+  `b881d6ff…`; a wrong-wallet unseal fails loudly. `/sealed` returns
+  503 while sealed **or** when the mesh failed to start.
 - Public age recipient is committed at `talos/age-recipient.txt`
   (re-derive with `recover -age-recipient -sig <unseal-sig>`). The SSH key
   remains a break-glass recipient.

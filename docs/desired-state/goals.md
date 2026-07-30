@@ -14,7 +14,10 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
 - **Mesh v2**: nebula replaces wg0 — **direct peer paths on the LAN**
   (LAN traffic never hairpins through fly), phones/TV join the network,
   one overlay, one derivation tree. Spike gate passed 2026-07-29
-  (ADR-0002 Accepted); now in phase 1 (dual overlay). Full record in
+  (ADR-0002); **phase 2 complete 2026-07-30** — wg0 deleted, mesh is
+  the sole overlay and control channel (ADR-0007). Remaining scope
+  deliberately deferred: TV client (task 2e1bef85), remote-direct
+  paths (ADR-0006). Full record in
   [`../mesh-v2-nebula.md`](../mesh-v2-nebula.md).
   _Remote_ peer paths are **not** a goal: measured 2026-07-30 as
   relay-by-default because ordinary remote networks (cellular CGNAT,

@@ -12,12 +12,14 @@
 - 2026-07-29 — Every fly deploy re-seals the hub: derived roles (wg,
   KMS, enrollment) are down until a wallet unseal at `/status`. The
   tunnel HTTP listener (hello + admin `/config`) only exists post-unseal.
-- 2026-07-29 — `nix run .#apply` now requires being on the wg tunnel as
+- 2026-07-29 — ~~`nix run .#apply` now requires being on the wg tunnel as
   an admin peer (`wgup`) and an unsealed hub. `APPLY_HUB` overrides the
-  default `http://10.99.0.1`.
-- 2026-07-29 — `wgping` binaries built before the tunnel-HTTP change
-  hang against the new hub (the hello no longer speaks unprompted —
-  rebuild wgping).
+  default `http://10.99.0.1`.~~ Superseded by step 3 (2026-07-30):
+  apply rides the mesh as an admin device (`nebup`), default
+  `http://10.42.0.1`.
+- 2026-07-29 — ~~`wgping` binaries built before the tunnel-HTTP change
+  hang against the new hub.~~ Tool deleted with wg0 (2026-07-30);
+  offline derivations moved to `cmd/recover`.
 - 2026-07-29 — nebula cert-version skew: `nebula-cert` ≥1.10 emits V2
   certs by default; nebula ≤1.9 (e.g. alpine's apk package) can't parse
   them. Anything minting or consuming mesh certs must be ≥1.10; the hub
@@ -62,11 +64,12 @@
   now refuses the whole `/config` serve, provisioning included. Pure
   derivation, so no overlay dependency, but it does mean a repo mistake
   in mesh addressing blocks installs — the same posture wg0 already has.
-- 2026-07-29 — the mesh is enabled per-deploy with `--mesh-port` and
-  requires `--wg-port` (phase 1 is a dual overlay, one master). A mesh
-  startup failure is deliberately non-fatal: `/sealed` reports
-  `mesh: DOWN (<err>)` but still returns 200, because wg0 carries
-  production traffic while the mesh is on trial.
+- 2026-07-29 — ~~the mesh is enabled per-deploy with `--mesh-port` and
+  requires `--wg-port`… a mesh startup failure is non-fatal, `/sealed`
+  still returns 200.~~ Inverted by step 3 (2026-07-30): `--mesh-port`
+  is standalone and `/sealed` returns **503 on mesh startup failure**
+  (it still never blocks the unseal itself — KMS rides the WAN,
+  invariant 4).
 
 - 2026-07-30 — **Any overlay carrying the route to the hub/peer poisons a
   punch measurement**: nebula will use it as underlay and hairpin. Bit us
@@ -114,6 +117,21 @@
   the hub's leaf fingerprint rotates per deploy+unseal cycle while the
   issuer (derived CA `b881d6ff…`) stays fixed. Never pin the hub's leaf
   fingerprint anywhere — pin the CA.
+
+- 2026-07-30 — **wg0 is fully deleted** (phase 2 step 3): anything
+  referencing `10.99.0.x`, `wgup`, `wgping`, `talos.wg`, or udp/51820
+  is dead — including the wg-flavoured notes above, kept struck-through
+  for history. Laptop cleanup owed: remove any leftover `talos-laptop`
+  wireguard interface / wgup autostart; `/tmp/wg-talos.conf` is
+  obsolete (resolves the first absorbed-handover item below).
+- 2026-07-30 — **first `apply` after a hub redeploy can time out**:
+  the laptop→cp1 mesh tunnel needs lighthouse re-registration + a
+  fresh handshake after the hub restarts. Warm it with
+  `ping 10.42.218.125`, then retry — succeeded on second attempt.
+- 2026-07-30 — `MESH_CA_PIN` in fly.toml pins the derived mesh CA
+  (`b881d6ff…`); a wrong-wallet unseal now fails loudly instead of
+  bringing up an untrusted mesh. Re-derive offline with
+  `recover -ca-fingerprint -sig <unseal-sig>`.
 
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
