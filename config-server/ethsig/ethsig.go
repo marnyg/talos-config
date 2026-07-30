@@ -1,10 +1,10 @@
-package main
-
-// Sign-In-with-Ethereum-style approval: the admin proves control of an
-// allowlisted address by signing a canonical message (EIP-191
-// personal_sign) over the approval action. Verification is pure offline
-// signature recovery — no OIDC provider, no chain RPC (EOA only, by
-// design; see the repo decision log).
+// Package ethsig verifies Ethereum EIP-191 personal_sign signatures:
+// pure offline signature recovery — no OIDC provider, no chain RPC (EOA
+// only, by design; see the repo decision log). It is the hub-side
+// counterpart of walletsign (the client half): every wallet-gated flow
+// — device-flow approval, /status login, hub unseal, mesh enrollment —
+// reduces to RecoverPersonalSign plus an address allowlist check.
+package ethsig
 
 import (
 	"encoding/hex"
@@ -16,29 +16,25 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-func keccak256(data []byte) []byte {
+// Keccak256 is Ethereum's hash: the legacy (pre-FIPS) Keccak-256, used
+// for both message hashing and address derivation.
+func Keccak256(data []byte) []byte {
 	h := sha3.NewLegacyKeccak256()
 	h.Write(data)
 	return h.Sum(nil)
 }
 
-// approvalMessage is the canonical text the admin signs. The nonce is
-// generated per device authorization, making every message unique.
-func approvalMessage(action, userCode, nonce string) string {
-	return fmt.Sprintf(
-		"talos config-server machine approval\naction: %s\nuser_code: %s\nnonce: %s",
-		action, userCode, nonce,
-	)
-}
+// ErrBadSignature is returned for signatures that are not 65-byte
+// r||s||v hex at all — as opposed to well-formed ones that recover to
+// the wrong address.
+var ErrBadSignature = errors.New("malformed signature")
 
-var errBadSignature = errors.New("malformed signature")
-
-// recoverPersonalSign recovers the lowercase 0x address that produced an
+// RecoverPersonalSign recovers the lowercase 0x address that produced an
 // Ethereum personal_sign signature (r||s||v hex) over message.
-func recoverPersonalSign(message, sigHex string) (string, error) {
+func RecoverPersonalSign(message, sigHex string) (string, error) {
 	sig, err := hex.DecodeString(strings.TrimPrefix(strings.TrimSpace(sigHex), "0x"))
 	if err != nil || len(sig) != 65 {
-		return "", errBadSignature
+		return "", ErrBadSignature
 	}
 
 	v := sig[64]
@@ -46,7 +42,7 @@ func recoverPersonalSign(message, sigHex string) (string, error) {
 		v -= 27
 	}
 	if v > 1 {
-		return "", errBadSignature
+		return "", ErrBadSignature
 	}
 
 	// decred's RecoverCompact wants [recoveryCode || r || s] with
@@ -56,7 +52,7 @@ func recoverPersonalSign(message, sigHex string) (string, error) {
 	copy(compact[1:], sig[:64])
 
 	prefixed := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
-	hash := keccak256([]byte(prefixed))
+	hash := Keccak256([]byte(prefixed))
 
 	pub, _, err := secpecdsa.RecoverCompact(compact, hash)
 	if err != nil {
@@ -64,12 +60,12 @@ func recoverPersonalSign(message, sigHex string) (string, error) {
 	}
 
 	uncompressed := pub.SerializeUncompressed() // 0x04 || X || Y
-	addr := keccak256(uncompressed[1:])[12:]
+	addr := Keccak256(uncompressed[1:])[12:]
 	return "0x" + hex.EncodeToString(addr), nil
 }
 
-// normalizeAddress lowercases and validates an 0x address.
-func normalizeAddress(addr string) (string, error) {
+// NormalizeAddress lowercases and validates an 0x address.
+func NormalizeAddress(addr string) (string, error) {
 	a := strings.ToLower(strings.TrimSpace(addr))
 	if !strings.HasPrefix(a, "0x") || len(a) != 42 {
 		return "", fmt.Errorf("invalid ethereum address %q", addr)

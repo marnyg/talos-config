@@ -10,6 +10,9 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	secpecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+
+	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/ethsig"
 )
 
 // wellKnownAddr is the Ethereum address of private key 0x...01 — an
@@ -28,51 +31,12 @@ func testKey(t *testing.T) *secp256k1.PrivateKey {
 func personalSign(t *testing.T, priv *secp256k1.PrivateKey, message string) string {
 	t.Helper()
 	prefixed := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
-	hash := keccak256([]byte(prefixed))
+	hash := ethsig.Keccak256([]byte(prefixed))
 	compact := secpecdsa.SignCompact(priv, hash, false) // [v+27 || r || s]
 	sig := make([]byte, 65)
 	copy(sig[:64], compact[1:])
-	sig[64] = compact[0] // keep 27/28; recoverPersonalSign handles both
+	sig[64] = compact[0] // keep 27/28; RecoverPersonalSign handles both
 	return "0x" + hex.EncodeToString(sig)
-}
-
-func TestRecoverPersonalSignKnownKey(t *testing.T) {
-	priv := testKey(t)
-	msg := approvalMessage("approve", "AAAA-BBBB", "d34db33f")
-
-	addr, err := recoverPersonalSign(msg, personalSign(t, priv, msg))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if addr != wellKnownAddr {
-		t.Fatalf("recovered %s, want %s", addr, wellKnownAddr)
-	}
-
-	// A different message must not recover to the same address.
-	other, err := recoverPersonalSign("tampered", personalSign(t, priv, msg))
-	if err == nil && other == wellKnownAddr {
-		t.Fatal("tampered message recovered to the signing address")
-	}
-}
-
-func TestRecoverPersonalSignMalformed(t *testing.T) {
-	for _, sig := range []string{"", "0x", "0xdeadbeef", "not-hex"} {
-		if _, err := recoverPersonalSign("msg", sig); err == nil {
-			t.Fatalf("expected error for signature %q", sig)
-		}
-	}
-}
-
-func TestNormalizeAddress(t *testing.T) {
-	got, err := normalizeAddress(" 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf ")
-	if err != nil || got != wellKnownAddr {
-		t.Fatalf("got %q, %v", got, err)
-	}
-	for _, bad := range []string{"", "0x123", "7e5f4552091a69125d5dfcb7b8c2659029395bdf", "0xzz5f4552091a69125d5dfcb7b8c2659029395bdf"} {
-		if _, err := normalizeAddress(bad); err == nil {
-			t.Fatalf("expected error for %q", bad)
-		}
-	}
 }
 
 func TestHTTPSignatureApproval(t *testing.T) {
@@ -83,7 +47,7 @@ func TestHTTPSignatureApproval(t *testing.T) {
 	defer ts.Close()
 
 	priv := testKey(t)
-	da := s.store.begin(authKindMachine, "talos-pxe", map[string]string{"mac": "aa:bb:cc:dd:ee:ff"})
+	da := s.store.Begin(deviceflow.KindMachine, "talos-pxe", map[string]string{"mac": "aa:bb:cc:dd:ee:ff"})
 
 	post := func(action, sig string) int {
 		resp, err := http.PostForm(ts.URL+"/verify", url.Values{
@@ -117,13 +81,13 @@ func TestHTTPSignatureApproval(t *testing.T) {
 	}
 
 	// The machine's poll now yields a token.
-	token, errCode := s.store.poll(da.DeviceCode)
+	token, errCode := s.store.Poll(da.DeviceCode)
 	if errCode != "" || token == "" {
 		t.Fatalf("expected token after wallet approval, got err=%q", errCode)
 	}
 
 	// Admin token path is disabled when unset.
-	da2 := s.store.begin(authKindMachine, "talos-pxe", nil)
+	da2 := s.store.Begin(deviceflow.KindMachine, "talos-pxe", nil)
 	resp, err := http.PostForm(ts.URL+"/verify", url.Values{
 		"user_code": {da2.UserCode}, "action": {"approve"}, "admin_token": {"anything"},
 	})

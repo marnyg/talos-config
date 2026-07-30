@@ -86,7 +86,7 @@ wallet sig (EIP-191 over frozen message)
   after a device wipe re-derives the same identity.
 - **Headless/appliance devices** (TV): admin-mediated enrollment
   (`nebup -name androidtv -print`, transfer config into the app).
-  RFC 8628 device flow (existing `deviceflow.go`) reserved for devices
+  RFC 8628 device flow (the `deviceflow` package) reserved for devices
   that can run an enrollment client. The wallet never touches the
   device; SIWE authorizes issuance — same pattern as PXE machines.
 - **DNS**: the hub serves the on-tunnel zone over the nebula netstack

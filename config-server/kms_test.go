@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
@@ -146,7 +147,7 @@ func TestKMSMissingUUID(t *testing.T) {
 // recovery passphrase; the WG-only output stays free of it.
 func TestDiskEncryptionInjection(t *testing.T) {
 	m, _ := newTestKMS(t)
-	s := &server{root: m.root, store: newAuthStore(), hub: m, adminAddrs: m.adminAddrs, kmsAdvertise: "https://kms.example:443"}
+	s := &server{root: m.root, store: deviceflow.NewStore(), hub: m, adminAddrs: m.adminAddrs, kmsAdvertise: "https://kms.example:443"}
 
 	fetch := func() (int, string) {
 		rec := httptest.NewRecorder()
@@ -191,7 +192,7 @@ func TestDiskEncryptionInjection(t *testing.T) {
 // handler → KMS service, sharing the port with plain HTTP.
 func TestKMSOverH2C(t *testing.T) {
 	m, k := newTestKMS(t)
-	s := &server{root: m.root, store: newAuthStore(), hub: m, adminAddrs: m.adminAddrs, kms: k, kmsAdvertise: "grpc://ignored", sessions: newSessionStore()}
+	s := &server{root: m.root, store: deviceflow.NewStore(), hub: m, adminAddrs: m.adminAddrs, kms: k, kmsAdvertise: "grpc://ignored", sessions: newSessionStore()}
 
 	ts := httptest.NewServer(s.handler())
 	defer ts.Close()

@@ -31,6 +31,8 @@ import (
 	kmsapi "github.com/siderolabs/kms-client/api/kms"
 	"github.com/siderolabs/talos/pkg/machinery/config/configpatcher"
 
+	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
@@ -197,7 +199,7 @@ func (s *server) serveTimePatches(mac string, m machine, machines map[string]mac
 type server struct {
 	root string // talos/ directory
 
-	store        *authStore
+	store        *deviceflow.Store
 	sessions     *sessionStore // SIWE sessions for /status
 	requireAuth  bool
 	clientID     string        // expected OAuth client_id ("" = accept any)
@@ -269,7 +271,7 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 	token := bearerToken(r)
 	if s.requireAuth {
-		if err := s.store.validate(token, mac); err != nil {
+		if err := s.store.Validate(token, mac); err != nil {
 			log.Printf("rejected config request for %s: %v", mac, err)
 			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -287,20 +289,18 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 	if s.requireAuth {
-		s.store.consume(token) // single-use: burn only after a successful serve
+		s.store.Consume(token) // single-use: burn only after a successful serve
 	}
 	s.recordFetch(mac)
 	log.Printf("served config for %s", mac)
 }
 
 // handleTunnelConfig serves hub-composed configs over the overlay
-// listeners for `nix run .#apply`. No bearer token: the route is only
-// reachable on an overlay — the mesh (serveMeshHTTP, gated by derived
-// admin device addresses under the cert-group firewall) and, until
-// phase 2 finishes, wg0 (serveTunnelHTTP, gated by derived admin peer
-// addresses) — and membership is wallet-rooted via enrollment either
-// way. It does not consume device-flow tokens or record fetches — the
-// machine itself is not fetching.
+// listener for `nix run .#apply`. No bearer token: the route is only
+// reachable on the mesh (serveMeshHTTP, gated by derived admin device
+// addresses under the cert-group firewall), and membership is
+// wallet-rooted via enrollment. It does not consume device-flow tokens
+// or record fetches — the machine itself is not fetching.
 func (s *server) handleTunnelConfig(w http.ResponseWriter, r *http.Request) {
 	mac := r.URL.Query().Get("mac")
 	if mac == "" {
@@ -377,7 +377,7 @@ func main() {
 		if strings.TrimSpace(a) == "" {
 			continue
 		}
-		norm, err := normalizeAddress(a)
+		norm, err := ethsig.NormalizeAddress(a)
 		if err != nil {
 			log.Fatalf("--admin-address: %v", err)
 		}
@@ -428,7 +428,7 @@ func main() {
 
 	s := &server{
 		root:         *root,
-		store:        newAuthStore(),
+		store:        deviceflow.NewStore(),
 		sessions:     newSessionStore(),
 		requireAuth:  *requireAuth,
 		clientID:     *clientID,

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 )
 
@@ -96,7 +97,7 @@ func (s *server) handleStatusLogin(w http.ResponseWriter, r *http.Request) {
 		s.renderLogin(w, "login challenge expired or already used — try again")
 		return
 	}
-	addr, err := recoverPersonalSign(loginMessage(nonce), sig)
+	addr, err := ethsig.RecoverPersonalSign(loginMessage(nonce), sig)
 	if err != nil {
 		log.Printf("status login: signature verification failed: %v", err)
 		http.Error(w, "forbidden", http.StatusForbidden)
@@ -578,7 +579,7 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		snap := s.boot.status()
 		data.Boot = &snap
 	}
-	for _, da := range s.store.pending() {
+	for _, da := range s.store.Pending() {
 		data.Pending = append(data.Pending, verifyEntry{
 			Auth:       da,
 			MsgApprove: approvalMessage("approve", da.UserCode, da.Nonce),

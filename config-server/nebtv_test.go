@@ -13,6 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/slackhq/nebula/cert"
+
+	"github.com/marnyg/talos-config/config-server/deviceflow"
 )
 
 // tvStart POSTs the name form and extracts the device code the ticket
@@ -113,8 +115,8 @@ func TestMeshTVFlow(t *testing.T) {
 	}
 
 	// Only one pending flow, and it is ours, kind tv.
-	pending := s.store.pending()
-	if len(pending) != 1 || pending[0].Kind != authKindTV {
+	pending := s.store.Pending()
+	if len(pending) != 1 || pending[0].Kind != deviceflow.KindTV {
 		t.Fatalf("pending = %+v, want one tv flow", pending)
 	}
 	userCode := pending[0].UserCode
@@ -122,13 +124,13 @@ func TestMeshTVFlow(t *testing.T) {
 		t.Fatal("ticket page does not show the user code")
 	}
 
-	if _, errCode := pollToken(t, ts.URL, deviceCode); errCode != errAuthorizationPending {
-		t.Fatalf("pre-approval poll error = %q, want %q", errCode, errAuthorizationPending)
+	if _, errCode := pollToken(t, ts.URL, deviceCode); errCode != deviceflow.ErrCodeAuthorizationPending {
+		t.Fatalf("pre-approval poll error = %q, want %q", errCode, deviceflow.ErrCodeAuthorizationPending)
 	}
-	if err := s.store.approve(userCode); err != nil {
+	if err := s.store.Approve(userCode); err != nil {
 		t.Fatal(err)
 	}
-	s.store.byDeviceCode[deviceCode].lastPoll = s.store.now().Add(-2 * pollInterval)
+	skipSlowDown(s.store) // bypass the poll interval
 	token, errCode := pollToken(t, ts.URL, deviceCode)
 	if token == "" {
 		t.Fatalf("post-approval poll error = %q, want a token", errCode)
@@ -183,11 +185,11 @@ func TestMeshTVKindSeparation(t *testing.T) {
 
 	// Machine-kind token (as minted for a Talos config fetch), even one
 	// that smuggles a mesh_device identity key from the untrusted form.
-	da := s.store.begin(authKindMachine, "talos-pxe", map[string]string{"mesh_device": "androidtv"})
-	if err := s.store.approve(da.UserCode); err != nil {
+	da := s.store.Begin(deviceflow.KindMachine, "talos-pxe", map[string]string{"mesh_device": "androidtv"})
+	if err := s.store.Approve(da.UserCode); err != nil {
 		t.Fatal(err)
 	}
-	machineToken, errCode := s.store.poll(da.DeviceCode)
+	machineToken, errCode := s.store.Poll(da.DeviceCode)
 	if machineToken == "" {
 		t.Fatalf("poll error = %q", errCode)
 	}
@@ -196,15 +198,15 @@ func TestMeshTVKindSeparation(t *testing.T) {
 	}
 
 	// TV-kind token against the machine config validator.
-	da = s.store.begin(authKindTV, nebTVClientID, map[string]string{"mesh_device": "androidtv"})
-	if err := s.store.approve(da.UserCode); err != nil {
+	da = s.store.Begin(deviceflow.KindTV, nebTVClientID, map[string]string{"mesh_device": "androidtv"})
+	if err := s.store.Approve(da.UserCode); err != nil {
 		t.Fatal(err)
 	}
-	tvToken, errCode := s.store.poll(da.DeviceCode)
+	tvToken, errCode := s.store.Poll(da.DeviceCode)
 	if tvToken == "" {
 		t.Fatalf("poll error = %q", errCode)
 	}
-	if err := s.store.validate(tvToken, "b0-41-6f-15-3b-8f"); err == nil {
+	if err := s.store.Validate(tvToken, "b0-41-6f-15-3b-8f"); err == nil {
 		t.Fatal("tv token validated for a machine config fetch")
 	}
 }

@@ -7,10 +7,20 @@ package main
 // consistent with the rest of the server.
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
 )
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err) // crypto/rand failure is not recoverable
+	}
+	return hex.EncodeToString(b)
+}
 
 const (
 	loginNonceTTL = 5 * time.Minute

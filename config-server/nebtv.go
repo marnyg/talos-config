@@ -8,11 +8,11 @@ package main
 // the token endpoint and swaps the single-use token for its nebula
 // config over its own TLS session.
 //
-// Reuses deviceflow.go wholesale, which is the security argument in one
-// line: the QR is a *pointer to the approval page*, not a bearer
-// credential — worthless without an allowlisted wallet — and the token
-// it eventually mints is single-use, ten-minute, and bound server-side
-// to one declared media device (authKindTV; see deviceflow.go).
+// Reuses the deviceflow package wholesale, which is the security
+// argument in one line: the QR is a *pointer to the approval page*, not
+// a bearer credential — worthless without an allowlisted wallet — and
+// the token it eventually mints is single-use, ten-minute, and bound
+// server-side to one declared media device (deviceflow.KindTV).
 //
 // Media group only, by construction: the flow refuses to start for an
 // admins-group name, and refuses again at redemption in case the lists
@@ -28,6 +28,8 @@ import (
 	"net/http"
 
 	qrcode "github.com/skip2/go-qrcode"
+
+	"github.com/marnyg/talos-config/config-server/deviceflow"
 )
 
 // nebTVClientID labels TV enrollment flows in logs and on the approval
@@ -79,7 +81,7 @@ func (s *server) handleMeshTVStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	da := s.store.begin(authKindTV, nebTVClientID, map[string]string{"mesh_device": d.name})
+	da := s.store.Begin(deviceflow.KindTV, nebTVClientID, map[string]string{"mesh_device": d.name})
 	approveURL := externalBase(r) + "/status?user_code=" + da.UserCode
 
 	png, err := qrcode.Encode(approveURL, qrcode.Medium, 256)
@@ -97,8 +99,8 @@ func (s *server) handleMeshTVStart(w http.ResponseWriter, r *http.Request) {
 		"DeviceCode": da.DeviceCode,
 		"ApproveURL": approveURL,
 		"QRDataURI":  template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(png)),
-		"Interval":   int(pollInterval.Seconds()),
-		"ExpiresIn":  int(deviceAuthTTL.Seconds()),
+		"Interval":   int(deviceflow.PollInterval.Seconds()),
+		"ExpiresIn":  int(deviceflow.AuthTTL.Seconds()),
 	})
 	if err != nil {
 		log.Printf("rendering tv ticket: %v", err)
@@ -119,7 +121,7 @@ func (s *server) handleMeshTVConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing bearer token", http.StatusUnauthorized)
 		return
 	}
-	name, err := s.store.meshDeviceFor(token)
+	name, err := s.store.MeshDeviceFor(token)
 	if err != nil {
 		log.Printf("tv config: %v", err)
 		http.Error(w, "forbidden", http.StatusForbidden)
@@ -143,7 +145,7 @@ func (s *server) handleMeshTVConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	s.store.consume(token)
+	s.store.Consume(token)
 	log.Printf("tv enroll: served mesh config for %q (group %s)", d.name, d.group)
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", d.name+".yml"))

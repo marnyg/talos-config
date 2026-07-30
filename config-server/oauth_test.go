@@ -11,106 +11,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/marnyg/talos-config/config-server/deviceflow"
 )
 
-// fakeClock lets tests step time.
-type fakeClock struct{ t time.Time }
-
-func (c *fakeClock) now() time.Time          { return c.t }
-func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
-
-func newTestStore() (*authStore, *fakeClock) {
-	clock := &fakeClock{t: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
-	s := newAuthStore()
-	s.now = clock.now
-	return s, clock
-}
-
-func TestDeviceFlowHappyPath(t *testing.T) {
-	s, clock := newTestStore()
-
-	da := s.begin(authKindMachine, "talos-pxe", map[string]string{"mac": "b0-41-6f-15-3b-8f", "uuid": "abc"})
-
-	if _, errCode := s.poll(da.DeviceCode); errCode != errAuthorizationPending {
-		t.Fatalf("expected authorization_pending, got %q", errCode)
-	}
-
-	if err := s.approve(da.UserCode); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-
-	clock.advance(pollInterval)
-	token, errCode := s.poll(da.DeviceCode)
-	if errCode != "" || token == "" {
-		t.Fatalf("expected token, got err=%q", errCode)
-	}
-
-	// Token is bound to the MAC (normalization: dashes vs colons).
-	if err := s.validate(token, "b0:41:6f:15:3b:8f"); err != nil {
-		t.Fatalf("validate: %v", err)
-	}
-	if err := s.validate(token, "de:ad:be:ef:00:00"); err == nil {
-		t.Fatal("expected mac mismatch error")
-	}
-
-	// Single use.
-	s.consume(token)
-	if err := s.validate(token, "b0:41:6f:15:3b:8f"); err == nil {
-		t.Fatal("expected consumed token to be rejected")
-	}
-
-	// Device code is gone after minting.
-	if _, errCode := s.poll(da.DeviceCode); errCode != errInvalidGrant {
-		t.Fatalf("expected invalid_grant after redemption, got %q", errCode)
-	}
-}
-
-func TestDeviceFlowDenyAndSlowDown(t *testing.T) {
-	s, clock := newTestStore()
-	da := s.begin(authKindMachine, "talos-pxe", nil)
-
-	if _, errCode := s.poll(da.DeviceCode); errCode != errAuthorizationPending {
-		t.Fatalf("expected authorization_pending, got %q", errCode)
-	}
-	// Immediate re-poll violates the interval.
-	if _, errCode := s.poll(da.DeviceCode); errCode != errSlowDown {
-		t.Fatalf("expected slow_down, got %q", errCode)
-	}
-
-	if err := s.deny(da.UserCode); err != nil {
-		t.Fatalf("deny: %v", err)
-	}
-	clock.advance(pollInterval)
-	if _, errCode := s.poll(da.DeviceCode); errCode != errAccessDenied {
-		t.Fatalf("expected access_denied, got %q", errCode)
-	}
-}
-
-func TestDeviceAuthExpiry(t *testing.T) {
-	s, clock := newTestStore()
-	da := s.begin(authKindMachine, "talos-pxe", nil)
-
-	clock.advance(deviceAuthTTL + time.Second)
-	if _, errCode := s.poll(da.DeviceCode); errCode != errInvalidGrant {
-		t.Fatalf("expected invalid_grant for expired auth, got %q", errCode)
-	}
-	if err := s.approve(da.UserCode); err == nil {
-		t.Fatal("expected approve of expired code to fail")
-	}
-}
-
-func TestTokenNotBoundWithoutMAC(t *testing.T) {
-	s, clock := newTestStore()
-	da := s.begin(authKindMachine, "talos-pxe", map[string]string{"uuid": "abc"}) // no mac sent
-	if err := s.approve(da.UserCode); err != nil {
-		t.Fatal(err)
-	}
-	clock.advance(pollInterval)
-	token, _ := s.poll(da.DeviceCode)
-	// Without a mac identity there is nothing to bind against.
-	if err := s.validate(token, "any:mac:at:all:00:00"); err != nil {
-		t.Fatalf("expected unbound token to validate, got %v", err)
-	}
+// skipSlowDown backdates the store's clock view so the next poll is not
+// throttled by the RFC 8628 interval (store unit tests live in the
+// deviceflow package; HTTP tests here only need to get past it).
+func skipSlowDown(s *deviceflow.Store) {
+	s.Now = func() time.Time { return time.Now().Add(2 * deviceflow.PollInterval) }
 }
 
 // newTestServer builds a server over a synthetic talos root with one machine.
@@ -132,7 +41,7 @@ func newTestServer(t *testing.T) *server {
 
 	return &server{
 		root:        root,
-		store:       newAuthStore(),
+		store:       deviceflow.NewStore(),
 		sessions:    newSessionStore(),
 		requireAuth: true,
 		clientID:    "talos-pxe",
@@ -192,7 +101,7 @@ func TestHTTPFullFlow(t *testing.T) {
 		}
 		return body.AccessToken, body.Error
 	}
-	if _, errCode := pollToken(); errCode != errAuthorizationPending {
+	if _, errCode := pollToken(); errCode != deviceflow.ErrCodeAuthorizationPending {
 		t.Fatalf("expected authorization_pending, got %q", errCode)
 	}
 
@@ -221,9 +130,7 @@ func TestHTTPFullFlow(t *testing.T) {
 	}
 
 	// 6. Next poll gets a token (bypass the slow-down interval).
-	s.store.mu.Lock()
-	s.store.byDeviceCode[dc.DeviceCode].lastPoll = time.Time{}
-	s.store.mu.Unlock()
+	skipSlowDown(s.store)
 	token, errCode := pollToken()
 	if errCode != "" || token == "" {
 		t.Fatalf("expected token, got err=%q", errCode)

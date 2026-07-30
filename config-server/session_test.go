@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// fakeClock lets tests step time.
+type fakeClock struct{ t time.Time }
+
+func (c *fakeClock) now() time.Time          { return c.t }
+func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
+
 func newTestSessionStore() (*sessionStore, *fakeClock) {
 	c := &fakeClock{t: time.Now()}
 	s := newSessionStore()

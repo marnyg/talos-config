@@ -7,15 +7,34 @@ package main
 // and as a redirect for consoles that print the old URL.
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/ethsig"
 )
 
 const deviceCodeGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+
+// approvalMessage is the canonical text the admin signs. The nonce is
+// generated per device authorization, making every message unique.
+func approvalMessage(action, userCode, nonce string) string {
+	return fmt.Sprintf(
+		"talos config-server machine approval\naction: %s\nuser_code: %s\nnonce: %s",
+		action, userCode, nonce,
+	)
+}
+
+// constantTimeEqual compares two strings without leaking length timing
+// beyond equality of lengths.
+func constantTimeEqual(a, b string) bool {
+	return len(a) == len(b) && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
 
 // externalBase reconstructs the externally visible base URL for
 // verification_uri, honoring a TLS-terminating proxy.
@@ -66,7 +85,7 @@ func (s *server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	da := s.store.begin(authKindMachine, clientID, identity)
+	da := s.store.Begin(deviceflow.KindMachine, clientID, identity)
 	base := externalBase(r)
 
 	log.Printf("device auth started: user_code=%s identity=%v", da.UserCode, identity)
@@ -75,8 +94,8 @@ func (s *server) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		"user_code":                 da.UserCode,
 		"verification_uri":          base + "/status",
 		"verification_uri_complete": base + "/status?user_code=" + da.UserCode,
-		"expires_in":                int(deviceAuthTTL.Seconds()),
-		"interval":                  int(pollInterval.Seconds()),
+		"expires_in":                int(deviceflow.AuthTTL.Seconds()),
+		"interval":                  int(deviceflow.PollInterval.Seconds()),
 	})
 }
 
@@ -91,7 +110,7 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, errCode := s.store.poll(r.FormValue("device_code"))
+	token, errCode := s.store.Poll(r.FormValue("device_code"))
 	if errCode != "" {
 		oauthError(w, errCode)
 		return
@@ -100,14 +119,14 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token": token,
 		"token_type":   "Bearer",
-		"expires_in":   int(tokenTTL.Seconds()),
+		"expires_in":   int(deviceflow.TokenTTL.Seconds()),
 	})
 }
 
 // verifyEntry is a pending device authorization plus the canonical
 // messages an admin signs to act on it. Rendered on /status.
 type verifyEntry struct {
-	Auth       *deviceAuth
+	Auth       *deviceflow.Auth
 	MsgApprove string
 	MsgDeny    string
 }
@@ -143,9 +162,9 @@ func (s *server) handleVerifyPost(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if action == "approve" {
-		err = s.store.approve(userCode)
+		err = s.store.Approve(userCode)
 	} else {
-		err = s.store.deny(userCode)
+		err = s.store.Deny(userCode)
 	}
 	if err != nil {
 		s.respondAction(w, r, fmt.Sprintf("%s: %v", userCode, err))
@@ -161,11 +180,11 @@ func (s *server) handleVerifyPost(w http.ResponseWriter, r *http.Request) {
 // break-glass admin token.
 func (s *server) authorizeAdmin(r *http.Request, userCode, action string) bool {
 	if sig := r.FormValue("signature"); sig != "" && len(s.adminAddrs) > 0 {
-		nonce, err := s.store.nonceFor(userCode)
+		nonce, err := s.store.NonceFor(userCode)
 		if err != nil {
 			return false
 		}
-		addr, err := recoverPersonalSign(approvalMessage(action, userCode, nonce), sig)
+		addr, err := ethsig.RecoverPersonalSign(approvalMessage(action, userCode, nonce), sig)
 		if err != nil {
 			log.Printf("signature verification failed for %s: %v", userCode, err)
 			return false

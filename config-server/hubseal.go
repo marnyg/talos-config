@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
@@ -65,7 +66,7 @@ func (m *hubManager) unsealWithSignature(sigHex string) error {
 	if len(m.adminAddrs) == 0 {
 		return fmt.Errorf("no admin addresses configured; cannot verify unseal signature")
 	}
-	addr, err := recoverPersonalSign(masterderive.MasterMessage, sigHex)
+	addr, err := ethsig.RecoverPersonalSign(masterderive.MasterMessage, sigHex)
 	if err != nil {
 		return fmt.Errorf("signature verification failed: %w", err)
 	}

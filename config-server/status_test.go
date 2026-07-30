@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+
+	"github.com/marnyg/talos-config/config-server/deviceflow"
 )
 
 // testMAC is the machine declared by newTestServer.
@@ -65,7 +67,7 @@ func loginNonce(t *testing.T, c *http.Client, base string) string {
 
 func TestStatusLeaksNothingLoggedOut(t *testing.T) {
 	s, ts := newStatusServer(t)
-	da := s.store.begin(authKindMachine, "talos-pxe", map[string]string{"mac": testMAC, "uuid": "1234-5678"})
+	da := s.store.Begin(deviceflow.KindMachine, "talos-pxe", map[string]string{"mac": testMAC, "uuid": "1234-5678"})
 
 	code, body := get(t, http.DefaultClient, ts.URL+"/status")
 	if code != http.StatusOK {
@@ -232,7 +234,7 @@ func login(t *testing.T, ts *httptest.Server) *http.Client {
 
 func TestStatusShowsPendingApprovals(t *testing.T) {
 	s, ts := newStatusServer(t)
-	da := s.store.begin(authKindMachine, "talos-pxe", map[string]string{"mac": testMAC, "uuid": "1234-5678"})
+	da := s.store.Begin(deviceflow.KindMachine, "talos-pxe", map[string]string{"mac": testMAC, "uuid": "1234-5678"})
 
 	client := login(t, ts)
 	code, body := get(t, client, ts.URL+"/status")
@@ -267,7 +269,7 @@ func TestStatusShowsUnsealFormWhenSealed(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr}, "")
 	s := &server{
 		root:       m.root,
-		store:      newAuthStore(),
+		store:      deviceflow.NewStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
 		hub:        m,
@@ -354,7 +356,7 @@ func TestStatusShowsMeshMembers(t *testing.T) {
 	m.mesh = mesh
 	s := &server{
 		root:       m.root,
-		store:      newAuthStore(),
+		store:      deviceflow.NewStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
 		hub:        m,

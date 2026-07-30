@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
@@ -146,7 +147,7 @@ func TestUnsealPinnedCAFingerprint(t *testing.T) {
 
 func TestConfigRefusedWhileSealed(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr}, "")
-	s := &server{root: m.root, store: newAuthStore(), hub: m, adminAddrs: m.adminAddrs}
+	s := &server{root: m.root, store: deviceflow.NewStore(), hub: m, adminAddrs: m.adminAddrs}
 
 	req := httptest.NewRequest("GET", "/config?mac=aa-bb-cc-dd-ee-ff", nil)
 	rec := httptest.NewRecorder()
@@ -173,7 +174,7 @@ func TestConfigRefusedWhileSealed(t *testing.T) {
 
 func TestUnsealEndpoint(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr}, "")
-	s := &server{root: m.root, store: newAuthStore(), hub: m, adminAddrs: m.adminAddrs}
+	s := &server{root: m.root, store: deviceflow.NewStore(), hub: m, adminAddrs: m.adminAddrs}
 
 	// Sealed status endpoint.
 	rec := httptest.NewRecorder()

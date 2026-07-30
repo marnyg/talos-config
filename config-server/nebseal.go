@@ -1,7 +1,7 @@
 package main
 
-// Mesh lifecycle. The mesh unseals from the *same* master as wg0 — one
-// derivation tree, two overlays — so there is no second unseal flow and
+// Mesh lifecycle. The mesh unseals from the hub's one master — one
+// derivation tree, one overlay — so there is no second unseal flow and
 // no second secret. nebManager owns only what nebula needs: the config,
 // the netstack, and the DNS listener.
 //
@@ -83,13 +83,6 @@ func newNebManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone,
 // machinesDir is where declared machines live under the talos tree.
 func (m *nebManager) machinesDir() string {
 	return filepath.Join(m.root, "machines")
-}
-
-// hubIP is the hub's overlay address: derived from the subnet, never
-// configured, so static_host_map entries and the resolver address are
-// knowable from the CIDR alone.
-func (m *nebManager) hubIP() (netip.Addr, error) {
-	return nebderive.HubIP(m.subnet)
 }
 
 // state reports the live service, the zone, and the last startup error.

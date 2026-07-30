@@ -27,6 +27,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
@@ -90,7 +91,7 @@ func (s *server) handleMeshEnroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown device name (declare it in MESH_DEVICES or MESH_MEDIA_DEVICES)", http.StatusNotFound)
 		return
 	}
-	addr, err := recoverPersonalSign(meshEnrollMessage(d.name, nonce), r.FormValue("signature"))
+	addr, err := ethsig.RecoverPersonalSign(meshEnrollMessage(d.name, nonce), r.FormValue("signature"))
 	if err != nil {
 		log.Printf("mesh enroll %q: signature verification failed: %v", d.name, err)
 		http.Error(w, "forbidden", http.StatusForbidden)

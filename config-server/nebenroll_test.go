@@ -18,6 +18,7 @@ import (
 	"github.com/slackhq/nebula/logging"
 	"github.com/slackhq/nebula/overlay"
 
+	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 )
@@ -38,7 +39,7 @@ func newMeshEnrollServer(t *testing.T) (*server, *httptest.Server) {
 	}
 	s := &server{
 		root:       m.root,
-		store:      newAuthStore(),
+		store:      deviceflow.NewStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
 		hub:        m,
@@ -290,7 +291,7 @@ func TestMeshEnrollSealed(t *testing.T) {
 	m.mesh = mesh
 	s := &server{
 		root:       m.root,
-		store:      newAuthStore(),
+		store:      deviceflow.NewStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
 		hub:        m,
@@ -312,7 +313,7 @@ func TestMeshEnrollDisabled(t *testing.T) {
 	}
 	s := &server{
 		root:       m.root,
-		store:      newAuthStore(),
+		store:      deviceflow.NewStore(),
 		sessions:   newSessionStore(),
 		adminAddrs: []string{wellKnownAddr},
 		hub:        m,
