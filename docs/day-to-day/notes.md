@@ -81,8 +81,8 @@
   name), so both machines hold the *same* mesh key and the same overlay
   address — do not run nebula on both simultaneously. It also means a
   corporate-managed machine holds an owner-device mesh credential;
-  revocation route is `talos/mesh-blocklist.txt`. Undecided as of this
-  writing.
+  revocation route is `talos/mesh-blocklist.txt`. _Decided later same
+  day (d8a8ed86): leave as-is; revisit only if it becomes a problem._
 - 2026-07-30 — Home network has **no native IPv6** (no v6 default route;
   the only global-scope v6 address is a Tailscale ULA). This is the
   blocker on ADR-0006's revisit trigger for direct remote paths.
@@ -91,6 +91,13 @@
   muscle memory pointing at a LAN IP are stale within days; find the
   node with a port-50000 scan (`echo > /dev/tcp/10.0.0.N/50000`). Mesh
   and wg addresses were stable throughout. Phase 2 step 2 retires this.
+- 2026-07-30 — **Mobile Nebula on the phone was configured by hand**:
+  the `/mesh/tv` flow delivers a self-contained YAML, but the app has no
+  config-file import — CA/cert/key and lighthouse/relay/static-host-map
+  details were entered through its site UI. Workable but clunky; recurs
+  at every 90-day device-cert renewal (`nebDeviceCertValidity`). A
+  re-enroll mints the same identity, so renewal is re-entry, not
+  re-approval of anything new.
 - 2026-07-30 — **the hub re-mints its own nebula leaf at every unseal**:
   the hub's leaf fingerprint rotates per deploy+unseal cycle while the
   issuer (derived CA `b881d6ff…`) stays fixed. Never pin the hub's leaf

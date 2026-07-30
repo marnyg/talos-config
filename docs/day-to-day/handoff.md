@@ -5,45 +5,43 @@
 
 ## Last session
 
-2026-07-30 (afternoon) — **All three phase-1 exit checks passed**, the
-TV question got decided, and the dashboard grew mesh eyes.
+2026-07-30 (evening) — **Phase 1 is fully closed.** The last gate —
+criterion 4's phone half — was measured and passed (decision c4f07507).
 
-- **Exit checks 1–3 ✓** (details in `mesh-v2-nebula.md`): node reboot
-  (same mesh address through a reboot *and* a LAN lease drift), hub
-  re-seal (twice — reconverges unaided ~60s after unseal), roaming
-  (fixed-line → cellular, no manual action, relay parity ~71–82ms).
-- **Criterion 4's TV case dropped** (decision 3dfef644): official
-  Mobile Nebula is unusable on Android TV (mobile_nebula#148 — Flutter
-  ignores d-pad), so the home TV goes LAN-direct; a thin gomobile TV
-  APK is filed as task 2e1bef85 for if a remote-TV need ever appears.
-  The phone half of criterion 4 remains the *only* phase-2 gate.
-- **TV device flow deployed** (`f2cc4b7` shipped with the first
-  re-seal); `/mesh/tv` live.
-- **/status upgrades** (`5d85161`): soft refresh (10s poller swaps a
-  `#live` region, backs off while typing — replaces meta-refresh) and a
-  Mesh table: full derived membership joined with the live hostmap
-  (tunnel state, WAN endpoint, relaying-via-hub). Watched the roaming
-  check happen on it in real time.
+- **Phone enrolled** as a media device (`fly.toml` `MESH_MEDIA_DEVICES`,
+  commit `4e8ef8e`): self-served through the `/mesh/tv` device flow on
+  the phone's own browser (QR → wallet approval → config over its own
+  TLS session). First real use of that flow for a phone.
+- **Verdict, out loud:** Mobile Nebula import UX is *bad* but the phone
+  is on the mesh — below criterion 4's "would stay off" bar. Driver 2
+  stands for phones. UX improvement filed as a `+later +nice` task
+  (recurs at the 90-day device-cert renewal, so it may earn priority).
+- **Office MacBook decided** (decision d8a8ed86): keeps the shared
+  `laptop` identity, leave as-is; revisit only if it becomes a problem.
+  Revocation route remains `talos/mesh-blocklist.txt`.
+- Closed threads: dba0c63d (TV onboarding — nothing left after the TV
+  decision + deploy), d14514fa (criterion-2 office punch test — resolved
+  into ADR-0006 earlier).
+- `docs/mesh-v2-nebula.md` updated: all four kill criteria settled, the
+  "open decision" paragraph resolved.
 
 ## Loose threads
 
-- **Criterion 4, phone half**: measure Mobile Nebula phone UX (app
-  imports externally-derived keys — verified in source) or formally
-  drop driver 2. This is the last gate before phase 2.
-- **Office MacBook holds the `laptop` identity** (same key + overlay
-  address as the home laptop). Decide: leave / blocklist / re-enroll
-  under a distinct name. Undecided since morning.
-- **Thread 35 (TV onboarding, dba0c63d)** has nothing left in it after
-  the deploy + TV decision — close it, or keep until the phone half
-  resolves.
-- cp1's LAN lease now drifts freely (.20→.30→.31 in one day); every
-  LAN-side `talosctl` needs a scan first. Phase 2 step 2 (endpoint →
-  mesh IP) retires this — thread 24 has the full context.
+- A brief seal window per deploy: the phone-declaration deploys re-sealed
+  the hub twice; each needed a wallet unseal at `/status`. Known
+  behavior, but phase 2's early steps involve more deploys — budget the
+  unseals.
+- Thread a7920bda (wallet-authorized auto-enroll for undeclared names)
+  is untouched; today's flow — edit fly.toml, deploy, unseal, enroll —
+  is exactly the friction it describes.
 
 ## Suggested next steps
 
-- Settle criterion 4's phone half (enroll a phone once, or drop driver
-  2 by decision) — then phase 2 is unblocked.
-- Phase 2 step 1 (certSANs: nebula name + IP) is additive and safe to
-  start regardless.
-- Decide the office-mac credential question.
+- **Start phase 2** (task 1afafb50), in order: (1) certSANs (nebula
+  name + IP — additive, safe); (2) cluster endpoint → nebula IP,
+  re-point talosconfig/kubeconfig (retires the cp1 lease-drift scan
+  dance); (3) strip wg0 from compose, delete hub wg* code (closes
+  invariant 5's dual-overlay exception).
+- Verify the phone shows up in the `/status` mesh table and Jellyfin
+  plays over the overlay from a remote network (expect relay parity,
+  ADR-0006).

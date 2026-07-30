@@ -180,20 +180,24 @@ hub (see DNS bullet above).
   gomobile AAR, task 2e1bef85) is deferred until a remote-TV need
   actually exists. The `/mesh/tv` device flow stays: it serves media
   *phones*, whose official app imports externally-derived private keys.
-  **The phone half of criterion 4 remains open and is not a checklist
-  item** — it needs a measurement or an explicit decision to drop the
-  rest of driver 2. See "Open decision" below.
+  **The phone half was measured later the same day (2026-07-30) and
+  passes** (decision c4f07507): a phone was declared as a media device
+  and self-served through the `/mesh/tv` device flow end to end. The
+  Mobile Nebula import UX is bad — but not bad enough to keep the phone
+  off the mesh, which is the bar criterion 4 sets. Driver 2 stands for
+  phones; a UX improvement is filed, not blocking. With that, **all
+  four criteria are settled and phase 2 is unblocked.**
 - The exit checks are the evaluation window — the go/no-go for phase 2
   lands before anything irreversible.
 
-**Open decision (2026-07-30)** — with driver 1 narrowed to LAN-direct
-(ADR-0006), if criterion 4 also goes unmeasured then phase 2 is
-justified by LAN-direct plus consolidation (one overlay, one derivation
-tree, wg* code deleted) alone. That is defensible, but it should be
-chosen out loud rather than arrived at by attrition: the drivers have
-now been narrowed twice. _Update (same day): the TV half **was** chosen
-out loud — dropped (decision 3dfef644), home TV goes LAN-direct, client
-deferred. Only the phone half of driver 2 remains undecided._
+**~~Open decision~~ (2026-07-30, resolved same day)** — with driver 1
+narrowed to LAN-direct (ADR-0006), if criterion 4 also goes unmeasured
+then phase 2 is justified by LAN-direct plus consolidation alone. That
+was the risk of deciding by attrition. It didn't happen: the TV half was
+dropped out loud (decision 3dfef644), and the phone half was **measured
+and passed** (decision c4f07507) — enrollment via the device flow
+worked, the import UX is poor but workable at a 90-day cadence. Phase 2
+proceeds on drivers 1 (LAN), 2 (phones), and 3 (consolidation).
 
 **Phase 2 (uuid 1afafb50)** — cutover, in order:
 1. Add nebula name + IP to certSANs (additive, safe).
@@ -231,7 +235,11 @@ deferred. Only the phone half of driver 2 remains undecided._
    the calculus on drivers 1+3 alone. _TV case dropped 2026-07-30
    (decided out, not fired): no usable client exists for Android TV,
    the home TV needs only LAN, and a bespoke client is deferred — the
-   criterion now covers phones only._
+   criterion now covers phones only._ _Phone case measured 2026-07-30:
+   PASSES (decision c4f07507). Device-flow enrollment worked end to
+   end; Mobile Nebula import UX is bad but the phone is on the mesh —
+   below the "would stay off" bar. Criterion settled; a UX improvement
+   task exists (+later)._
 
 ## Ruled out (with reasons)
 
