@@ -5,61 +5,45 @@
 
 ## Last session
 
-2026-07-30 (office) — **Kill criterion 2 resolved: amended, not fired
-(ADR-0006).** Phase 1's remaining gates are three concrete exit checks
-and criterion 4.
+2026-07-30 (afternoon) — **All three phase-1 exit checks passed**, the
+TV question got decided, and the dashboard grew mesh eyes.
 
-- Office Wi-Fi punch test: **RELAYED**, and the run is **valid** —
-  Tailscale was up but split-tunnel with no exit node, and `route get`
-  for both cp1's WAN and fly showed egress on the physical `en0`.
-- NAT classified at both ends by STUN (one socket → several destination
-  IPs): home = endpoint-independent **and** port-preserving (cone);
-  office = **symmetric, random ports**; cellular = CGNAT symmetric.
-  Criterion 2's premise ("relay ⇒ home NAT is symmetric") is therefore
-  **falsified** — home was never the blocker, and no overlay punches
-  through two symmetric remote NATs.
-- Criterion 2 restated as a parity-plus-LAN test in `mesh-v2-nebula.md`
-  (canonical), cross-referenced from ADR-0002, recorded in ADR-0006.
-  `goals.md` now scopes driver 1 to **LAN-direct**, with remote P2P an
-  explicit non-goal.
-- Established while comparing against Tailscale: making the home side
-  reachable (UPnP/NAT-PMP/PCP or a static forward) **would** work — only
-  one side needs reachability, after which the remote symmetric NAT is
-  irrelevant. Rejected on **invariant 5**, not on capability. The earlier
-  claim that a port forward "cannot fix" this was wrong and is corrected
-  in ADR-0006.
+- **Exit checks 1–3 ✓** (details in `mesh-v2-nebula.md`): node reboot
+  (same mesh address through a reboot *and* a LAN lease drift), hub
+  re-seal (twice — reconverges unaided ~60s after unseal), roaming
+  (fixed-line → cellular, no manual action, relay parity ~71–82ms).
+- **Criterion 4's TV case dropped** (decision 3dfef644): official
+  Mobile Nebula is unusable on Android TV (mobile_nebula#148 — Flutter
+  ignores d-pad), so the home TV goes LAN-direct; a thin gomobile TV
+  APK is filed as task 2e1bef85 for if a remote-TV need ever appears.
+  The phone half of criterion 4 remains the *only* phase-2 gate.
+- **TV device flow deployed** (`f2cc4b7` shipped with the first
+  re-seal); `/mesh/tv` live.
+- **/status upgrades** (`5d85161`): soft refresh (10s poller swaps a
+  `#live` region, backs off while typing — replaces meta-refresh) and a
+  Mesh table: full derived membership joined with the live hostmap
+  (tunnel state, WAN endpoint, relaying-via-hub). Watched the roaming
+  check happen on it in real time.
 
 ## Loose threads
 
-- **Criterion 2 no longer gates phase 2.** The ≥1wk dogfood window was
-  replaced (2026-07-30) by three exit checks — node reboot, hub re-seal,
-  roaming reconvergence — because calendar time was a weak proxy for the
-  resilience events it stood for. None have been run yet; together they
-  are about an hour. Plus certSANs (phase 2 step 1). Invariant 5's
-  dual-overlay exception can close once phase 2 lands.
-- **Criterion 4 (mobile/TV UX) still open**, behind the revocation policy
-  thread (uuid dc04e3e8). It is deliberately *not* one of the exit
-  checks: with driver 1 narrowed to LAN-only by ADR-0006, leaving
-  criterion 4 unmeasured means phase 2 rests on LAN-direct plus
-  consolidation alone. Defensible, but it should be an explicit call.
-- **TV onboarding is built but NOT deployed** (`f2cc4b7`). Deploying
-  re-seals the hub, so it needs an unseal immediately after — but it is
-  no longer held back by a pending measurement.
-- **The office MacBook now holds a `laptop` mesh credential**, the same
-  derived identity as the home laptop (identity = f(master, name), and
-  both used the default name). Same key, same overlay address — do not
-  run nebula on both at once. Needs a decision (see next steps).
-- New tasks filed: **42** (`+bug`, nebup overlay-underlay guard) and
-  **43** (`+thread +later`, revisit direct remote paths if IPv6 lands).
+- **Criterion 4, phone half**: measure Mobile Nebula phone UX (app
+  imports externally-derived keys — verified in source) or formally
+  drop driver 2. This is the last gate before phase 2.
+- **Office MacBook holds the `laptop` identity** (same key + overlay
+  address as the home laptop). Decide: leave / blocklist / re-enroll
+  under a distinct name. Undecided since morning.
+- **Thread 35 (TV onboarding, dba0c63d)** has nothing left in it after
+  the deploy + TV decision — close it, or keep until the phone half
+  resolves.
+- cp1's LAN lease now drifts freely (.20→.30→.31 in one day); every
+  LAN-side `talosctl` needs a scan first. Phase 2 step 2 (endpoint →
+  mesh IP) retires this — thread 24 has the full context.
 
 ## Suggested next steps
 
-- Decide the office-mac credential question: leave as-is, revoke via
-  `talos/mesh-blocklist.txt`, or re-enroll office machines under a
-  distinct name with a restricted group.
-- Run the three phase-1 exit checks (node reboot, hub re-seal, roaming),
-  then phase 2 starting with certSANs. The hub re-seal check comes free
-  with deploying the TV build.
-- Decide criterion 4: measure the mobile/TV path, or formally drop
-  driver 2 and record that phase 2 stands on LAN-direct + consolidation.
-- Settle revocation policy (dc04e3e8) to unblock the TV path.
+- Settle criterion 4's phone half (enroll a phone once, or drop driver
+  2 by decision) — then phase 2 is unblocked.
+- Phase 2 step 1 (certSANs: nebula name + IP) is additive and safe to
+  start regardless.
+- Decide the office-mac credential question.

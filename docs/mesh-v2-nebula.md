@@ -147,26 +147,42 @@ hub (see DNS bullet above).
   (no wipe, `/var/media` survives).
 - CA + cert derivation in the hub; compose-time injection of extension
   config; `nebup` enrollment.
-- Run nebula beside wg0. Android TV sideload check.
+- Run nebula beside wg0. ~~Android TV sideload check~~ _(dropped
+  2026-07-30 — TV case decided out of criterion 4, see below)_.
 - **Phase-1 exit checks** _(replaced the ≥1-week dogfood window,
-  2026-07-30)_. Calendar time was a proxy for resilience events that
-  ordinary use would eventually trigger; naming them directly is both
-  faster and stricter, since a quiet week triggers none of them:
-  1. **Node reboot** — after a Talos reboot, `ext-nebula` restarts and
-     cp1 rejoins the mesh at the same address. Nodes reboot for
-     upgrades; failing this is a problem discovered at the worst moment.
-  2. **Hub re-seal** — after a fly deploy + wallet unseal, the mesh
-     comes back (lighthouse up, members reconverge). Guaranteed to
-     happen the moment the TV build ships, and never yet exercised
-     end-to-end.
-  3. **Roaming reconvergence** — a device that changes network
-     (LAN ↔ foreign) re-establishes without manual intervention.
+  2026-07-30; **all three passed later the same day**)_. Calendar time
+  was a proxy for resilience events that ordinary use would eventually
+  trigger; naming them directly was both faster and stricter — and in
+  fact all three ran within hours of being named:
+  1. **Node reboot** — ✓ 2026-07-30: `talosctl reboot`; `ext-nebula`
+     auto-restarted, nebula0 back at 10.42.218.125, hub handshake
+     seconds after start. Bonus evidence: cp1's LAN lease drifted
+     10.0.0.20→.30→.31 the same day while the mesh address never moved
+     — the phase-2 endpoint argument demonstrating itself.
+  2. **Hub re-seal** — ✓ 2026-07-30, exercised **twice** (TV build
+     deploy, then the /status UI deploy): sealed window drops the
+     mesh, cp1's handshake times out, and it reconverges unaided one
+     retry cycle (~60s) after the wallet unseal. Note: the hub re-mints
+     its own leaf per unseal (fingerprint rotates, issuer stable).
+  3. **Roaming reconvergence** — ✓ 2026-07-30: laptop hopped
+     fixed-line → cellular with nebup untouched; hub hostmap flipped
+     endpoint, tunnel stayed up, laptop→cp1 answered relayed at
+     ~71–82ms steady (ADR-0006 parity; 589ms first packet is relay
+     setup).
 
   Criteria 1–3 are settled (1 spike, 2 amended per ADR-0006, 3
-  measured). **Criterion 4 (mobile/TV UX) remains open and is not a
-  checklist item** — it needs either a measurement or an explicit
-  decision to drop driver 2, because ADR-0006 already narrowed driver 1
-  to LAN-only. See "Open decision" below.
+  measured). **Criterion 4 is half-decided (2026-07-30): the TV case is
+  dropped and no longer blocks phase 2.** The official Mobile Nebula app
+  is unusable on Android TV (Flutter buttons ignore d-pad clicks,
+  DefinedNet/mobile_nebula#148; no camera for QR import), so the home
+  TV is served LAN-direct — consistent with ADR-0006's scoping — and a
+  bespoke mesh client (thin Kotlin/leanback APK bundling the nebula
+  gomobile AAR, task 2e1bef85) is deferred until a remote-TV need
+  actually exists. The `/mesh/tv` device flow stays: it serves media
+  *phones*, whose official app imports externally-derived private keys.
+  **The phone half of criterion 4 remains open and is not a checklist
+  item** — it needs a measurement or an explicit decision to drop the
+  rest of driver 2. See "Open decision" below.
 - The exit checks are the evaluation window — the go/no-go for phase 2
   lands before anything irreversible.
 
@@ -175,7 +191,9 @@ hub (see DNS bullet above).
 justified by LAN-direct plus consolidation (one overlay, one derivation
 tree, wg* code deleted) alone. That is defensible, but it should be
 chosen out loud rather than arrived at by attrition: the drivers have
-now been narrowed twice.
+now been narrowed twice. _Update (same day): the TV half **was** chosen
+out loud — dropped (decision 3dfef644), home TV goes LAN-direct, client
+deferred. Only the phone half of driver 2 remains undecided._
 
 **Phase 2 (uuid 1afafb50)** — cutover, in order:
 1. Add nebula name + IP to certSANs (additive, safe).
@@ -210,7 +228,10 @@ now been narrowed twice.
    enough to stop.
 4. **Mobile/TV UX** — if enrollment/operation is miserable enough that
    those devices would stay off the mesh, driver 2 evaporates; rerun
-   the calculus on drivers 1+3 alone.
+   the calculus on drivers 1+3 alone. _TV case dropped 2026-07-30
+   (decided out, not fired): no usable client exists for Android TV,
+   the home TV needs only LAN, and a bespoke client is deferred — the
+   criterion now covers phones only._
 
 ## Ruled out (with reasons)
 

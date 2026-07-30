@@ -86,6 +86,15 @@
 - 2026-07-30 — Home network has **no native IPv6** (no v6 default route;
   the only global-scope v6 address is a Tailscale ULA). This is the
   blocker on ADR-0006's revisit trigger for direct remote paths.
+- 2026-07-30 — **cp1's LAN lease drifts freely**: 10.0.0.20→.30
+  overnight, .30→.31 across a single reboot. `talosctl` contexts and
+  muscle memory pointing at a LAN IP are stale within days; find the
+  node with a port-50000 scan (`echo > /dev/tcp/10.0.0.N/50000`). Mesh
+  and wg addresses were stable throughout. Phase 2 step 2 retires this.
+- 2026-07-30 — **the hub re-mints its own nebula leaf at every unseal**:
+  the hub's leaf fingerprint rotates per deploy+unseal cycle while the
+  issuer (derived CA `b881d6ff…`) stays fixed. Never pin the hub's leaf
+  fingerprint anywhere — pin the CA.
 
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
