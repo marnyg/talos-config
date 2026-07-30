@@ -246,10 +246,29 @@ const statusStyle = `
  .session-line { color: var(--muted); margin: 0 0 1.25rem; }
 `
 
-var loginTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
+// statusPageHead is the shared HTML shell opener for the admin pages
+// (login and dashboard), so the style block and head boilerplate cannot
+// drift between them. Closed by the templates' own </body></html>.
+func statusPageHead(title string) string {
+	return `<!DOCTYPE html>
 <html>
-<head><title>Status</title><style>` + statusStyle + `</style></head>
-<body>
+<head><title>` + title + `</title><style>` + statusStyle + `</style></head>
+<body>`
+}
+
+// walletSignJS is the one place the in-page wallet API is touched: both
+// admin pages sign EIP-191 personal_sign messages through this helper,
+// so the request shape cannot drift between the login and dashboard
+// flows. Returns null when no wallet is present (already alerted).
+const walletSignJS = `
+  async function walletSign(msg) {
+    if (!window.ethereum) { alert('no wallet found'); return null; }
+    var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+    return await ethereum.request({ method: 'personal_sign', params: [msg, accounts[0]] });
+  }
+`
+
+var loginTemplate = template.Must(template.New("login").Parse(statusPageHead("Status") + `
 <h1>Status</h1>
 {{if .Message}}<div class="msg">{{.Message}}</div>{{end}}
 <p>Sign in with an admin wallet to view cluster status.</p>
@@ -277,12 +296,11 @@ var loginTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
 {{if .WalletEnabled}}
 <script>
 (function () {
-  var btn = document.getElementById('login-wallet');
-  btn.addEventListener('click', async function () {
-    if (!window.ethereum) { alert('no wallet found'); return; }
+` + walletSignJS + `
+  document.getElementById('login-wallet').addEventListener('click', async function () {
     try {
-      var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-      var sig = await ethereum.request({ method: 'personal_sign', params: [{{.Msg}}, accounts[0]] });
+      var sig = await walletSign({{.Msg}});
+      if (!sig) return;
       var form = document.getElementById('login-form');
       form.querySelector('input[name=signature]').value = sig;
       form.submit();
@@ -308,11 +326,7 @@ func (s *server) renderLogin(w http.ResponseWriter, msg string) {
 	}
 }
 
-var statusTemplate = template.Must(template.New("status").Parse(`<!DOCTYPE html>
-<html>
-<head><title>Cluster status</title>
-<style>` + statusStyle + `</style></head>
-<body>
+var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("Cluster status") + `
 <h1>Cluster status</h1>
 <p class="session-line">signed in as {{.Addr}}
  <form class="inline" method="POST" action="/status/logout"><button>sign out</button></form>
@@ -404,11 +418,7 @@ server restart or it will not be able to unlock its disks.</div>
 </div>
 <script>
 (function () {
-  async function walletSign(msg) {
-    if (!window.ethereum) { alert('no wallet found'); return null; }
-    var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-    return await ethereum.request({ method: 'personal_sign', params: [msg, accounts[0]] });
-  }
+` + walletSignJS + `
   // Delegated, not per-node: the live region below is re-rendered by
   // the poller, and per-node listeners would die with their nodes.
   document.addEventListener('click', async function (ev) {
