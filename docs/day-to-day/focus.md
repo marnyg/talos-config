@@ -8,9 +8,10 @@ substrate is live (ADR-0009: scoped `<service>.<member>` names,
 ingress-nginx over the mesh, tailscale gone); next is the stateless
 SIWE→OIDC bridge and per-service SSO (tasks 38–41).
 
-**Toward goal:** No explicit `goals.md` entry yet (flagged in handoff) —
-the work serves vision/invariant 3 directly: the last hosted account
-left the access path, and authentication reduces to the wallet.
+**Toward goal:** "Every exposed service authenticates against the
+wallet" in `desired-state/goals.md` (added this session) — the last
+hosted account left the access path, and authentication reduces to
+the wallet.
 
 **Out of scope:**
 - HTTPS over the mesh — deferred until the wallet-derived CA lands in

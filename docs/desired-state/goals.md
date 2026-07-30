@@ -25,3 +25,8 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   is wg0 parity via the hub; the LAN shortcut is the win. See ADR-0006.
 - **Provisioning plane stays minimal** — the Omni line in `vision.md`:
   no fleet management, no upgrade orchestration, no multi-cluster.
+- **Every exposed service authenticates against the wallet** —
+  self-hosted SIWE SSO, no hosted identity anywhere in the access
+  path. Substrate landed 2026-07-31 (ADR-0009: nebula-native ingress,
+  tailscale gone); remaining scope is the stateless SIWE→OIDC bridge
+  and per-service wiring (tasks 38–41, sketch 162c630d).

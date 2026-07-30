@@ -31,13 +31,11 @@ and verified end-to-end.
 - **Task 37 open pending explicit confirmation** — rollout verified
   (all six services answer by name; tailscale ns pruned cleanly), user
   hasn't said "done" yet.
-- **Broken windows surfaced, awaiting fix/file/ignore call:**
-  `technical/guides/deployment.md:33` still says NodePort-based access
-  (stale); jellyfin/arr NodePorts now redundant over the mesh (LAN-direct
-  TV still needs jellyfin's); `notes.md` dex line superseded by task 39.
-- **No goal in `desired-state/goals.md` covers the SSO arc** — the
-  ingress+SIWE work ties to vision/invariant 3 but no goal entry.
-  Flagged by docs-update; add a goal or consciously don't.
+- ~~Broken windows~~ all fixed at session close: deployment.md access
+  section updated, sonarr/radarr NodePorts dropped (jellyfin's 30096
+  kept for LAN-direct TV; transmission-peer is peer traffic, not web),
+  notes.md dex line struck through. Goal for the SSO arc added to
+  `goals.md` same session.
 - Media library still empty (u-media re-adoption unexercised with real
   data).
 

@@ -30,9 +30,12 @@ or change something, update the date.
 - Media stack Running. SealedSecrets (`newshosting`, `nzbgeek`)
   unseal via the inlineManifest-provisioned key pair.
 - Admin access is mesh-only: `talos/talosconfig` + `kubeconfig` (local,
-  gitignored) point at 10.42.218.125; NodePorts serve on the overlay
-  (Jellyfin `10.42.218.125:30096`). Recovery path: LAN address SANs
-  (`talosctl -e 10.0.0.<lease>`) with owner keys.
+  gitignored) point at 10.42.218.125. Services are reached by hostname
+  over the mesh — `http://<service>.cp1.mesh.internal/` via
+  ingress-nginx (ADR-0009); the only web NodePort left is Jellyfin's
+  30096 for LAN-direct clients (TV), plus transmission's peer ports.
+  Recovery path: LAN address SANs (`talosctl -e 10.0.0.<lease>`) with
+  owner keys.
 - The node's only overlay link is `nebula0` (`ext-nebula` extension);
   wg0 was removed by the 2026-07-30 apply.
 - _2026-07-29_: upgraded in place to the nebula schematic (see Mesh
