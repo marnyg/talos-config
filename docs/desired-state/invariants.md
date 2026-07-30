@@ -18,7 +18,11 @@ this list is the checkable form.
 2. **Git is the single source of truth.** Servers derive; they do not
    own state. Anything a server "remembers" must be recomputable from
    (repo + fly secrets + pure functions). If a slice seems to need a
-   database, redesign it.
+   database, redesign it. Scope: control-plane and derived state —
+   workload payload is excepted, and the media library (`u-media`
+   volume) is the one deliberate instance: owner-held bulk data a
+   reinstall must *preserve*, not recompute. _(Amended 2026-07-31,
+   see ADR-0008.)_
 3. **Roots of trust are keys the owner holds**, never accounts someone
    hosts (`~/.ssh/id_ed25519`, wallet `0xf568…9406`). Fly.io is
    trusted infrastructure, not a root of trust.

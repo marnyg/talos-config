@@ -144,6 +144,21 @@
   bringing up an untrusted mesh. Re-derive offline with
   `recover -ca-fingerprint -sig <unseal-sig>`.
 
+- 2026-07-31 — **cp1 reprovisioned onto the new disk layout**: node name
+  is now `talos-ezw-edv`, LAN lease `10.0.0.32`. Partitions: p3 STATE
+  (luks), p4 EPHEMERAL 160GiB (luks), p5 `u-media` 300GiB (xfs, plain)
+  at `/var/mnt/media`.
+- 2026-07-31 — **a plain `talosctl reset` wipes the whole disk,
+  media library included.** The standard reinstall is now
+  `reset --system-labels-to-wipe STATE --system-labels-to-wipe
+  EPHEMERAL`: it *deletes* those partitions (not just contents), the
+  bootloader survives, the node returns in maintenance mode on a LAN
+  lease, and `apply-config --insecure` + `bootstrap` rebuilds — no USB
+  medium needed. u-media is untouched and re-adopted by label.
+- 2026-07-31 — the media library is **empty** post-migration (old
+  `/var/media` went with the wipe, as agreed). u-media re-adoption
+  across a reinstall is proven by mechanism but not yet exercised.
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have

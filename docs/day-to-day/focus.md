@@ -3,16 +3,16 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Mesh v2 is complete and in dogfood mode; the post-phase-2
-QoL/debt list is cleared (2026-07-30: split DNS, sealed-secrets 0.38.4,
-overlay-route guard, template dedup). No active build focus — the one
-open thread from the list is the EPHEMERAL media-disk question
-(task be79fbb1), which needs a design decision before any code.
+**Now:** No active build focus — mesh v2 and the post-phase-2 QoL list
+are done, and the EPHEMERAL media-disk thread closed 2026-07-31 (media
+lives on a 300GiB user volume that reinstalls preserve). The system is
+in dogfood/upkeep mode; the library needs refilling.
 
-**Toward goal:** "Mesh v2" in `desired-state/goals.md` — achieved in
-its committed scope; current work is upkeep of that state. The
-EPHEMERAL thread serves "git is the single source of truth" (what may
-a reinstall legitimately forget?).
+**Toward goal:** "Git is the single source of truth" in
+`desired-state/goals.md`-adjacent invariant 2 — the reinstall question
+("what may a reinstall legitimately forget?") is now answered: derived
+state rebuilds from git, the media volume is the one deliberate
+exception, everything else is forgettable.
 
 **Out of scope:**
 - Phone onboarding UX (+later; recurs at 90-day cert renewal).

@@ -5,10 +5,24 @@ legacy `docs/handover.md` so it survives that file's deletion. Facts here
 decay — each block carries the date it was last confirmed. If you verify
 or change something, update the date.
 
-## Cluster — _last verified 2026-07-30_
+## Cluster — _last verified 2026-07-31_
 
-- Single control plane `b0:41:6f:15:3b:8f`, Talos v1.12.6, k8s v1.32.3.
-- LUKS2 on STATE + EPHEMERAL.
+- Single control plane `b0:41:6f:15:3b:8f` (node `talos-ezw-edv`,
+  LAN lease `10.0.0.32` — drifts), Talos v1.12.6, k8s v1.32.3.
+- Disk layout (since the 2026-07-31 reprovision): EFI + META +
+  STATE (LUKS2) + EPHEMERAL 160GiB (LUKS2, capped) + `u-media`
+  300GiB (xfs, **unencrypted** — ADR-0004 posture, re-downloadable
+  content) mounted at `/var/mnt/media`; media PVs hostPath into it.
+- **Reinstall runbook**: `talosctl reset --graceful=false --reboot
+  --system-labels-to-wipe STATE --system-labels-to-wipe EPHEMERAL`
+  deletes those partitions but keeps the bootloader and `u-media`;
+  the node comes back in maintenance mode on a LAN lease → fetch the
+  hub-composed config over the mesh (`/config?mac=…`, hub must be
+  unsealed) → `talosctl apply-config --insecure -n <lease>` →
+  `talosctl bootstrap`. Cluster state rebuilds from git; the media
+  volume is re-adopted by its `u-media` partition label. A **plain
+  `talosctl reset` wipes the entire disk including the media library**
+  and needs USB/PXE to recover — don't.
 - Cluster endpoint `https://10.42.218.125:6443` — the node's **derived
   mesh address**, deliberately not its DHCP LAN address (invariant 7;
   DHCP handed out four leases in one day before this moved off the LAN,
@@ -23,7 +37,10 @@ or change something, update the date.
   wg0 was removed by the 2026-07-30 apply.
 - _2026-07-29_: upgraded in place to the nebula schematic (see Mesh
   below). EPHEMERAL survived, as expected since Talos 1.5 — etcd and
-  `/var/media` intact, media stack unaffected.
+  the then-`/var/media` intact, media stack unaffected.
+- _2026-07-31_: wiped and reprovisioned onto the capped layout above;
+  the media library restarted empty (pre-migration contents were on
+  EPHEMERAL and went with it, by design).
 
 ## Mesh (nebula) — _last verified 2026-07-30_
 
