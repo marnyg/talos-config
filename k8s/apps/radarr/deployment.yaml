@@ -82,10 +82,10 @@ spec:
             name: radarr-configurator
         - name: movies
           persistentVolumeClaim:
-            claimName: media-movies
+            claimName: movies
         - name: downloads
           persistentVolumeClaim:
-            claimName: media-downloads
+            claimName: downloads
 ---
 apiVersion: v1
 kind: Service

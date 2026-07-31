@@ -64,7 +64,7 @@ spec:
             name: transmission-config
         - name: downloads
           persistentVolumeClaim:
-            claimName: media-downloads
+            claimName: downloads
 ---
 apiVersion: v1
 kind: Service

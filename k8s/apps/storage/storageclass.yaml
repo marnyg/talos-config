@@ -1,0 +1,46 @@
+# A second StorageClass for bulk media, applying ADR-0011's own thesis
+# consistently: durability belongs on app state, not on the library.
+#
+# The default `longhorn` class (RWO, 2 replicas) stays as-is for
+# sonarr/radarr/jellyfin state — small, irreplaceable, worth 2x disk.
+# This class is for the opposite kind of data: large, re-downloadable,
+# and explicitly declared disposable by ADR-0011. Replicating it would
+# cost 2x capacity to protect data whose loss the owner already
+# accepted, and with ~1073GB raw across two nodes that multiplier is the
+# difference between fitting and not.
+#
+# Why RWX matters here (and not for state): six pods share three media
+# directories — media-tv is sonarr+jellyfin, media-downloads is
+# nzbget+radarr+sonarr+transmission. Under hostPath that worked only
+# because every pod sat on cp1. A Longhorn RWO volume attaches to one
+# node, so keeping RWO would mean pinning all six pods to a node —
+# reintroducing exactly what ADR-0011 chose Longhorn to eliminate. RWX
+# volumes get a share-manager pod exporting NFS in-cluster (Talos'
+# kernel has nfs/nfs4 built in, verified in /proc/filesystems), so any
+# pod on any node can mount them.
+#
+# The trade accepted: a per-volume share-manager is a single point of
+# failure and puts an NFS hop in Jellyfin's streaming path. For a
+# disposable library that is the cheaper failure.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-bulk
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+# Retain, unlike the default class's Delete. ArgoCD runs with
+# prune: true, so a bad manifest or a renamed directory could delete
+# these PVCs; Retain means that costs a manual PV cleanup instead of the
+# library. Disposable is a statement about reinstalls, not about
+# tolerating accidents.
+reclaimPolicy: Retain
+parameters:
+  numberOfReplicas: "1"
+  staleReplicaTimeout: "30"
+  fsType: "ext4"
+  # Disabled rather than best-effort: with a single replica, tying its
+  # placement to wherever the share-manager currently runs would make a
+  # share-manager reschedule trigger a full replica rebuild of the whole
+  # library. The NFS hop is cheaper than that.
+  dataLocality: "disabled"

@@ -63,10 +63,10 @@ spec:
             name: jellyfin-configurator
         - name: tv
           persistentVolumeClaim:
-            claimName: media-tv
+            claimName: tv
         - name: movies
           persistentVolumeClaim:
-            claimName: media-movies
+            claimName: movies
 ---
 apiVersion: v1
 kind: Service

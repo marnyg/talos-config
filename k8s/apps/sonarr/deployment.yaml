@@ -82,10 +82,10 @@ spec:
             name: sonarr-configurator
         - name: tv
           persistentVolumeClaim:
-            claimName: media-tv
+            claimName: tv
         - name: downloads
           persistentVolumeClaim:
-            claimName: media-downloads
+            claimName: downloads
 ---
 apiVersion: v1
 kind: Service

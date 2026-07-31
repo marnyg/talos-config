@@ -1,41 +1,57 @@
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: media-tv
-  namespace: media
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: ""
-  resources:
-    requests:
-      storage: 200Gi
-  volumeName: media-tv
+# The media library, on Longhorn (ADR-0011). Replaces the three hostPath
+# PVs + statically-bound PVCs that ADR-0008 built for a single node.
+#
+# Renamed from media-tv/media-movies/media-downloads on purpose. The old
+# claims set storageClassName: "" with a volumeName pointing at a
+# hostPath PV, and both fields are immutable — editing them in place
+# makes ArgoCD's apply fail forever. New names let one sync create these,
+# roll the deployments onto them, and prune the old pair. The `media`
+# namespace already carries the prefix, so media/tv reads better anyway.
+#
+# ReadWriteMany, not ReadWriteOnce: each of these is mounted by several
+# pods (tv by sonarr+jellyfin, downloads by four), which under hostPath
+# only worked because they were all on cp1. See storageclass.yaml.
+#
+# Sizes are unchanged from the ADR-0008 declarations, but they mean
+# something now: hostPath ignored them, so 450Gi of claims sat on a
+# 300GiB partition. At one replica these fit w1's disk (736GB available)
+# with room, and stay expandable.
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: media-movies
+  name: tv
   namespace: media
 spec:
   accessModes:
-    - ReadWriteOnce
-  storageClassName: ""
+    - ReadWriteMany
+  storageClassName: longhorn-bulk
   resources:
     requests:
       storage: 200Gi
-  volumeName: media-movies
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: media-downloads
+  name: movies
   namespace: media
 spec:
   accessModes:
-    - ReadWriteOnce
-  storageClassName: ""
+    - ReadWriteMany
+  storageClassName: longhorn-bulk
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: downloads
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: longhorn-bulk
   resources:
     requests:
       storage: 50Gi
-  volumeName: media-downloads
