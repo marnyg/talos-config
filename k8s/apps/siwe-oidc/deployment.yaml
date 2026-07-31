@@ -66,6 +66,13 @@ metadata:
   name: siwe-oidc
   namespace: sso
 spec:
+  # Pinned, not allocated. oauth2-proxy's hostAliases maps
+  # auth.cp1.mesh.internal to this address so its server-side OIDC calls
+  # resolve in-cluster from whichever node it lands on; a reallocated
+  # ClusterIP would silently break SSO. Immutable once set, so this must
+  # match the existing allocation (it does) — changing it later needs the
+  # Service recreated.
+  clusterIP: 10.107.226.217
   selector:
     app: siwe-oidc
   ports:

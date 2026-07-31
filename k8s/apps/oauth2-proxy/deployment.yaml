@@ -12,9 +12,28 @@
 # encrypts the wire.
 #
 # hostAliases: pods cannot resolve .mesh.internal (Talos host DNS
-# serves no /etc/hosts entries to kube-dns — siderolabs/talos#9822);
-# the issuer is pinned to cp1's derived mesh address (invariant 7),
-# same as argocd-server in the installer job.
+# serves no /etc/hosts entries to kube-dns — siderolabs/talos#9822),
+# so the issuer hostname is pinned here.
+#
+# It points at the siwe-oidc **Service**, not at cp1's mesh address as
+# it did until 2026-07-31. That pin only ever worked while this pod
+# happened to run on cp1: nebula carries 10.42.0.0/16 source addresses,
+# and a pod's source is 10.244.x.x, so from any other node the dial to
+# 10.42.218.125:80 just times out. cp1's reboot during the Longhorn work
+# rescheduled this pod to w1 and every SSO-protected service started
+# returning 500 (nginx: "auth request unexpected status: 502").
+#
+# Pointing at the ClusterIP is not a workaround for OIDC's issuer-URL
+# equality rule — it satisfies it. siwe-oidc advertises
+# issuer/authorization_endpoint/jwks_uri as http://auth.cp1.mesh.internal
+# no matter how the discovery document is fetched, so the browser's view
+# and this pod's view agree on the issuer string. Only the transport
+# differs: server-side calls (discovery, token redeem, JWKS) resolve
+# in-cluster from any node, browser-side calls still go over the mesh
+# through ingress.
+#
+# The ClusterIP is pinned in the siwe-oidc Service manifest so this
+# literal cannot go stale.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,7 +50,7 @@ spec:
         app: oauth2-proxy
     spec:
       hostAliases:
-        - ip: 10.42.218.125
+        - ip: 10.107.226.217
           hostnames: [auth.cp1.mesh.internal]
       containers:
         - name: oauth2-proxy
