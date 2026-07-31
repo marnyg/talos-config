@@ -1,0 +1,19 @@
+# Cluster layer for WORKERS. The controlplane layer (cluster.yaml) is
+# not reusable here: apiServer/proxy/inlineManifests are control-plane
+# concerns, and pairing it with secrets.yaml fails validation outright
+# ("etcd config is only allowed on control plane machines").
+#
+# A worker needs exactly two facts from the cluster: its name and where
+# the API server is. Everything else it learns from the control plane
+# after it joins.
+cluster:
+  clusterName: homelab
+  # cp1's derived mesh address — the same value cluster.yaml gives the
+  # control plane, and deliberately not a DHCP lease (invariant 7).
+  # Consequence: a worker's kubelet reaches the API server *over the
+  # mesh*, so ext-nebula must be up before it can join. That is a boot
+  # ordering the node retries through, not a bootstrap dependency —
+  # invariant 4 constrains provisioning and recovery, and both still
+  # run on HTTPS + LAN.
+  controlPlane:
+    endpoint: https://10.42.218.125:6443

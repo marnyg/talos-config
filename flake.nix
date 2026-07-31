@@ -83,7 +83,12 @@
                 echo "Encrypted talosconfig"
               fi
               # Encrypt cluster secrets
-              find clusters -type f \( -name 'secrets.yaml' -o -name 'sealed-secrets.yaml' \) | while IFS= read -r f; do
+              # Match by suffix, not by exact name: an exact-name list
+              # silently skips any new secret file (worker-secrets.yaml
+              # was the first), which fails open — plaintext left
+              # unencrypted and only .gitignore standing between it and
+              # a commit.
+              find clusters -type f -name '*secrets.yaml' | while IFS= read -r f; do
                 # shellcheck disable=SC2086
                 ${pkgs.age}/bin/age -R "${sshKey}.pub" $FLY_RECIP -o "$f.age" "$f"
                 echo "Encrypted $f"
@@ -155,7 +160,19 @@
                 local mac ip composed
 
                 mac=$(basename "$mac_dir")
-                ip=$($YQ '.ip' "$mac_dir/meta.yaml")
+                ip=$($YQ '.ip // ""' "$mac_dir/meta.yaml")
+
+                # A machine declared but not yet installed has no known
+                # mesh address (it is HKDF-derived hub-side, so it can
+                # only be read off /status or mesh DNS after the first
+                # serve). Skip it rather than let an empty -n abort the
+                # run: machines/ is applied in directory order, so one
+                # unaddressed newcomer would otherwise block every
+                # machine sorting after it.
+                if [ -z "$ip" ] || [ "$ip" = "null" ]; then
+                  echo "Skipping $mac — no ip in meta.yaml (not installed yet?)" >&2
+                  return 0
+                fi
 
                 echo "Applying to $mac ($ip) — hub-composed config from $HUB"
 

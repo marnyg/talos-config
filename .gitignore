@@ -7,8 +7,9 @@ talos/talosconfig
 # credential for the whole cluster, and nothing recreates it from git, so
 # it must never be committed by accident.
 kubeconfig
-talos/clusters/**/secrets.yaml
-talos/clusters/**/sealed-secrets.yaml
+# Suffix match, so a new secret file is ignored by default rather than
+# by remembering to add a line here (matches the encrypt-secrets glob).
+talos/clusters/**/*secrets.yaml
 result
 config-server/config-server
 .claude/

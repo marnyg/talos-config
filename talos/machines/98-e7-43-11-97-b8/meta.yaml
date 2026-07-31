@@ -1,0 +1,23 @@
+# Mesh overlay address (HKDF-derived from the MAC by the hub) — filled
+# in after the first serve, because it is only computable with the
+# master key. Read it off /status, or `dig w1.mesh.internal @10.42.0.1`
+# from an enrolled device. Until then `nix run .#apply` cannot target
+# this machine; nothing else depends on the field.
+ip: ""
+# Mesh DNS name: w1.mesh.internal (served by the hub at 10.42.0.1:53).
+name: w1
+# SMBIOS UUID, read from the hub's device-flow log before the first
+# approval (service tag 324S9K3). Recorded up front on purpose: it is
+# the durable KMS unseal allowlist, so declaring it here means the node
+# never depends on the session-scoped "sealed this lifetime" grace
+# window — a hub restart before the UUID was written down would
+# otherwise leave an encrypted disk that cannot unlock.
+uuid: 4c4c4544-0032-3410-8053-b3c04f394b33
+diskEncryption: true
+config: base/worker.yaml
+# No sealed-secrets.yaml: that patch provisions the controller's key
+# pair via an inlineManifest, which is a control-plane concern.
+patches:
+  - clusters/homelab/worker-cluster.yaml
+  - clusters/homelab/worker-secrets.yaml
+  - hardware/dell-optiplex.yaml
