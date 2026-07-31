@@ -109,7 +109,7 @@ wallet sig (EIP-191 over frozen message)
 |---|---|---|
 | Cluster down | Mesh unaffected (Talos extension, not a k8s workload) | talosctl over mesh to repair |
 | Fly down | Config/enroll/KMS down (as today; slot-1 keeps boots working). No new discovery/relay; **established tunnels persist** (p2p post-handshake) | On-LAN: full, via `static_host_map` pinning node LAN addrs (lighthouse-less). Remote: cached endpoints until NAT rebind |
-| Hub redeploy → sealed | Hub mesh roles down until wallet unseal (thread 27 precedent). Device/node certs unaffected | Everything p2p keeps working |
+| Hub redeploy → sealed | Hub mesh roles down until wallet unseal (thread `19a4c316` precedent). Device/node certs unaffected | Everything p2p keeps working |
 | Node reprovision | Provisioning is HTTPS + device flow — zero mesh dependency | Unchanged |
 | Fly down + admin remote | The one lost case: no fresh punch until fly returns | None (accepted, see below) |
 
