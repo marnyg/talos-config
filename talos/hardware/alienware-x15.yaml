@@ -15,9 +15,11 @@ machine:
     # now that the device node is a measured fact. Takes effect at
     # install time only — repinning does not move an installed system.
     disk: /dev/nvme0n1
-    # Factory schematic 011ccc… = stock v1.12.6 + siderolabs/nebula
-    # (1.10.3), the same image cp1 runs — see hardware/minipc.yaml for
-    # how to rebuild the id from its inputs. Without it the node has no
-    # mesh identity, and the hub's serve-time cert injection has no
-    # extension service to configure.
-    image: factory.talos.dev/installer/011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598:v1.12.6
+    # Factory schematic 6a9acc… = stock v1.12.6 + siderolabs/nebula
+    # (1.10.3) + iscsi-tools + util-linux-tools, the same image cp1 runs
+    # — see hardware/minipc.yaml for how to rebuild the id from its
+    # inputs and what each extension is for. Without nebula the node has
+    # no mesh identity, and the hub's serve-time cert injection has no
+    # extension service to configure; without the other two it cannot
+    # run Longhorn (ADR-0011).
+    image: factory.talos.dev/installer/6a9acceefb4231ee98d04df0a3172479299cf51a36cda05f7ff817ab6d0d4735:v1.12.6

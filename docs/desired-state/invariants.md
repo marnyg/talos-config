@@ -17,12 +17,19 @@ this list is the checkable form.
    no chain RPC in any auth path. _(Amended 2026-07-29, see ADR-0002.)_
 2. **Git is the single source of truth.** Servers derive; they do not
    own state. Anything a server "remembers" must be recomputable from
-   (repo + fly secrets + pure functions). If a slice seems to need a
-   database, redesign it. Scope: control-plane and derived state —
-   workload payload is excepted, and the media library (`u-media`
-   volume) is the one deliberate instance: owner-held bulk data a
-   reinstall must *preserve*, not recompute. _(Amended 2026-07-31,
-   see ADR-0008.)_
+   (repo + fly secrets + pure functions). If a slice of *this design*
+   seems to need a database, redesign it.
+   **Scope: the control plane** — identity, membership, certs,
+   addresses, machine config. The **data plane** is excepted: workload
+   payload, and the bookkeeping a stateful data-plane service keeps
+   about payload it holds (Longhorn's volume/replica/snapshot CRDs).
+   That bookkeeping is not recomputable from git and is not required to
+   be; it shares the fate of the payload it describes, so its
+   durability is a replication-and-backup problem, not a git problem.
+   Corollary: **no single node's disk is exempt from a wipe.** A
+   reinstall may forget anything that is either re-derivable from git or
+   replicated elsewhere. _(Amended 2026-07-31, see ADR-0011; replaces
+   the `u-media` carve-out from ADR-0008.)_
 3. **Roots of trust are keys the owner holds**, never accounts someone
    hosts (`~/.ssh/id_ed25519`, wallet `0xf568…9406`). Fly.io is
    trusted infrastructure, not a root of trust.

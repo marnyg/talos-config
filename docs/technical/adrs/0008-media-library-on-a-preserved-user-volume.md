@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-31
 
-> **Superseded by [ADR-0011](0011-longhorn-replaces-hostpath-and-the-preserved-media-volume.md) (Proposed, 2026-07-31).**
+> **Superseded by [ADR-0011](0011-longhorn-replaces-hostpath-and-the-preserved-media-volume.md) (Accepted, 2026-07-31).**
 > This ADR reasons from a single node with a single disk. The cluster
 > gained a second node the same day, which broke both halves of it: the
 > `hostPath` PVs it implies have no `nodeAffinity`, and the data it

@@ -1,6 +1,6 @@
 # ADR-0011: Longhorn replaces hostPath and the preserved media volume
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-07-31
 - Supersedes: ADR-0008
 
@@ -107,12 +107,22 @@ current library contents to get there.
   label-scoped reset that protected it, and the "what may a reinstall
   forget" framing all go away: with replicated volumes, a node wipe
   costs a replica rebuild, not a library.
-- **Invariant 2's carve-out must be amended.** It currently names the
-  `u-media` volume specifically. The successor wording has to cover
-  Longhorn's control-plane state (volume/replica/snapshot CRDs), which
-  is *not* recomputable from git. Either that is workload payload under
-  the existing exception, or the invariant needs a second named
-  instance. Not resolved by this ADR — flagged as required follow-up.
+- **Invariant 2's carve-out was replaced, not extended** (amended with
+  this ADR's acceptance). The old wording named the `u-media` volume as
+  a per-disk exception. The successor draws a *layer* line instead: git
+  owns the control plane (identity, membership, certs, addresses,
+  machine config); the data plane owns its payload **and the
+  bookkeeping a stateful service keeps about that payload** — Longhorn's
+  volume/replica/snapshot CRDs. That bookkeeping shares the fate of the
+  payload it describes, so its durability is a
+  replication-and-backup problem rather than a git problem. Net effect:
+  the invariant got *stronger* per node — no single disk is exempt from
+  a wipe — while gaining an honest data-plane scope. Two riders:
+  "if a slice seems to need a database, redesign it" is now bounded to
+  slices of *this* design (Longhorn is a database of replicas, and
+  adopting it would otherwise violate the sentence literally); and with
+  no preserved volume anywhere, **a backup target stops being optional**
+  — it is the only remaining durability story for app state.
 - **`guides/reinstall.md` is largely obsolete** and must be rewritten;
   its central warning ("never run a bare `talosctl reset`") exists to
   protect a volume that will no longer hold anything unique.

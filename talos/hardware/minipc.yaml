@@ -1,16 +1,27 @@
 machine:
   install:
-    # Factory schematic 011ccc… = stock v1.12.6 + the siderolabs/nebula
-    # system extension (nebula 1.10.3), which runs the mesh overlay on
-    # the node. Rebuild the id from its inputs — the factory is
-    # content-addressed, so the same customization always yields it:
+    # Factory schematic 6a9acc… = stock v1.12.6 + three system extensions.
+    # Rebuild the id from its inputs — the factory is content-addressed,
+    # so the same customization always yields it:
     #
     #   curl -s -X POST --data-binary @- https://factory.talos.dev/schematics <<'EOF'
     #   customization:
     #     systemExtensions:
     #       officialExtensions:
+    #         - siderolabs/iscsi-tools
     #         - siderolabs/nebula
+    #         - siderolabs/util-linux-tools
     #   EOF
+    #
+    # - nebula        (1.10.3) runs the mesh overlay on the node. Without
+    #                 it the node has no mesh identity at all.
+    # - iscsi-tools   iscsid + iscsiadm + the iscsi_tcp module, which
+    #                 Longhorn's V1 data engine attaches volumes with.
+    # - util-linux-tools  nsenter (required by Longhorn ≥1.5) and fstrim
+    #                 (volume trimming). Both per ADR-0011.
+    #
+    # Predecessor 011ccc… was nebula only; both nodes were upgraded off
+    # it on 2026-07-31 when Longhorn landed.
     #
     # Changing this image on a *running* node needs an upgrade, not a
     # reboot: `talosctl upgrade --image factory.talos.dev/installer/<id>:<ver>`.
@@ -18,4 +29,4 @@ machine:
     # is why there is no --preserve flag to pass — so etcd and
     # /var/media come back. A fresh *install* is the destructive path.
     disk: /dev/nvme0n1
-    image: factory.talos.dev/installer/011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598:v1.12.6
+    image: factory.talos.dev/installer/6a9acceefb4231ee98d04df0a3172479299cf51a36cda05f7ff817ab6d0d4735:v1.12.6

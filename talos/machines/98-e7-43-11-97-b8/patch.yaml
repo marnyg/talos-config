@@ -5,6 +5,27 @@
 machine:
   network:
     hostname: w1
+  kubelet:
+    # Longhorn's data path, bind-mounted into the kubelet container with
+    # `rshared` propagation (ADR-0011, per Longhorn's Talos guide).
+    #
+    # Talos already propagates /var/mnt/<name> user volumes into kubelet,
+    # but not as a *shared* mount. Longhorn needs bidirectional
+    # propagation: its instance-manager mounts each replica's iSCSI
+    # device underneath this path from a different mount namespace, and
+    # without `rshared` those mounts are invisible to kubelet, so pods
+    # attach an empty directory instead of the volume.
+    #
+    # The source path must already exist as the u-longhorn mount, or
+    # kubelet fails to start. Add this only alongside the volume.
+    extraMounts:
+      - destination: /var/mnt/longhorn
+        type: bind
+        source: /var/mnt/longhorn
+        options:
+          - bind
+          - rshared
+          - rw
 ---
 # Cap EPHEMERAL so it stops owning the whole 953.9GiB disk, leaving room
 # for the Longhorn volume below. Takes effect only when the partition is
