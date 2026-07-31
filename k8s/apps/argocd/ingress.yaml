@@ -1,6 +1,6 @@
 # ArgoCD over the mesh (ADR-0009 pattern): plain HTTP, hostname
-# routing; argocd-server runs with server.insecure=true (set by the
-# installer job in talos/clusters/homelab/cluster.yaml) so it serves
+# routing; argocd-server runs with server.insecure=true (set in
+# config.yaml alongside this file) so it serves
 # HTTP instead of redirecting to its self-signed TLS. Sign-in is OIDC
 # against the SIWE bridge — the wallet is the identity (sketch
 # 162c630d); the local admin account remains as break-glass.

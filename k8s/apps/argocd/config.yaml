@@ -1,0 +1,80 @@
+# ArgoCD's own configuration, managed by ArgoCD.
+#
+# These three ConfigMaps used to be `kubectl patch` calls inside the
+# argocd-installer Job (talos/clusters/homelab/cluster.yaml). That made
+# them bootstrap-time-only: the Job runs once per cluster, so changing
+# SSO on a running cluster meant patching live by hand, and the git copy
+# silently drifted from reality. The 2026-07-31 reinstall test made the
+# cost concrete — the rebuilt cluster came up with no oidc.config, no
+# policy.csv, and dex resurrected.
+#
+# Here they are ordinary manifests under the root `apps` Application
+# (path k8s/apps, recurse, selfHeal) — so they follow git HEAD and
+# self-heal, exactly like every other app in this repo.
+#
+# These are partial ConfigMaps on purpose: upstream install.yaml creates
+# each one and owns the keys we do not declare. ArgoCD's apply semantics
+# leave undeclared keys alone.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # External URL, used to build OIDC redirect URIs. Must match the
+  # ingress host (k8s/apps/argocd/ingress.yaml) or the redirect breaks.
+  url: http://argocd.cp1.mesh.internal
+  # SSO (sketch 162c630d): ArgoCD authenticates against the wallet via
+  # the in-cluster SIWE→OIDC bridge (k8s/apps/siwe-oidc). No dex — the
+  # bridge is the only IdP (invariant 1: no hosted identity).
+  #
+  # The issuer is a mesh hostname, and OIDC requires issuer-URL equality
+  # between the browser's discovery and the server's — so the same name
+  # must work in both places. Pods cannot resolve .mesh.internal (Talos
+  # host DNS serves no /etc/hosts to kube-dns; siderolabs/talos
+  # #9822/#13141), hence the hostAliases pin on argocd-server, still
+  # applied by the installer Job.
+  oidc.config: |
+    name: wallet
+    issuer: http://auth.cp1.mesh.internal
+    clientID: argocd
+    enablePKCEAuthentication: true
+    requestedScopes: ["openid", "profile", "email", "groups"]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # The bridge's groups claim carries [admins] for wallet addresses in
+  # the hub's admin list; map it to full admin. The built-in local
+  # `admin` account stays as break-glass.
+  policy.csv: |
+    g, admins, role:admin
+  scopes: "[groups]"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cmd-params-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Plain HTTP behind ingress-nginx (ADR-0009): nebula encrypts the
+  # wire, so argocd-server must not self-redirect to its own TLS.
+  #
+  # Caveat: this ConfigMap is consumed as env, so argocd-server only
+  # picks up changes on restart. ArgoCD syncing this file does NOT
+  # restart the deployment — after changing it, run
+  # `kubectl -n argocd rollout restart deployment argocd-server`.
+  server.insecure: "true"

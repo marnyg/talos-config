@@ -63,36 +63,16 @@ cluster:
                 - |
                   kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-                  # SSO (task refs 162c630d): ArgoCD authenticates against the
-                  # wallet through the SIWE→OIDC bridge (k8s/apps/siwe-oidc);
-                  # dex is deleted below — no second identity path. These are
-                  # patches, not full manifests: install.yaml owns the rest of
-                  # each ConfigMap's data.
-                  cat > /tmp/argocd-cm.patch <<'PATCH'
-                  data:
-                    url: http://argocd.cp1.mesh.internal
-                    oidc.config: |
-                      name: wallet
-                      issuer: http://auth.cp1.mesh.internal
-                      clientID: argocd
-                      enablePKCEAuthentication: true
-                      requestedScopes: ["openid", "profile", "email", "groups"]
-                  PATCH
-                  kubectl -n argocd patch configmap argocd-cm --type merge --patch-file /tmp/argocd-cm.patch
-
-                  # Plain HTTP behind ingress-nginx (ADR-0009): nebula encrypts
-                  # the wire; argocd-server must not self-redirect to TLS.
-                  kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge -p '{"data":{"server.insecure":"true"}}'
-
-                  # The bridge's groups claim carries [admins]; map it to full
-                  # admin. The built-in admin account stays as break-glass.
-                  cat > /tmp/argocd-rbac.patch <<'PATCH'
-                  data:
-                    policy.csv: |
-                      g, admins, role:admin
-                    scopes: "[groups]"
-                  PATCH
-                  kubectl -n argocd patch configmap argocd-rbac-cm --type merge --patch-file /tmp/argocd-rbac.patch
+                  # ArgoCD's own config (oidc.config, policy.csv,
+                  # server.insecure) is NOT set here — it lives in
+                  # k8s/apps/argocd/config.yaml and is reconciled by ArgoCD
+                  # itself, so it follows git HEAD and self-heals. This Job is
+                  # bootstrap-irreducible only: install ArgoCD, make it able to
+                  # reach the issuer, and hand it the root Application.
+                  #
+                  # Keeping config here would make it bootstrap-time-only (this
+                  # Job runs once per cluster), which is what left the
+                  # 2026-07-31 reinstall with no SSO and dex resurrected.
 
                   # Pods cannot resolve .mesh.internal: Talos host DNS serves no
                   # /etc/hosts entries to kube-dns queries (siderolabs/talos
