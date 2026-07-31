@@ -135,6 +135,27 @@ current library contents to get there.
 - Capacity accounting becomes replica-aware — 300GiB of media at two
   replicas is 600GiB of disk.
 
+### Adoption note (2026-07-31)
+
+Implemented the same day it was accepted. One thing the ADR did not
+anticipate: the media volumes are **shared** — `tv` by sonarr+jellyfin,
+`downloads` by four pods — which hostPath only permitted because every
+pod sat on cp1. A Longhorn RWO volume attaches to a single node, so a
+naive migration would have re-pinned all six pods and delivered none of
+the mobility this decision was chosen for. Resolved by splitting the
+StorageClasses **by data class rather than by app**: default `longhorn`
+(RWO, 2 replicas) for app state, `longhorn-bulk` (RWX, 1 replica,
+Retain) for the library. That also applies this ADR's own thesis to
+capacity — the library is disposable, so it does not earn a 2x
+multiplier on a 1073GB pool.
+
+The hazard in bug `0b374653` turned out to be **wrong in our favour**: a
+media pod on a node without the volume does not silently get an empty
+library, because `/var/mnt` is read-only on Talos unless a user volume
+mounts there. It fails loudly (`mkdir /var/mnt/media: read-only file
+system`) — an outage, not silent data divergence. Observed live when
+cp1's reboot rescheduled the media stack onto w1.
+
 ### Confirmation
 
 The decision is right if, after adoption: (a) a media pod can be deleted

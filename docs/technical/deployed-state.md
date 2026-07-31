@@ -253,15 +253,33 @@ Synced/Healthy. ADR-0011.
   EPHEMERAL — replicas would land on scratch and die with the next
   reinstall.
   - `w1` — labeled. Disk `default-disk-1030500000000` at
-    `/var/mnt/longhorn`, 751GB max / 736GB available, `storageReserved: 0`.
-  - `talos-wu6-eib` (cp1) — **unlabeled, `disks: map[]`**. Its 322GB
-    `nvme0n1p5` is still `u-media` holding the hostPath media PVs; the
-    handover to a Longhorn disk is task `214661d2`.
-- StorageClass `longhorn` is the cluster default: `numberOfReplicas: 2`,
-  `dataLocality: best-effort`, `fsType: ext4`, reclaim `Delete`.
-- **Expect Degraded volumes** until cp1 contributes its disk — two
-  replicas requested, one node offering storage. Degraded is functional
-  and self-heals when the second disk appears.
+    `/var/mnt/longhorn`, 751GB max / 727GB available.
+  - `talos-wu6-eib` (cp1) — labeled. Disk `default-disk-1030400000000`
+    at `/var/mnt/longhorn`, 322GB max / 316GB available. This is the
+    former `u-media` partition, handed over 2026-07-31 (task
+    `214661d2`); it renumbered `nvme0n1p5` → `nvme0n1p4` on reprovision.
+  - **Total raw 1073GB**, `storageReserved: 0` on both.
+- Two StorageClasses, split by data class (ADR-0011):
+  - `longhorn` (default) — RWO, `numberOfReplicas: 2`, `dataLocality:
+    best-effort`, reclaim `Delete`. For app state. **No users yet**:
+    every app still keeps its config on `emptyDir`, so nothing on this
+    cluster is replicated today.
+  - `longhorn-bulk` — RWX, `numberOfReplicas: 1`, `dataLocality:
+    disabled`, reclaim `Retain`. For the media library.
+- Media is `media/{tv,movies,downloads}` (200/200/50Gi, RWX), renamed
+  from `media-*` because storageClassName and volumeName are immutable.
+  All three `attached` / `healthy`.
+- **Volume mobility verified deliberately** 2026-07-31, per ADR-0011's
+  confirmation criterion: a file written from a sonarr pod on cp1 was
+  read back intact after cordoning cp1 and letting the pod reschedule
+  onto w1. Media pods now run split across both nodes sharing the same
+  volumes — impossible under hostPath.
+- Handover gotcha: plain `talosctl wipe disk nvme0n1p5` is **not enough**
+  to free a user volume's space, despite the docs saying it makes the
+  disk allocatable. It clears the filesystem but leaves the partition
+  entry, and the replacement volume stays `failed` with `no disks
+  matched for volume (1 matched selector): 1 have not enough space`.
+  `--drop-partition` is what actually frees it.
 - The chart's `preUpgradeChecker` job is **disabled**: ArgoCD maps the
   Helm pre-upgrade hook to PreSync, which runs before the main wave
   creates `longhorn-service-account`, wedging the sync. Chart version is
