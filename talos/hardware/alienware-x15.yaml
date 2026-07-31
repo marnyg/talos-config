@@ -1,0 +1,23 @@
+# Alienware x15 R1 laptop (Dell; OUI 98:e7:43, service tag 324S9K3,
+# BIOS 1.4.0, SKU 0A8D). i9-11900H, 1TB SK hynix PC711 NVMe.
+# All of this was read off the node AFTER first boot — it PXE-booted
+# straight into the device-flow wait, so nothing could be inspected
+# before the install (see the disk note below).
+machine:
+  install:
+    # PIN, not the base template's /dev/sda. That default would have
+    # been actively destructive here: the machine also presents a
+    # 2.1GB USB "Flash Disk" as sda (it boots from it), so a
+    # /dev/sda install targets the boot stick, not the system disk.
+    #
+    # The first install ran on a `diskSelector: size >= 100GB` instead,
+    # because the disk was unknowable in advance; the selector is gone
+    # now that the device node is a measured fact. Takes effect at
+    # install time only — repinning does not move an installed system.
+    disk: /dev/nvme0n1
+    # Factory schematic 011ccc… = stock v1.12.6 + siderolabs/nebula
+    # (1.10.3), the same image cp1 runs — see hardware/minipc.yaml for
+    # how to rebuild the id from its inputs. Without it the node has no
+    # mesh identity, and the hub's serve-time cert injection has no
+    # extension service to configure.
+    image: factory.talos.dev/installer/011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598:v1.12.6

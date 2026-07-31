@@ -1,9 +1,8 @@
-# Mesh overlay address (HKDF-derived from the MAC by the hub) — filled
-# in after the first serve, because it is only computable with the
-# master key. Read it off /status, or `dig w1.mesh.internal @10.42.0.1`
-# from an enrolled device. Until then `nix run .#apply` cannot target
-# this machine; nothing else depends on the field.
-ip: ""
+# Mesh overlay address (HKDF-derived from the MAC by the hub) — stable
+# across DHCP leases and reprovisions; the talosctl/apply dial target.
+# Only computable with the master key, so it was read back after the
+# first serve (`dig w1.mesh.internal @10.42.0.1`), not predicted.
+ip: 10.42.227.66
 # Mesh DNS name: w1.mesh.internal (served by the hub at 10.42.0.1:53).
 name: w1
 # SMBIOS UUID, read from the hub's device-flow log before the first
@@ -20,4 +19,4 @@ config: base/worker.yaml
 patches:
   - clusters/homelab/worker-cluster.yaml
   - clusters/homelab/worker-secrets.yaml
-  - hardware/dell-optiplex.yaml
+  - hardware/alienware-x15.yaml
