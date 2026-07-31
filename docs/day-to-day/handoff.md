@@ -5,52 +5,60 @@
 
 ## Last session
 
-2026-07-31 (third session) — **the SSO arc landed end-to-end**
-(`f6e69d2`..`98dd4c9`, tasks 35–38 all closed; sketch 162c630d fully
-realized). Every exposed service now authenticates against the wallet.
+2026-07-31 (fourth session) — **the cluster stopped being single-node**
+(`03a712a`, `b31933b`, `cf4aaca`). w1, an Alienware x15 R1, is a Ready
+worker with an encrypted disk and a mesh identity.
 
-- `config-server/siweoidc/` + `cmd/siweoidc`: minimal OIDC provider,
-  EIP-191 signature is the only auth, PKCE S256 mandatory, per-boot
-  RS256 key, everything in-memory, clients/admins as deployment args.
-  Deployed in-cluster (`sso` ns) at `http://auth.cp1.mesh.internal` —
-  decoupled from the hub so SSO survives seal state and redeploys.
-  First custom-image CI: `.github/workflows/siwe-oidc-image.yml` →
-  `ghcr.io/marnyg/siwe-oidc` (public), `:latest` + `:<sha>`.
-- ArgoCD: `oidc.config` → bridge (PKCE), `admins` group → `role:admin`,
-  dex deleted, `argocd.cp1.mesh.internal` ingress. All encoded in the
-  installer job (bootstrap-time only) *and* applied live by hand.
-- oauth2-proxy (sso ns, sealed cookie secret) gates sonarr/radarr/
-  nzbget/jackett/transmission via `auth_request` annotations; one
-  cookie (`.cp1.mesh.internal`) opens all five.
-- Jellyfin: `jellyfin-plugin-sso` auto-installed by the configurator
-  (emptyDir → re-runs on every pod start), provider "wallet", groups →
-  admin; relative login-button action keeps TV local login intact.
-- One live bug found+fixed: x/oauth2 sends `client_id` as HTTP Basic
-  (`75fb4e7`); one dead end logged: Talos host DNS does not serve
-  `/etc/hosts` to pods, hence hostAliases pins on every relying-party
-  pod (exploration-log).
+- First non-controlplane machine, which is most of the work: the cluster
+  layer had to split (`worker-cluster.yaml` + `worker-secrets.yaml`,
+  every issuing key stripped) because Talos rejects a worker holding
+  etcd config or CA keys. `hardware/alienware-x15.yaml`, `meta.yaml`
+  with the uuid recorded *before* first boot so the KMS allowlist was
+  durable from the start — `kms: unsealed disk key` on the first reboot
+  confirmed it.
+- The machine was un-inspectable before install (no apid while waiting
+  on approval), so it installed via `diskSelector: size >= 100GB`,
+  chosen to fail safe. Now pinned to `/dev/nvme0n1` — and the
+  precaution mattered: `sda` is the 2.1GB USB boot stick, which the
+  role template's `install.disk` default would have overwritten.
+- Two fixes provoked by the change: `encrypt-secrets` matched secret
+  files by exact name (a new one would have stayed plaintext), and
+  `nix run .#apply` would have aborted on w1's empty `ip:` before ever
+  reaching cp1.
+- **Invariant 4 gained a scope note** (decision 46): a worker's kubelet
+  reaches the API server over the mesh — kube-apiserver has no LAN SAN
+  — so cluster membership now has a hard lighthouse dependency. Owner
+  accepted; provisioning and admin recovery still may not depend on the
+  overlay.
+- **Storage direction changed**: ADR-0011 (Proposed) adopts Longhorn and
+  supersedes ADR-0008. More nodes land within days, and the media
+  library's contents are declared disposable, so the migration has no
+  data-movement step and cp1 needs neither reinstall nor repartition.
 
 ## Loose threads
 
-- **Task 39 (`+later`)**: wallet-derived CA in nebup → HTTPS over the
-  mesh. Cookie/redirect config all assumes plain HTTP; flipping to
-  HTTPS touches bridge issuer, oauth2-proxy cookie-secure, jellyfin
-  provider, ArgoCD url.
-- Jellyfin local `admin`/`admin` bootstrap credentials still in git
-  (broken window, deferred); dex-era `stable` install.yaml pin also
-  deferred (installer job pulls whatever `stable` serves).
-- **u-media re-adoption still unexercised with data** — but the input
-  now exists: 4.70 GB / 44 files on `/var/mnt/media` as of 2026-08-01
-  (`tv/Re - ZERO…` S3+S4 plus `downloads/completed`), all three media
-  PVs Bound. ADR-0008's Confirmation criterion is one label-scoped
-  reset away; see [`guides/reinstall.md`](../technical/guides/reinstall.md).
+- **w1's repartition is committed but not applied.** `patch.yaml` (200GiB
+  EPHEMERAL cap + 700GiB `longhorn` volume + `hostname: w1`) needs
+  `fly deploy` → unseal → **bare** `talosctl reset` → approve. The hub
+  was deployed and left **sealed** waiting on that unseal. This is the
+  one legitimate use of the reset `guides/reinstall.md` warns against.
+- **ADR-0011 is Proposed, not Accepted**, and it leaves one thing
+  unresolved on purpose: invariant 2's carve-out names the `u-media`
+  volume as the single deliberate instance of state outside git, and
+  Longhorn's control-plane state is not recomputable from git either.
+  That wording needs a decision before Longhorn lands.
+- `guides/reinstall.md` is largely obsolete under ADR-0011 — its central
+  warning protects a volume that will hold nothing unique.
+- Media hostPath PVs still have no `nodeAffinity` (bug `0b374653`).
+  Harmless only while the library is empty; the `nodeAffinity` stopgap
+  was deliberately **withdrawn** rather than committed, since Longhorn
+  deletes the whole mechanism.
 
 ## Suggested next steps
 
-- Decide the two deferred broken windows (pin ArgoCD install.yaml
-  version; Jellyfin bootstrap credentials → sealed secret or accept).
-- Exercise the reinstall with the library populated (ADR-0008
-  Confirmation) — expect files to survive and sonarr/radarr/jellyfin
-  metadata to be lost with EPHEMERAL.
-- Mesh backlog: tasks 30/31/33/34 (`talos-config.mesh`) are the only
-  open work besides 39.
+- Finish w1: unseal, wipe, approve, then verify the 200/700 split and
+  that the node returns as `w1` rather than a new generated name.
+- Decide ADR-0011 (Accept/revise) and the invariant-2 wording with it.
+- When the new nodes arrive: build the schematic with nebula +
+  iscsi-tools + util-linux-tools (task `ca77f427`) and onboard them on
+  it directly, so no node needs a second upgrade.

@@ -3,19 +3,26 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** The SSO arc is **complete** — every exposed service
-authenticates against the wallet (ArgoCD native OIDC, five UIs via
-oauth2-proxy `auth_request`, Jellyfin via plugin; all through the
-in-cluster SIWE→OIDC bridge). No active arc; next candidates are the
-deferred hardening items and refilling the media library.
+**Now:** Growing the cluster past one node, and rebuilding storage for a
+multi-node world. w1 (Alienware x15) is a Ready worker; its repartition
+into a 700GiB Longhorn volume is committed and awaiting the wipe. More
+nodes land within days, after which Longhorn replaces hostPath and the
+preserved media volume (ADR-0011, Proposed).
 
-**Toward goal:** "Every exposed service authenticates against the
-wallet" in `desired-state/goals.md` — reached 2026-07-31. The last
-remaining scope under that goal is HTTPS-over-mesh (task 39, `+later`).
+**Toward goal:** "Blank metal → cluster member with one human act" in
+`desired-state/goals.md` — w1 exercised that path end to end for the
+first time on hardware that was *not* the control plane, and the one
+human act held: a wallet signature to unseal, a wallet signature to
+approve, nothing else. The storage work serves it too: replicated
+volumes are what make a node wipe cheap enough for provisioning to stay
+routine.
 
 **Out of scope:**
-- HTTPS over the mesh — still deferred until the wallet-derived CA
-  lands in nebup (task 39); plain HTTP remains the recorded decision.
-- TV mesh client / phone onboarding UX — unchanged deferrals.
-- Auto-enroll for undeclared devices (thread a7920bda) — needs an
-  invariant-1 discussion before any code.
+- Replicating the media library for its own sake — ADR-0011 demotes
+  media to an ordinary volume; the durability that matters is app state
+  (sonarr/radarr/jellyfin metadata), which no design has protected yet.
+- Encrypting the Longhorn volume (thread `8e46f3a5`) — needs hub key
+  derivation for user volumes, not just `systemDiskEncryption`.
+- HTTPS over the mesh (task `75c8b6b3`) — unchanged deferral.
+- A second control plane / etcd HA — the new nodes are workers until
+  there are three, and auto-bootstrap actively refuses multi-CP.

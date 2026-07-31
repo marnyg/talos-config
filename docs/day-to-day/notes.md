@@ -145,8 +145,11 @@
   bringing up an untrusted mesh. Re-derive offline with
   `recover -ca-fingerprint -sig <unseal-sig>`.
 
-- 2026-07-31 — **cp1 reprovisioned onto the new disk layout**: node name
-  is now `talos-ezw-edv`, LAN lease `10.0.0.32`. Partitions: p3 STATE
+- 2026-07-31 — **cp1 reprovisioned onto the new disk layout**: ~~node name
+  is now `talos-ezw-edv`, LAN lease `10.0.0.32`~~ — as of the second
+  reprovision the same day it is **`talos-wu6-eib`, lease `10.0.0.21`**
+  (Talos' generated names are not stable across reinstalls; w1 pins its
+  hostname for exactly this reason). Partitions: p3 STATE
   (luks), p4 EPHEMERAL 160GiB (luks), p5 `u-media` 300GiB (xfs, plain)
   at `/var/mnt/media`.
 - 2026-07-31 — **a plain `talosctl reset` wipes the whole disk,
@@ -191,6 +194,44 @@
   workflow finishes is the actual deploy step.
 - 2026-07-31 — ghcr package `siwe-oidc` came up **public** on first
   push (no manual visibility flip was needed).
+
+- 2026-07-31 — **a machine waiting on device-flow approval has no apid**:
+  port 50000 is *refused*, so `talosctl get disks` cannot answer and the
+  hardware is un-inspectable until it is declared, approved and
+  installed. Chicken-and-egg for `install.disk`. The way out: the hub
+  logs the machine's full identity at `/device/code` time, so
+  `fly logs | grep "device auth started"` yields mac + **uuid** +
+  serial with no wallet and no approval — enough to write `meta.yaml`,
+  including the uuid that makes the KMS allowlist durable from the
+  first boot.
+- 2026-07-31 — **`install.disk: /dev/sda` in `base/worker.yaml` is a
+  landmine**: w1 (Alienware x15) boots from a 2.1GB USB stick that
+  presents as `sda`, so the role default would have installed Talos onto
+  the boot medium. Removing the key needs an RFC6902 patch — a merge
+  patch cannot delete, and `disk: ""` is silently dropped, which leaves
+  *both* `disk` and `diskSelector` set with an implicit precedence rule
+  deciding the winner.
+- 2026-07-31 — **a worker cannot reuse the cluster layer.**
+  `base/worker.yaml` + `clusters/homelab/{cluster,secrets}.yaml` fails
+  validation ("etcd config is only allowed on control plane machines"
+  plus three CA-key rejections). Workers take
+  `worker-cluster.yaml` + `worker-secrets.yaml`; regenerate the latter
+  with the `yq del(...)` one-liner in its header whenever `secrets.yaml`
+  changes.
+- 2026-07-31 — `talosctl` global flags are **not** global: `-n`/`-e` must
+  follow the subcommand (`talosctl version --insecure -n IP`, not
+  `talosctl -n IP version`), and maintenance-mode reads are `get -i`,
+  not `--insecure`.
+- 2026-07-31 — **`~/.kube/config` is dead**: it still routes through
+  `zitadel.marnyg.xyz` + `kube-oidc-proxy`, both removed in the SSO arc.
+  `kubectl` only works with `--kubeconfig ./kubeconfig` from the repo
+  root until it is replaced.
+- 2026-07-31 — **the media library is empty and declared disposable**,
+  which is the only reason the missing `nodeAffinity` on the media
+  hostPath PVs is not yet an incident (bug 0b374653): w1 is schedulable,
+  and a media pod landing there gets an empty `DirectoryOrCreate` mount.
+  Must be fixed or superseded by Longhorn **before** the library is
+  refilled.
 
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
