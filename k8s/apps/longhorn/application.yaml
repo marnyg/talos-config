@@ -35,6 +35,20 @@ spec:
     targetRevision: 1.12.0
     helm:
       valuesObject:
+        # The chart ships a `longhorn-pre-upgrade` Job as a Helm
+        # pre-upgrade hook, which ArgoCD maps to a PreSync hook. PreSync
+        # runs before the main wave, so the Job is created before its
+        # own ServiceAccount exists and wedges the sync:
+        #   pods "longhorn-pre-upgrade-" is forbidden: error looking up
+        #   service account longhorn-system/longhorn-service-account
+        # On a fresh install it has nothing to check regardless.
+        #
+        # Cost of disabling: chart upgrades lose the built-in
+        # eligibility guard (version skew, degraded volumes). Acceptable
+        # only because targetRevision is pinned exactly — upgrades here
+        # are a deliberate act, and the check can be run by hand first.
+        preUpgradeChecker:
+          jobEnabled: false
         defaultSettings:
           # Talos user volumes mount at /var/mnt/<name>; Longhorn's own
           # default (/var/lib/longhorn) would land on EPHEMERAL.
