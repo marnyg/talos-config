@@ -1,5 +1,25 @@
 cluster:
   allowSchedulingOnControlPlanes: true
+machine:
+  kubelet:
+    # Longhorn's data path, bind-mounted into the kubelet container with
+    # `rshared` propagation — same reasoning as w1's patch: Talos
+    # propagates user volumes into kubelet, but not as *shared* mounts,
+    # and Longhorn's instance-manager mounts replica devices under this
+    # path from another mount namespace.
+    #
+    # Added in a second apply, after the u-media -> u-longhorn handover
+    # created the mount point. The source path must exist or kubelet
+    # fails to start, /var/mnt is read-only on Talos until a user volume
+    # mounts there, and this is the only control plane.
+    extraMounts:
+      - destination: /var/mnt/longhorn
+        type: bind
+        source: /var/mnt/longhorn
+        options:
+          - bind
+          - rshared
+          - rw
 ---
 # Cap EPHEMERAL so it stops swallowing the whole 512GB disk, leaving
 # room for the `media` user volume below. Takes effect only when the
