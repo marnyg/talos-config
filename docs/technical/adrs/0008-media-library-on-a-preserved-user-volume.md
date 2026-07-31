@@ -86,7 +86,7 @@ one deliberate instance.
   apply + bootstrap, media intact.
 - The standard reinstall command changes; a plain `talosctl reset`
   now destroys the media library and needs USB/PXE to recover
-  (documented in `technical/guides/deployment.md`).
+  (documented in `technical/guides/reinstall.md`).
 - Media PVs hostPath into `/var/mnt/media/*`; the pre-migration
   library restarted empty.
 - The 160GiB EPHEMERAL cap bounds etcd/images/logs; revisit only via

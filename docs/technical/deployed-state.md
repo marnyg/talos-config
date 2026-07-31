@@ -13,16 +13,12 @@ or change something, update the date.
   STATE (LUKS2) + EPHEMERAL 160GiB (LUKS2, capped) + `u-media`
   300GiB (xfs, **unencrypted** — ADR-0004 posture, re-downloadable
   content) mounted at `/var/mnt/media`; media PVs hostPath into it.
-- **Reinstall runbook**: `talosctl reset --graceful=false --reboot
-  --system-labels-to-wipe STATE --system-labels-to-wipe EPHEMERAL`
-  deletes those partitions but keeps the bootloader and `u-media`;
-  the node comes back in maintenance mode on a LAN lease → fetch the
-  hub-composed config over the mesh (`/config?mac=…`, hub must be
-  unsealed) → `talosctl apply-config --insecure -n <lease>` →
-  `talosctl bootstrap`. Cluster state rebuilds from git; the media
-  volume is re-adopted by its `u-media` partition label. A **plain
-  `talosctl reset` wipes the entire disk including the media library**
-  and needs USB/PXE to recover — don't.
+- **Reinstall**: the procedure lives in
+  [`guides/reinstall.md`](guides/reinstall.md). Short form: the
+  label-scoped reset (`--system-labels-to-wipe STATE
+  --system-labels-to-wipe EPHEMERAL`) keeps the bootloader and
+  `u-media`; a **plain `talosctl reset` wipes the entire disk including
+  the media library** and needs USB/PXE to recover — don't.
 - Cluster endpoint `https://10.42.218.125:6443` — the node's **derived
   mesh address**, deliberately not its DHCP LAN address (invariant 7;
   DHCP handed out four leases in one day before this moved off the LAN,
@@ -30,7 +26,18 @@ or change something, update the date.
 - Media stack Running. SealedSecrets (`newshosting`, `nzbgeek`)
   unseal via the inlineManifest-provisioned key pair.
 - Admin access is mesh-only: `talos/talosconfig` + `kubeconfig` (local,
-  gitignored) point at 10.42.218.125. Services are reached by hostname
+  gitignored) point at 10.42.218.125. **`-e` takes the hostname, `-n`
+  must be an IP** _(diagnosed 2026-08-01)_:
+  `talosctl -e cp1.mesh.internal -n 10.42.218.125 …` works, while any
+  `-n cp1.mesh.internal` fails with
+  `dns: A record lookup error … on 127.0.0.53:53: server misbehaving`.
+  That 127.0.0.53 is the **node's** host DNS, not the laptop's stub of
+  the same address — apid resolves the `-n` node name itself, and the
+  node's `resolvers` upstream is the LAN router `10.0.0.1` with no
+  `.mesh.internal` zone and no search domains. Laptop-side split-DNS is
+  fine (link `nebula0`, DNS `10.42.0.1`); `dig`, `curl` and `kubectl`
+  all resolve mesh names. Fixable node-side by pointing the node's
+  resolver at `10.42.0.1`, not yet done. Services are reached by hostname
   over the mesh — `http://<service>.cp1.mesh.internal/` via
   ingress-nginx (ADR-0009); the only web NodePort left is Jellyfin's
   30096 for LAN-direct clients (TV), plus transmission's peer ports.
@@ -74,9 +81,11 @@ wg0 is deleted — hub code, udp/51820, and the node interface.
 - **Mesh certSANs live** _(phase 2 step 1, verified 2026-07-31)_: apid
   and kube-apiserver certs carry `cp1.mesh.internal` + `10.42.218.125`.
   `talosctl -e 10.42.218.125` and the kube API verify over the mesh.
-  `-e cp1.mesh.internal` still needs the laptop resolver to split-DNS
-  `.mesh.internal` → `10.42.0.1` (the hub zone answers it; local
-  resolution is the missing piece).
+  `-e cp1.mesh.internal` works too _(2026-08-01)_: the laptop resolver
+  does split-DNS `.mesh.internal` → `10.42.0.1` via the `nebula0` link,
+  so the earlier "local resolution is the missing piece" note was
+  wrong. The remaining gap is node-side — see the `-n` caveat under
+  Cluster.
 - The CA fingerprint is re-derived on every unseal and is the value
   members pin; it was `b881d6ff…` on the 2026-07-29 unseal. A *different*
   fingerprint after an unseal means a different wallet signed — not a

@@ -4,6 +4,20 @@ Traps that have each cost real time at least once. Landed knowledge —
 these are properties of the tools, not current weather (that lives in
 `day-to-day/notes.md`).
 
+## Talos
+
+- **`127.0.0.53` in a talosctl error is the *node's* resolver, not
+  yours.** Talos host DNS listens on 127.0.0.53 — the same address as
+  systemd-resolved's local stub — so
+  `dns: A record lookup error … on 127.0.0.53:53: server misbehaving`
+  reads like a broken laptop resolver when the lookup actually failed
+  on the node. `-e <endpoint>` is resolved locally; **`-n <node>` is
+  resolved by apid on the node**. Cost an entire wrong diagnosis
+  ("mesh DNS doesn't work locally") that survived into the docs, while
+  `dig`, `curl`, `kubectl` and even `-e cp1.mesh.internal` resolved the
+  same name fine. Check `get resolvers` on the node before blaming the
+  client.
+
 ## Nix / Go
 
 - **`vendorHash` and untracked files.** Flakes only see git-tracked

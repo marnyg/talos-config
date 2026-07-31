@@ -137,4 +137,4 @@ Verified by the measurements above: NAT classification at both ends, a
 capture-verified relay on the hotspot pair, route-table confirmation that
 the office run egressed the physical interface, and the direct-LAN latency
 and throughput numbers recorded in
-[`../guides/deployment.md`](../guides/deployment.md).
+[`../deployed-state.md`](../deployed-state.md).

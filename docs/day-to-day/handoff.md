@@ -39,12 +39,18 @@ realized). Every exposed service now authenticates against the wallet.
 - Jellyfin local `admin`/`admin` bootstrap credentials still in git
   (broken window, deferred); dex-era `stable` install.yaml pin also
   deferred (installer job pulls whatever `stable` serves).
-- Media library still empty; u-media re-adoption unexercised with data.
+- **u-media re-adoption still unexercised with data** — but the input
+  now exists: 4.70 GB / 44 files on `/var/mnt/media` as of 2026-08-01
+  (`tv/Re - ZERO…` S3+S4 plus `downloads/completed`), all three media
+  PVs Bound. ADR-0008's Confirmation criterion is one label-scoped
+  reset away; see [`guides/reinstall.md`](../technical/guides/reinstall.md).
 
 ## Suggested next steps
 
 - Decide the two deferred broken windows (pin ArgoCD install.yaml
   version; Jellyfin bootstrap credentials → sealed secret or accept).
-- Refill the media library.
+- Exercise the reinstall with the library populated (ADR-0008
+  Confirmation) — expect files to survive and sonarr/radarr/jellyfin
+  metadata to be lost with EPHEMERAL.
 - Mesh backlog: tasks 30/31/33/34 (`talos-config.mesh`) are the only
   open work besides 39.
