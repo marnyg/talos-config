@@ -13,23 +13,33 @@ provisioning:
   maxSize: 160GiB
   grow: false
 ---
-# Media library on its own partition so a reinstall (which wipes STATE +
-# EPHEMERAL) preserves it: Talos re-adopts an existing partition matching
-# a UserVolumeConfig instead of recreating it. This is the answer to
-# "what may a reinstall legitimately forget" — everything except this
-# volume. Mounts at /var/mnt/media; the media PVs
-# (k8s/apps/storage/pvs.yaml) hostPath into it.
+# cp1's contribution to Longhorn (mounts at /var/mnt/longhorn).
 #
-# Unencrypted by choice: ADR-0004 frames disk encryption here as
-# disposal/RMA protection only, and this volume holds re-downloadable
-# public media — not worth coupling the volume to serve-time key
-# derivation.
+# This was `media` until 2026-07-31, the ADR-0008 preserved volume that a
+# reinstall was supposed to spare. ADR-0011 supersedes that: the media
+# library became an ordinary Longhorn volume (RWX, one replica, class
+# `longhorn-bulk`), so this partition holds nothing unique and becomes
+# backing store like w1's. Invariant 2's "no single node's disk is exempt
+# from a wipe" is the general form of the same change.
 #
-# Sizing: 476.9GiB disk - ~2.3GiB (EFI/META/STATE) - 160GiB EPHEMERAL
-# leaves ~314GiB; 300GiB fits with slack.
+# The rename is not free: a UserVolumeConfig is identified by name and
+# labels the partition `u-<name>`, so Talos will not relabel `u-media` in
+# place. Removing the old document unmounts it but deliberately leaves
+# the data; the space only becomes allocatable after an explicit
+# `talosctl wipe disk nvme0n1p5`, and only then does this document
+# provision. Sequence matters — wiping while the old document is still in
+# the config fails with "blockdevice is in use by volume".
+#
+# Still unencrypted, and now that is a weaker justification than it was:
+# ADR-0004 cleared the media volume as public and re-downloadable, which
+# stops describing a Longhorn disk the moment app state moves onto it.
+# Same open decision as w1's volume, thread `8e46f3a5`.
+#
+# Sizing: unchanged from the media volume it replaces — 476.9GiB disk
+# - ~2.3GiB (EFI/META/STATE) - 160GiB EPHEMERAL leaves ~314GiB.
 apiVersion: v1alpha1
 kind: UserVolumeConfig
-name: media
+name: longhorn
 provisioning:
   diskSelector:
     match: system_disk
