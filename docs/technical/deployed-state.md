@@ -9,16 +9,18 @@ or change something, update the date.
 
 - Two nodes, Talos v1.12.6, k8s v1.32.3:
   - **cp1** — control plane `b0:41:6f:15:3b:8f`, node `talos-wu6-eib`,
-    LAN lease `10.0.0.21` (drifts; was `talos-ezw-edv`/`10.0.0.32`
-    before the second reprovision the same day — generated names are
-    not stable across reinstalls).
+    LAN lease `10.0.0.41` (drifts — `.33 → .21 → .35 → .41` in one day;
+    was `talos-ezw-edv`/`10.0.0.32` before the second reprovision the
+    same day — generated names are not stable across reinstalls, and
+    cp1's hostname is **not** pinned the way w1's is).
   - **w1** — worker `98:e7:43:11:97:b8`, node `w1` (**hostname pinned**,
     so reinstalls stop stranding NotReady node objects), LAN lease
-    `10.0.0.38` (drifts), mesh `10.42.227.66`. Alienware x15 R1,
+    `10.0.0.39` (drifts), mesh `10.42.227.66`. Alienware x15 R1,
     i9-11900H, 1TB SK hynix PC711 NVMe. Disk: STATE (LUKS2) +
     EPHEMERAL 200GiB (LUKS2, capped) + `u-longhorn` 700GiB (xfs,
     **unencrypted** — decision pending, thread `8e46f3a5`) at
-    `/var/mnt/longhorn`, empty and waiting for Longhorn (ADR-0011).
+    `/var/mnt/longhorn`, **in service as w1's Longhorn disk** since
+    2026-07-31 (751GB max / 736GB available, `storageReserved: 0`).
     Beware `sda`: a 2.1GB USB boot stick, which is why the install disk
     is pinned rather than left at the role template's `/dev/sda`.
   - Worker configs take `clusters/homelab/worker-{cluster,secrets}.yaml`
@@ -42,6 +44,21 @@ or change something, update the date.
   mesh address**, deliberately not its DHCP LAN address (invariant 7;
   DHCP handed out four leases in one day before this moved off the LAN,
   and the wg0 address it moved to next died with phase 2).
+- **etcd still advertises the DHCP lease**, which invariant 7 forbids
+  and which the cluster endpoint above already moved away from:
+  `talosctl etcd members` shows peer/client URLs at `10.0.0.41:2380/2379`.
+  Talos reconciles the *peer* URL from the current address but never the
+  *client* URL, which is only re-published when etcd restarts — and etcd
+  has no API restart, only a reboot. A lease drift between reboots
+  therefore leaves a member advertising a dead address, which fails
+  `talosctl upgrade`'s pre-flight (`etcd member … is not healthy`) while
+  etcd itself is fine. Hit on 2026-07-31; cleared by a reboot, not fixed.
+  Durable fix is `cluster.etcd.advertisedSubnets` on the mesh —
+  **but** setting it implicitly narrows the listen addresses to the same
+  subnet (siderolabs/talos@dce923f), and kube-apiserver dials
+  `--etcd-servers=https://127.0.0.1:2379`, so it needs an explicit
+  `listenSubnets` that retains loopback or the API server dies
+  (siderolabs/talos#12542).
 - Media stack Running. SealedSecrets (`newshosting`, `nzbgeek`)
   unseal via the inlineManifest-provisioned key pair.
 - Admin access is mesh-only: `talos/talosconfig` + `kubeconfig` (local,
@@ -87,8 +104,10 @@ wg0 is deleted — hub code, udp/51820, and the node interface.
 
 - Hub is lighthouse + relay on `10.42.0.1`, fly udp/4242, dedicated
   IPv4 `213.188.219.215`.
-- cp1 runs `siderolabs/nebula` 1.10.3 from factory schematic
-  `011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598`,
+- Both nodes run `siderolabs/nebula` 1.10.3 from factory schematic
+  `6a9acceefb4231ee98d04df0a3172479299cf51a36cda05f7ff817ab6d0d4735`
+  (nebula + `iscsi-tools` v0.2.0 + `util-linux-tools` 2.41.2; upgraded
+  from the nebula-only `011ccc…` on 2026-07-31 for Longhorn),
   service `ext-nebula`, interface `nebula0`, overlay `10.42.218.125/16`.
 - Verified handshake in both directions, node WAN endpoint seen by the
   hub as `80.212.67.203:4242` — so NAT mapping is visible and direct
@@ -220,3 +239,34 @@ plaintext META.
 > Now recorded properly in **ADR-0004**, including the consequence that
 > matters most: wipe META before a *machine* (not just a disk) leaves the
 > owner's hands, because the slot-1 passphrase travels with it.
+
+## Storage — _last verified 2026-07-31_
+
+Longhorn 1.12.0 via ArgoCD (`k8s/apps/longhorn/application.yaml`),
+Synced/Healthy. ADR-0011.
+
+- **Disks are opt-in per node** (`createDefaultDiskLabeledNodes: true`).
+  Only nodes carrying `node.longhorn.io/create-default-disk=true` get
+  one. This is a safety property, not tidiness: without it Longhorn
+  creates a disk on every node at `/var/mnt/longhorn`, and on a node
+  lacking that user volume the path is an ordinary directory on
+  EPHEMERAL — replicas would land on scratch and die with the next
+  reinstall.
+  - `w1` — labeled. Disk `default-disk-1030500000000` at
+    `/var/mnt/longhorn`, 751GB max / 736GB available, `storageReserved: 0`.
+  - `talos-wu6-eib` (cp1) — **unlabeled, `disks: map[]`**. Its 322GB
+    `nvme0n1p5` is still `u-media` holding the hostPath media PVs; the
+    handover to a Longhorn disk is task `214661d2`.
+- StorageClass `longhorn` is the cluster default: `numberOfReplicas: 2`,
+  `dataLocality: best-effort`, `fsType: ext4`, reclaim `Delete`.
+- **Expect Degraded volumes** until cp1 contributes its disk — two
+  replicas requested, one node offering storage. Degraded is functional
+  and self-heals when the second disk appears.
+- The chart's `preUpgradeChecker` job is **disabled**: ArgoCD maps the
+  Helm pre-upgrade hook to PreSync, which runs before the main wave
+  creates `longhorn-service-account`, wedging the sync. Chart version is
+  pinned exactly to compensate.
+- **No backup target configured.** Replication is not backup, and
+  invariant 2 makes Longhorn's own bookkeeping a backup problem — so
+  until this exists, a cp1 wipe is not the routine act `reinstall.md`
+  describes.
