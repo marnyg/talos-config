@@ -237,6 +237,39 @@
   Must be fixed or superseded by Longhorn **before** the library is
   refilled.
 
+- 2026-07-31 — ~~the media library is empty and declared disposable,
+  which is the only reason the missing `nodeAffinity` ... is not yet an
+  incident (bug 0b374653)~~ Superseded same day: hostPath is gone, media
+  is on Longhorn RWX. The bug's premise was also **wrong in our favour**
+  — a media pod on a node without the volume fails loudly (`mkdir
+  /var/mnt/media: read-only file system`, because `/var/mnt` is
+  read-only on Talos unless a user volume mounts there), it does not
+  silently mount an empty `DirectoryOrCreate`.
+- 2026-07-31 — **Nothing on this cluster is replicated.** Longhorn is
+  installed and healthy on 1073GB, but the 2-replica StorageClass has no
+  users: every app keeps config on `emptyDir`. App state dies on pod
+  restart, not just reinstall. Do not read "Longhorn is up" as "state is
+  safe".
+- 2026-07-31 — **Knowing deviation from invariant 2** (decision
+  `d5f73e89`): `longhorn-bulk` runs 1 replica, so the media library is
+  neither git-derivable nor replicated — wiping the node holding it
+  destroys it. Accepted only until the new nodes land (`da61bd8e`).
+  This is the wrong implementation, not a relaxed invariant.
+- 2026-07-31 — **Anything that dials a `.mesh.internal` name from a pod
+  only works if that pod lands on cp1.** nebula routes 10.42.0.0/16
+  source addresses; a pod's source is 10.244.x.x. Bit oauth2-proxy this
+  session (~70min SSO outage) and `argocd-server` is still broken the
+  same way (`f9bac57c`). Rule of thumb: pods talk to Services,
+  the mesh is for hosts and browsers.
+- 2026-07-31 — `talosctl wipe disk <part>` does **not** free a user
+  volume's space despite the docs saying it makes the disk allocatable.
+  It clears the filesystem, leaves the partition entry, and the
+  replacement volume sits in `failed` / "not enough space".
+  `--drop-partition` is the real flag. Partitions renumber (`p5` → `p4`).
+- 2026-07-31 — cp1's DHCP lease moved four times in one day
+  (`.33 → .21 → .35 → .41`). Never hardcode it; use the mesh address
+  `10.42.218.125`.
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have

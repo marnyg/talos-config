@@ -5,60 +5,68 @@
 
 ## Last session
 
-2026-07-31 (fourth session) — **the cluster stopped being single-node**
-(`03a712a`, `b31933b`, `cf4aaca`). w1, an Alienware x15 R1, is a Ready
-worker with an encrypted disk and a mesh identity.
+2026-07-31 (fifth session) — **the storage layer landed** (`d43b8fb`
+through `5069649`). ADR-0011 went from Proposed to Accepted and was
+implemented the same day.
 
-- First non-controlplane machine, which is most of the work: the cluster
-  layer had to split (`worker-cluster.yaml` + `worker-secrets.yaml`,
-  every issuing key stripped) because Talos rejects a worker holding
-  etcd config or CA keys. `hardware/alienware-x15.yaml`, `meta.yaml`
-  with the uuid recorded *before* first boot so the KMS allowlist was
-  durable from the start — `kms: unsealed disk key` on the first reboot
-  confirmed it.
-- The machine was un-inspectable before install (no apid while waiting
-  on approval), so it installed via `diskSelector: size >= 100GB`,
-  chosen to fail safe. Now pinned to `/dev/nvme0n1` — and the
-  precaution mattered: `sda` is the 2.1GB USB boot stick, which the
-  role template's `install.disk` default would have overwritten.
-- Two fixes provoked by the change: `encrypt-secrets` matched secret
-  files by exact name (a new one would have stayed plaintext), and
-  `nix run .#apply` would have aborted on w1's empty `ip:` before ever
-  reaching cp1.
-- **Invariant 4 gained a scope note** (decision 46): a worker's kubelet
-  reaches the API server over the mesh — kube-apiserver has no LAN SAN
-  — so cluster membership now has a hard lighthouse dependency. Owner
-  accepted; provisioning and admin recovery still may not depend on the
-  overlay.
-- **Storage direction changed**: ADR-0011 (Proposed) adopts Longhorn and
-  supersedes ADR-0008. More nodes land within days, and the media
-  library's contents are declared disposable, so the migration has no
-  data-movement step and cp1 needs neither reinstall nor repartition.
+- **Invariant 2 was amended before any code moved** (decision
+  `5f9040ab`). The old wording named `u-media` as the one instance of
+  state outside git; the replacement draws a layer line instead — git
+  owns the control plane, the data plane owns payload *and the
+  bookkeeping a stateful service keeps about it* (Longhorn's CRDs).
+  Net effect: stronger per node ("no single disk is exempt from a
+  wipe"), honest about the data plane. `reinstall.md` was rewritten
+  around it as one whole-disk procedure for every node.
+- **Both nodes upgraded** to schematic `6a9acc…` (nebula + iscsi-tools
+  + util-linux-tools), and **Longhorn 1.12.0 runs on 1073GB raw** —
+  w1's 751GB plus cp1's 322GB, the former `u-media` partition handed
+  over with no reinstall, exactly as the ADR promised.
+- **The media volumes forced a design call the ADR had missed.** They
+  are *shared* (tv by sonarr+jellyfin, downloads by four pods), which
+  hostPath only allowed because every pod sat on cp1. Longhorn RWO
+  attaches to one node, so a naive migration would have re-pinned all
+  six. Resolved by splitting StorageClasses **by data class**: default
+  `longhorn` (RWO, 2 replicas) for app state, `longhorn-bulk` (RWX, 1
+  replica, Retain) for the library.
+- **Mobility was verified deliberately**, not observed: a file written
+  from a sonarr pod on cp1 was read back intact after cordoning cp1 and
+  letting the pod reschedule to w1. Media pods now run split across
+  both nodes sharing the same volumes.
+- **SSO broke and was fixed properly.** oauth2-proxy CrashLooped for
+  ~70min after cp1's reboot moved it to w1: its `hostAliases` pinned the
+  issuer to cp1's *mesh* address, and nebula carries only 10.42.0.0/16
+  sources, so a pod at 10.244.x.x cannot dial it. Now aliased to the
+  siwe-oidc ClusterIP (pinned in git), which satisfies OIDC issuer-URL
+  equality rather than dodging it — the discovery document advertises
+  the mesh name however it is fetched.
 
 ## Loose threads
 
-- **w1's repartition is committed but not applied.** `patch.yaml` (200GiB
-  EPHEMERAL cap + 700GiB `longhorn` volume + `hostname: w1`) needs
-  `fly deploy` → unseal → **bare** `talosctl reset` → approve. The hub
-  was deployed and left **sealed** waiting on that unseal. This is the
-  one legitimate use of the reset `guides/reinstall.md` warns against.
-- **ADR-0011 is Proposed, not Accepted**, and it leaves one thing
-  unresolved on purpose: invariant 2's carve-out names the `u-media`
-  volume as the single deliberate instance of state outside git, and
-  Longhorn's control-plane state is not recomputable from git either.
-  That wording needs a decision before Longhorn lands.
-- `guides/reinstall.md` is largely obsolete under ADR-0011 — its central
-  warning protects a volume that will hold nothing unique.
-- Media hostPath PVs still have no `nodeAffinity` (bug `0b374653`).
-  Harmless only while the library is empty; the `nodeAffinity` stopgap
-  was deliberately **withdrawn** rather than committed, since Longhorn
-  deletes the whole mechanism.
+- **A knowing deviation from invariant 2 is live** (decision
+  `d5f73e89`): `longhorn-bulk` is 1 replica, so the library is neither
+  git-derivable nor replicated and a wipe of its node destroys it. The
+  invariant stands as written — the implementation is the wrong half,
+  accepted only until the new nodes add capacity (`da61bd8e`).
+- **Nothing on this cluster is replicated yet.** The 2-replica class has
+  no users: every app still keeps config on `emptyDir`, so
+  sonarr/radarr/jellyfin metadata dies on every *pod restart*. This is
+  the last unclaimed piece of ADR-0011 and the only one that makes a
+  node wipe genuinely cheap.
+- **`argocd-server` has the same mesh-alias bug oauth2-proxy just had**
+  (`f9bac57c`) and is currently broken for SSO login. Its pin lives in
+  the bootstrap-only installer Job, so it needs migrating into
+  `k8s/apps/argocd/`, not a one-line edit.
+- **etcd advertises the DHCP lease** (`6c456522`), violating invariant 7.
+  Cleared by a reboot this session, not fixed; the mesh-advertise fix
+  narrows listen addresses too and would kill kube-apiserver's loopback
+  etcd dial unless `listenSubnets` explicitly retains it.
+- No backup target (`8b9972fd`), which invariant 2 makes load-bearing.
 
 ## Suggested next steps
 
-- Finish w1: unseal, wipe, approve, then verify the 200/700 split and
-  that the node returns as `w1` rather than a new generated name.
-- Decide ADR-0011 (Accept/revise) and the invariant-2 wording with it.
-- When the new nodes arrive: build the schematic with nebula +
-  iscsi-tools + util-linux-tools (task `ca77f427`) and onboard them on
-  it directly, so no node needs a second upgrade.
+- Move app config off `emptyDir` onto the 2-replica class — verifying
+  each app's `configurator` container is idempotent against pre-existing
+  config rather than assuming.
+- Fix `argocd-server`'s alias the same way oauth2-proxy was fixed.
+- When the new nodes land: onboard them on `6a9acc…` directly, then
+  raise `longhorn-bulk` to 2 replicas.

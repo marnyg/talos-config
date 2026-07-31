@@ -20,6 +20,23 @@
   oauth2-proxy and jellyfin in their manifests). Only the issuer name
   needs this — browsers resolve via hub DNS; pods never dial other
   service names.
+- 2026-07-31 (later) — **that landing was half wrong, and the wrong
+  half was the address, not the mechanism.** `hostAliases` is still
+  right; pointing it at cp1's *mesh* address is not. nebula carries
+  10.42.0.0/16 source addresses and a pod's source is 10.244.x.x, so
+  the alias only resolves-and-connects while the pod happens to run on
+  cp1 — anywhere else the dial times out. cp1's reboot moved
+  oauth2-proxy to w1 and every SSO-protected service returned 500 for
+  ~70 minutes. Landed on: alias the issuer name to the **siwe-oidc
+  Service ClusterIP** (pinned in git). This satisfies OIDC's issuer-URL
+  equality rather than dodging it — siwe-oidc advertises issuer,
+  authorization_endpoint and jwks_uri as `http://auth.cp1.mesh.internal`
+  no matter how the discovery document is fetched, so only the transport
+  differs: server-side calls resolve in-cluster from any node,
+  browser-side calls still traverse the mesh via ingress.
+  The sentence above — "pods never dial other service names" — was the
+  buried assumption that made this a latent single-node bug.
+  `argocd-server` still carries the old pin (`f9bac57c`).
 
 ## TV mesh client (2026-07-30)
 
