@@ -4,10 +4,14 @@
      don't belong in AGENTS.md (too verbose / temporal) or technical/ (not landed knowledge).
 
      Each entry: `YYYY-MM-DD — <note>`.
-     docs-update prunes stale items (>30 days old gets `<!-- stale? -->` flag for review). -->
+     docs-update prunes stale items (>30 days old gets `<!-- stale? -->` flag for review).
+
+     Reference tasks by 8-char UUID prefix (`85ba4de5`), never by short id (`task 42`):
+     short ids are renumbered as tasks complete, so the reference silently comes to
+     point at an unrelated task. -->
 
 - 2026-07-29 — ~~`nix run .#apply` is dangerous on provisioned machines~~
-  Fixed later same day (#30): apply now fetches the hub-composed config
+  Fixed later same day (`4dcfb659`): apply now fetches the hub-composed config
   over the tunnel and refuses to compose locally.
 - 2026-07-29 — Every fly deploy re-seals the hub: derived roles (wg,
   KMS, enrollment) are down until a wallet unseal at `/status`. The
@@ -78,7 +82,7 @@
   `netstat -rn` plus `route get <peer-ip>` (macOS) or `ip route get`
   (Linux) — confirm egress is a physical NIC. The old `ip link` check
   silently no-ops on macOS, which is where these tests actually run.
-  Guard filed as a bug against `nebup` (task 42).
+  Guard filed as a bug against `nebup` (`85ba4de5`).
 - 2026-07-30 — **The office MacBook is enrolled as device name `laptop`**,
   the same default the home laptop used. Identity derives from (master,
   name), so both machines hold the *same* mesh key and the same overlay
@@ -243,7 +247,7 @@ ask before doing so.
   permanent + `chmod 600` (user action).
 - ~~`argocd-dex-server` pod in Error — unused OIDC component; candidate
   for disabling in the ArgoCD install.~~ Scoped 2026-07-31: dex gets
-  deleted as part of the ArgoCD→SIWE-OIDC switch (task 39).
+  deleted as part of the ArgoCD→SIWE-OIDC switch (`01199df7`).
 - ~~`tailscale-operator` Application Degraded — never investigated.~~
   Moot 2026-07-31: tailscale removed entirely (ADR-0009).
 - KMS slot 0 is never used at boot (early-boot DNS loses the race).

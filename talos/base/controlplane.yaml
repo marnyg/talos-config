@@ -188,7 +188,12 @@ machine:
 
     # Used to provide instructions for installations.
     install:
-        disk: /dev/sda # The disk used for installations.
+        # NO DEFAULT DISK ON PURPOSE — see the same note in worker.yaml.
+        # `/dev/sda` is whatever the BIOS enumerated first, which on at
+        # least one of these machines is a USB boot stick. Absent means a
+        # hardware layer that forgets the disk fails validation rather
+        # than installing over the wrong device.
+        # Set it in talos/hardware/<type>.yaml.
         image: ghcr.io/siderolabs/installer:v1.12.6 # Allows for supplying the image used to perform the installation.
         wipe: false # Indicates if the installation disk should be wiped at installation time.
         

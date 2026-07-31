@@ -188,7 +188,13 @@ machine:
 
     # Used to provide instructions for installations.
     install:
-        disk: /dev/sda # The disk used for installations.
+        # NO DEFAULT DISK ON PURPOSE. The generated template ships
+        # `disk: /dev/sda`, which is a landmine: on w1 (Alienware x15)
+        # sda is the 2.1GB USB stick the machine boots from, so the
+        # default would install Talos over the boot medium. With the key
+        # absent, a hardware layer that forgets to state the disk fails
+        # validation instead of wiping the wrong device.
+        # Set it in talos/hardware/<type>.yaml.
         image: ghcr.io/siderolabs/installer:v1.12.6 # Allows for supplying the image used to perform the installation.
         wipe: false # Indicates if the installation disk should be wiped at installation time.
         
