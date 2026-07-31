@@ -1,0 +1,90 @@
+# Replicated block storage (ADR-0011). Longhorn replaces the hostPath
+# PVs + preserved `u-media` volume that ADR-0008 built for a one-node
+# cluster: volumes follow pods instead of pinning them, and app state
+# (sonarr/radarr/jellyfin metadata) becomes durable, which is the data
+# that actually hurts to lose.
+#
+# Node prerequisites, all of which must be true BEFORE this syncs:
+#   - factory schematic 6a9acc… (iscsi-tools + util-linux-tools);
+#     talos/hardware/*.yaml
+#   - a `longhorn` user volume mounted at /var/mnt/longhorn
+#   - kubelet extraMounts for that path with `rshared`; see the machine
+#     patches for why propagation, not just visibility, is required
+#   - the node labeled node.longhorn.io/create-default-disk=true
+#
+# Version is pinned EXACTLY, unlike ingress-nginx's "4.*". A storage
+# engine upgrade migrates on-disk replica formats and wants its release
+# notes read first; drifting to whatever the chart repo published today
+# is not a thing to do unattended.
+#
+# Deletion hazard: removing this Application (or renaming the directory)
+# cascades to the CRDs, and the Volume/Replica CRs are the only record of
+# where replica data lives. Invariant 2 classifies that bookkeeping as
+# data-plane state whose durability is a backup problem — so until a
+# backup target exists, do not delete this Application casually.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.longhorn.io
+    chart: longhorn
+    targetRevision: 1.12.0
+    helm:
+      valuesObject:
+        defaultSettings:
+          # Talos user volumes mount at /var/mnt/<name>; Longhorn's own
+          # default (/var/lib/longhorn) would land on EPHEMERAL.
+          defaultDataPath: /var/mnt/longhorn
+          # Only nodes explicitly labeled get a default disk. The default
+          # (false) would auto-create a disk on EVERY node at
+          # defaultDataPath — and on a node without the user volume that
+          # path is an ordinary directory on EPHEMERAL, so replicas would
+          # silently land on the 200GiB scratch partition and die with
+          # the next reinstall. Fail closed instead.
+          createDefaultDiskLabeledNodes: true
+          # The backing volume is dedicated to Longhorn, so the 30%
+          # default reserve protects nothing and costs ~90GiB on cp1.
+          # storageMinimalAvailablePercentage still guards against
+          # filling it completely.
+          storageReservedPercentageForDefaultDisk: 0
+          storageMinimalAvailablePercentage: 10
+          # Keep a replica on whichever node runs the pod: this is what
+          # makes the read path local and removes the hostPath
+          # nodeAffinity hazard (bug 0b374653) by design rather than by
+          # pinning.
+          defaultDataLocality: best-effort
+        persistence:
+          defaultClass: true
+          # Two nodes, so two replicas — one per node. Deliberately set
+          # here rather than via defaultSettings.defaultReplicaCount,
+          # which changed to a per-engine map in 1.10 and only affects
+          # UI-created volumes anyway; PVCs take this.
+          #
+          # Expect volumes to sit Degraded until cp1's partition is
+          # handed over (task 214661d2) — degraded is functional, and it
+          # self-heals when the second disk appears. Revisit when node
+          # three lands.
+          defaultClassReplicaCount: 2
+          defaultDataLocality: best-effort
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Longhorn's CRDs exceed the 256KB last-applied-configuration
+      # annotation limit that client-side apply uses.
+      - ServerSideApply=true
+    # Talos enforces the baseline PSS on workload namespaces; Longhorn's
+    # manager and instance-manager need privileged (host devices, mount
+    # namespaces). Scoped to this namespace only, as with ingress-nginx.
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
