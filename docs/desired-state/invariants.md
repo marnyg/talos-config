@@ -29,6 +29,14 @@ this list is the checkable form.
 4. **The mesh is post-bootstrap.** Nothing on the provisioning or
    recovery path may depend on the overlay network. Provisioning is
    HTTPS + device flow; recovery works from LAN with owner keys.
+   _Scope, clarified 2026-07-31 when the first worker joined:_ this
+   constrains **provisioning and admin recovery**, not steady-state
+   cluster membership. A worker's kubelet reaches the API server over
+   the mesh, because `apiServer.certSANs` carries only mesh names
+   (`10.42.218.125`, `cp1.mesh.internal`) — so a worker cannot rejoin
+   while the lighthouse is unreachable. Accepted deliberately: the
+   lighthouse is a hard dependency of cluster membership. Provisioning
+   a replacement node still needs nothing but HTTPS + the wallet.
 5. **Single public entrypoint.** The hub is the only public surface
    (HTTPS + its UDP overlay port). No second entrypoint, no home-IP
    pinning into device configs.

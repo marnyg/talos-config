@@ -1,0 +1,52 @@
+# Pin the hostname. Talos' generated names are NOT stable across a
+# reinstall — cp1 came back as talos-wu6-eib having been talos-ezw-edv
+# — so without this every wipe leaves a permanently NotReady Node
+# object behind and breaks anything that referenced the old name.
+machine:
+  network:
+    hostname: w1
+---
+# Cap EPHEMERAL so it stops owning the whole 953.9GiB disk, leaving room
+# for the Longhorn volume below. Takes effect only when the partition is
+# (re)created — a fresh install, not an upgrade or reboot.
+#
+# 200GiB is generous for a worker: EPHEMERAL holds container images,
+# logs and pod scratch, and nothing durable. Durable data belongs in
+# Longhorn, which is the point of the split.
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  maxSize: 200GiB
+  grow: false
+---
+# Dedicated storage volume for Longhorn (mounts at /var/mnt/longhorn).
+# Sidero recommends a disk separate from the Talos install disk for any
+# storage cluster; a partition is the closest thing available on a
+# single-disk machine.
+#
+# Sizing: 953.9GiB disk - ~2.3GiB (EFI/META/STATE) - 200GiB EPHEMERAL
+# leaves ~751GiB; 700GiB fits with slack.
+#
+# Deliberately NOT the `media` name cp1's volume carries. This partition
+# is Longhorn's backing store, not a media library — the media library
+# becomes a Longhorn volume that happens to have replicas here.
+#
+# UNENCRYPTED, matching cp1's media volume — but note the posture has
+# genuinely shifted and this deserves a decision, not inheritance.
+# ADR-0004 justifies leaving cp1's media volume in the clear because it
+# holds re-downloadable public content. A Longhorn disk holds app state
+# too (sonarr/radarr/jellyfin metadata), which is not re-downloadable
+# and not public. Talos user volumes do support `encryption:`, but the
+# hub only derives keys for systemDiskEncryption today, so turning it on
+# is hub work, not a flag. Tracked, not silently accepted.
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: longhorn
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 700GiB
+  maxSize: 700GiB
+filesystem:
+  type: xfs
