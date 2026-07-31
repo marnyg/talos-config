@@ -7,8 +7,27 @@ or change something, update the date.
 
 ## Cluster — _last verified 2026-07-31_
 
-- Single control plane `b0:41:6f:15:3b:8f` (node `talos-ezw-edv`,
-  LAN lease `10.0.0.32` — drifts), Talos v1.12.6, k8s v1.32.3.
+- Two nodes, Talos v1.12.6, k8s v1.32.3:
+  - **cp1** — control plane `b0:41:6f:15:3b:8f`, node `talos-wu6-eib`,
+    LAN lease `10.0.0.21` (drifts; was `talos-ezw-edv`/`10.0.0.32`
+    before the second reprovision the same day — generated names are
+    not stable across reinstalls).
+  - **w1** — worker `98:e7:43:11:97:b8`, node `w1` (**hostname pinned**,
+    so reinstalls stop stranding NotReady node objects), LAN lease
+    `10.0.0.38` (drifts), mesh `10.42.227.66`. Alienware x15 R1,
+    i9-11900H, 1TB SK hynix PC711 NVMe. Disk: STATE (LUKS2) +
+    EPHEMERAL 200GiB (LUKS2, capped) + `u-longhorn` 700GiB (xfs,
+    **unencrypted** — decision pending, thread `8e46f3a5`) at
+    `/var/mnt/longhorn`, empty and waiting for Longhorn (ADR-0011).
+    Beware `sda`: a 2.1GB USB boot stick, which is why the install disk
+    is pinned rather than left at the role template's `/dev/sda`.
+  - Worker configs take `clusters/homelab/worker-{cluster,secrets}.yaml`
+    — the control-plane cluster layer fails validation on a worker.
+- **Scheduling hazard while both nodes run hostPath media PVs**: the PVs
+  have no `nodeAffinity`, so a media pod landing on w1 gets an empty
+  `DirectoryOrCreate` mount. Safe only because the library is empty and
+  declared disposable; must be fixed or superseded before refilling
+  (bug `0b374653`).
 - Disk layout (since the 2026-07-31 reprovision): EFI + META +
   STATE (LUKS2) + EPHEMERAL 160GiB (LUKS2, capped) + `u-media`
   300GiB (xfs, **unencrypted** — ADR-0004 posture, re-downloadable
