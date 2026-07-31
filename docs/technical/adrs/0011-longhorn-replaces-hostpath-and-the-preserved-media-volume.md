@@ -117,10 +117,11 @@ current library contents to get there.
   its central warning ("never run a bare `talosctl reset`") exists to
   protect a volume that will no longer hold anything unique.
 - Every node needs the new schematic before it can run Longhorn, so
-  node onboarding and this migration are coupled (tasks 42, 43).
+  node onboarding and this migration are coupled (`ca77f427`,
+  `214661d2`).
 - Encryption posture becomes an open question: ADR-0004 clears cp1's
   media volume as public and re-downloadable, which will no longer
-  describe the contents of a Longhorn disk (thread 44).
+  describe the contents of a Longhorn disk (thread `8e46f3a5`).
 - Capacity accounting becomes replica-aware — 300GiB of media at two
   replicas is 600GiB of disk.
 
