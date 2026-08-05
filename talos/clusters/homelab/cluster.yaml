@@ -61,7 +61,9 @@ cluster:
                 - /bin/sh
                 - -c
                 - |
-                  kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+                  # Pinned: `stable` made every reinstall adopt whatever
+                  # upstream shipped that day. Bump deliberately.
+                  kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.5/manifests/install.yaml
 
                   # ArgoCD's own config (oidc.config, policy.csv,
                   # server.insecure) is NOT set here — it lives in
@@ -74,21 +76,13 @@ cluster:
                   # Job runs once per cluster), which is what left the
                   # 2026-07-31 reinstall with no SSO and dex resurrected.
 
-                  # Pods cannot resolve .mesh.internal: Talos host DNS serves no
-                  # /etc/hosts entries to kube-dns queries (siderolabs/talos
-                  # #9822/#13141), so pin the issuer name to cp1's derived mesh
-                  # address — stable across leases and reprovisions (invariant
-                  # 7), and the same name browsers resolve via hub DNS (OIDC
-                  # requires issuer-URL equality between the two paths).
-                  cat > /tmp/argocd-server.patch <<'PATCH'
-                  spec:
-                    template:
-                      spec:
-                        hostAliases:
-                          - ip: 10.42.218.125
-                            hostnames: [auth.cp1.mesh.internal]
-                  PATCH
-                  kubectl -n argocd patch deployment argocd-server --patch-file /tmp/argocd-server.patch
+                  # The issuer hostAliases pin is NOT set here — it lives in
+                  # k8s/apps/argocd/server-patch.yaml (SSA partial) and is
+                  # reconciled by ArgoCD, so it follows git HEAD. The old
+                  # bootstrap-time patch pinned cp1's mesh address, which no
+                  # pod off cp1 could dial (nebula carries 10.42.0.0/16
+                  # sources only) — same failure class as oauth2-proxy's
+                  # 2026-07-31 break.
 
                   # No dex: the bridge is the only IdP (invariant 1 — no hosted
                   # identity, and no idle second issuer to keep patched).

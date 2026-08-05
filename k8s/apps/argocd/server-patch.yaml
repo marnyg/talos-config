@@ -1,0 +1,38 @@
+# argocd-server needs to resolve the OIDC issuer name in-cluster.
+#
+# Pods cannot resolve .mesh.internal (Talos host DNS serves no
+# /etc/hosts entries to kube-dns — siderolabs/talos #9822/#13141), so
+# the issuer hostname is pinned via hostAliases. Like oauth2-proxy
+# (k8s/apps/oauth2-proxy/deployment.yaml, 2026-07-31), it points at the
+# siwe-oidc **Service** ClusterIP, not a node's mesh address: nebula
+# carries 10.42.0.0/16 sources only, so a pod (10.244.x.x) on any node
+# other than the pinned one cannot dial a mesh IP. The ClusterIP is
+# pinned in the siwe-oidc Service manifest so this literal cannot go
+# stale. OIDC issuer-URL equality still holds — siwe-oidc advertises
+# http://auth.cp1.mesh.internal however the discovery document is
+# fetched.
+#
+# This used to be a `kubectl patch` inside the argocd-installer Job
+# (talos/clusters/homelab/cluster.yaml), which made it bootstrap-time-
+# only and pinned to cp1's mesh address — broken from any other node,
+# and invisible to git-driven reconciliation. Same failure class the
+# 2026-07-31 reinstall exposed for argocd-cm.
+#
+# This is a partial Deployment on purpose: upstream install.yaml owns
+# the resource; ArgoCD applies this as a server-side-apply patch
+# (ServerSideApply=true) and owns only the fields declared here.
+# Validate=false because a partial Deployment fails client-side schema
+# validation.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argocd-server
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=true,Validate=false
+spec:
+  template:
+    spec:
+      hostAliases:
+        - ip: 10.107.226.217
+          hostnames: [auth.cp1.mesh.internal]

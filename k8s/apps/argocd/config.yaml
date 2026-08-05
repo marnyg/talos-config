@@ -36,8 +36,8 @@ data:
   # between the browser's discovery and the server's — so the same name
   # must work in both places. Pods cannot resolve .mesh.internal (Talos
   # host DNS serves no /etc/hosts to kube-dns; siderolabs/talos
-  # #9822/#13141), hence the hostAliases pin on argocd-server, still
-  # applied by the installer Job.
+  # #9822/#13141), hence the hostAliases pin on argocd-server
+  # (server-patch.yaml, reconciled by ArgoCD like this file).
   oidc.config: |
     name: wallet
     issuer: http://auth.cp1.mesh.internal
