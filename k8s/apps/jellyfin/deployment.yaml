@@ -16,9 +16,12 @@ spec:
       # The SSO plugin's code exchange dials the issuer server-side;
       # pods cannot resolve .mesh.internal (Talos host DNS serves no
       # /etc/hosts entries to kube-dns — siderolabs/talos#9822), so pin
-      # cp1's derived mesh address, same as argocd-server/oauth2-proxy.
+      # the issuer name — at the siwe-oidc **Service** ClusterIP (pinned
+      # in its manifest), same as oauth2-proxy/argocd-server. A node's
+      # mesh address would only be dialable from pods on that node
+      # (nebula carries 10.42.0.0/16 sources; pods are 10.244.x.x).
       hostAliases:
-        - ip: 10.42.218.125
+        - ip: 10.107.226.217
           hostnames: [auth.cp1.mesh.internal]
       containers:
         - name: jellyfin
@@ -50,6 +53,12 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - apk add --no-cache curl > /dev/null 2>&1 && sh /scripts/configure.sh
+          env:
+            - name: JELLYFIN_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: jellyfin-admin
+                  key: password
           volumeMounts:
             - name: config
               mountPath: /config
