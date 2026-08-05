@@ -5,9 +5,9 @@
 
 ## Last session
 
-2026-08-04 (sixth session) — loose-end fixes, and **w1 was found down**.
+2026-08-05 (sixth session) — loose-end fixes, and **w1 was found down**.
 
-- **w1 has been unreachable since ~2026-08-03 morning** (no LAN ping,
+- **w1 has been unreachable since 2026-08-04 ~09:26** (no LAN ping,
   no apid; replacement pods on cp1 are 27h old). All three
   `longhorn-bulk` volumes are `faulted` — their single replica is on
   w1 — so the media library is offline: decision `d5f73e89`'s accepted

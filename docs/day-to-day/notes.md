@@ -259,7 +259,7 @@
   only works if that pod lands on cp1.** nebula routes 10.42.0.0/16
   source addresses; a pod's source is 10.244.x.x. Bit oauth2-proxy this
   session (~70min SSO outage) and ~~`argocd-server` is still broken the
-  same way (`f9bac57c`)~~ fixed 2026-08-04 (`fed04b4`), along with a
+  same way (`f9bac57c`)~~ fixed 2026-08-05 (`fed04b4`), along with a
   third instance in jellyfin (`f1f5dd4`). Rule of thumb: pods talk to
   Services, the mesh is for hosts and browsers.
 - 2026-07-31 — `talosctl wipe disk <part>` does **not** free a user
@@ -271,12 +271,12 @@
   (`.33 → .21 → .35 → .41`). Never hardcode it; use the mesh address
   `10.42.218.125`.
 
-- 2026-08-04 — **w1 is down** (since ~2026-08-03 morning: no LAN ping, no
+- 2026-08-05 — **w1 is down** (since 2026-08-04 ~09:26: no LAN ping, no
   apid, kubelet silent). Media library offline — all three `longhorn-bulk`
   volumes `faulted`, single replica on w1. Needs physical power/console
   attention; data presumed intact on disk. Until it returns, do not start
   storage work: the 2-replica class can't place healthy volumes on one node.
-- 2026-08-04 — **patching upstream-owned resources from git**: the pattern
+- 2026-08-05 — **patching upstream-owned resources from git**: the pattern
   is an SSA partial manifest with annotation
   `argocd.argoproj.io/sync-options: ServerSideApply=true,Validate=false`
   (first use: `k8s/apps/argocd/server-patch.yaml`). ArgoCD owns only the
@@ -284,7 +284,7 @@
   field manager (e.g. the old installer-Job `kubectl patch`) is NOT removed
   by SSA merge on keyed lists — the stale argocd-server alias was removed
   with a one-time live `--type=json` replace before the SSA manifest synced.
-- 2026-08-04 — jellyfin's old pod (pre-`f1f5dd4`) still runs with
+- 2026-08-05 — jellyfin's old pod (pre-`f1f5dd4`) still runs with
   admin/admin until it cycles; the new pod is blocked on the faulted media
   volumes. Retrieve the new password after w1 returns:
   `kubectl -n media get secret jellyfin-admin -o jsonpath='{.data.password}' | base64 -d`.
