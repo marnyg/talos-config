@@ -15,6 +15,15 @@ this list is the checkable form.
    zero runtime re-enrollment. Self-hosted token/cert issuance only
    with wallet-derived issuer keys. No third-party identity accounts,
    no chain RPC in any auth path. _(Amended 2026-07-29, see ADR-0002.)_
+   _(Amended 2026-08-05, see ADR-0012.)_ **Scope for mesh devices:** a
+   device's membership is the CA-signed cert it holds; its keypair is
+   generated and kept on-device, never derived from the master. The
+   device *set* is not enumerable from git — it is bounded by
+   wallet-signed enrollment acts, and any device's membership is
+   re-establishable at any time by one signature. Addresses and DNS
+   labels still derive from the approved name, so re-keying or
+   re-enrolling never moves a device. The control plane remains fully
+   re-derivable: hub, CA, machine identities, addresses.
 2. **Git is the single source of truth.** Servers derive; they do not
    own state. Anything a server "remembers" must be recomputable from
    (repo + fly secrets + pure functions). If a slice of *this design*
