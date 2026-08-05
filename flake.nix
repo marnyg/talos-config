@@ -234,6 +234,7 @@
               done
 
               export TALOSCONFIG="$cd_talos/talosconfig"
+              export KUBECONFIG=$(git rev-parse --show-toplevel)/kubeconfig
             '';
           };
         };
