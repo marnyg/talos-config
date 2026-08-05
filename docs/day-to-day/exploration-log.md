@@ -36,7 +36,9 @@
   browser-side calls still traverse the mesh via ingress.
   The sentence above — "pods never dial other service names" — was the
   buried assumption that made this a latent single-node bug.
-  `argocd-server` still carries the old pin (`f9bac57c`).
+  ~~`argocd-server` still carries the old pin (`f9bac57c`)~~ fixed
+  2026-08-04 (`fed04b4`, SSA partial manifest), plus a third instance
+  in jellyfin (`f1f5dd4`).
 
 ## TV mesh client (2026-07-30)
 
