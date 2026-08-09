@@ -4,6 +4,20 @@
 # straight into the device-flow wait, so nothing could be inspected
 # before the install (see the disk note below).
 machine:
+  # Fan-noise tuning. The fans themselves are out of reach: they are
+  # EC-controlled, and the Talos kernel builds neither dell-smm-hwmon
+  # (CONFIG_SENSORS_DELL_SMM unset) nor any platform_profile driver, so
+  # there is no /sys pwm interface to drive and no "quiet" ACPI profile
+  # to select from Linux. The lever that does exist is heat: intel_pstate
+  # is built in (CONFIG_X86_INTEL_PSTATE=y), and pinning no_turbo keeps
+  # the i9-11900H at base clocks (2.5GHz; boost is 4.9) instead of
+  # spiking to ~90°C under load — the EC then never ramps the fans past
+  # their low tier. Applied live by apply-config, no reboot; verify with
+  #   talosctl -n 10.42.227.66 read /sys/devices/system/cpu/intel_pstate/no_turbo
+  # If the throughput loss ever matters, the softer knob is
+  # max_perf_pct (e.g. "70") instead of no_turbo.
+  sysfs:
+    devices.system.cpu.intel_pstate.no_turbo: "1"
   install:
     # PIN, not the base template's /dev/sda. That default would have
     # been actively destructive here: the machine also presents a
