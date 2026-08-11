@@ -130,4 +130,8 @@ spec:
         - name: sysprep
           sysprep:
             secret:
-              secretName: win2k25-autounattend
+              # LocalObjectReference — the field is `name`, NOT `secretName`
+              # (that spelling silently drops on apply and the launcher
+              # pod fails validation with an empty secret ref; cost 20
+              # minutes on 2026-08-12).
+              name: win2k25-autounattend
