@@ -22,10 +22,14 @@ metadata:
 spec:
   runStrategy: Always
   dataVolumeTemplates:
-    # Blank system disk. Longhorn Block mode: the guest gets the raw
-    # block device — no disk.img-on-xfs double filesystem. Created
-    # degraded (1 of 2 replicas) while w1 is down; heals when it
-    # returns. Lifecycle is tied to the VM: deleting the VM deletes
+    # Blank system disk. Filesystem mode (disk.img on Longhorn's xfs),
+    # not Block: CDI's importer runs non-root and cannot open the raw
+    # device on a Block-mode Longhorn volume — it crash-looped with
+    # `blockdev: cannot open /dev/cdi-block-volume: Permission denied`
+    # (2026-08-11). The double-filesystem overhead is irrelevant behind
+    # SATA emulation; revisit Block only alongside the virtio switch.
+    # Created degraded (1 of 2 replicas) while w1 is down; heals when
+    # it returns. Lifecycle is tied to the VM: deleting the VM deletes
     # the Windows install, but never the ISO (separate DataVolume).
     - metadata:
         name: win2k25-system
@@ -35,7 +39,6 @@ spec:
         storage:
           accessModes:
             - ReadWriteOnce
-          volumeMode: Block
           storageClassName: longhorn
           resources:
             requests:
