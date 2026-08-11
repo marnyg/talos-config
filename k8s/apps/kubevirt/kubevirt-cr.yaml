@@ -16,7 +16,16 @@ metadata:
 spec:
   certificateRotateStrategy: {}
   configuration:
-    developerConfiguration: {}
+    developerConfiguration:
+      # KubeVirt v1.9 mounts containerDisks via the k8s ImageVolume
+      # feature, which this cluster (v1.32) doesn't support — kubelet
+      # never mounts the volume and virt-launcher dies with
+      #   exec /container-disk-binary/usr/bin/container-disk: no such file
+      # (kubevirt/kubevirt#17460, hit 2026-08-11). Disabling the gate
+      # forces the classic init-container copy path. Drop this once the
+      # cluster reaches a k8s version where ImageVolume works (≥1.35).
+      disabledFeatureGates:
+        - ImageVolume
   customizeComponents: {}
   imagePullPolicy: IfNotPresent
   workloadUpdateStrategy: {}
