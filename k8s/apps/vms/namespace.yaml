@@ -1,0 +1,11 @@
+# Namespace for KubeVirt guests. Labeled privileged: virt-launcher is
+# designed to pass baseline PSS, but the importer/launcher combination
+# has enough sharp edges (block volumeDevices, /dev/kvm device plugin)
+# that failing closed on PSS here buys nothing — this is a single-admin
+# cluster and the namespace holds only VM workloads.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vms
+  labels:
+    pod-security.kubernetes.io/enforce: privileged

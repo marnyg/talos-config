@@ -1,0 +1,25 @@
+# CDI deployment CR — cdi-operator reads this and rolls out
+# cdi-{apiserver,deployment,uploadproxy}. CDI exists to import disk
+# images (the Windows ISO, blank VM disks) into PVCs via DataVolume CRs.
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: CDI
+metadata:
+  name: cdi
+spec:
+  config:
+    # Scratch space for imports that need staging. The Talos guide
+    # suggests local-path-provisioner, but that would mean a new
+    # component plus kubelet extraMounts (machine config change +
+    # apply); Longhorn already provides RWO filesystem volumes and
+    # scratch is ephemeral anyway. With w1 down these volumes create
+    # degraded (1 of 2 replicas) — harmless for scratch.
+    scratchSpaceStorageClass: longhorn
+    # Defaults are too small for a 6GB ISO import and the importer pod
+    # OOMs/crawls; bumped per the Talos KubeVirt guide.
+    podResourceRequirements:
+      requests:
+        cpu: 100m
+        memory: 60Mi
+      limits:
+        cpu: "4"
+        memory: 4Gi

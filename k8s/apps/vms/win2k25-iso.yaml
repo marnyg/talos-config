@@ -1,0 +1,25 @@
+# Windows Server 2025 evaluation ISO (26100.1742, en-us, 180-day eval),
+# imported once by CDI into a PVC and attached to the VM as a CD-ROM.
+# Standalone DataVolume (not a dataVolumeTemplate) so the ~6GB download
+# survives VM deletion/recreation.
+#
+# The go.microsoft.com fwlink is the stable published entry point for
+# the eval ISO (verified 2026-08-11: 302 → software-static.download.
+# prss.microsoft.com …SERVER_EVAL_x64FRE_en-us.iso); the CDI importer
+# follows redirects.
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: win2k25-iso
+  namespace: vms
+spec:
+  source:
+    http:
+      url: "https://go.microsoft.com/fwlink/?linkid=2293312&clcid=0x409&culture=en-us&country=us"
+  storage:
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: longhorn
+    resources:
+      requests:
+        storage: 12Gi

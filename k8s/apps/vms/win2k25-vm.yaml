@@ -1,0 +1,113 @@
+# Windows Server 2025 guest. Deliberately boring device choices for the
+# install path — the goal is "RDP works", not peak I/O:
+#
+#   - system disk on SATA, NIC as e1000e: Windows setup sees both with
+#     inbox drivers, zero "Load driver" fumbling over VNC. The virtio
+#     switch (viostor/NetKVM from the attached driver CD) is a later,
+#     deliberate perf step.
+#   - EFI without SecureBoot (SecureBoot needs SMM; nothing here needs
+#     attestation theater on an eval guest).
+#   - runStrategy Always: with ArgoCD selfHeal, `virtctl stop/start`
+#     would be reverted by the next sync — start/stop is a git edit of
+#     this field (Always ↔ Halted), consistent with git-is-truth.
+#
+# Sizing: 4 cores / 8Gi against cp1's 16 vCPU / 28Gi, beside etcd and
+# the media stack. Guest memory is not reclaimable; don't grow this
+# casually (deployed-state.md notes the contention concern).
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: win2k25
+  namespace: vms
+spec:
+  runStrategy: Always
+  dataVolumeTemplates:
+    # Blank system disk. Longhorn Block mode: the guest gets the raw
+    # block device — no disk.img-on-xfs double filesystem. Created
+    # degraded (1 of 2 replicas) while w1 is down; heals when it
+    # returns. Lifecycle is tied to the VM: deleting the VM deletes
+    # the Windows install, but never the ISO (separate DataVolume).
+    - metadata:
+        name: win2k25-system
+      spec:
+        source:
+          blank: {}
+        storage:
+          accessModes:
+            - ReadWriteOnce
+          volumeMode: Block
+          storageClassName: longhorn
+          resources:
+            requests:
+              storage: 80Gi
+  template:
+    metadata:
+      labels:
+        vm.kubevirt.io/name: win2k25
+    spec:
+      domain:
+        cpu:
+          cores: 4
+        memory:
+          guest: 8Gi
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        clock:
+          utc: {}
+          timer:
+            hpet:
+              present: false
+            pit:
+              tickPolicy: delay
+            rtc:
+              tickPolicy: catchup
+            hyperv: {}
+        features:
+          acpi: {}
+          apic: {}
+          hyperv:
+            relaxed: {}
+            vapic: {}
+            spinlocks:
+              spinlocks: 8191
+        devices:
+          inputs:
+            # USB tablet = absolute pointer coordinates; without it the
+            # VNC mouse drifts hopelessly during Windows setup.
+            - type: tablet
+              bus: usb
+              name: tablet
+          disks:
+            - name: system
+              bootOrder: 1
+              disk:
+                bus: sata
+            - name: iso
+              bootOrder: 2
+              cdrom:
+                bus: sata
+            - name: virtio-drivers
+              cdrom:
+                bus: sata
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: e1000e
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: system
+          dataVolume:
+            name: win2k25-system
+        - name: iso
+          dataVolume:
+            name: win2k25-iso
+        # virtio-win drivers ISO, shipped by the KubeVirt project as a
+        # container image — no CDI import needed. For the post-install
+        # virtio switch and the qemu guest agent.
+        - name: virtio-drivers
+          containerDisk:
+            image: quay.io/kubevirt/virtio-container-disk:v1.9.0

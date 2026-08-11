@@ -1,0 +1,22 @@
+# KubeVirt deployment CR — virt-operator (operator.yaml) reads this and
+# rolls out virt-api / virt-controller / virt-handler. The runtime CRDs
+# (VirtualMachine, VirtualMachineInstance, …) are created by the
+# operator, not vendored; the root app's SkipDryRunOnMissingResource
+# covers the window where this CR lands before its CRD.
+#
+# /dev/kvm was verified present on cp1 2026-08-11 (VT-x enabled, KVM in
+# the stock Talos kernel) — no schematic change was needed for this.
+# useEmulation stays off: if a node lacks KVM the VM should fail loudly,
+# not silently run TCG at 1/10 speed.
+apiVersion: kubevirt.io/v1
+kind: KubeVirt
+metadata:
+  name: kubevirt
+  namespace: kubevirt
+spec:
+  certificateRotateStrategy: {}
+  configuration:
+    developerConfiguration: {}
+  customizeComponents: {}
+  imagePullPolicy: IfNotPresent
+  workloadUpdateStrategy: {}

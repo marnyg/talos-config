@@ -1,0 +1,25 @@
+# RDP into the guest from admin devices: mesh → cp1:30389 → 3389.
+#
+# NodePort, not Ingress: RDP is raw TCP, ingress-nginx routes HTTP by
+# Host header (ADR-0009) — same reason Jellyfin's TV path is NodePort
+# 30096. The node firewall already passes everything from cert group
+# `admins`, so no mesh firewall change is needed; nothing public is
+# exposed (invariant 5: the hub stays the only public surface).
+#
+# Selector matches the virt-launcher pod's VM label, so the service
+# follows the VM wherever it schedules.
+apiVersion: v1
+kind: Service
+metadata:
+  name: win2k25-rdp
+  namespace: vms
+spec:
+  type: NodePort
+  selector:
+    vm.kubevirt.io/name: win2k25
+  ports:
+    - name: rdp
+      protocol: TCP
+      port: 3389
+      targetPort: 3389
+      nodePort: 30389
