@@ -108,9 +108,14 @@ spec:
         - name: system
           dataVolume:
             name: win2k25-system
+        # The no-prompt repack (win2k25-iso-noprompt.yaml), not the raw
+        # CDI import — its EFI loader boots straight into setup, which is
+        # what makes unattended reinstalls a pure API act. Empty until
+        # the repack Job has run once; harmless, the installed system
+        # boots from the system disk anyway.
         - name: iso
-          dataVolume:
-            name: win2k25-iso
+          persistentVolumeClaim:
+            claimName: win2k25-iso-noprompt
         # virtio-win drivers ISO, shipped by the KubeVirt project as a
         # container image — no CDI import needed. For the post-install
         # virtio switch and the qemu guest agent.
@@ -119,8 +124,9 @@ spec:
             image: quay.io/kubevirt/virtio-container-disk:v1.9.0
         # autounattend.xml on a vfat CD (win2k25-autounattend.yaml).
         # Only Windows *setup* reads it — inert once the guest is
-        # installed. Reinstall-from-scratch is scripts/win2k25-reinstall.sh:
-        # wipe system disk, reboot, one scripted VNC keypress, walk away.
+        # installed. Reinstall-from-scratch: fire the suspended CronJob
+        # (win2k25-reinstall-trigger.yaml) or run
+        # scripts/win2k25-reinstall.sh; zero interaction either way.
         - name: sysprep
           sysprep:
             secret:

@@ -1,58 +1,34 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -i bash -p kubevirt kubectl python3Packages.vncdotool
+#!nix-shell -i bash -p kubectl
 #
-# Reinstall the win2k25 guest from the ISO, hands-free.
+# Reinstall the win2k25 guest from scratch, hands-free.
 #
-# DESTROYS the Windows system disk (the ISO and the answer file are
-# untouched). The flow:
-#   1. delete the system DataVolume + running VMI — virt-controller
-#      recreates both from the VM spec (runStrategy Always), giving a
-#      blank disk that boots the install ISO
-#   2. the EFI ISO shows "Press any key to boot from CD or DVD…" for a
-#      few seconds; nothing inside the guest exists yet to answer it,
-#      so we answer from outside: proxy the VNC subresource and spam
-#      Enter through the window (the one non-declarative step — a
-#      no-prompt ISO repack would remove it, deliberately not built)
-#   3. autounattend.xml (sysprep CD, sealed secret) does everything
-#      else: partitioning, install, admin password, RDP, virtio tools
+# Thin wrapper: fires the in-cluster trigger (the suspended CronJob in
+# k8s/apps/vms/win2k25-reinstall-trigger.yaml), which deletes the
+# system DataVolume + running instance. virt-controller recreates both,
+# the blank disk boots the no-prompt ISO, and the sealed answer file
+# does the entire install — including enabling RDP.
 #
-# ~20-30 min after this script exits, RDP is up:
+# DESTROYS the Windows system disk. ISO and answer file are untouched.
+#
+# ~25 min later:
 #   xfreerdp3 /v:cp1.mesh.internal:30389 /u:Administrator
+# password:
+#   kubectl -n vms get secret win2k25-admin -o jsonpath='{.data.password}' | base64 -d
 set -euo pipefail
 
-NS=vms VM=win2k25 PORT=5901
+NS=vms
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export KUBECONFIG="${KUBECONFIG:-$REPO_ROOT/kubeconfig}"
 
-echo ">>> This WIPES the ${VM} system disk and reinstalls Windows."
+echo ">>> This WIPES the win2k25 system disk and reinstalls Windows."
 echo ">>> Ctrl-C within 5s to abort."
 sleep 5
 
-echo ">>> Deleting system disk + instance (recreated from VM spec)…"
-kubectl delete dv "${VM}-system" -n "$NS" --ignore-not-found --wait=false
-kubectl delete vmi "$VM" -n "$NS" --ignore-not-found --wait=false
+JOB="win2k25-reinstall-$(date +%s)"
+kubectl -n "$NS" create job --from=cronjob/win2k25-reinstall "$JOB"
+kubectl -n "$NS" wait --for=condition=complete "job/$JOB" --timeout=120s
+kubectl -n "$NS" logs "job/$JOB"
 
-echo ">>> Waiting for the blank system disk to re-import…"
-until [[ "$(kubectl get dv "${VM}-system" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null)" == "Succeeded" ]]; do
-  sleep 3
-done
-
-echo ">>> Waiting for the VM to start…"
-until [[ "$(kubectl get vmi "$VM" -n "$NS" -o jsonpath='{.status.phase}' 2>/dev/null)" == "Running" ]]; do
-  sleep 3
-done
-
-echo ">>> Answering the 'press any key' prompt over VNC…"
-virtctl vnc "$VM" -n "$NS" --proxy-only --port "$PORT" >/dev/null 2>&1 &
-PROXY=$!
-trap 'kill "$PROXY" 2>/dev/null || true' EXIT
-# Spam Enter through the boot window. Harmless once setup is past the
-# prompt: autounattend has already answered every dialog it could hit.
-for _ in $(seq 1 40); do
-  vncdo -s "localhost::${PORT}" key enter >/dev/null 2>&1 || true
-  sleep 1.5
-done
-
-echo ">>> Boot committed. Unattended install running (~20-30 min)."
-echo ">>> Watch:  virtctl vnc ${VM} -n ${NS}"
-echo ">>> Then:   xfreerdp3 /v:cp1.mesh.internal:30389 /u:Administrator"
+echo ">>> Reinstall triggered. Unattended install running (~25 min)."
+echo ">>> Watch:  kubectl get dv,vmi -n $NS   (or virtctl vnc win2k25 -n $NS)"

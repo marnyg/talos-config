@@ -1,0 +1,100 @@
+# No-prompt variant of the Windows install ISO, built in-cluster.
+#
+# The stock ISO's EFI bootloader (efisys.bin) demands "Press any key to
+# boot from CD or DVD…" — the one step no answer file can automate,
+# because nothing exists inside the guest yet to answer it. Microsoft
+# ships the answer on the ISO itself: efisys_noprompt.bin. The Job
+# below repacks the imported ISO (win2k25-iso PVC, CDI layout: the
+# image lives at /disk.img) into this PVC with the no-prompt loader as
+# the EFI El Torito entry. With it, a reinstall is a pure API act — no
+# VNC, no keypress, no timing window (this replaced the vncdotool hack
+# the first version of scripts/win2k25-reinstall.sh used).
+#
+# The Job is idempotent (skips if the output exists) and colocates with
+# the VM pod via podAffinity: both PVCs are Longhorn RWO, attachable to
+# one node at a time, and the VM holds the source ISO. Jobs are
+# immutable — to change the script, bump the Job name (-v2, …).
+# Re-derivation chain stays intact: MS fwlink → win2k25-iso (CDI) →
+# this Job → win2k25-iso-noprompt; all three are disposable payload.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: win2k25-iso-noprompt
+  namespace: vms
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 12Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: win2k25-iso-noprompt-build
+  namespace: vms
+spec:
+  backoffLimit: 3
+  # No ttlSecondsAfterFinished: ArgoCD would prune-and-recreate the Job
+  # forever once the TTL reaped it. The Completed object stays as the
+  # record that the repack ran.
+  template:
+    metadata:
+      labels:
+        app: win2k25-iso-noprompt-build
+    spec:
+      restartPolicy: OnFailure
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  vm.kubevirt.io/name: win2k25
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: repack
+          image: alpine:3.22
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              if [ -f /dst/disk.img ] && [ -f /dst/.repack-done ]; then
+                echo "no-prompt ISO already built, nothing to do"
+                exit 0
+              fi
+              apk add --no-cache xorriso
+              rm -rf /work/iso /dst/disk.img /dst/.repack-done
+              mkdir -p /work/iso
+              echo "extracting source ISO…"
+              xorriso -osirrox on -indev /src/disk.img -extract / /work/iso
+              EFISYS=$(find /work/iso -ipath '*efisys_noprompt.bin' | head -1)
+              [ -n "$EFISYS" ] || { echo "efisys_noprompt.bin not found"; exit 1; }
+              echo "rebuilding with EFI boot image ${EFISYS#/work/iso/}…"
+              xorriso -as mkisofs \
+                -iso-level 3 -J -joliet-long -R \
+                -V WIN2K25_NOPROMPT \
+                -e "${EFISYS#/work/iso/}" -no-emul-boot \
+                -o /dst/disk.img /work/iso
+              touch /dst/.repack-done
+              echo "done"
+          volumeMounts:
+            - name: src
+              mountPath: /src
+              readOnly: true
+            - name: dst
+              mountPath: /dst
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: src
+          persistentVolumeClaim:
+            claimName: win2k25-iso
+            readOnly: true
+        - name: dst
+          persistentVolumeClaim:
+            claimName: win2k25-iso-noprompt
+        # Extraction scratch (~7GB) on EPHEMERAL, dies with the pod.
+        - name: work
+          emptyDir: {}

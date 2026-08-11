@@ -1,0 +1,21 @@
+# The win2k25 local Administrator credentials — the same password that
+# is baked into the sealed answer file (win2k25-autounattend.yaml), kept
+# here separately so retrieval is a kubectl call instead of a password
+# manager (the jellyfin-admin pattern):
+#   kubectl -n vms get secret win2k25-admin -o jsonpath='{.data.password}' | base64 -d
+# If you rotate the password in the answer file, reseal BOTH secrets —
+# nothing links them mechanically.
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: win2k25-admin
+  namespace: vms
+spec:
+  encryptedData:
+    password: AgCwZRRecEovNhfSHHfZnJ3wGA/Vn9VwrObaChFjeejMQ4/LDRpKsPNzLBHhvAAQKhDEpp3XjoQ7O8IxtMA9+CkoNsW97GDmlahaoapVFdFEJnsfHHo6YN+bJr6iXpy9TpyubliRS61mfEyPylluQIVslAlDp2kO1wb8TRvi9Abv+HJ6/Q0Ml871+A7DcE6X4AYGIhijjhK2oFtvuKRGnLbZDp/Cdm2/RuPm2lR7qZm71hG4a9Mv7CBvnJIlbPvZSARFA6D9eyLlrsXi+aOSyf+5sfPQVCNb2BJzOErLuYmEE7P8mD/2AGVxXRM+4y3RaBakTNu46My3hkjgYRiIJ6MkubAbBlQ6Y6bYJtZuCuMBXKSdtThFK0y/s8Noh252esEUAJGu4kLqAhAOC//QpSrVxjFYvzfaUg846026r3mdd8p0WpW0iMX0u5xtplqGHc1b69vfxA3EO/Z7E7u1uQIYBtNVVw12IoSk+L6DIdoV+ENTS85meuO65/BKoKuJrUvMCvxR5fYvR75ZlpYJHTSQyM1L5Kqk3X6iFYA9ONGhlWcP00Q9l35RTO+nlDg2FuUn2HsgjB9Z9wcG7s3k6jtp2/NQByc7ujwLZHMSptO6myby5jH3N5A/3Gfiqyl9suEJu6nRgZrMgptXj8MpysAO4emsXEf25LBnnbL6qzMO1NaOyihFxNoCRhT/z5MSf5Oe758QI7fplmabu6Eevx6KeC2zIgA=
+    username: AgAEpq8YBBt73ZtG9v879aRaW8cSdV+1nhkt2OQ0gR33CgLx5AdvNeMUuz3B03BKb1pPzwNS+PHSHaeftL75g3OsjvqzlNdnHHZj4DcRz4OeZp9YEWHqb3Ur3SB19x8QAfm1sgqWqRSWndi9d3isBEdL1mu0oY6YXK0rVKxZaEFLDYvsw0X8cYXxfOMTdoWwrNkjPrzKA6LCSuT4Ut2+l6VkVqUGKCbcs3hwSFX+wLPcwQVBIhBKlwrJbfPH5eE/5NQX7RKRFuTjBm6jLQMoRDppST0PqS/tgZFw3kWcUQfG++H+xoqcrQ6f/T5K7ZO9PaxrSVXBJQ8mj02J5/XMSHYgIziVEfdPio/3NHezlDWMC7iYmD9AziaW9EP+LLJeWU2CeMGa1uQIzZsbTWlkaoo1hPVDFx3CALF0A0ro0RuTtNPpDV2Z8rL1QkkahJlNFCh3fyyu731qGeGK3fg5XQF8rfOz1TVxTYFBXnF5YkHDYsYJMMhhonpc3uFrJOIetPoaZsMR8kyHGRzlonh9GocKnU+Pib4EVbN+MUpKFUOuVDOoAxH6cST0014xVm7jCYMuvF3yoNn5hqFnNGYcUgyt256PzfZD6J78BlpaeLmSmMWLvkqVsOaJdN7soCu3nDDwZy8nlhHz6vnTI544ZBVtT2OC2Z+0q9VUtQP7WFPOur3Rn1Dpw7Kj/zjxP63sS3BmcRCRv32j6DqpAiBN
+  template:
+    metadata:
+      name: win2k25-admin
+      namespace: vms

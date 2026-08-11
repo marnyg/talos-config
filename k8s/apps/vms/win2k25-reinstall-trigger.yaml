@@ -1,0 +1,89 @@
+# In-cluster reinstall trigger for the win2k25 guest.
+#
+# A reinstall is just "delete the system DataVolume and the running
+# instance": virt-controller recreates both from the VM spec, the blank
+# disk boots the no-prompt ISO, and the sealed answer file does the
+# rest — RDP is back ~25 min later with the password from the
+# win2k25-admin secret. The suspended CronJob carries that act so it
+# can be fired from anywhere with cluster access:
+#
+#   kubectl -n vms create job --from=cronjob/win2k25-reinstall \
+#     win2k25-reinstall-$(date +%s)
+#
+# (scripts/win2k25-reinstall.sh wraps exactly that.) suspend:true +
+# a far-future schedule means it never fires on its own.
+#
+# The pod needs no kubectl: two DELETEs against the API server with the
+# ServiceAccount token are the whole job, so the image is pinned curl.
+# RBAC is the narrowest that works: delete on exactly these two
+# resource types, in this namespace only.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: win2k25-reinstaller
+  namespace: vms
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: win2k25-reinstaller
+  namespace: vms
+rules:
+  - apiGroups: ["cdi.kubevirt.io"]
+    resources: ["datavolumes"]
+    verbs: ["delete"]
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachineinstances"]
+    verbs: ["delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: win2k25-reinstaller
+  namespace: vms
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: win2k25-reinstaller
+subjects:
+  - kind: ServiceAccount
+    name: win2k25-reinstaller
+    namespace: vms
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: win2k25-reinstall
+  namespace: vms
+spec:
+  suspend: true
+  schedule: "0 0 1 1 *"
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: win2k25-reinstaller
+          containers:
+            - name: reinstall
+              image: curlimages/curl:8.14.1
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  API=https://kubernetes.default.svc
+                  TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                  CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                  del() {
+                    echo "DELETE $1"
+                    code=$(curl -sS -o /dev/stderr -w '%{http_code}' \
+                      --cacert "$CA" -H "Authorization: Bearer $TOKEN" \
+                      -X DELETE "$API$1")
+                    echo " -> HTTP $code"
+                    case "$code" in 2*|404) ;; *) exit 1 ;; esac
+                  }
+                  del /apis/cdi.kubevirt.io/v1beta1/namespaces/vms/datavolumes/win2k25-system
+                  del /apis/kubevirt.io/v1/namespaces/vms/virtualmachineinstances/win2k25
+                  echo "reinstall triggered; virt-controller takes it from here"
