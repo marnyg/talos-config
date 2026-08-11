@@ -94,6 +94,9 @@ spec:
             - name: virtio-drivers
               cdrom:
                 bus: sata
+            - name: sysprep
+              cdrom:
+                bus: sata
           interfaces:
             - name: default
               masquerade: {}
@@ -114,3 +117,11 @@ spec:
         - name: virtio-drivers
           containerDisk:
             image: quay.io/kubevirt/virtio-container-disk:v1.9.0
+        # autounattend.xml on a vfat CD (win2k25-autounattend.yaml).
+        # Only Windows *setup* reads it — inert once the guest is
+        # installed. Reinstall-from-scratch is scripts/win2k25-reinstall.sh:
+        # wipe system disk, reboot, one scripted VNC keypress, walk away.
+        - name: sysprep
+          sysprep:
+            secret:
+              secretName: win2k25-autounattend
