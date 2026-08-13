@@ -33,7 +33,11 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: win2k25-iso-noprompt-build
+  # -v2: extraction switched from xorriso to 7z. The stock ISO is
+  # UDF-bridge: the ISO9660/Joliet view xorriso reads cannot represent
+  # the >4GB install.wim, so extraction died partway. 7z reads the UDF
+  # layer natively; xorriso is still the rebuilder (El Torito -e).
+  name: win2k25-iso-noprompt-build-v2
   namespace: vms
 spec:
   backoffLimit: 3
@@ -43,7 +47,7 @@ spec:
   template:
     metadata:
       labels:
-        app: win2k25-iso-noprompt-build
+        app: win2k25-iso-noprompt-build-v2
     spec:
       restartPolicy: OnFailure
       affinity:
@@ -64,11 +68,11 @@ spec:
                 echo "no-prompt ISO already built, nothing to do"
                 exit 0
               fi
-              apk add --no-cache xorriso
+              apk add --no-cache xorriso 7zip
               rm -rf /work/iso /dst/disk.img /dst/.repack-done
               mkdir -p /work/iso
-              echo "extracting source ISO…"
-              xorriso -osirrox on -indev /src/disk.img -extract / /work/iso
+              echo "extracting source ISO (7z: UDF layer, xorriso can't)…"
+              7z x -y -o/work/iso /src/disk.img >/dev/null
               EFISYS=$(find /work/iso -ipath '*efisys_noprompt.bin' | head -1)
               [ -n "$EFISYS" ] || { echo "efisys_noprompt.bin not found"; exit 1; }
               echo "rebuilding with EFI boot image ${EFISYS#/work/iso/}…"
