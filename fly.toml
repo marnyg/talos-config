@@ -22,17 +22,11 @@ MESH_ENDPOINT = "213.188.219.215:4242"
 # unseal signature — `recover -ca-fingerprint -sig <unseal-sig>`).
 # Unseal fails if a signature derives anything else.
 MESH_CA_PIN = "b881d6ffb00822272d6937fd2eb033f6253edc0c1716104bf467cd1be6177527"
-# Named mesh devices: identities derived from the same master as wg0's,
-# no registry. The list decides two things — which names may enroll at
-# /mesh/enroll, and which resolve in mesh DNS.
-#
-# MESH_DEVICES are owner devices (admins group): unrestricted access to
-# nodes, matching what wg0 already grants them.
-MESH_DEVICES = "laptop"
-# MESH_MEDIA_DEVICES are shared-space appliances (media group): Jellyfin's
-# NodePort and nothing else. A device in both lists is a startup error,
-# because the group is signed into its certificate.
-MESH_MEDIA_DEVICES = "androidtv,phone"
+# Mesh devices are no longer declared here (ADR-0012): enrollment is
+# wallet-signed, the device generates its keypair locally, and the
+# approver at /status decides the final name and group per enrollment.
+# The device set is not enumerable from git — devices resolve while
+# their tunnel is live.
 
 [http_service]
 internal_port = 8080

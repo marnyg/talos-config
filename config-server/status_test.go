@@ -352,7 +352,7 @@ func TestStatusLoginNonceSingleUse(t *testing.T) {
 // contract: a #live region and no meta-refresh reload.
 func TestStatusShowsMeshMembers(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr}, "")
-	nm, _ := testNebManager(t, m.root, adminDevices("laptop"))
+	nm, _ := testNebManager(t, m.root)
 	m.mesh = nm
 	s := &server{
 		root:       m.root,
@@ -372,8 +372,8 @@ func TestStatusShowsMeshMembers(t *testing.T) {
 	if !strings.Contains(body, ">mesh</th>") || !strings.Contains(body, "sealed") {
 		t.Error("sealed page should carry the mesh seal-state line")
 	}
-	if strings.Contains(body, "<h2>Mesh</h2>") && strings.Contains(body, "laptop") {
-		t.Error("sealed page must not list mesh members")
+	if !strings.Contains(body, "Membership appears after unseal") {
+		t.Error("sealed page must show the placeholder, not a members table")
 	}
 
 	if resp, err := client.PostForm(ts.URL+"/unseal", url.Values{"signature": {unsealSig(t)}}); err != nil {
@@ -387,7 +387,9 @@ func TestStatusShowsMeshMembers(t *testing.T) {
 		t.Fatalf("status after unseal: got %d", code)
 	}
 	// "+" renders as &#43; under html/template's text escaping.
-	for _, want := range []string{"<h2>Mesh</h2>", "laptop", "lighthouse&#43;relay", "aa-bb-cc-dd-ee-ff"} {
+	// Devices no longer appear via git declaration under ADR-0012 —
+	// only the hub and machines are listed until a device tunnels in.
+	for _, want := range []string{"<h2>Mesh</h2>", "lighthouse&#43;relay", "aa-bb-cc-dd-ee-ff"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("unsealed page missing %q", want)
 		}
@@ -397,5 +399,45 @@ func TestStatusShowsMeshMembers(t *testing.T) {
 	}
 	if strings.Contains(body, `http-equiv="refresh"`) {
 		t.Error("meta refresh should be gone — the poller replaced it")
+	}
+}
+
+// TestStatusRendersMeshEnrollCard: a pending mesh enrollment renders
+// its own approval card — editable name, group radios, admins retype,
+// the live-message placeholder — targeting /mesh/enroll/approve, and
+// never the generic approve buttons (whose messages it has none of).
+func TestStatusRendersMeshEnrollCard(t *testing.T) {
+	s, ts := newStatusServer(t)
+	da := s.store.Begin(deviceflow.KindMeshEnroll, "mesh-enroll", map[string]string{
+		"pubkey":         strings.Repeat("ab", 32),
+		"pubkey_fp":      "feedfacefeedface",
+		"proposed_name":  "tv",
+		"proposed_group": "media",
+	})
+
+	client := login(t, ts)
+	code, body := get(t, client, ts.URL+"/status")
+	if code != http.StatusOK {
+		t.Fatalf("status: got %d", code)
+	}
+	for _, want := range []string{
+		da.UserCode,
+		"feedfacefeedface",
+		`action="/mesh/enroll/approve"`,
+		`data-nonce="` + da.Nonce + `"`,
+		`name="admin_retype"`,
+		`value="tv"`,
+		`class="mesh-msg"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("status page missing %q", want)
+		}
+	}
+	// The raw pubkey stays server-side: only the fingerprint renders.
+	if strings.Contains(body, strings.Repeat("ab", 32)) {
+		t.Error("status page leaks the raw pubkey hex; the card should show only the fingerprint")
+	}
+	if strings.Contains(body, `data-action="approve"`) {
+		t.Error("mesh card must not render the generic approve button")
 	}
 }

@@ -1,21 +1,28 @@
 // Command nebup is the owner entrypoint to the nebula mesh. On first
-// run it enrolls this device against
-// the hub: the hub issues a single-use challenge, the owner signs it with
-// an allowlisted wallet (EIP-191 personal_sign — an ordinary auth
-// message, NOT the fleet master message), and the hub returns a
-// self-contained nebula config, cached locally (0600). Subsequent runs go
-// straight to bringing nebula up.
+// run it enrolls this device against the hub: the tool generates an
+// X25519 keypair locally (the private key never leaves this disk),
+// submits the pubkey with a requested name and group, an allowlisted
+// wallet signs the v1 enrollment message (EIP-191 personal_sign — an
+// ordinary auth message, NOT the fleet master message), and the hub
+// returns a nebula config with pki.key left empty for nebup to splice
+// in a reference to the sibling key file. Subsequent runs go straight
+// to bringing nebula up.
 //
-// Enrollment mints no state anywhere: the identity is derived from
-// (master, device name), so -reenroll after a wipe returns the same key
-// and the same overlay address. The hub does not remember that this
-// device exists.
+// Two-file cache (ADR-0012):
+//   - <name>.key — device-born identity. Survives -reenroll; only a
+//     -rekey discards it. This is the whole membership credential; 0600.
+//   - <name>.yml — disposable hub artifact (CA + cert + config). Any
+//     -reenroll refreshes it.
+//
+// Enrollment mints no state on the hub: after a wipe, -rekey generates
+// a fresh keypair and enrolls under the *same* name to keep the address
+// stable. The hub does not remember that this device exists.
 //
 //	nebup                          # enroll if needed, then run nebula (foreground)
 //	nebup -print                   # enroll if needed, print the config path, run nothing
-//	nebup -reenroll                # discard the cached config, enroll again
-//	nebup -name androidtv -print   # admin-mediated: enroll a device that cannot sign,
-//	                               # then transfer the printed file into its client
+//	nebup -reenroll                # discard the .yml artifact, re-sign, keep the .key
+//	nebup -rekey                   # also discard the .key: new identity, new pubkey
+//	nebup -group admins            # request admin group (default: admins)
 //	nebup -paste                   # headless: paste the signature instead
 //	nebup -dns off                 # no split DNS — mesh names won't resolve
 //
@@ -31,10 +38,10 @@
 //
 // Other platforms fall back to overlay IPs (nebup -print).
 //
-// The device name must be declared on the hub (MESH_DEVICES for owner
-// devices, MESH_MEDIA_DEVICES for shared-space appliances). The hub
-// decides the group from that declaration, never the client — which is
-// what keeps a TV in a shared room off the nodes.
+// The approver at /status decides the *final* name and group, so what
+// nebup sends is a proposal; the wallet signs whatever the approver
+// ratified. In nebup direct (the wallet is local, requester = approver)
+// the proposal and the signed values always agree.
 package main
 
 import (
@@ -52,6 +59,10 @@ import (
 	"syscall"
 	"time"
 
+	"crypto/rand"
+	"encoding/hex"
+
+	"golang.org/x/crypto/curve25519"
 	"gopkg.in/yaml.v3"
 
 	"github.com/marnyg/talos-config/config-server/nebderive"
@@ -62,8 +73,10 @@ func main() {
 	log.SetFlags(0)
 	var (
 		hub      = flag.String("hub", "https://marnyg-talos-config.fly.dev", "hub base URL")
-		name     = flag.String("name", "laptop", "device name (must be declared on the hub)")
-		reenroll = flag.Bool("reenroll", false, "discard the cached config and enroll again")
+		name     = flag.String("name", "laptop", "device name (the approver may edit this on /status)")
+		group    = flag.String("group", "admins", "requested group (admins|media); the approver decides the final value")
+		reenroll = flag.Bool("reenroll", false, "discard the .yml artifact and re-sign with the SAME device key")
+		rekey    = flag.Bool("rekey", false, "discard both the .key and the .yml: brand-new identity")
 		printCfg = flag.Bool("print", false, "enroll if needed and print the config path instead of running nebula")
 		paste    = flag.Bool("paste", false, "paste a signature instead of signing in the browser (headless)")
 		dnsMode  = flag.String("dns", "auto", "mesh DNS: auto (split DNS for ."+nebderive.DNSZone+": resolvectl on Linux, /etc/resolver on macOS), off")
@@ -74,54 +87,149 @@ func main() {
 	if dev == "" {
 		log.Fatal("-name must not be empty")
 	}
-	path, err := confPath(dev)
+	if *group != "admins" && *group != "media" {
+		log.Fatalf("-group must be 'admins' or 'media', got %q", *group)
+	}
+	keyPath, cfgPath, err := cachePaths(dev)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	if *reenroll {
-		_ = os.Remove(path)
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
+		log.Fatal(err)
 	}
-	if _, err := os.Stat(path); err != nil {
-		endpoint := strings.TrimRight(*hub, "/") + "/mesh/enroll"
-		cfg, err := walletsign.Enroll(endpoint, dev, "nebup", *paste)
+
+	if *rekey {
+		_ = os.Remove(keyPath)
+		_ = os.Remove(cfgPath)
+	}
+	if *reenroll {
+		_ = os.Remove(cfgPath)
+	}
+
+	if _, err := os.Stat(cfgPath); err != nil {
+		priv, pub, err := loadOrCreateDeviceKey(keyPath)
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		pubHex := hex.EncodeToString(pub[:])
+
+		endpoint := strings.TrimRight(*hub, "/") + "/mesh/enroll"
+		cfg, err := walletsign.MeshEnroll(endpoint, dev, *group, pubHex, "nebup", *paste)
+		if err != nil {
 			log.Fatal(err)
 		}
-		// 0600: the file carries the device's private key. It is the
-		// whole membership credential — anything that can read it is
-		// this device on the mesh.
-		if err := os.WriteFile(path, cfg, 0o600); err != nil {
+		// The hub leaves pki.key empty; splice in an inline PEM of the
+		// private key we just held onto. Kept self-contained (rather
+		// than pointing at keyPath) so a printed config can still be
+		// scp'd or QR'd to another host — the same portability property
+		// the wg0 era had.
+		spliced, err := spliceKeyInline(cfg, priv)
+		if err != nil {
+			log.Fatalf("splicing device key into config: %v", err)
+		}
+		if err := os.WriteFile(cfgPath, spliced, 0o600); err != nil {
 			log.Fatal(err)
 		}
 		// Enrolling under `sudo -E nebup` would leave the cache
 		// root-owned, locking out a later non-root run. Hand it back to
-		// the invoking user so both flows work; no-op when not under sudo.
-		if err := reownToSudoUser(filepath.Dir(path), path); err != nil {
+		// the invoking user so both flows work; no-op when not under
+		// sudo.
+		if err := reownToSudoUser(filepath.Dir(cfgPath), keyPath, cfgPath); err != nil {
 			log.Printf("warning: could not hand cache to invoking user (a later non-root nebup may re-enroll): %v", err)
 		}
-		log.Printf("enrolled %q — config cached at %s", dev, path)
+		log.Printf("enrolled %q (group requested: %s) — config cached at %s", dev, *group, cfgPath)
 	}
 
 	if *printCfg {
-		fmt.Println(path)
+		fmt.Println(cfgPath)
 		return
 	}
-	if err := runNebula(path, *dnsMode); err != nil {
+	if err := runNebula(cfgPath, *dnsMode); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// confPath is where the device's nebula config is cached.
-func confPath(name string) (string, error) {
+// loadOrCreateDeviceKey reads keyPath if it exists, otherwise generates
+// a fresh X25519 keypair and writes the private key (raw 32 bytes hex)
+// to keyPath at 0600. Returns (priv, pub).
+//
+// Persisting the .key across -reenroll is the whole point of the two
+// file cache: renewals reuse the same identity, so a device's address
+// stays stable across ceremony repeats.
+func loadOrCreateDeviceKey(keyPath string) (priv, pub [32]byte, err error) {
+	if b, ferr := os.ReadFile(keyPath); ferr == nil {
+		s := strings.TrimSpace(string(b))
+		raw, decErr := hex.DecodeString(s)
+		if decErr != nil || len(raw) != 32 {
+			return priv, pub, fmt.Errorf("%s is not a 32-byte hex X25519 private key (rerun with -rekey to regenerate)", keyPath)
+		}
+		copy(priv[:], raw)
+		curve25519.ScalarBaseMult(&pub, &priv)
+		return priv, pub, nil
+	}
+	if _, err := rand.Read(priv[:]); err != nil {
+		return priv, pub, err
+	}
+	// X25519 clamp: RFC 7748.
+	priv[0] &= 248
+	priv[31] &= 127
+	priv[31] |= 64
+	curve25519.ScalarBaseMult(&pub, &priv)
+	if err := os.WriteFile(keyPath, []byte(hex.EncodeToString(priv[:])+"\n"), 0o600); err != nil {
+		return priv, pub, fmt.Errorf("writing %s: %w", keyPath, err)
+	}
+	return priv, pub, nil
+}
+
+// spliceKeyInline replaces the empty pki.key placeholder with the
+// device key as an inline PEM block. By text rather than yaml
+// round-trip because a full re-marshal would reflow the CA and cert
+// PEM blocks the hub sent (yaml.v3 folds block scalars
+// idiosyncratically). Indent-agnostic: matches whatever indentation
+// the sibling ca:/cert: use.
+func spliceKeyInline(cfg []byte, priv [32]byte) ([]byte, error) {
+	keyPEM := nebderive.HostKeyPEM(priv)
+	lines := strings.Split(string(cfg), "\n")
+	for i, l := range lines {
+		trimmed := strings.TrimLeft(l, " ")
+		if !strings.HasPrefix(trimmed, "key:") {
+			continue
+		}
+		after := strings.TrimSpace(strings.TrimPrefix(trimmed, "key:"))
+		if after != "" && after != "\"\"" && after != "''" {
+			// Non-empty key already: nothing to splice, and refusing here
+			// is safer than clobbering whatever it is.
+			return nil, fmt.Errorf("pki.key already set in hub config; refuse to overwrite")
+		}
+		indent := l[:len(l)-len(trimmed)]
+		var replacement strings.Builder
+		replacement.WriteString(indent + "key: |\n")
+		for _, pl := range strings.Split(strings.TrimRight(string(keyPEM), "\n"), "\n") {
+			replacement.WriteString(indent + "    " + pl + "\n")
+		}
+		var out strings.Builder
+		for _, prev := range lines[:i] {
+			out.WriteString(prev)
+			out.WriteByte('\n')
+		}
+		out.WriteString(replacement.String())
+		out.WriteString(strings.Join(lines[i+1:], "\n"))
+		return []byte(out.String()), nil
+	}
+	return nil, fmt.Errorf("pki.key placeholder not found in hub config (unexpected shape)")
+}
+
+// cachePaths returns the two-file device cache paths:
+// (<name>.key, <name>.yml) under ~/.config/talos-mesh/. The .key is
+// device-born and persists across -reenroll; the .yml is hub-rendered
+// and disposable.
+func cachePaths(name string) (keyPath, cfgPath string, err error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
-		return "", fmt.Errorf("resolving config dir: %w", err)
+		return "", "", fmt.Errorf("resolving config dir: %w", err)
 	}
-	return filepath.Join(dir, "talos-mesh", name+".yml"), nil
+	base := filepath.Join(dir, "talos-mesh")
+	return filepath.Join(base, name+".key"), filepath.Join(base, name+".yml"), nil
 }
 
 // reownToSudoUser hands paths back to the user behind a sudo invocation

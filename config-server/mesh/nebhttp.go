@@ -5,15 +5,18 @@ package mesh
 // handshake), /config serves hub-composed machine configs to admin
 // devices only — the route `nix run .#apply` fetches from.
 //
-// The auth carries ADR-0003's property onto the mesh, with one layer
-// added. Nebula's firewall admits tcp/80 only from certs carrying the
-// admins group (HubConfig) — a predicate the CA signed, which a
-// peer that merely reaches us cannot spoof. The source-IP gate below is
-// the second layer: a cert's overlay address is bound at mint time to a
-// wallet-derived identity, so "request from a derived admin address"
-// still maps to exactly one wallet-authorized device — ADR-0007, which
-// carries ADR-0003's property from wg0's cryptokey routing onto the
-// mesh's CA-signed certs.
+// The /config gate is two layers deep. The nebula firewall admits
+// tcp/80 only from certs carrying the admins group (HubConfig) — a
+// predicate the CA signed, which a peer that merely reaches us cannot
+// spoof. The handler below is the second layer, and under ADR-0012 it
+// is fully cert-derived: no declared device list, no allowlist of
+// admin addresses. For the peer that sourced the request, verify the
+// live hostmap entry's cert has group=admins AND the cert's address
+// equals DeviceIP(master, cert.Name). That structurally excludes
+// machines (which carry group=machines) and any peer whose address
+// does not match its own derivation — the property ADR-0007 carried
+// from wg0's cryptokey routing onto the mesh, restated without the
+// declared list.
 
 import (
 	"fmt"
@@ -21,47 +24,58 @@ import (
 	"net/http"
 	"net/netip"
 
+	"github.com/slackhq/nebula"
+
 	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nebstack"
 )
 
-// adminMeshIPs derives the overlay addresses of the admins-group
-// devices — the set the mesh /config gate admits. Media devices are
-// left out on purpose: the firewall already drops them at tcp/80, and
-// this gate must agree with it, never widen it. Machines are absent
-// for the same reason as on wg0 — served configs carry other machines'
-// secrets, and a machine must never read a config it didn't earn a
-// device-flow token for.
-func (m *Manager) adminMeshIPs(master []byte) (map[netip.Addr]bool, error) {
-	ips := map[netip.Addr]bool{}
-	for _, d := range m.devices {
-		if d.Group != GroupAdmins {
+// isAdminPeer reports whether the peer sourcing this request holds an
+// admin cert whose address matches its derived overlay address. Called
+// per-request so newly-enrolled devices are admitted without hub
+// restart, and revoked/expired peers stop being admitted the moment
+// nebula drops the tunnel.
+func isAdminPeer(master []byte, subnet netip.Prefix, peers []nebula.ControlHostInfo, src netip.Addr) bool {
+	for _, hi := range peers {
+		var match bool
+		for _, a := range hi.VpnAddrs {
+			if a == src {
+				match = true
+				break
+			}
+		}
+		if !match {
 			continue
 		}
-		ip, err := nebderive.DeviceIP(master, d.Name, m.subnet)
-		if err != nil {
-			return nil, fmt.Errorf("deriving mesh address for admin device %q: %w", d.Name, err)
+		var isAdmin bool
+		for _, g := range hi.Cert.Groups() {
+			if g == GroupAdmins {
+				isAdmin = true
+				break
+			}
 		}
-		ips[ip] = true
+		if !isAdmin {
+			return false
+		}
+		want, err := nebderive.DeviceIP(master, hi.Cert.Name(), subnet)
+		if err != nil {
+			return false
+		}
+		return want == src
 	}
-	return ips, nil
+	return false
 }
 
 // serveMeshHTTP starts the overlay HTTP listener. The netstack owns
 // only the hub's overlay address, so the wildcard listen cannot expose
 // the routes anywhere but on the mesh.
 func (m *Manager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
-	admins, err := m.adminMeshIPs(master)
-	if err != nil {
-		return err
-	}
-
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "hello from the mesh: %s\n", svc.OverlayAddr())
 	})
 	if m.TunnelConfig != nil {
-		mux.Handle("GET /config", requireAdminPeer(admins, m.TunnelConfig))
+		mux.Handle("GET /config", requireAdminPeer(master, m.subnet, svc.Peers, m.TunnelConfig))
 	}
 
 	listener, err := svc.Listen("tcp", ":80")
@@ -73,19 +87,24 @@ func (m *Manager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
 			log.Printf("mesh http server: %v", err)
 		}
 	}()
-	log.Printf("mesh http: hello + /config on %s:80, %d admin address(es)", svc.OverlayAddr(), len(admins))
+	log.Printf("mesh http: hello + /config on %s:80 (admins gated per-request by cert group + derived address)", svc.OverlayAddr())
 	return nil
 }
 
-// requireAdminPeer gates an overlay route to admin device source
-// addresses. Machines are mesh members too, and served configs carry
-// other machines' secrets — a machine must never read a config it
-// didn't earn a device-flow token for.
-func requireAdminPeer(admins map[netip.Addr]bool, next http.Handler) http.Handler {
+// requireAdminPeer gates an overlay route to peers whose live cert is
+// group=admins and whose address matches DeviceIP(master, cert.Name).
+// The peer supplier is a function (svc.Peers) so revocations take
+// effect the moment nebula drops the tunnel.
+func requireAdminPeer(master []byte, subnet netip.Prefix, peers func() []nebula.ControlHostInfo, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ap, err := netip.ParseAddrPort(r.RemoteAddr)
-		if err != nil || !admins[ap.Addr().Unmap()] {
-			log.Printf("mesh %s %s: refused non-admin peer %s", r.Method, r.URL.Path, r.RemoteAddr)
+		if err != nil {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		src := ap.Addr().Unmap()
+		if !isAdminPeer(master, subnet, peers(), src) {
+			log.Printf("mesh %s %s: refused non-admin peer %s", r.Method, r.URL.Path, src)
 			http.Error(w, "forbidden: admin devices only", http.StatusForbidden)
 			return
 		}

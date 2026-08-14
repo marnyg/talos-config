@@ -125,10 +125,16 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 
 // verifyEntry is a pending device authorization plus the canonical
 // messages an admin signs to act on it. Rendered on /status.
+//
+// Mesh (ADR-0012) enrollments do not use MsgApprove/MsgDeny: the
+// wallet signs the v1 enrollment message with the *final* name and
+// group the operator picks on the card, so the message is built
+// client-side from form values (see updateEnroll in status.go).
 type verifyEntry struct {
 	Auth       *deviceflow.Auth
 	MsgApprove string
 	MsgDeny    string
+	Mesh       bool // true for KindMeshEnroll: render the enrollment card instead
 }
 
 // handleVerifyPage redirects to the /status dashboard, which hosts the
@@ -158,6 +164,18 @@ func (s *server) handleVerifyPost(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeAdmin(r, userCode, action) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
+	}
+
+	// Mesh enrollments (ADR-0012) cannot be approved here: approval IS
+	// the wallet signature over the v1 enrollment message, which mints
+	// and stashes the config (see handleMeshEnrollApprove). A generic
+	// approve would hand the device a token that redeems to nothing.
+	// Denying is fine — it just kills the pending flow.
+	if action == "approve" {
+		if _, isMesh := s.pendingMeshEnroll(userCode); isMesh {
+			s.respondAction(w, r, fmt.Sprintf("%s is a mesh enrollment — approve it from its card on /status (the wallet signs the enrollment message itself)", userCode))
+			return
+		}
 	}
 
 	var err error

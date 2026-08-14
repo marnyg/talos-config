@@ -104,3 +104,83 @@ func TestTokenNotBoundWithoutMAC(t *testing.T) {
 		t.Fatalf("expected unbound token to validate, got %v", err)
 	}
 }
+
+// TestMeshEnrollPayloadRoundTrip: the ADR-0012 device-flow contract —
+// approval stashes the minted config on the grant, the token redeems
+// it, Consume makes it single-use.
+func TestMeshEnrollPayloadRoundTrip(t *testing.T) {
+	s, _ := newTestStore()
+	da := s.Begin(KindMeshEnroll, "mesh-enroll", map[string]string{
+		"pubkey": "aa", "pubkey_fp": "fp", "proposed_name": "tv", "proposed_group": "media",
+	})
+
+	// Operator edits land on the pending auth (rendered on /status).
+	if err := s.UpdateIdentity(da.UserCode, map[string]string{"name": "livingroom", "group": "media"}); err != nil {
+		t.Fatalf("update identity: %v", err)
+	}
+	pending := s.Pending()
+	if len(pending) != 1 || pending[0].Identity["name"] != "livingroom" {
+		t.Fatalf("identity after update = %+v", pending)
+	}
+
+	payload := []byte("minted nebula config")
+	if err := s.ApproveWithPayload(da.UserCode, payload); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	// Decided flows are frozen: no further identity edits.
+	if err := s.UpdateIdentity(da.UserCode, map[string]string{"name": "x"}); err == nil {
+		t.Fatal("expected UpdateIdentity to fail once decided")
+	}
+
+	token, errCode := s.Poll(da.DeviceCode)
+	if errCode != "" || token == "" {
+		t.Fatalf("poll after approval: err=%q", errCode)
+	}
+	got, err := s.MeshEnrollPayload(token)
+	if err != nil || string(got) != string(payload) {
+		t.Fatalf("payload = %q, %v; want %q", got, err, payload)
+	}
+	// Not consumed yet: readable again (redeem is Consume's job).
+	if _, err := s.MeshEnrollPayload(token); err != nil {
+		t.Fatalf("second read before consume: %v", err)
+	}
+	s.Consume(token)
+	if _, err := s.MeshEnrollPayload(token); err == nil {
+		t.Fatal("expected consumed token to be rejected")
+	}
+}
+
+// TestMeshEnrollPayloadGuards: a machine token never redeems as a mesh
+// config, and a mesh flow approved WITHOUT a payload (the generic
+// Approve path) redeems to an error, not an empty config.
+func TestMeshEnrollPayloadGuards(t *testing.T) {
+	s, clock := newTestStore()
+
+	m := s.Begin(KindMachine, "talos-pxe", nil)
+	if err := s.Approve(m.UserCode); err != nil {
+		t.Fatal(err)
+	}
+	mTok, _ := s.Poll(m.DeviceCode)
+	if _, err := s.MeshEnrollPayload(mTok); err != ErrWrongTarget {
+		t.Fatalf("machine token as mesh payload: err = %v, want ErrWrongTarget", err)
+	}
+
+	e := s.Begin(KindMeshEnroll, "mesh-enroll", nil)
+	if err := s.Approve(e.UserCode); err != nil { // no payload
+		t.Fatal(err)
+	}
+	clock.advance(PollInterval)
+	eTok, _ := s.Poll(e.DeviceCode)
+	if _, err := s.MeshEnrollPayload(eTok); err != ErrBadToken {
+		t.Fatalf("payload-less mesh token: err = %v, want ErrBadToken", err)
+	}
+}
+
+// TestUpdateIdentityUnknownCode: a stale or fabricated user code is an
+// error, not a silent no-op.
+func TestUpdateIdentityUnknownCode(t *testing.T) {
+	s, _ := newTestStore()
+	if err := s.UpdateIdentity("NOPE-CODE", map[string]string{"name": "x"}); err == nil {
+		t.Fatal("expected an error for an unknown user code")
+	}
+}

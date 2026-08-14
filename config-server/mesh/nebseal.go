@@ -48,10 +48,9 @@ type Manager struct {
 	port       int
 	subnet     netip.Prefix // mesh CIDR; the hub's address is derived, not configured
 	listenHost string
-	endpoint   string   // hub's public host:port, injected into node configs
-	dnsZone    string   // "" = no mesh DNS
-	devices    []Device // named devices whose identities are derived
-	root       string   // talos/ directory
+	endpoint   string // hub's public host:port, injected into node configs
+	dnsZone    string // "" = no mesh DNS
+	root       string // talos/ directory
 
 	// Start boots nebula from a rendered config. Defaults to
 	// startMeshNebula; exported so tests can stub the socket away (the
@@ -68,23 +67,13 @@ type Manager struct {
 	err  error // last startup failure, surfaced by State()
 }
 
-// Device is one enrollable device: a derived identity plus the group
-// its certificate will carry. Declared, not registered — the list says
-// which names are allowed to enroll and what access they get, and the
-// identity itself is a pure function of (master, name).
-type Device struct {
-	Name  string
-	Group string // GroupAdmins or GroupMedia
-}
-
-func NewManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone, root string, devices []Device) *Manager {
+func NewManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone, root string) *Manager {
 	return &Manager{
 		port:       port,
 		subnet:     subnet,
 		listenHost: listenHost,
 		endpoint:   endpoint,
 		dnsZone:    dnsZone,
-		devices:    devices,
 		root:       root,
 		Start:      startMeshNebula,
 	}
@@ -133,14 +122,16 @@ func (m *Manager) UnsealWithMaster(master []byte) error {
 	// The zone is built before nebula starts, and validated even when
 	// the start is stubbed: a duplicate label or a colliding address is
 	// a repo mistake, and it should fail before an overlay exists rather
-	// than after certs have been minted against it.
+	// than after certs have been minted against it. Devices are not in
+	// the git-derived zone under ADR-0012 — they resolve dynamically from
+	// the live peer map (see dnsRespond).
 	var zone map[string]netip.Addr
 	if m.dnsZone != "" {
 		byMAC, err := machines.Load(m.machinesDir())
 		if err != nil {
 			return m.fail(fmt.Errorf("loading machines: %w", err))
 		}
-		if zone, err = buildMeshZone(master, m.subnet, byMAC, m.devices); err != nil {
+		if zone, err = buildMeshZone(master, m.subnet, byMAC); err != nil {
 			return m.fail(fmt.Errorf("building mesh zone: %w", err))
 		}
 	}
@@ -169,7 +160,10 @@ func (m *Manager) UnsealWithMaster(master []byte) error {
 	m.svc, m.zone = svc, zone
 
 	if svc != nil && zone != nil {
-		if err := serveMeshDNS(svc, zone, m.dnsZone); err != nil {
+		// The DNS handler layers live-peer device resolution on top of
+		// the static (hub+machines) zone; the peer supplier is svc.Peers,
+		// injected here so the resolver has no other coupling to nebula.
+		if err := serveMeshDNS(svc, zone, m.dnsZone, master, m.subnet, svc.Peers); err != nil {
 			return m.fail(fmt.Errorf("starting mesh dns: %w", err))
 		}
 	}
@@ -193,13 +187,6 @@ func (m *Manager) UnsealWithMaster(master []byte) error {
 	} else {
 		log.Printf("mesh configured (start stubbed): %s on udp/%d, CA %s", hubIP, m.port, fp)
 	}
-	for _, d := range m.devices {
-		ip, err := nebderive.DeviceIP(master, d.Name, m.subnet)
-		if err != nil {
-			continue
-		}
-		log.Printf("mesh device %q (%s): overlay address %s", d.Name, d.Group, ip)
-	}
 	return nil
 }
 
@@ -209,11 +196,12 @@ type MemberRow struct {
 	Name, Group, Addr, Tunnel, Endpoint, Relays string
 }
 
-// Members lists every derived mesh member with live tunnel state.
-// Offline members still appear: membership is derived from git +
-// declarations, not from who happens to be connected. Nil until the
-// zone exists (built at unseal), so a sealed hub shows nothing — the
-// same rule the DNS zone follows.
+// Members lists every mesh member with live tunnel state. Under
+// ADR-0012 the device set is not enumerable from git — devices appear
+// only while their tunnel is live, sourced from the peer map's certs.
+// Machines and the hub still come from the git-derived zone so a
+// disconnected machine remains visible. Nil until the zone exists
+// (built at unseal): a sealed hub shows nothing.
 func (m *Manager) Members() []MemberRow {
 	svc, zone, _ := m.State()
 	if zone == nil {
@@ -223,17 +211,13 @@ func (m *Manager) Members() []MemberRow {
 	if svc != nil {
 		live = svc.Peers()
 	}
-	return memberRows(zone, m.devices, m.endpoint, live)
+	return memberRows(zone, m.endpoint, live)
 }
 
-// memberRows is the pure join: derived membership × live hostmap.
-// Separated from the Manager so tests can fabricate hostmap entries
-// without a running nebula.
-func memberRows(zone map[string]netip.Addr, devices []Device, hubEndpoint string, live []nebula.ControlHostInfo) []MemberRow {
-	groups := map[string]string{}
-	for _, d := range devices {
-		groups[d.Name] = d.Group
-	}
+// memberRows is the pure join: git-derived membership (hub + machines)
+// plus live devices from the hostmap. Separated from the Manager so
+// tests can fabricate hostmap entries without a running nebula.
+func memberRows(zone map[string]netip.Addr, hubEndpoint string, live []nebula.ControlHostInfo) []MemberRow {
 	// Reverse zone, so relay targets render as names, not addresses.
 	names := map[netip.Addr]string{}
 	for n, a := range zone {
@@ -243,6 +227,35 @@ func memberRows(zone map[string]netip.Addr, devices []Device, hubEndpoint string
 	for _, hi := range live {
 		if len(hi.VpnAddrs) > 0 {
 			byAddr[hi.VpnAddrs[0]] = hi
+		}
+	}
+
+	fillLive := func(row *MemberRow, addr netip.Addr) {
+		hi, ok := byAddr[addr]
+		if !ok {
+			return
+		}
+		row.Tunnel = "up"
+		if len(hi.CurrentRelaysToMe) > 0 {
+			// The hub needs a relay to reach this member — should
+			// never happen while the hub is the only relay, so it
+			// is worth surfacing loudly if it does.
+			row.Tunnel = "up (via relay)"
+		}
+		if hi.CurrentRemote.IsValid() {
+			row.Endpoint = hi.CurrentRemote.String()
+		}
+		if len(hi.CurrentRelaysThroughMe) > 0 {
+			var ts []string
+			for _, a := range hi.CurrentRelaysThroughMe {
+				if peer, ok := names[a]; ok {
+					ts = append(ts, peer)
+				} else {
+					ts = append(ts, a.String())
+				}
+			}
+			slices.Sort(ts)
+			row.Relays = strings.Join(ts, ", ")
 		}
 	}
 
@@ -259,36 +272,42 @@ func memberRows(zone map[string]netip.Addr, devices []Device, hubEndpoint string
 			rows = append(rows, row)
 			continue
 		}
-		row.Group = groups[n]
-		if row.Group == "" {
-			row.Group = GroupMachines
-		}
-		if hi, ok := byAddr[addr]; ok {
-			row.Tunnel = "up"
-			if len(hi.CurrentRelaysToMe) > 0 {
-				// The hub needs a relay to reach this member — should
-				// never happen while the hub is the only relay, so it
-				// is worth surfacing loudly if it does.
-				row.Tunnel = "up (via relay)"
-			}
-			if hi.CurrentRemote.IsValid() {
-				row.Endpoint = hi.CurrentRemote.String()
-			}
-			if len(hi.CurrentRelaysThroughMe) > 0 {
-				var ts []string
-				for _, a := range hi.CurrentRelaysThroughMe {
-					if peer, ok := names[a]; ok {
-						ts = append(ts, peer)
-					} else {
-						ts = append(ts, a.String())
-					}
-				}
-				slices.Sort(ts)
-				row.Relays = strings.Join(ts, ", ")
-			}
-		}
+		row.Group = GroupMachines
+		fillLive(&row, addr)
 		rows = append(rows, row)
 	}
+
+	// Live devices: everyone in the hostmap whose cert name is not
+	// already a git-derived member. Group and name come from the cert
+	// itself — the CA signed them, and the git zone was already
+	// collision-checked at enrollment.
+	var devRows []MemberRow
+	for _, hi := range live {
+		if len(hi.VpnAddrs) == 0 {
+			continue
+		}
+		name := hi.Cert.Name()
+		if _, staticMember := zone[name]; staticMember {
+			continue
+		}
+		group := ""
+		for _, g := range hi.Cert.Groups() {
+			if g == GroupAdmins || g == GroupMedia {
+				group = g
+				break
+			}
+		}
+		row := MemberRow{
+			Name: name, Group: group, Addr: hi.VpnAddrs[0].String(),
+			Tunnel: "—", Endpoint: "—", Relays: "—",
+		}
+		fillLive(&row, hi.VpnAddrs[0])
+		devRows = append(devRows, row)
+	}
+	slices.SortFunc(devRows, func(a, b MemberRow) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	rows = append(rows, devRows...)
 	return rows
 }
 
@@ -327,50 +346,6 @@ func startMeshNebula(cfg []byte) (*nebstack.Service, error) {
 
 // meshBuildVersion is what the hub reports to peers in handshakes.
 const meshBuildVersion = "talos-config-hub"
-
-// ParseDevices splits the two device lists into one declared set,
-// normalizing names the same way the derivation does so a stray capital
-// cannot produce a different identity than the one an enrolled device
-// holds.
-//
-// A name in both lists is an error rather than a precedence rule: the
-// group is signed into the cert, so "which group did laptop get?" must
-// have one answer, and guessing it silently is how a TV ends up with
-// admin access.
-func ParseDevices(admins, media string) ([]Device, error) {
-	var out []Device
-	seen := map[string]string{}
-	for _, spec := range []struct {
-		list  string
-		group string
-	}{{admins, GroupAdmins}, {media, GroupMedia}} {
-		for _, name := range strings.Split(spec.list, ",") {
-			n := nebderive.Normalize(name)
-			if n == "" {
-				continue
-			}
-			if prev, dup := seen[n]; dup {
-				return nil, fmt.Errorf("device %q is declared in both the %s and %s groups", n, prev, spec.group)
-			}
-			seen[n] = spec.group
-			out = append(out, Device{Name: n, Group: spec.group})
-		}
-	}
-	return out, nil
-}
-
-// Device returns the declared device with this name. Enrollment refuses
-// anything else: a name that is not declared has no group, and a cert
-// without a group reaches nothing.
-func (m *Manager) Device(name string) (Device, bool) {
-	name = nebderive.Normalize(name)
-	for _, d := range m.devices {
-		if d.Name == name {
-			return d, true
-		}
-	}
-	return Device{}, false
-}
 
 // ResolveListenHost picks the address nebula binds.
 //

@@ -29,7 +29,7 @@ func TestMeshDNSOverOverlay(t *testing.T) {
 	const lighthousePort = 24243
 
 	byMAC := map[string]machines.Machine{"aa:bb:cc:dd:ee:01": {Name: "cp1"}}
-	zone, err := buildMeshZone(master, subnet, byMAC, adminDevices("laptop"))
+	zone, err := buildMeshZone(master, subnet, byMAC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestMeshDNSOverOverlay(t *testing.T) {
 	hub := nebtest.Hub(t, master, subnet, lighthousePort)
 	dev := nebtest.Device(t, master, subnet, "laptop", lighthousePort)
 
-	if err := serveMeshDNS(hub, zone, nebderive.DNSZone); err != nil {
+	if err := serveMeshDNS(hub, zone, nebderive.DNSZone, master, subnet, hub.Peers); err != nil {
 		t.Fatal(err)
 	}
 

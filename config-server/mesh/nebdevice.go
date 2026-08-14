@@ -1,13 +1,22 @@
 package mesh
 
-// The device side of the mesh: the self-contained nebula config that
-// enrollment (nebenroll.go in main) and the TV flow hand a device. The
-// HTTP handlers and the wallet-signature checks stay with the server;
-// what lives here is the derivation — given the master and a declared
-// device, the config is a pure function.
+// The device side of the mesh: the (nearly-)self-contained nebula
+// config the hub returns to a wallet-signed enrollment. The HTTP
+// handlers and the wallet-signature checks stay with the server; what
+// lives here is the mint given (master, name, group, device-generated
+// pubkey).
+//
+// Under ADR-0012 the hub never sees a device's private key. The client
+// generated it locally, submitted the pubkey, and the hub returns a
+// config whose pki.key is left empty — the client splices in its own
+// key (either inline PEM or a path to a sibling file) before running
+// nebula.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -17,36 +26,79 @@ import (
 )
 
 // DeviceCertValidity bounds a device's leaf certificate. Shorter than
-// a machine's five years because re-enrolling a device is one command
-// against a hub that needs no memory of the last one — this is the one
-// place where short-lived certs are a practical revocation strategy
-// rather than a maintenance cliff (thread uuid dc04e3e8).
+// a machine's five years because re-enrolling a device is one wallet
+// signature against a hub that needs no memory of the last one — this
+// is the one place where short-lived certs are a practical revocation
+// strategy rather than a maintenance cliff.
 const DeviceCertValidity = 90 * 24 * time.Hour
 
-// DeviceConfig renders a device's self-contained nebula config: the
-// derived identity, inline, plus the hub as its only lighthouse and
-// relay.
+// PubkeyFingerprint returns the canonical sha256-hex fingerprint of a
+// nebula X25519 pubkey. Used in the enrollment message the wallet
+// signs (v1) and on the /status approval card so an operator can read
+// it back before signing.
+func PubkeyFingerprint(pub [32]byte) string {
+	sum := sha256.Sum256(pub[:])
+	return hex.EncodeToString(sum[:])
+}
+
+// EnrollDeviceParams is everything the mint needs. Populated by the
+// verify+mint core once the wallet signature is confirmed.
+type EnrollDeviceParams struct {
+	Master []byte
+	Name   string   // final approved name (normalized)
+	Group  string   // GroupAdmins or GroupMedia
+	Pubkey [32]byte // device-generated X25519 public key
+}
+
+// EnrollDevice mints a device's cert from a device-supplied pubkey and
+// renders its nebula config. The returned config is nearly self-
+// contained: pki.ca and pki.cert are inline PEM, pki.key is the empty
+// string — the client splices in its own key before running nebula.
 //
-// The address comes from buildMeshZone for the same reason a machine's
-// does — mesh DNS and the cert must agree, and this is where a collision
-// with a machine or another device is caught before a cert bakes it in.
-func (m *Manager) DeviceConfig(master []byte, d Device) ([]byte, error) {
+// Collision check: the requested name and its derived address must not
+// clash with the git-derived zone (hub + machines). Devices are not in
+// that zone; a device that collides with a machine label or address is
+// refused here rather than after the cert bakes it in.
+func (m *Manager) EnrollDevice(p EnrollDeviceParams) ([]byte, error) {
 	if m.endpoint == "" {
 		return nil, fmt.Errorf("mesh endpoint is not configured (--mesh-endpoint)")
 	}
+	if p.Group != GroupAdmins && p.Group != GroupMedia {
+		return nil, fmt.Errorf("group must be %q or %q, got %q", GroupAdmins, GroupMedia, p.Group)
+	}
+	name := nebderive.Normalize(p.Name)
+	if !dnsLabelRe.MatchString(name) {
+		return nil, fmt.Errorf("device name %q is not a valid DNS label", p.Name)
+	}
+
 	byMAC, err := machines.Load(m.machinesDir())
 	if err != nil {
 		return nil, fmt.Errorf("loading machines: %w", err)
 	}
-	zone, err := buildMeshZone(master, m.subnet, byMAC, m.devices)
+	zone, err := buildMeshZone(p.Master, m.subnet, byMAC)
 	if err != nil {
 		return nil, fmt.Errorf("building mesh zone: %w", err)
 	}
-	addr, ok := zone[d.Name]
-	if !ok {
-		return nil, fmt.Errorf("device %q is not in the mesh zone", d.Name)
+	if _, clash := zone[name]; clash {
+		return nil, fmt.Errorf("device name %q collides with the git-derived mesh zone (a machine or the hub owns it)", name)
+	}
+	addr, err := nebderive.DeviceIP(p.Master, name, m.subnet)
+	if err != nil {
+		return nil, fmt.Errorf("deriving device address: %w", err)
+	}
+	for zn, za := range zone {
+		if za == addr {
+			return nil, fmt.Errorf("device %q would take address %s, already claimed by %q in the git zone (retry with a different name, or override the machine's meshIP)", name, addr, zn)
+		}
 	}
 
+	return m.renderDeviceConfig(p.Master, name, p.Group, addr, p.Pubkey)
+}
+
+// renderDeviceConfig is the pure render step: given a verified
+// (name, group, addr, pubkey), produce the nebula config. Split from
+// EnrollDevice so tests can exercise it without a machines directory.
+func (m *Manager) renderDeviceConfig(master []byte, name, group string, addr netip.Addr, pub [32]byte) ([]byte, error) {
 	hubIP, err := nebderive.HubIP(m.subnet)
 	if err != nil {
 		return nil, err
@@ -55,16 +107,15 @@ func (m *Manager) DeviceConfig(master []byte, d Device) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("deriving mesh CA: %w", err)
 	}
-	priv, pub := nebderive.DeviceKey(master, d.Name)
 	now := time.Now()
-	crt, err := nebderive.HostCert(master, d.Name, pub, addr, m.subnet,
-		[]string{d.Group}, now.Add(-ClockSkew), now.Add(DeviceCertValidity))
+	crt, err := nebderive.HostCert(master, name, pub, addr, m.subnet,
+		[]string{group}, now.Add(-ClockSkew), now.Add(DeviceCertValidity))
 	if err != nil {
-		return nil, fmt.Errorf("minting cert for %q: %w", d.Name, err)
+		return nil, fmt.Errorf("minting cert for %q: %w", name, err)
 	}
 	crtPEM, err := crt.MarshalPEM()
 	if err != nil {
-		return nil, fmt.Errorf("marshalling cert for %q: %w", d.Name, err)
+		return nil, fmt.Errorf("marshalling cert for %q: %w", name, err)
 	}
 	blocklist, err := LoadBlocklist(m.root)
 	if err != nil {
@@ -73,9 +124,13 @@ func (m *Manager) DeviceConfig(master []byte, d Device) ([]byte, error) {
 
 	cfg := ConfigYAML{
 		PKI: nebPKIYAML{
-			CA:        string(caPEM),
-			Cert:      string(crtPEM),
-			Key:       string(nebderive.HostKeyPEM(priv)),
+			CA:   string(caPEM),
+			Cert: string(crtPEM),
+			// Key deliberately empty: the device's private key never
+			// leaves the device. The client splices in its own key
+			// (inline PEM or path to a sibling file) before starting
+			// nebula.
+			Key:       "",
 			Blocklist: blocklist,
 		},
 		StaticHostMap: map[string][]string{hubIP.String(): {m.endpoint}},
@@ -83,26 +138,27 @@ func (m *Manager) DeviceConfig(master []byte, d Device) ([]byte, error) {
 			Interval: 60,
 			Hosts:    []string{hubIP.String()},
 			// Devices roam, so their own addresses are not worth
-			// filtering — but a peer's wg0 or pod-network address must
-			// never be dialed: that is how nebula ends up tunnelled
-			// inside wireguard and hairpinning through the hub.
+			// filtering — but a peer's pod-network address must never
+			// be dialed: that is how nebula ends up tunnelled inside
+			// another overlay and hairpinning through the hub.
 			RemoteAllowList: nebUnderlayFilter(m.subnet),
 		},
 		// Port 0: devices roam. A fixed port buys a node the
-		// lighthouse-less LAN fallback (nebmachine.go), but a laptop that
-		// changes networks daily gains nothing from it and can lose to
-		// whatever else holds 4242 on a coffee-shop NAT.
+		// lighthouse-less LAN fallback (nebmachine.go), but a laptop
+		// that changes networks daily gains nothing from it and can
+		// lose to whatever else holds 4242 on a coffee-shop NAT.
 		Listen: nebListenYAML{Host: "0.0.0.0", Port: 0},
 		// No dev name: device configs are portable by design (one file,
-		// moved by scp/clipboard/QR) and Darwin rejects any name that is
-		// not utun[0-9]+. Let each client pick its own.
+		// moved by scp/clipboard/QR) and Darwin rejects any name that
+		// is not utun[0-9]+. Let each client pick its own.
 		Tun:    &nebTunYAML{MTU: nebNodeMTU},
 		Punchy: nebPunchyYAML{Punch: true, Respond: true},
 		Relay:  nebRelayYAML{UseRelays: true, Relays: []string{hubIP.String()}},
 		Firewall: nebFirewallYAML{
-			// Outbound open: a device is the thing that initiates. Inbound
-			// needs only ICMP, because nebula's firewall is stateful —
-			// replies to flows this device started are already allowed.
+			// Outbound open: a device is the thing that initiates.
+			// Inbound needs only ICMP, because nebula's firewall is
+			// stateful — replies to flows this device started are
+			// already allowed.
 			OutboundAction: "drop",
 			InboundAction:  "drop",
 			Outbound:       []nebRuleYAML{{Port: "any", Proto: "any", Host: "any"}},

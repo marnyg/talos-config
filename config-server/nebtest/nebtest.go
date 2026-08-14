@@ -53,8 +53,18 @@ listen:
 `, Loopback, port))
 }
 
-// Device starts a named device peer pointed at a hub on hubPort.
+// Device starts a named device peer pointed at a hub on hubPort. The
+// cert carries no groups — use DeviceWithGroups when the test exercises
+// group-based admission (mesh /config gate, DNS live-device resolution).
 func Device(tb testing.TB, master []byte, subnet netip.Prefix, name string, hubPort int) *nebstack.Service {
+	return DeviceWithGroups(tb, master, subnet, name, hubPort, nil)
+}
+
+// DeviceWithGroups starts a named device peer whose cert carries the
+// given groups. Under ADR-0012 the production hub never derives a
+// device's private key, but the derivation is still valid for tests —
+// what changes is only the wire (pubkey submitted, not derived).
+func DeviceWithGroups(tb testing.TB, master []byte, subnet netip.Prefix, name string, hubPort int, groups []string) *nebstack.Service {
 	tb.Helper()
 	priv, pub := nebderive.DeviceKey(master, name)
 	addr, err := nebderive.DeviceIP(master, name, subnet)
@@ -65,7 +75,7 @@ func Device(tb testing.TB, master []byte, subnet netip.Prefix, name string, hubP
 	if err != nil {
 		tb.Fatalf("deriving hub address: %v", err)
 	}
-	return start(tb, master, subnet, name, priv, pub, addr, fmt.Sprintf(`
+	return startWithGroups(tb, master, subnet, name, priv, pub, addr, groups, fmt.Sprintf(`
 static_host_map:
   "%s": ["%s:%d"]
 lighthouse:
@@ -81,13 +91,18 @@ listen:
 // netstack. The identity is always derived, never ad hoc, so a test that
 // passes here is evidence about the real derivation chain.
 func start(tb testing.TB, master []byte, subnet netip.Prefix, name string, priv, pub [32]byte, addr netip.Addr, extra string) *nebstack.Service {
+	return startWithGroups(tb, master, subnet, name, priv, pub, addr, nil, extra)
+}
+
+// startWithGroups is start plus a group list for the leaf cert.
+func startWithGroups(tb testing.TB, master []byte, subnet netip.Prefix, name string, priv, pub [32]byte, addr netip.Addr, groups []string, extra string) *nebstack.Service {
 	tb.Helper()
 
 	caPEM, err := nebderive.CACertPEM(master)
 	if err != nil {
 		tb.Fatalf("deriving CA: %v", err)
 	}
-	crt, err := nebderive.HostCert(master, name, pub, addr, subnet, nil,
+	crt, err := nebderive.HostCert(master, name, pub, addr, subnet, groups,
 		time.Now().Add(-time.Minute), time.Now().Add(10*time.Minute))
 	if err != nil {
 		tb.Fatalf("minting cert for %q: %v", name, err)

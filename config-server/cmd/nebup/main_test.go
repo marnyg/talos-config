@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // hubRendered mimics the shape mesh.DeviceConfig emits (yaml.v3, 4-space
@@ -29,6 +31,89 @@ logging:
     level: info
     format: text
 `
+
+// hubRenderedNoKey mimics what the hub returns under ADR-0012:
+// pki.ca and pki.cert inline, pki.key an empty scalar for the client
+// to splice its own key into.
+const hubRenderedNoKey = `pki:
+    ca: |
+        -----BEGIN NEBULA CERTIFICATE-----
+        AAAA
+        -----END NEBULA CERTIFICATE-----
+    cert: |
+        -----BEGIN NEBULA CERTIFICATE-----
+        BBBB
+        -----END NEBULA CERTIFICATE-----
+    key: ""
+lighthouse:
+    hosts:
+        - 10.42.0.1
+tun:
+    mtu: 1300
+`
+
+func TestSpliceKeyInline(t *testing.T) {
+	var priv [32]byte
+	priv[0] = 0x40 // any clamped-looking key; the PEM shape is what matters
+	out, err := spliceKeyInline([]byte(hubRenderedNoKey), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The result must still be one well-formed YAML document …
+	var doc struct {
+		PKI struct {
+			CA   string `yaml:"ca"`
+			Cert string `yaml:"cert"`
+			Key  string `yaml:"key"`
+		} `yaml:"pki"`
+		Tun struct {
+			MTU int `yaml:"mtu"`
+		} `yaml:"tun"`
+	}
+	if err := yaml.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("spliced config is not valid YAML: %v\n%s", err, out)
+	}
+	// … with the key filled in and everything else untouched.
+	if !strings.Contains(doc.PKI.Key, "-----BEGIN NEBULA X25519 PRIVATE KEY-----") {
+		t.Errorf("pki.key not a PEM block after splice: %q", doc.PKI.Key)
+	}
+	if !strings.Contains(doc.PKI.CA, "AAAA") || !strings.Contains(doc.PKI.Cert, "BBBB") {
+		t.Errorf("ca/cert damaged by splice: ca=%q cert=%q", doc.PKI.CA, doc.PKI.Cert)
+	}
+	if doc.Tun.MTU != 1300 {
+		t.Errorf("tun.mtu = %d, want 1300 (trailing content damaged)", doc.Tun.MTU)
+	}
+	// Every original line except the key placeholder survives verbatim —
+	// the splice must not reflow or concatenate lines (regression: an
+	// earlier version joined all preceding lines without newlines).
+	for _, line := range strings.Split(strings.TrimRight(hubRenderedNoKey, "\n"), "\n") {
+		if strings.Contains(line, "key:") {
+			continue
+		}
+		if !strings.Contains(string(out), line+"\n") {
+			t.Errorf("original line lost or reflowed: %q\n%s", line, out)
+		}
+	}
+}
+
+func TestSpliceKeyInlineRefusesNonEmptyKey(t *testing.T) {
+	var priv [32]byte
+	once, err := spliceKeyInline([]byte(hubRenderedNoKey), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := spliceKeyInline(once, priv); err == nil {
+		t.Fatal("want a refusal when pki.key is already set")
+	}
+}
+
+func TestSpliceKeyInlineNoPlaceholder(t *testing.T) {
+	var priv [32]byte
+	if _, err := spliceKeyInline([]byte("tun:\n    mtu: 1300\n"), priv); err == nil {
+		t.Fatal("want an error when the config has no pki.key line")
+	}
+}
 
 func TestAdaptSplitDNSPinsDevAndFindsHub(t *testing.T) {
 	out, dev, hub, note := adaptSplitDNS([]byte(hubRendered), "auto", true)

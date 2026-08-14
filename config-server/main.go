@@ -233,11 +233,12 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("GET /verify", s.handleVerifyPage)
 	mux.HandleFunc("POST /verify", s.handleVerifyPost)
 	mux.HandleFunc("POST /unseal", s.handleUnseal)
-	mux.HandleFunc("GET /mesh/enroll", s.handleMeshEnrollChallenge)
+	mux.HandleFunc("GET /mesh/enroll", s.handleMeshEnrollPage)
+	mux.HandleFunc("POST /mesh/enroll/challenge", s.handleMeshEnrollChallenge)
 	mux.HandleFunc("POST /mesh/enroll", s.handleMeshEnroll)
-	mux.HandleFunc("GET /mesh/tv", s.handleMeshTVPage)
-	mux.HandleFunc("POST /mesh/tv", s.handleMeshTVStart)
-	mux.HandleFunc("GET /mesh/tv/config", s.handleMeshTVConfig)
+	mux.HandleFunc("POST /mesh/enroll/device", s.handleMeshEnrollDevice)
+	mux.HandleFunc("POST /mesh/enroll/approve", s.handleMeshEnrollApprove)
+	mux.HandleFunc("GET /mesh/enroll/config", s.handleMeshEnrollConfig)
 	mux.HandleFunc("GET /sealed", s.handleSealed)
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("POST /status/login", s.handleStatusLogin)
@@ -258,8 +259,6 @@ func main() {
 		meshHost     = flag.String("mesh-listen-host", "", "address nebula binds (default: fly-global-services on fly, 0.0.0.0 elsewhere)")
 		meshEndpoint = flag.String("mesh-endpoint", "", "public host:port mesh members dial to reach the hub lighthouse (required with --mesh-port)")
 		meshZone     = flag.String("mesh-dns-zone", nebderive.DNSZone, "DNS zone the hub serves on the mesh (empty = no mesh DNS)")
-		meshDevices  = flag.String("mesh-devices", "", "comma-separated owner devices in the mesh admins group (e.g. laptop,phone); identities derived from the master")
-		meshMedia    = flag.String("mesh-media-devices", "", "comma-separated shared-space devices in the mesh media group (e.g. androidtv); reach media only, never node control surfaces")
 		meshCAPin    = flag.String("mesh-ca-pin", "", "pinned expected mesh CA fingerprint (hex); unseal fails on mismatch (wrong wallet or message)")
 		autoBoot     = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the mesh when its etcd waits for it")
 		kmsAdv       = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --mesh-port)")
@@ -309,11 +308,7 @@ func main() {
 		if listenHost == "" {
 			listenHost = mesh.ResolveListenHost()
 		}
-		devices, err := mesh.ParseDevices(*meshDevices, *meshMedia)
-		if err != nil {
-			log.Fatalf("--mesh-devices/--mesh-media-devices: %v", err)
-		}
-		nm := mesh.NewManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root, devices)
+		nm := mesh.NewManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root)
 		hub = newHubManager(*root, addrs, *meshCAPin, nm)
 		log.Printf("mesh enabled: %s on udp/%d, binding %s (unseals with the hub)", subnet, *meshPort, listenHost)
 

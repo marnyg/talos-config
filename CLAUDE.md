@@ -185,35 +185,48 @@ Node firewall on the overlay: ICMP from anyone, everything from the hub
 plus Jellyfin's NodePort from the `media` group. Machines cannot reach
 each other's control surfaces over the mesh.
 
-**Device groups.** Three, and the hub decides which — never the client,
-because the group is signed into the certificate:
+**Device groups.** Three; the group is signed into the certificate, and
+the *approver* (never the requesting device) decides which group each
+enrollment gets — rubber-stamp resistance (ADR-0012):
 
-| Group | Declared in | Gets |
+| Group | How it's assigned | Gets |
 |---|---|---|
-| `machines` | `talos/machines/` | injected at compose time |
-| `admins` | `MESH_DEVICES` | unrestricted node access (what wg0 grants today) |
-| `media` | `MESH_MEDIA_DEVICES` | Jellyfin's NodePort, nothing else |
+| `machines` | `talos/machines/` (compose time) | injected at machine config compose |
+| `admins` | approver picks `admins` at /status; admins requires re-typing the device name | unrestricted node access |
+| `media` | approver picks `media` at /status (default for the device-flow path) | Jellyfin's NodePort, nothing else |
 
-A shared-space appliance (TV) belongs in `media`: anyone in the room can
-operate it. A name in both lists is a startup error. Regrouping a device
-means re-enrolling it, but it keeps its key and address — the group is
-not part of the derivation.
+A shared-space appliance (TV) belongs in `media`: anyone in the room
+can operate it. Regrouping a device means re-enrolling it, but the
+name (not the group) drives the derived address, so an *unchanged*
+name keeps the device at the same overlay address.
 
-**Connecting a device** (`nebup`, the `wgup` pattern one overlay over):
+**Connecting a device** (`nebup`, ADR-0012):
 
 ```bash
 nebup                          # enroll if needed, then run nebula (Ctrl-C disconnects)
 nebup -print                   # enroll, print the config path, run nothing
-nebup -reenroll                # discard the cache and re-derive the same identity
-nebup -name androidtv -print   # admin-mediated: for a device that cannot sign
+nebup -reenroll                # keep the .key, re-sign, refresh the .yml (renewal)
+nebup -rekey                   # brand-new keypair; the approver sees a new fingerprint
+nebup -group admins            # request admin group; approver still ratifies
 nebup -paste                   # headless: paste a `cast wallet sign` signature
 ```
 
-Enrollment (`GET`/`POST /mesh/enroll`) never touches the fleet master:
-the wallet signs an ordinary single-use challenge and the hub returns a
-self-contained config (CA, cert and key inline — one file, so it moves by
-scp, clipboard or QR). Device certs last 90 days; re-running `nebup`
-re-derives the same key and address, so re-enrolling is the renewal.
+Enrollment (`POST /mesh/enroll/challenge` → `POST /mesh/enroll`) never
+touches the fleet master: nebup generates an X25519 keypair locally
+(the private key never leaves this disk), submits the pubkey, the
+wallet signs the v1 message `(name, group, sha256(pubkey), nonce)`,
+and the hub returns a config with `pki.key` empty for nebup to splice
+in. Two-file cache: `<name>.key` (device-born, survives `-reenroll`)
+and `<name>.yml` (disposable hub artifact). Device certs last 90 days;
+re-running `nebup -reenroll` with the same key re-signs at the same
+address.
+
+Devices that can't sign locally (headless appliance, TV) use the
+RFC 8628 flow: the device tool submits its pubkey to
+`POST /mesh/enroll/device`, displays a QR pointing at
+`/status?user_code=...`, and the approver signs on /status where the
+approval form shows the pubkey fingerprint and lets the operator edit
+the final name/group before signing.
 
 ### Recovery USB
 

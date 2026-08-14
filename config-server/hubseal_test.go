@@ -22,24 +22,14 @@ var nebSealSubnet = netip.MustParsePrefix("10.42.0.0/16")
 
 const nebTestEndpoint = "203.0.113.7:4242"
 
-// adminDevices is the common case in tests: named devices, all in the
-// admins group.
-func adminDevices(names ...string) []mesh.Device {
-	var out []mesh.Device
-	for _, n := range names {
-		out = append(out, mesh.Device{Name: n, Group: mesh.GroupAdmins})
-	}
-	return out
-}
-
 // testNebManager returns a mesh manager whose nebula start is stubbed:
 // everything up to and including config rendering runs for real, only
 // the UDP socket is skipped. (The mesh package has its own twin; this
 // one exists for the hub- and server-level tests in package main.)
-func testNebManager(t *testing.T, root string, devices []mesh.Device) (*mesh.Manager, *[]byte) {
+func testNebManager(t *testing.T, root string) (*mesh.Manager, *[]byte) {
 	t.Helper()
 	var rendered []byte
-	m := mesh.NewManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root, devices)
+	m := mesh.NewManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root)
 	m.Start = func(cfg []byte) (*nebstack.Service, error) {
 		rendered = cfg
 		return nil, nil
@@ -65,7 +55,7 @@ func testHubManager(t *testing.T, adminAddrs []string, pinnedCAFP string) *hubMa
 		t.Fatal(err)
 	}
 
-	nm, _ := testNebManager(t, root, adminDevices("laptop"))
+	nm, _ := testNebManager(t, root)
 	return newHubManager(root, adminAddrs, pinnedCAFP, nm)
 }
 
@@ -136,7 +126,7 @@ func meshRendered(t *testing.T, m *hubManager) *[]byte {
 // (invariant 4). The failure is recorded, not swallowed.
 func TestMeshFailureDoesNotBreakHubUnseal(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr}, "")
-	nm, _ := testNebManager(t, m.root, nil)
+	nm, _ := testNebManager(t, m.root)
 	nm.Start = func([]byte) (*nebstack.Service, error) {
 		return nil, errors.New("simulated mesh failure")
 	}
@@ -158,7 +148,7 @@ func TestMeshFailureDoesNotBreakHubUnseal(t *testing.T) {
 // incident, not a footnote.
 func TestSealedEndpointPagesOnMeshFailure(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr}, "")
-	nm, _ := testNebManager(t, m.root, nil)
+	nm, _ := testNebManager(t, m.root)
 	nm.Start = func([]byte) (*nebstack.Service, error) {
 		return nil, errors.New("simulated mesh failure")
 	}

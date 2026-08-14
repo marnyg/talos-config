@@ -1,7 +1,7 @@
 # ADR-0012: Wallet-signed enrollment replaces the declared device list
 
-- Status: Proposed
-- Date: 2026-08-05
+- Status: Accepted
+- Date: 2026-08-05 (proposed) → 2026-08-14 (accepted, implementation in flight)
 - Amends: invariant 1 (see `desired-state/invariants.md`)
 
 ## Context and Problem Statement
@@ -137,6 +137,29 @@ for self-generated keys).
   a future "re-sign same pubkey" renewal automatable in principle.
 - Device↔device address collisions at /16 are accepted as
   probabilistic; enrollment only guards the git zone.
-- The signed-message prefix is not yet versioned (open).
+- Signed-message prefix pinned to v1 (see "Signed message (v1)" below);
+  future revisions bump the version tail. Thread `72d38fd0` closed.
 - The phone has no working enrollment path until either the Mobile
   Nebula import assumption verifies or the APK ships — accepted.
+
+## Signed message (v1)
+
+One canonical text, distinct from the wg enrollment, approval, login
+and master-key messages so a signature for one is never replayable as
+another. `pubkey-fingerprint` is `sha256(pubkey)` hex — short enough to
+read off the approval card, unambiguous, no dependency on nebula's
+cert-fingerprint (which does not exist until after the mint).
+
+```
+talos config-server mesh device enrollment v1
+name: <name>
+group: <admins|media>
+pubkey: <sha256-hex of the 32-byte X25519 pubkey>
+nonce: <server-issued nonce>
+```
+
+The old `meshEnrollMessage` (no `v1`, no `group`, no `pubkey`) is
+structurally distinct — signatures against it cannot be replayed against
+v1. When the message shape needs to change, bump to `v2` in the header
+line and the hub only accepts v2. No dual-accept window: enrollment is
+an interactive act and callers upgrade on the next signature.

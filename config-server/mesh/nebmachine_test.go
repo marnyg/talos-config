@@ -29,7 +29,7 @@ var nebNodeSubnet = netip.MustParsePrefix("10.42.0.0/16")
 const nebTestEndpoint = "203.0.113.7:4242"
 
 func nebTestManager(root string) *Manager {
-	return NewManager(4242, nebNodeSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root, adminDevices("laptop"))
+	return NewManager(4242, nebNodeSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root)
 }
 
 // nebTestMachines is a machine set with one named control plane, mirroring
@@ -349,7 +349,7 @@ func TestNebMachinePatchAgreesWithMeshDNS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	zone, err := buildMeshZone(nebTestMaster, nebNodeSubnet, byMAC, n.devices)
+	zone, err := buildMeshZone(nebTestMaster, nebNodeSubnet, byMAC)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,22 +22,18 @@ import (
 // The firewall layer (cert group → tcp/80) is nebula's own enforcement
 // and is validated against the rendered config in nebconf_test.go; the
 // nebtest harness runs an open firewall precisely so this test isolates
-// the second layer — the derived-admin-address gate that carries
-// ADR-0003 onto the mesh.
+// the second layer — the derived-admin-address + cert-group gate that
+// carries ADR-0003 onto the mesh (ADR-0012).
 func TestMeshHTTPOverOverlay(t *testing.T) {
 	master := []byte("mesh-http-e2e-test-master-32byte")
 	subnet := netip.MustParsePrefix("10.42.0.0/16")
 	const lighthousePort = 24244
 
 	hub := nebtest.Hub(t, master, subnet, lighthousePort)
-	admin := nebtest.Device(t, master, subnet, "laptop", lighthousePort)
-	tv := nebtest.Device(t, master, subnet, "tv", lighthousePort)
+	admin := nebtest.DeviceWithGroups(t, master, subnet, "laptop", lighthousePort, []string{GroupAdmins})
+	tv := nebtest.DeviceWithGroups(t, master, subnet, "tv", lighthousePort, []string{GroupMedia})
 
-	devices := []Device{
-		{Name: "laptop", Group: GroupAdmins},
-		{Name: "tv", Group: GroupMedia},
-	}
-	m := NewManager(lighthousePort, subnet, nebtest.Loopback, "hub.example:4242", "", t.TempDir(), devices)
+	m := NewManager(lighthousePort, subnet, nebtest.Loopback, "hub.example:4242", "", t.TempDir())
 	m.TunnelConfig = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "composed-config")
 	})

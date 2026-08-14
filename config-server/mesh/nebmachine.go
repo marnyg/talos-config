@@ -94,7 +94,7 @@ func (n *Manager) MachinePatch(master []byte, mac string, m machines.Machine, by
 	if n.endpoint == "" {
 		return "", fmt.Errorf("mesh endpoint is not configured (--mesh-endpoint)")
 	}
-	zone, err := buildMeshZone(master, n.subnet, byMAC, n.devices)
+	zone, err := buildMeshZone(master, n.subnet, byMAC)
 	if err != nil {
 		return "", fmt.Errorf("building mesh zone: %w", err)
 	}

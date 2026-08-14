@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/masterderive"
@@ -373,6 +374,52 @@ server restart or it will not be able to unlock its disks.</div>
 <h2>Pending approvals</h2>
 {{if not .Pending}}<p>No pending requests.</p>{{end}}
 {{range .Pending}}
+{{if .Mesh}}
+<table>
+ <tr><th>User code</th><td>{{.Auth.UserCode}}</td></tr>
+ <tr><th>kind</th><td>{{.Auth.Kind}}</td></tr>
+ <tr><th>pubkey fingerprint</th><td><code>{{index .Auth.Identity "pubkey_fp"}}</code></td></tr>
+ <tr><th>proposed</th><td>{{index .Auth.Identity "proposed_name"}} ({{index .Auth.Identity "proposed_group"}})</td></tr>
+ <tr><th>Requested</th><td>{{.Auth.CreatedAt.Format "15:04:05"}}</td></tr>
+</table>
+<p>Verify the fingerprint against what the device shows before approving.
+You decide the final name and group — the device only proposed them.</p>
+<form method="POST" action="/mesh/enroll/approve" class="mesh-enroll"
+      data-fp="{{index .Auth.Identity "pubkey_fp"}}" data-nonce="{{.Auth.Nonce}}">
+ <input type="hidden" name="user_code" value="{{.Auth.UserCode}}">
+ <p>
+  <label>name <input type="text" name="name" value="{{index .Auth.Identity "proposed_name"}}"></label>
+  <label><input type="radio" name="group" value="media"{{if ne (index .Auth.Identity "proposed_group") "admins"}} checked{{end}}> media</label>
+  <label><input type="radio" name="group" value="admins"{{if eq (index .Auth.Identity "proposed_group") "admins"}} checked{{end}}> admins</label>
+  <label>retype name to confirm admins <input type="text" name="admin_retype" placeholder="required for admins"></label>
+ </p>
+ <p>The wallet signs exactly this (rebuilt live from the fields above):</p>
+ <pre class="mesh-msg"></pre>
+{{if $.WalletEnabled}}
+ <button type="button" class="wallet mesh-approve">Approve with wallet</button>
+{{end}}
+ <details>
+  <summary>Sign manually (e.g. cast wallet sign)</summary>
+  <input type="text" name="signature" placeholder="0x signature" size="60">
+  <button>Submit approve</button>
+ </details>
+</form>
+<form method="POST" action="/verify" data-msg-deny="{{.MsgDeny}}">
+ <input type="hidden" name="user_code" value="{{.Auth.UserCode}}">
+ <input type="hidden" name="signature" value="">
+{{if $.WalletEnabled}}
+ <button type="button" class="wallet" data-action="deny">Deny with wallet</button>
+{{end}}
+{{if $.TokenEnabled}}
+ <details>
+  <summary>Admin token (break-glass)</summary>
+  <input type="password" name="admin_token" placeholder="admin token">
+  <button name="action" value="deny">Deny</button>
+ </details>
+{{end}}
+</form>
+<br>
+{{else}}
 <table>
  <tr><th>User code</th><td>{{.Auth.UserCode}}</td></tr>
  <tr><th>kind</th><td>{{.Auth.Kind}}</td></tr>
@@ -404,6 +451,7 @@ server restart or it will not be able to unlock its disks.</div>
 </form>
 <br>
 {{end}}
+{{end}}
 <h2>Machines</h2>
 <table>
  <tr><th>mac</th><th>dns</th><th>role</th><th>lan ip</th><th>last config fetch</th></tr>
@@ -431,6 +479,8 @@ server restart or it will not be able to unlock its disks.</div>
     var msg, action = null;
     if (btn.id === 'unseal-wallet') {
       msg = form.dataset.msg;
+    } else if (btn.classList.contains('mesh-approve')) {
+      msg = meshEnrollMsg(form);
     } else if (btn.classList.contains('wallet') && btn.dataset.action) {
       action = btn.dataset.action;
       msg = action === 'approve' ? form.dataset.msgApprove : form.dataset.msgDeny;
@@ -451,6 +501,33 @@ server restart or it will not be able to unlock its disks.</div>
     } catch (e) { alert('signing failed: ' + (e.message || e)); }
   });
 
+  // Mesh-enroll cards (ADR-0012): the wallet signs the v1 enrollment
+  // message with the FINAL name/group the operator picks, so the
+  // message is rebuilt from the form fields on every edit. The server
+  // rebuilds the same message from the submitted values
+  // (handleMeshEnrollApprove) — the two must agree byte for byte,
+  // including the name normalization (trim + lowercase).
+  function meshEnrollMsg(form) {
+    var name = form.querySelector('input[name=name]').value.trim().toLowerCase();
+    var checked = form.querySelector('input[name=group]:checked');
+    var group = checked ? checked.value : '';
+    return 'talos config-server mesh device enrollment v1\nname: ' + name +
+           '\ngroup: ' + group + '\npubkey: ' + form.dataset.fp +
+           '\nnonce: ' + form.dataset.nonce;
+  }
+  function updateEnroll() {
+    document.querySelectorAll('form.mesh-enroll').forEach(function (f) {
+      var pre = f.querySelector('pre.mesh-msg');
+      if (pre) pre.textContent = meshEnrollMsg(f);
+    });
+  }
+  ['input', 'change'].forEach(function (t) {
+    document.addEventListener(t, function (ev) {
+      if (ev.target.closest && ev.target.closest('form.mesh-enroll')) updateEnroll();
+    });
+  });
+  updateEnroll();
+
   // Soft refresh: re-fetch the page and swap only #live, so an update
   // never wipes a half-typed signature. Backs off while the operator
   // is interacting (focus in the region, text in any input, an open
@@ -460,7 +537,9 @@ server restart or it will not be able to unlock its disks.</div>
     if (document.activeElement !== document.body && live.contains(document.activeElement)) return true;
     if (live.querySelector('details[open]')) return true;
     var inputs = live.querySelectorAll('input[type=text], input[type=password]');
-    for (var i = 0; i < inputs.length; i++) if (inputs[i].value) return true;
+    // Compare against defaultValue, not '': mesh-enroll cards prefill
+    // the name field, and an untouched prefill is not interaction.
+    for (var i = 0; i < inputs.length; i++) if (inputs[i].value !== inputs[i].defaultValue) return true;
     return false;
   }
   setInterval(async function () {
@@ -473,7 +552,7 @@ server restart or it will not be able to unlock its disks.</div>
       if (!next) { location.reload(); return; }
       if (busy()) return;
       var cur = document.getElementById('live');
-      if (cur.innerHTML !== next.innerHTML) cur.innerHTML = next.innerHTML;
+      if (cur.innerHTML !== next.innerHTML) { cur.innerHTML = next.innerHTML; updateEnroll(); }
     } catch (e) { /* transient; try again next tick */ }
   }, 10000);
 })();
@@ -582,6 +661,17 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		data.Boot = &snap
 	}
 	for _, da := range s.store.Pending() {
+		if da.Kind == deviceflow.KindMeshEnroll {
+			// No MsgApprove: approval IS the wallet signature over the v1
+			// enrollment message, rebuilt live on the card. Deny still
+			// goes through /verify with the generic deny message.
+			data.Pending = append(data.Pending, verifyEntry{
+				Auth:    da,
+				MsgDeny: approvalMessage("deny", da.UserCode, da.Nonce),
+				Mesh:    true,
+			})
+			continue
+		}
 		data.Pending = append(data.Pending, verifyEntry{
 			Auth:       da,
 			MsgApprove: approvalMessage("approve", da.UserCode, da.Nonce),

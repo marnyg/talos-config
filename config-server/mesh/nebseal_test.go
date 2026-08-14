@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/slackhq/nebula"
+	"github.com/slackhq/nebula/cert"
 	"gopkg.in/yaml.v3"
 
 	"github.com/marnyg/talos-config/config-server/nebderive"
@@ -39,10 +40,10 @@ func testTalosTree(t *testing.T) string {
 // testNebManager returns a mesh manager whose nebula start is stubbed:
 // everything up to and including config rendering runs for real, only
 // the UDP socket is skipped.
-func testNebManager(t *testing.T, root string, devices []string) (*Manager, *[]byte) {
+func testNebManager(t *testing.T, root string) (*Manager, *[]byte) {
 	t.Helper()
 	var rendered []byte
-	m := NewManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root, adminDevices(devices...))
+	m := NewManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root)
 	m.Start = func(cfg []byte) (*nebstack.Service, error) {
 		rendered = cfg
 		return nil, nil
@@ -52,7 +53,7 @@ func testNebManager(t *testing.T, root string, devices []string) (*Manager, *[]b
 
 func TestNebManagerUnseal(t *testing.T) {
 	root := testTalosTree(t)
-	m, rendered := testNebManager(t, root, []string{"laptop", "phone"})
+	m, rendered := testNebManager(t, root)
 	master := []byte("neb-seal-test-master-key-32bytes")
 
 	if m.Up() {
@@ -95,9 +96,10 @@ func TestNebManagerUnseal(t *testing.T) {
 	if zone[nebderive.HubName] != hubIP {
 		t.Errorf("zone hub = %s, want %s", zone[nebderive.HubName], hubIP)
 	}
+	// Under ADR-0012, devices are not in the git-derived zone.
 	for _, name := range []string{"laptop", "phone"} {
-		if !zone[name].IsValid() {
-			t.Errorf("device %q missing from the zone", name)
+		if _, ok := zone[name]; ok {
+			t.Errorf("device %q leaked into the git-derived zone", name)
 		}
 	}
 }
@@ -105,9 +107,29 @@ func TestNebManagerUnseal(t *testing.T) {
 // A bad zone must fail before nebula starts: a duplicate label is a repo
 // mistake, and it should surface while no overlay exists rather than
 // after certs have been minted against it.
+//
+// Under ADR-0012 devices are not part of the git zone, so collisions
+// only come from the machines directory. Simulate by putting two
+// machines under the same DNS name in the tree.
 func TestNebManagerZoneFailsBeforeStart(t *testing.T) {
-	root := testTalosTree(t)
-	m, rendered := testNebManager(t, root, []string{"cp1"}) // collides with the machine's name
+	root := t.TempDir()
+	// Two machines both named cp1 → label collision.
+	for _, mac := range []string{"aa-bb-cc-dd-ee-01", "aa-bb-cc-dd-ee-02"} {
+		dir := filepath.Join(root, "machines", mac)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		meta := "ip: 127.0.0.1\nname: cp1\nconfig: base.yaml\npatches: []\n"
+		if err := os.WriteFile(filepath.Join(dir, "meta.yaml"), []byte(meta), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := "version: v1alpha1\nmachine:\n  type: worker\n"
+	if err := os.WriteFile(filepath.Join(root, "base.yaml"), []byte(base), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, rendered := testNebManager(t, root)
 	started := false
 	m.Start = func(cfg []byte) (*nebstack.Service, error) {
 		started = true
@@ -133,7 +155,7 @@ func TestNebManagerZoneFailsBeforeStart(t *testing.T) {
 // rendered config must not open udp/53.
 func TestNebManagerWithoutDNS(t *testing.T) {
 	root := testTalosTree(t)
-	m, rendered := testNebManager(t, root, nil)
+	m, rendered := testNebManager(t, root)
 	m.dnsZone = ""
 
 	if err := m.UnsealWithMaster([]byte("neb-seal-test-master-key-32bytes")); err != nil {
@@ -149,7 +171,7 @@ func TestNebManagerWithoutDNS(t *testing.T) {
 
 func TestNebManagerUnsealIsIdempotent(t *testing.T) {
 	root := testTalosTree(t)
-	m, _ := testNebManager(t, root, nil)
+	m, _ := testNebManager(t, root)
 	calls := 0
 	// A non-nil service is needed for the idempotence guard to engage,
 	// and Service is opaque, so drive it through the field directly after
@@ -173,49 +195,21 @@ func TestNebManagerUnsealIsIdempotent(t *testing.T) {
 	}
 }
 
-// adminDevices is the common case in tests: named devices, all in the
-// admins group.
-func adminDevices(names ...string) []Device {
-	var out []Device
-	for _, n := range names {
-		out = append(out, Device{Name: nebderive.Normalize(n), Group: GroupAdmins})
-	}
-	return out
+// fakeCert stands in for a real nebula cert on tests that only need
+// Name() and Groups(); the other cert.Certificate methods are unused
+// by memberRows and dnsRespond.
+type fakeCert struct {
+	cert.Certificate
+	name   string
+	groups []string
 }
 
-func TestParseMeshDevices(t *testing.T) {
-	got, err := ParseDevices(" Laptop , ,phone ", "ANDROIDTV")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []Device{
-		{Name: "laptop", Group: GroupAdmins},
-		{Name: "phone", Group: GroupAdmins},
-		{Name: "androidtv", Group: GroupMedia},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("got[%d] = %+v, want %+v", i, got[i], want[i])
-		}
-	}
-}
+func (f fakeCert) Name() string     { return f.name }
+func (f fakeCert) Groups() []string { return f.groups }
 
-// TestParseMeshDevicesRejectsBothGroups: the group is signed into the
-// cert, so a name in both lists has no single answer and must not get a
-// guessed one — guessing is how a shared-space TV ends up an admin.
-func TestParseMeshDevicesRejectsBothGroups(t *testing.T) {
-	if _, err := ParseDevices("laptop,androidtv", "androidtv"); err == nil {
-		t.Fatal("expected an error for a device declared in both groups, got none")
-	}
-}
-
-// TestMeshMemberRows: the pure join of derived membership × live
-// hostmap. The hub is self, a live member shows its WAN endpoint and
-// who it relays to (by name), and an offline member still appears —
-// membership comes from derivation, not from who is connected.
+// TestMeshMemberRows: hub + machines come from the (git-derived) zone;
+// live devices come from the peer map's certs (ADR-0012 — devices are
+// not enumerable from git).
 func TestMeshMemberRows(t *testing.T) {
 	hubIP := netip.MustParseAddr("10.42.0.1")
 	cp1IP := netip.MustParseAddr("10.42.218.125")
@@ -224,26 +218,25 @@ func TestMeshMemberRows(t *testing.T) {
 	zone := map[string]netip.Addr{
 		nebderive.HubName: hubIP,
 		"cp1":             cp1IP,
-		"laptop":          lapIP,
-		"androidtv":       tvIP,
-	}
-	devices := []Device{
-		{Name: "laptop", Group: GroupAdmins},
-		{Name: "androidtv", Group: GroupMedia},
 	}
 	live := []nebula.ControlHostInfo{
 		{
 			VpnAddrs:               []netip.Addr{lapIP},
+			Cert:                   fakeCert{name: "laptop", groups: []string{GroupAdmins}},
 			CurrentRemote:          netip.MustParseAddrPort("198.51.100.7:4242"),
 			CurrentRelaysThroughMe: []netip.Addr{cp1IP},
 		},
+		{
+			VpnAddrs: []netip.Addr{tvIP},
+			Cert:     fakeCert{name: "androidtv", groups: []string{GroupMedia}},
+		},
 	}
 
-	got := memberRows(zone, devices, "hub.example:4242", live)
+	got := memberRows(zone, "hub.example:4242", live)
 	want := []MemberRow{
-		{Name: "androidtv", Group: GroupMedia, Addr: tvIP.String(), Tunnel: "—", Endpoint: "—", Relays: "—"},
 		{Name: "cp1", Group: GroupMachines, Addr: cp1IP.String(), Tunnel: "—", Endpoint: "—", Relays: "—"},
 		{Name: "hub", Group: "lighthouse+relay", Addr: hubIP.String(), Tunnel: "self", Endpoint: "hub.example:4242", Relays: "—"},
+		{Name: "androidtv", Group: GroupMedia, Addr: tvIP.String(), Tunnel: "up", Endpoint: "—", Relays: "—"},
 		{Name: "laptop", Group: GroupAdmins, Addr: lapIP.String(), Tunnel: "up", Endpoint: "198.51.100.7:4242", Relays: "cp1"},
 	}
 	if len(got) != len(want) {
@@ -257,11 +250,12 @@ func TestMeshMemberRows(t *testing.T) {
 }
 
 // TestNebManagerMembers: before unseal there is no zone and therefore
-// no membership; after unseal every derived member is listed even with
-// nebula stubbed out (nothing is live, everything still appears).
+// no membership; after unseal the hub + declared machines are listed
+// even with nebula stubbed out. Devices only appear while their tunnel
+// is live (not exercised here — nebula is stubbed to nil).
 func TestNebManagerMembers(t *testing.T) {
 	root := testTalosTree(t)
-	m, _ := testNebManager(t, root, []string{"laptop"})
+	m, _ := testNebManager(t, root)
 
 	if rows := m.Members(); rows != nil {
 		t.Fatalf("sealed manager should report no members, got %v", rows)
@@ -280,7 +274,7 @@ func TestNebManagerMembers(t *testing.T) {
 	if r := byName["cp1"]; r.Group != GroupMachines || r.Tunnel != "—" {
 		t.Errorf("cp1 row = %+v", r)
 	}
-	if r := byName["laptop"]; r.Group != GroupAdmins || r.Tunnel != "—" {
-		t.Errorf("laptop row = %+v", r)
+	if _, present := byName["laptop"]; present {
+		t.Errorf("device leaked into Members() without a live tunnel (ADR-0012)")
 	}
 }

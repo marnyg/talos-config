@@ -45,8 +45,8 @@ const (
 type Kind string
 
 const (
-	KindMachine Kind = "machine"
-	KindTV      Kind = "tv"
+	KindMachine    Kind = "machine"
+	KindMeshEnroll Kind = "mesh-enroll" // wallet-signed device enrollment (ADR-0012)
 )
 
 type authStatus int
@@ -65,10 +65,17 @@ type Auth struct {
 	ClientID   string
 	Kind       Kind
 	// Identity holds the extra variables Talos sent in the device auth
-	// request (talos.config.oauth.extra_variable=uuid,mac,serial).
+	// request (talos.config.oauth.extra_variable=uuid,mac,serial), or
+	// for mesh enrollment the device-proposed name and pubkey
+	// fingerprint that the /status card renders.
 	Identity  map[string]string
 	CreatedAt time.Time
 	ExpiresAt time.Time
+
+	// Payload is what Consume returns to the token holder. Set at
+	// Approve for KindMeshEnroll (the minted nebula config); unused for
+	// KindMachine, which builds its response from other server state.
+	Payload []byte
 
 	lastPoll time.Time
 	status   authStatus
@@ -79,6 +86,7 @@ type Auth struct {
 type grant struct {
 	Kind      Kind
 	Identity  map[string]string
+	Payload   []byte // KindMeshEnroll: the minted config; nil otherwise
 	ExpiresAt time.Time
 	used      bool
 }
@@ -195,12 +203,21 @@ func (s *Store) NonceFor(userCode string) (string, error) {
 }
 
 // Approve marks a pending authorization approved.
-func (s *Store) Approve(userCode string) error { return s.decide(userCode, statusApproved) }
+func (s *Store) Approve(userCode string) error { return s.decide(userCode, statusApproved, nil) }
+
+// ApproveWithPayload marks a pending authorization approved and stores
+// the payload the eventual token will redeem. Used by KindMeshEnroll:
+// the mint happens at approval (while the wallet signature is fresh
+// and the hub is unsealed), and the appliance polling /token receives
+// the already-minted config on the first successful poll.
+func (s *Store) ApproveWithPayload(userCode string, payload []byte) error {
+	return s.decide(userCode, statusApproved, payload)
+}
 
 // Deny marks a pending authorization denied.
-func (s *Store) Deny(userCode string) error { return s.decide(userCode, statusDenied) }
+func (s *Store) Deny(userCode string) error { return s.decide(userCode, statusDenied, nil) }
 
-func (s *Store) decide(userCode string, status authStatus) error {
+func (s *Store) decide(userCode string, status authStatus, payload []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.expireLocked()
@@ -210,6 +227,29 @@ func (s *Store) decide(userCode string, status authStatus) error {
 		return ErrUnknownUserCode
 	}
 	da.status = status
+	da.Payload = payload
+	return nil
+}
+
+// UpdateIdentity replaces one identity key on a pending authorization.
+// Used by KindMeshEnroll's /status approval form so the operator's
+// edits to the proposed name and group are visible on subsequent
+// renders. Approval writes the final values back through this too, so
+// the /status card and the signed message agree.
+func (s *Store) UpdateIdentity(userCode string, kv map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expireLocked()
+	da, ok := s.byUserCode[userCode]
+	if !ok || da.status != statusPending {
+		return ErrUnknownUserCode
+	}
+	if da.Identity == nil {
+		da.Identity = map[string]string{}
+	}
+	for k, v := range kv {
+		da.Identity[k] = v
+	}
 	return nil
 }
 
@@ -246,6 +286,7 @@ func (s *Store) Poll(deviceCode string) (token string, errCode string) {
 	s.tokens[token] = &grant{
 		Kind:      da.Kind,
 		Identity:  da.Identity,
+		Payload:   da.Payload,
 		ExpiresAt: now.Add(TokenTTL),
 	}
 	return token, ""
@@ -283,25 +324,24 @@ func (s *Store) Validate(token, mac string) error {
 	return nil
 }
 
-// MeshDeviceFor validates a TV-kind token and returns the mesh device
-// name it was bound to at flow start. It does not consume the token;
-// call Consume after successfully serving the config.
-func (s *Store) MeshDeviceFor(token string) (string, error) {
+// MeshEnrollPayload validates a mesh-enroll token and returns the
+// minted config the approval stashed on it. It does not consume the
+// token; call Consume after successfully serving.
+func (s *Store) MeshEnrollPayload(token string) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	g, ok := s.tokens[token]
 	if !ok || g.used || s.Now().After(g.ExpiresAt) {
-		return "", ErrBadToken
+		return nil, ErrBadToken
 	}
-	if g.Kind != KindTV {
-		return "", ErrWrongTarget
+	if g.Kind != KindMeshEnroll {
+		return nil, ErrWrongTarget
 	}
-	name := g.Identity["mesh_device"]
-	if name == "" {
-		return "", ErrBadToken
+	if len(g.Payload) == 0 {
+		return nil, ErrBadToken
 	}
-	return name, nil
+	return g.Payload, nil
 }
 
 // Consume marks the token used. Single-use: subsequent Validates fail.

@@ -1,5 +1,5 @@
 // Package walletsign is the client half of the hub's wallet-signed
-// enrollment flows: fetch a single-use challenge, get it signed by an
+// enrollment flow: fetch a single-use challenge, get it signed by an
 // allowlisted wallet, redeem it for the device's config.
 //
 // The signature is always over an ordinary auth message — never the
@@ -10,8 +10,9 @@
 // signing page no other local process can reach, and never letting a
 // signature touch a file or an argv.
 //
-// Extracted from wg0-era wgup, which had it first; phase 2 deleted that
-// tool and this package is the part that survived.
+// Under ADR-0012 the caller has already generated an X25519 keypair
+// locally; only the pubkey travels here, and the private key never
+// leaves the caller's disk.
 package walletsign
 
 import (
@@ -37,21 +38,25 @@ import (
 // wastes the user's time.
 const nonceTTL = 5 * time.Minute
 
-// Challenge is what an enrollment endpoint issues: the canonical message
-// to sign, plus the single-use nonce that binds it.
+// Challenge is what /mesh/enroll/challenge returns: the canonical
+// message the wallet signs, plus the single-use nonce that binds it
+// and the fingerprint the hub computed from the submitted pubkey so
+// the client can echo it in the signing UI.
 type Challenge struct {
-	Name    string `json:"name"`
-	Group   string `json:"group"` // mesh enrollment only; "" for wg0
-	Nonce   string `json:"nonce"`
-	Message string `json:"message"`
+	Name        string `json:"name"`
+	Group       string `json:"group"`
+	Nonce       string `json:"nonce"`
+	Fingerprint string `json:"fingerprint"`
+	Message     string `json:"message"`
 }
 
-// Enroll runs the whole exchange against endpoint (e.g.
-// "https://hub/mesh/enroll") and returns the config body the hub
-// rendered. tool names the calling command, for the signing page and its
-// error messages.
-func Enroll(endpoint, name, tool string, paste bool) ([]byte, error) {
-	ch, err := FetchChallenge(endpoint, name)
+// MeshEnroll runs the whole enrollment exchange against endpoint
+// (typically "<hub>/mesh/enroll") for a device that has already
+// generated its keypair locally. Returns the config body the hub
+// rendered; the caller is responsible for splicing in its own private
+// key before running nebula.
+func MeshEnroll(endpoint, name, group, pubkeyHex, tool string, paste bool) ([]byte, error) {
+	ch, err := FetchChallenge(endpoint, name, group, pubkeyHex)
 	if err != nil {
 		return nil, err
 	}
@@ -59,12 +64,16 @@ func Enroll(endpoint, name, tool string, paste bool) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Redeem(endpoint, ch, sig)
+	return Redeem(endpoint, ch, pubkeyHex, sig)
 }
 
-// FetchChallenge asks endpoint for a challenge for name.
-func FetchChallenge(endpoint, name string) (Challenge, error) {
-	resp, err := http.Get(endpoint + "?name=" + url.QueryEscape(name))
+// FetchChallenge asks endpoint's /challenge subpath for a challenge
+// binding (name, group, pubkey). The hub echoes back the canonical v1
+// message it expects signed.
+func FetchChallenge(endpoint, name, group, pubkeyHex string) (Challenge, error) {
+	resp, err := http.PostForm(endpoint+"/challenge", url.Values{
+		"name": {name}, "group": {group}, "pubkey": {pubkeyHex},
+	})
 	if err != nil {
 		return Challenge{}, fmt.Errorf("fetching enrollment challenge: %w", err)
 	}
@@ -88,10 +97,15 @@ func Sign(ch Challenge, tool string, paste bool) (string, error) {
 	return browserSignature(ch.Name, ch.Message, tool)
 }
 
-// Redeem posts the signed challenge and returns the hub's response body.
-func Redeem(endpoint string, ch Challenge, sig string) ([]byte, error) {
+// Redeem posts the signed challenge and returns the hub's response
+// body — the rendered device config, minus its private key.
+func Redeem(endpoint string, ch Challenge, pubkeyHex, sig string) ([]byte, error) {
 	resp, err := http.PostForm(endpoint, url.Values{
-		"name": {ch.Name}, "nonce": {ch.Nonce}, "signature": {sig},
+		"name":      {ch.Name},
+		"group":     {ch.Group},
+		"pubkey":    {pubkeyHex},
+		"nonce":     {ch.Nonce},
+		"signature": {sig},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("submitting enrollment: %w", err)

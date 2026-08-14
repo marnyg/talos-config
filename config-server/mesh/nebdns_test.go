@@ -16,7 +16,7 @@ func TestBuildMeshZone(t *testing.T) {
 		"aa:bb:cc:dd:ee:01": {Name: "cp1"},
 		"aa:bb:cc:dd:ee:02": {}, // no name: label is the MAC with dashes
 	}
-	zone, err := buildMeshZone(master, nebDNSSubnet, byMAC, adminDevices("laptop", "phone"))
+	zone, err := buildMeshZone(master, nebDNSSubnet, byMAC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,13 +36,7 @@ func TestBuildMeshZone(t *testing.T) {
 		}
 		want[label] = ip
 	}
-	for _, name := range []string{"laptop", "phone"} {
-		ip, err := nebderive.DeviceIP(master, name, nebDNSSubnet)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want[name] = ip
-	}
+	// Devices are not in the git-derived zone under ADR-0012.
 
 	if len(zone) != len(want) {
 		t.Fatalf("zone has %d names, want %d: %v", len(zone), len(want), zone)
@@ -65,7 +59,7 @@ func TestBuildMeshZoneRejectsHubAddress(t *testing.T) {
 	}
 	_, err = buildMeshZone(master, nebDNSSubnet, map[string]machines.Machine{
 		"aa:bb:cc:dd:ee:01": {Name: "cp1", MeshIP: hubIP.String()},
-	}, nil)
+	})
 	if err == nil {
 		t.Fatal("expected a collision error against the hub address")
 	}
@@ -76,7 +70,7 @@ func TestBuildMeshZoneRejectsDuplicateLabels(t *testing.T) {
 	_, err := buildMeshZone(master, nebDNSSubnet, map[string]machines.Machine{
 		"aa:bb:cc:dd:ee:01": {Name: "cp1"},
 		"aa:bb:cc:dd:ee:02": {Name: "cp1"},
-	}, nil)
+	})
 	if err == nil {
 		t.Fatal("expected a name collision error")
 	}
@@ -89,7 +83,7 @@ func TestBuildMeshZoneRejectsAddressCollision(t *testing.T) {
 	_, err := buildMeshZone(master, nebDNSSubnet, map[string]machines.Machine{
 		"aa:bb:cc:dd:ee:01": {Name: "cp1", MeshIP: "10.42.7.7"},
 		"aa:bb:cc:dd:ee:02": {Name: "cp2", MeshIP: "10.42.7.7"},
-	}, nil)
+	})
 	if err == nil {
 		t.Fatal("expected an address collision error")
 	}
@@ -100,7 +94,7 @@ func TestBuildMeshZoneRejectsInvalidLabels(t *testing.T) {
 	for _, name := range []string{"Not_A_Label", "-leading", "a..b"} {
 		if _, err := buildMeshZone(master, nebDNSSubnet, map[string]machines.Machine{
 			"aa:bb:cc:dd:ee:01": {Name: name},
-		}, nil); err == nil {
+		}); err == nil {
 			t.Errorf("accepted invalid label %q", name)
 		}
 	}
