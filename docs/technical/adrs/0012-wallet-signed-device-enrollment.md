@@ -76,10 +76,12 @@ Downstream jobs of the old declared list are replaced statelessly:
 
 Delivery scope: nebup rework and the hub-side unified flow ship
 together. No Android code is built now; the TV/phone APK (task
-`2e1bef85`) stays deferred until a remote-TV need appears, and the
+`2e1bef85`) stays deferred until a remote-TV need appears. ~~The
 phone path is *accepted as possibly nonfunctional until that APK
 exists* (the Mobile Nebula import path is opportunistic, unverified
-for self-generated keys).
+for self-generated keys).~~ **Verified 2026-08-14:** stock Mobile
+Nebula works given the hub-issued yaml — the phone path is
+functional with no custom client.
 
 ## Considered Options
 
@@ -139,8 +141,10 @@ for self-generated keys).
   probabilistic; enrollment only guards the git zone.
 - Signed-message prefix pinned to v1 (see "Signed message (v1)" below);
   future revisions bump the version tail. Thread `72d38fd0` closed.
-- The phone has no working enrollment path until either the Mobile
-  Nebula import assumption verifies or the APK ships — accepted.
+- ~~The phone has no working enrollment path until either the Mobile
+  Nebula import assumption verifies or the APK ships — accepted.~~
+  Resolved 2026-08-14: the import assumption verified (owner-tested,
+  stock app + hub yaml). The APK, if ever built, is TV-UX only.
 
 ## Signed message (v1)
 

@@ -310,6 +310,18 @@
   returns. Distinct from the `faulted` media volumes, which have no
   live replica at all.
 
+- 2026-08-14 — **ADR-0012 is live: enrollment mints only device-born
+  keys.** Old master-derived device certs (office MacBook enrolled as
+  `laptop`, the phone) remain *valid* until their 90-day expiry — the
+  CA did not change. Re-enrolling under the same name keeps the same
+  address, so the office-Mac/home-laptop name collision (2026-07-30
+  note) persists at the address level; blocklist the old fingerprint
+  if simultaneous use ever matters.
+- 2026-08-14 — **Stock Mobile Nebula accepts the hub-issued yaml**
+  (owner-verified) — updates the 2026-07-30 hand-entry note: phone
+  onboarding is "move the yaml + key onto the phone", not manual
+  field entry. Renewal is a re-import every 90 days (`5183f6ea`).
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have
