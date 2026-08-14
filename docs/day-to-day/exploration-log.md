@@ -4,6 +4,25 @@
      Granularity: strategy-level pivots only. Not "used ripgrep instead of sed".
      Yes: "tried library X, ruled out for reason Y." -->
 
+## Unattended Windows guest on KubeVirt (2026-08-11→14)
+
+- 2026-08-12 — Tried scripting the "Press any key to boot from CD" EFI
+  prompt with a VNC keypress (vncdotool, reinstall script v1). Ruled
+  out: timing window, requires VNC reachability from the operator's
+  machine, not derivable in-cluster. Landed on: repack the ISO with
+  Microsoft's own `efisys_noprompt.bin` as the El Torito EFI entry —
+  the prompt never exists, reinstall becomes a pure API act.
+- 2026-08-13 — Repack v1 extracted the ISO with xorriso. Ruled out: the
+  stock ISO is UDF-bridge and the ISO9660/Joliet view xorriso reads
+  cannot represent the >4GB `install.wim` — extraction died partway.
+  Landed on: 7z extracts the UDF layer; xorriso stays as the rebuilder.
+- 2026-08-12 — containerDisk delivery of the ISO via the ImageVolume
+  path ruled out: needs k8s ≥1.35 (kubevirt#17460); feature gate
+  disabled, ISO delivered by CDI DataVolume import instead.
+- 2026-08-11 — Block-mode system disk ruled out: CDI's importer runs
+  non-root and cannot open the raw device on a Block-mode Longhorn
+  volume. Filesystem mode; revisit only alongside the virtio switch.
+
 ## Pod resolution of mesh names (2026-07-31)
 
 - 2026-07-31 — Tried to give cluster pods `.mesh.internal` resolution

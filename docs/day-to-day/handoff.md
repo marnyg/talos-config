@@ -5,40 +5,40 @@
 
 ## Last session
 
-2026-08-05 (seventh session) — design session, no code: **ADR-0012
-drafted** (`technical/adrs/0012-wallet-signed-device-enrollment.md`,
-Proposed). Wallet-signed enrollment replaces the declared device list;
-device-generated keypairs (no key ever travels); approver-set
-name+group; two entry modes (nebup direct / RFC-8628) over one
-verify+mint core; live-peers-only device DNS; `/config` gate =
-`groups ∋ admins` + derivation-consistency. Client scope: nebup loses
-the admin-mediated transfer mode, gains `-group` (default `admins`)
-and a two-file cache (`<name>.key` persists, `-rekey` rotates);
-approval extends `/status` (no new page); no Android code now — TV
-APK (`2e1bef85`) stays deferred, spec re-annotated to the unified
-flow. Invariant 1 amended (uncommitted alongside the ADR).
+2026-08-11→14 (eighth session, several sittings) — **Windows guest arc,
+verified and closed.** KubeVirt + CDI operators landed
+(`k8s/apps/{kubevirt,cdi}/`); Windows Server 2025 guest on cp1
+(`k8s/apps/vms/`), RDP via NodePort 30389 — owner RDP-verified
+2026-08-14. Reinstall is one API act: sealed autounattend + no-prompt
+ISO repack Job (7z extracts the UDF layer, xorriso rebuilds with
+`efisys_noprompt.bin`) + a suspended-CronJob trigger with two-DELETE
+RBAC. Exercised end-to-end 2026-08-14 (trigger Job Complete, system DV
+re-imported, RDP back). Sync-waves + a CDI DataVolume health
+customization close the cold-start boot race (`f29dbf2`). Also
+confirmed: **ArgoCD wallet login works in the browser** (`fed04b4`
+verified end-to-end — that loose thread is closed).
 
 ## Loose threads
 
-- **w1 still down** (since 2026-08-04 ~09:26) — physical power/console
-  check; everything storage-shaped waits on it. Old jellyfin pod runs
-  admin/admin until it cycles (new password:
+- **w1 still down** (since 2026-08-04) — 3 `longhorn-bulk` volumes
+  `faulted` (media library offline); the VM's system/ISO volumes run
+  `degraded` 1-of-2 replicas and heal when w1 returns. Old jellyfin
+  pod still admin/admin until it cycles (new password:
   `kubectl -n media get secret jellyfin-admin …` after w1 returns).
-- **ADR-0012 is Proposed, not Accepted**; implementation not started.
-  The exploration-log section stays until the ADR is accepted.
-- **Phone enrollment is accepted-broken until the APK exists**: mode 3
-  (transfer-a-config) dies with the implementation, and the Mobile
-  Nebula import path is unverified for self-generated keys. Owner
-  accepted this explicitly.
-- Open design items: signed-message prefix versioning; 90-day renewal
-  automation (persistent device key makes "re-sign same pubkey"
-  possible in principle).
-- ArgoCD wallet login still not browser-tested since the `fed04b4` fix.
+- **ADR-0012 still Proposed, not Accepted**; enrollment implementation
+  not started. Exploration-log section stays until accepted.
+- **virtio switch deferred**: guest runs SATA + e1000e deliberately
+  (inbox drivers); viostor/NetKVM + Block-mode disk is a later perf
+  step, not owed now.
+- Rotating the win2k25 admin password means resealing **both**
+  `win2k25-admin` and the autounattend secret — nothing links them.
+- Phone enrollment accepted-broken until the APK exists (unchanged).
 
 ## Suggested next steps
 
-- Power-cycle w1; verify volumes leave `faulted`, jellyfin's new pod
-  starts, ArgoCD wallet login works.
-- Accept ADR-0012 (flip status) and commit the docs bundle.
-- Start implementation hub-side: one verify+mint core + the new signed
-  message, then nebup rework, then the `/status` approval form.
+- Power-cycle w1; verify `longhorn-bulk` volumes leave `faulted`, VM
+  volumes heal to 2 replicas, jellyfin's new pod starts.
+- Accept ADR-0012 (flip status) and start the hub-side verify+mint
+  core.
+- Decide whether the KubeVirt/Windows-guest choice gets an ADR (was
+  prompted at close of this session).

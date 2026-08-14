@@ -289,6 +289,27 @@
   volumes. Retrieve the new password after w1 returns:
   `kubectl -n media get secret jellyfin-admin -o jsonpath='{.data.password}' | base64 -d`.
 
+- 2026-08-14 — **win2k25 reinstall is one API act**:
+  `kubectl -n vms create job --from=cronjob/win2k25-reinstall
+  win2k25-reinstall-$(date +%s)` (wrapped by
+  `scripts/win2k25-reinstall.sh`); RDP is back ~25 min later. Password:
+  `kubectl -n vms get secret win2k25-admin -o
+  jsonpath='{.data.password}' | base64 -d`. Rotating it requires
+  resealing BOTH win2k25-admin and the autounattend secret.
+- 2026-08-14 — **ArgoCD-managed Jobs**: never set
+  `ttlSecondsAfterFinished` (ArgoCD prune-recreates the Job forever
+  once the TTL reaps it); Jobs are immutable, so script changes mean
+  bumping the Job name (`-v2`, …). Settings ConfigMap changes
+  (`resource.customizations.*`) are picked up live; `cmd-params-cm`
+  changes are not.
+- 2026-08-14 — **`virtctl stop/start` is futile under selfHeal**: the
+  next sync reverts it. VM start/stop is a git edit of `runStrategy`
+  (Always ↔ Halted).
+- 2026-08-14 — the win2k25 system/ISO Longhorn volumes run `degraded`
+  (1 of 2 replicas) while w1 is down; they heal unaided when it
+  returns. Distinct from the `faulted` media volumes, which have no
+  live replica at all.
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have
