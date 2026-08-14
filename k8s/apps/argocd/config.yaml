@@ -44,6 +44,32 @@ data:
     clientID: argocd
     enablePKCEAuthentication: true
     requestedScopes: ["openid", "profile", "email", "groups"]
+  # CDI DataVolume health: without this, ArgoCD calls any unknown CR
+  # Healthy the moment it exists, and sync-waves can't gate on it. The
+  # vms cold-start chain (ISO import → repack Job → VM) relies on wave
+  # ordering, so ArgoCD must see an importing DataVolume as Progressing
+  # until CDI reports Succeeded. Settings ConfigMap changes are picked
+  # up live — no controller restart needed (unlike cmd-params-cm).
+  resource.customizations.health.cdi.kubevirt.io_DataVolume: |
+    hs = {}
+    if obj.status ~= nil and obj.status.phase ~= nil then
+      if obj.status.phase == "Succeeded" then
+        hs.status = "Healthy"
+        hs.message = "import complete"
+        return hs
+      end
+      if obj.status.phase == "Failed" then
+        hs.status = "Degraded"
+        hs.message = "import failed"
+        return hs
+      end
+      hs.status = "Progressing"
+      hs.message = obj.status.phase
+      return hs
+    end
+    hs.status = "Progressing"
+    hs.message = "no status yet"
+    return hs
 ---
 apiVersion: v1
 kind: ConfigMap

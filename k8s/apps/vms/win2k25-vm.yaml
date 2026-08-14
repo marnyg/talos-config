@@ -19,6 +19,11 @@ kind: VirtualMachine
 metadata:
   name: win2k25
   namespace: vms
+  annotations:
+    # Wave 2: start only after the no-prompt repack Job (wave 1) is
+    # Complete. A blank disk + empty CD boots to the EFI shell and
+    # sits there — the VM must be last in the cold-start chain.
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   runStrategy: Always
   dataVolumeTemplates:

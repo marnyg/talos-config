@@ -39,6 +39,13 @@ metadata:
   # layer natively; xorriso is still the rebuilder (El Torito -e).
   name: win2k25-iso-noprompt-build-v2
   namespace: vms
+  annotations:
+    # Cold-start ordering (wave 0 → 1 → 2): the source DataVolume must
+    # be Succeeded (DV health check in k8s/apps/argocd/config.yaml)
+    # before this Job reads it, and the VM (wave 2) must not boot until
+    # this Job completes — on 2026-08-11 the VM started 33 min before
+    # the ISO existed and parked at the EFI shell.
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 3
   # No ttlSecondsAfterFinished: ArgoCD would prune-and-recreate the Job
