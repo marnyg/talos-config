@@ -167,22 +167,28 @@ func TestHubNebulaConfigInvariants(t *testing.T) {
 		t.Error("inbound firewall must default to drop")
 	}
 
-	// /config is admin-only, and specifically not reachable by machines:
-	// served configs carry other machines' secrets.
-	var httpRule *nebRuleYAML
-	for i, r := range got.Firewall.Inbound {
-		if r.Port == "80" && r.Proto == "tcp" {
-			httpRule = &got.Firewall.Inbound[i]
+	// tcp/80 admits exactly the two device groups (per-route gates in
+	// serveMeshHTTP decide who sees what) and never machines: served
+	// configs carry other machines' secrets, and machine certs must be
+	// dropped by the firewall before a request is accepted.
+	httpGroups := map[string]bool{}
+	for _, r := range got.Firewall.Inbound {
+		if r.Port != "80" || r.Proto != "tcp" {
+			continue
 		}
+		if r.Host == "any" {
+			t.Error("tunnel http must not be open to any host")
+		}
+		if r.Group == "" {
+			t.Error("tunnel http rule must be group-scoped")
+		}
+		httpGroups[r.Group] = true
 	}
-	if httpRule == nil {
-		t.Fatal("no inbound rule for tunnel http")
+	if !httpGroups[GroupAdmins] || !httpGroups[GroupMedia] {
+		t.Errorf("tunnel http groups = %v, want %q and %q", httpGroups, GroupAdmins, GroupMedia)
 	}
-	if httpRule.Group != GroupAdmins {
-		t.Errorf("tunnel http rule group = %q, want %q", httpRule.Group, GroupAdmins)
-	}
-	if httpRule.Host == "any" {
-		t.Error("tunnel http must not be open to any host")
+	if httpGroups[GroupMachines] {
+		t.Error("tunnel http must not admit machine certs")
 	}
 }
 

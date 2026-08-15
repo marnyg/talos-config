@@ -285,13 +285,16 @@ func HubConfig(p HubParams) ([]byte, error) {
 		cfg.Firewall.Inbound = append(cfg.Firewall.Inbound,
 			nebRuleYAML{Port: "53", Proto: "udp", Host: "any"})
 	}
-	// The overlay HTTP surface (/config) is admin-only. The group is
+	// The overlay HTTP surface admits both device groups; per-route
+	// gates in serveMeshHTTP decide who sees what (/config is
+	// admins-only, /hosts serves any enrolled device). The group is
 	// signed into the peer's certificate, so the firewall drops machines
 	// before a request is even accepted; the derived source-address
 	// check in serveMeshHTTP stays as the second layer (ADR-0007,
 	// carrying ADR-0003's property onto the mesh).
 	cfg.Firewall.Inbound = append(cfg.Firewall.Inbound,
-		nebRuleYAML{Port: "80", Proto: "tcp", Group: GroupAdmins})
+		nebRuleYAML{Port: "80", Proto: "tcp", Group: GroupAdmins},
+		nebRuleYAML{Port: "80", Proto: "tcp", Group: GroupMedia})
 
 	out, err := yaml.Marshal(cfg)
 	if err != nil {

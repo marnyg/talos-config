@@ -2,6 +2,7 @@ package mesh
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -92,6 +93,37 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 			t.Fatalf("status = %d, want 403 (media device must not read machine configs)", status)
 		}
 	})
+
+	// /hosts is the device-facing member list (the TV app's screen).
+	// Both groups may read it; each caller must appear in its own list
+	// as a live device, and the hub row is always present and online.
+	for caller, svc := range map[string]*nebstack.Service{"media": tv, "admin": admin} {
+		t.Run(caller+" device lists hosts", func(t *testing.T) {
+			status, body, err := meshGet(svc, hub.OverlayAddr(), "/hosts")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %q)", status, body)
+			}
+			var got struct {
+				Hosts []hostEntry `json:"hosts"`
+			}
+			if err := json.Unmarshal([]byte(body), &got); err != nil {
+				t.Fatalf("response is not the expected JSON: %v (body %q)", err, body)
+			}
+			rows := map[string]hostEntry{}
+			for _, h := range got.Hosts {
+				rows[h.Name] = h
+			}
+			if h, ok := rows["hub"]; !ok || h.Kind != "hub" || !h.Online {
+				t.Errorf("hub row = %+v, want kind=hub online=true", rows["hub"])
+			}
+			if h, ok := rows["tv"]; !ok || h.Kind != "device" || !h.Online {
+				t.Errorf("tv row = %+v, want kind=device online=true (caller must see live devices)", rows["tv"])
+			}
+		})
+	}
 }
 
 // meshGet performs one HTTP GET through a member's netstack to the
