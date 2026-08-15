@@ -59,6 +59,19 @@
   2026-08-05 (`fed04b4`, SSA partial manifest), plus a third instance
   in jellyfin (`f1f5dd4`).
 
+## Android app: DNS on the tun (2026-08-15)
+
+- 2026-08-15 — Considered pushing the hub's mesh resolver into the
+  app's VpnService (`addDnsServer(10.42.0.1)`), giving the TV
+  `.mesh.internal` names. Ruled out: Android routes **all** device DNS
+  to a VPN-provided resolver (no split DNS below API 33+, Shield is
+  Android 9–11), and the hub's resolver answers only the mesh zone
+  (REFUSED otherwise) — every non-mesh lookup on the TV would break.
+  Landed on: no DNS on the tun; services by overlay IP from `/hosts`.
+  Revisit paths if names become necessary: hub DNS grows an
+  upstream-forwarding mode for device peers (adds a fly hairpin to
+  every TV query), or Android 13+ split-DNS on newer devices.
+
 ## TV mesh client (2026-07-30)
 
 - 2026-07-30 — Considered the official Mobile Nebula app as the Android

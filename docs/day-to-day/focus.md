@@ -3,21 +3,18 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** ADR-0012 wallet-signed enrollment is deployed and
-owner-verified (2026-08-14); the mesh-v2 enrollment arc is at its
-deliberate stopping point. Pivot to the storage arc: blocked on
-physically reviving w1, so the interim code work is the etcd
-advertised-subnets bug (`6c456522`).
+**Now:** the Android mesh app v1 is live (built, released, verified on
+the owner's TV 2026-08-15). Remaining app scope is deployment to the
+actual remote TV (parents') and the Jellyfin-addressing decision
+(IP:port vs ingress name). Storage arc still queued behind reviving w1.
 
-**Toward goal:** the finished work closes out "Mesh v2 — phones/TV
-join the network" in `desired-state/goals.md` (phones: verified via
-stock Mobile Nebula, no client code). The storage pivot serves
-Longhorn adoption — currently only a task-tracker goal (`25d30c3b`),
-not yet in `goals.md`.
+**Toward goal:** closes the last open slice of "Mesh v2 — phones/TV
+join the network" in `desired-state/goals.md`: TV client existed only
+as a deferred task; the remote-TV use case fired its build-gate.
 
 **Out of scope:**
-- TV/phone client code — stock Mobile Nebula verified working; revisit
-  only if the TV needs a leanback UI (`2e1bef85`).
-- 90-day renewal automation (`49443c38`) — owed before ~2026-11-12,
-  not now.
-- Any storage migration while `longhorn-bulk` is faulted.
+- Release-keystore signing, APK size trimming, app polish — v1 is
+  sideload-and-works; iterate when a real need appears.
+- Mesh DNS on Android / hub resolver forwarding — reach services by IP
+  until the Jellyfin-addressing decision forces the question.
+- Any storage migration while `longhorn-bulk` is faulted (w1 down).

@@ -322,6 +322,23 @@
   onboarding is "move the yaml + key onto the phone", not manual
   field entry. Renewal is a re-import every 90 days (`5183f6ea`).
 
+- 2026-08-15 — **The Android app is distributed via the rolling
+  `android-latest` release**: every push touching `android/` or
+  `config-server/{mobile,devkey}` re-clobbers
+  `releases/download/android-latest/talos-mesh.apk`. "Update the app"
+  = re-download that URL on the TV (debug-signed, so versions install
+  over each other). CI is the only builder — there is no local
+  Android SDK on the dev machine.
+- 2026-08-15 — **Hub deployed with `/hosts` + the media tcp/80
+  firewall rule** (owner deploy + unseal same day). A TV enrolled
+  before this deploy would hold a valid cert but get firewall-dropped
+  on the device list — not an issue for devices enrolled after.
+- 2026-08-15 — The app pushes **no DNS server to the VpnService**
+  (deliberate — Android sends *all* device DNS to a VPN resolver and
+  the hub only answers the mesh zone). Symptom to expect: mesh *names*
+  don't resolve on the TV; the app's host list carries name + IP, and
+  services are reached by IP.
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have
