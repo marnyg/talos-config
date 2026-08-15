@@ -15,10 +15,11 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   (LAN traffic never hairpins through fly), phones/TV join the network,
   one overlay, one derivation tree. Spike gate passed 2026-07-29
   (ADR-0002); **phase 2 complete 2026-07-30** — wg0 deleted, mesh is
-  the sole overlay and control channel (ADR-0007). Remaining scope
-  deliberately deferred: TV client (task 2e1bef85), remote-direct
-  paths (ADR-0006). Full record in
-  [`../mesh-v2-nebula.md`](../mesh-v2-nebula.md).
+  the sole overlay and control channel (ADR-0007). TV/phone client
+  shipped 2026-08-15 (ADR-0013: custom app, rolling APK release) —
+  owner-TV verified; remote (parents') deployment pending. Remaining
+  scope deliberately deferred: remote-direct paths (ADR-0006). Full
+  record in [`../mesh-v2-nebula.md`](../mesh-v2-nebula.md).
   _Remote_ peer paths are **not** a goal: measured 2026-07-30 as
   relay-by-default because ordinary remote networks (cellular CGNAT,
   corporate Wi-Fi) are symmetric NATs that no overlay can punch. Remote
