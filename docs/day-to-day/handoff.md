@@ -34,7 +34,9 @@ TV at the parents' needs Jellyfin over the mesh).
   with real Jellyfin playback bitrates.
 - **Jellyfin from the app is by overlay IP** (no DNS on the tun — see
   exploration log). If Jellyfin needs its ingress *name* (Host-header
-  routing), that's unresolved; IP:NodePort works today.
+  routing), the chosen design is filed: in-tunnel split DNS via a
+  Device shim (`3b1734db`, +later) — hub-side forwarding was rejected
+  (seal window would kill all DNS on the remote TV).
 - APK is ~94 MB (4 ABIs bundled); `abiFilters arm64-v8a` would quarter it.
 - **w1 still down** (since 2026-08-04) — still gates the storage arc.
 - 90-day renewal automation (`49443c38`) owed before ~2026-11-12; the
