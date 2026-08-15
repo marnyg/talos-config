@@ -189,8 +189,12 @@ func (s *server) handleVerifyPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("device auth %sd: user_code=%s", action, userCode)
-	s.respondAction(w, r, fmt.Sprintf("%s %sd", userCode, action))
+	past := action + "d" // "approved"
+	if action == "deny" {
+		past = "denied"
+	}
+	log.Printf("device auth %s: user_code=%s", past, userCode)
+	s.respondAction(w, r, fmt.Sprintf("%s %s", userCode, past))
 }
 
 // authorizeAdmin accepts either a wallet signature over the canonical

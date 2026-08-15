@@ -149,6 +149,13 @@ func (s *server) handleMeshEnrollChallenge(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	name := nebderive.Normalize(r.FormValue("name"))
+	if name == "" {
+		// verifyAndMint would refuse the eventual enrollment anyway, but
+		// handing out a signable message for name "" invites a wasted
+		// wallet ceremony; refuse at issue time.
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
 	group := r.FormValue("group")
 	if group == "" {
 		group = mesh.GroupAdmins

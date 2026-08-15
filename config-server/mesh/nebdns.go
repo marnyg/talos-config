@@ -159,10 +159,10 @@ func liveDeviceZone(master []byte, subnet netip.Prefix, static map[string]netip.
 
 // dnsRespond answers one raw DNS query against the zone. Pure function
 // (tested without the netstack). Returns nil for unanswerable input.
-// The caller may pass a live device zone that overlays the static one;
-// a name in both resolves from the static zone (device names cannot
-// shadow machine or hub labels because enrollment refuses colliding
-// names in the first place).
+// The caller passes a single merged zone; precedence between static
+// and live names is settled before the merge — liveDeviceZone never
+// reports a name that exists in the static zone, and enrollment
+// refuses colliding names in the first place.
 func dnsRespond(zone map[string]netip.Addr, domain string, req []byte) []byte {
 	var p dnsmessage.Parser
 	hdr, err := p.Start(req)

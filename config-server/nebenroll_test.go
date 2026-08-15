@@ -277,6 +277,24 @@ func TestMeshEnrollTopology(t *testing.T) {
 	}
 }
 
+// TestMeshEnrollChallengeRequiresName: the challenge endpoint must
+// never issue a signable message for name "" — verifyAndMint would
+// refuse the enrollment later, but only after a wasted wallet ceremony.
+func TestMeshEnrollChallengeRequiresName(t *testing.T) {
+	_, ts := newMeshEnrollServer(t)
+	_, pubHex := makeDeviceKeypair(t)
+	resp, err := http.PostForm(ts.URL+"/mesh/enroll/challenge", url.Values{
+		"name": {"   "}, "group": {mesh.GroupAdmins}, "pubkey": {pubHex},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for an empty (whitespace) name", resp.StatusCode)
+	}
+}
+
 // TestMeshEnrollRejects covers the failure paths: a bad signature; a
 // replayed nonce; and a name that collides with the git zone (a
 // machine label) — the last is the collision-check ADR-0012 requires.
