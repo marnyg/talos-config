@@ -31,6 +31,20 @@ const tunnelBuildVersion = "talos-config-mobile"
 // the life of the session and calls Stop on revocation/teardown.
 type Tunnel struct {
 	control *nebula.Control
+	dns     *dnsDevice
+}
+
+// SetUpstreams replaces the underlay resolvers for non-mesh DNS.
+// Kotlin calls this from a ConnectivityManager callback whenever the
+// underlying network's link properties change — the resolvers captured
+// at start go stale the moment the device roams wifi↔cellular. Same
+// format as NewTunnel's upstreamDNS; empty/garbage input is ignored
+// (the previous resolvers stay).
+func (t *Tunnel) SetUpstreams(upstreamDNS string) {
+	if t.dns == nil || strings.TrimSpace(upstreamDNS) == "" {
+		return
+	}
+	t.dns.setUpstreams(parseUpstreams(upstreamDNS))
 }
 
 // NewTunnel starts nebula from a completed (key-spliced) config on the
@@ -82,12 +96,19 @@ func NewTunnel(cfgYAML string, tunFd int, logSink string, upstreamDNS string, pr
 
 	fd := tunFd
 	inner := overlay.NewFdDeviceFromConfig(&fd)
+	// nebula.Main runs the factory synchronously, so shim is set before
+	// Main returns and the Tunnel below can hold it for SetUpstreams.
+	var shim *dnsDevice
 	deviceFactory := func(cfg *nebconfig.C, l *slog.Logger, vpnNetworks []netip.Prefix, routines int) (overlay.Device, error) {
 		dev, err := inner(cfg, l, vpnNetworks, routines)
 		if err != nil {
 			return nil, err
 		}
-		return newDNSDevice(dev, hubIP, upstreams, protector)
+		shim, err = newDNSDevice(dev, hubIP, upstreams, protector)
+		if err != nil {
+			return nil, err
+		}
+		return shim, nil
 	}
 	control, err := nebula.Main(&c, false, tunnelBuildVersion, logger, deviceFactory)
 	if err != nil {
@@ -97,7 +118,7 @@ func NewTunnel(cfgYAML string, tunFd int, logSink string, upstreamDNS string, pr
 		control.Stop()
 		return nil, fmt.Errorf("starting nebula: %w", err)
 	}
-	return &Tunnel{control: control}, nil
+	return &Tunnel{control: control, dns: shim}, nil
 }
 
 // parseUpstreams turns Kotlin's comma-separated resolver list into

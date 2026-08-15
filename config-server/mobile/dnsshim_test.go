@@ -80,23 +80,51 @@ func dnsQueryMsg(name string) []byte {
 	return append(msg, 0, 0, 1, 0, 1)
 }
 
-// verifyChecksums recomputes both checksums of an IPv4/UDP packet and
-// compares against the stored values.
+// verifyChecksums recomputes both checksums of an IPv4 TCP/UDP packet
+// and compares against the stored values.
 func verifyChecksums(t *testing.T, pkt []byte) {
 	t.Helper()
 	ihl := int(pkt[0]&0x0f) * 4
+	proto := pkt[9]
+	ckOff := ihl + 6 // UDP
+	if proto == protoTCP {
+		ckOff = ihl + 16
+	}
 	gotIP := binary.BigEndian.Uint16(pkt[10:12])
-	gotUDP := binary.BigEndian.Uint16(pkt[26:28])
+	gotL4 := binary.BigEndian.Uint16(pkt[ckOff : ckOff+2])
 	cp := make([]byte, len(pkt))
 	copy(cp, pkt)
 	cp[10], cp[11] = 0, 0
-	cp[ihl+6], cp[ihl+7] = 0, 0
+	cp[ckOff], cp[ckOff+1] = 0, 0
 	if want := ipChecksum(cp[:ihl]); gotIP != want {
 		t.Errorf("IP checksum = %#x, want %#x", gotIP, want)
 	}
-	if want := udpChecksum(cp, ihl); gotUDP != want {
-		t.Errorf("UDP checksum = %#x, want %#x", gotUDP, want)
+	if want := transportChecksum(cp, ihl, proto); gotL4 != want {
+		t.Errorf("L4 checksum = %#x, want %#x", gotL4, want)
 	}
+}
+
+// tcpSegment builds a minimal IPv4/TCP packet (20-byte headers, no
+// payload) for feeding the shim's RST path.
+func tcpSegment(src netip.Addr, sport uint16, dst netip.Addr, dport uint16, seq, ack uint32, flags byte) []byte {
+	pkt := make([]byte, 40)
+	pkt[0] = 0x45
+	binary.BigEndian.PutUint16(pkt[2:4], 40)
+	pkt[8] = 64
+	pkt[9] = protoTCP
+	s4, d4 := src.As4(), dst.As4()
+	copy(pkt[12:16], s4[:])
+	copy(pkt[16:20], d4[:])
+	binary.BigEndian.PutUint16(pkt[10:12], ipChecksum(pkt[:20]))
+	t := pkt[20:]
+	binary.BigEndian.PutUint16(t[0:2], sport)
+	binary.BigEndian.PutUint16(t[2:4], dport)
+	binary.BigEndian.PutUint32(t[4:8], seq)
+	binary.BigEndian.PutUint32(t[8:12], ack)
+	t[12] = 0x50
+	t[13] = flags
+	binary.BigEndian.PutUint16(t[16:18], transportChecksum(pkt, 20, protoTCP))
+	return pkt
 }
 
 func TestDNSMagicIP(t *testing.T) {
@@ -283,6 +311,153 @@ func TestReadPassesUnrelatedPacketsThrough(t *testing.T) {
 		}
 		if string(buf[:n]) != string(want) {
 			t.Errorf("packet was modified or intercepted: %v", want)
+		}
+	}
+}
+
+func TestReadResetsTCPToMagicIP(t *testing.T) {
+	d, fake := testShim(t, nil, nil)
+
+	// A DoT probe: SYN to magic:853, no ACK → RST|ACK acking seq+1.
+	fake.in <- tcpSegment(testClient, 5555, testMagic, 853, 1000, 0, 0x02)
+	marker := buildIPv4UDP(testClient, 42000, testHub, 80, []byte("not dns"))
+	fake.in <- marker
+
+	buf := make([]byte, 1500)
+	n, err := d.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != string(marker) {
+		t.Fatal("TCP segment to magic IP reached nebula")
+	}
+
+	select {
+	case rst := <-fake.writes:
+		ip, ok := parseIPv4(rst)
+		if !ok || ip.proto != protoTCP {
+			t.Fatal("reply is not IPv4/TCP")
+		}
+		if ip.src != testMagic || ip.dst != testClient {
+			t.Errorf("RST addressing = %s → %s", ip.src, ip.dst)
+		}
+		tcp := rst[20:]
+		if got := binary.BigEndian.Uint16(tcp[0:2]); got != 853 {
+			t.Errorf("RST src port = %d, want 853", got)
+		}
+		if tcp[13] != 0x14 {
+			t.Errorf("flags = %#x, want RST|ACK", tcp[13])
+		}
+		if got := binary.BigEndian.Uint32(tcp[8:12]); got != 1001 {
+			t.Errorf("RST ack = %d, want 1001 (SYN counts)", got)
+		}
+		verifyChecksums(t, rst)
+	case <-time.After(time.Second):
+		t.Fatal("no RST written to the tun")
+	}
+
+	// A segment carrying ACK → plain RST at SEQ=SEG.ACK.
+	fake.in <- tcpSegment(testClient, 5555, testMagic, 53, 2000, 7777, 0x10)
+	fake.in <- marker
+	if _, err := d.Read(buf); err != nil {
+		t.Fatal(err)
+	}
+	rst := <-fake.writes
+	tcp := rst[20:]
+	if tcp[13] != 0x04 {
+		t.Errorf("flags = %#x, want plain RST", tcp[13])
+	}
+	if got := binary.BigEndian.Uint32(tcp[4:8]); got != 7777 {
+		t.Errorf("RST seq = %d, want SEG.ACK 7777", got)
+	}
+
+	// A RST to magic must not be answered (no RST-on-RST loops).
+	fake.in <- tcpSegment(testClient, 5555, testMagic, 853, 3000, 0, 0x04)
+	fake.in <- marker
+	if _, err := d.Read(buf); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fake.writes:
+		t.Error("answered a RST with a RST")
+	default:
+	}
+}
+
+func TestReadPassesTCPToOthersThrough(t *testing.T) {
+	d, fake := testShim(t, nil, nil)
+	pkt := tcpSegment(testClient, 5555, testHub, 80, 1, 0, 0x02) // real host, not magic
+	want := make([]byte, len(pkt))
+	copy(want, pkt)
+	fake.in <- pkt
+	buf := make([]byte, 1500)
+	n, err := d.Read(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buf[:n]) != string(want) {
+		t.Error("TCP to a real host was intercepted or modified")
+	}
+}
+
+func TestSetUpstreamsSwapsResolvers(t *testing.T) {
+	newUpstream := func(answer string) (*net.UDPConn, netip.AddrPort) {
+		c, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			buf := make([]byte, 1500)
+			for {
+				_, addr, err := c.ReadFromUDP(buf)
+				if err != nil {
+					return
+				}
+				c.WriteToUDP([]byte(answer), addr) //nolint:errcheck
+			}
+		}()
+		return c, netip.MustParseAddrPort(c.LocalAddr().String())
+	}
+	aConn, aAddr := newUpstream("answer-A")
+	defer aConn.Close()
+	bConn, bAddr := newUpstream("answer-B")
+	defer bConn.Close()
+
+	d, fake := testShim(t, []netip.AddrPort{aAddr}, nil)
+	ask := func(want string) {
+		t.Helper()
+		fake.in <- buildIPv4UDP(testClient, 41000, testMagic, 53, dnsQueryMsg("example.com"))
+		fake.in <- buildIPv4UDP(testClient, 42000, testHub, 80, []byte("marker"))
+		buf := make([]byte, 1500)
+		if _, err := d.Read(buf); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case got := <-fake.writes:
+			m, _ := parseIPv4UDP(got)
+			if string(m.payload) != want {
+				t.Errorf("answer = %q, want %q", m.payload, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no reply")
+		}
+	}
+
+	ask("answer-A")
+	d.setUpstreams(parseUpstreams(bAddr.String()))
+	ask("answer-B")
+	d.setUpstreams(nil) // empty: ignored, B stays
+	ask("answer-B")
+}
+
+func TestParseUpstreams(t *testing.T) {
+	got := parseUpstreams("192.168.1.1, 8.8.8.8:5353")
+	if len(got) != 2 || got[0].String() != "192.168.1.1:53" || got[1].String() != "8.8.8.8:5353" {
+		t.Errorf("parseUpstreams = %v", got)
+	}
+	for _, s := range []string{"", "garbage, more garbage"} {
+		if got := parseUpstreams(s); len(got) != 1 || got[0].String() != "1.1.1.1:53" {
+			t.Errorf("parseUpstreams(%q) = %v, want the 1.1.1.1 fallback", s, got)
 		}
 	}
 }

@@ -6,6 +6,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.util.Log
 import java.net.Inet4Address
@@ -58,6 +62,7 @@ class MeshVpnService : VpnService() {
                 ?: throw IllegalStateException("VPN consent missing or revoked")
             // detachFd: Go owns the fd from here; nebula closes it on Stop.
             tunnel = Mobile.newTunnel(cfg, pfd.detachFd().toLong(), "", upstreamDns, protector)
+            registerUnderlayCallback()
             running = true
         } catch (e: Exception) {
             Log.e(TAG, "starting tunnel", e)
@@ -78,6 +83,7 @@ class MeshVpnService : VpnService() {
     }
 
     private fun teardown() {
+        unregisterUnderlayCallback()
         tunnel?.stop()
         tunnel = null
         running = false
@@ -100,6 +106,43 @@ class MeshVpnService : VpnService() {
             .setContentIntent(open)
             .setOngoing(true)
             .build()
+    }
+
+    /**
+     * The resolvers captured at establish() go stale when the device
+     * roams wifi↔cellular; this callback feeds the shim the current
+     * underlay's resolvers as links change. The request's default
+     * NOT_VPN capability keeps our own tun out of the updates.
+     */
+    private val underlayCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
+            val v4 = lp.dnsServers.filterIsInstance<Inet4Address>()
+                .mapNotNull { it.hostAddress }
+                .joinToString(",")
+            if (v4.isNotEmpty()) tunnel?.setUpstreams(v4)
+        }
+    }
+    private var callbackRegistered = false
+
+    private fun registerUnderlayCallback() {
+        if (callbackRegistered) return
+        getSystemService(ConnectivityManager::class.java).registerNetworkCallback(
+            NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build(),
+            underlayCallback
+        )
+        callbackRegistered = true
+    }
+
+    private fun unregisterUnderlayCallback() {
+        if (!callbackRegistered) return
+        callbackRegistered = false
+        try {
+            getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(underlayCallback)
+        } catch (_: IllegalArgumentException) {
+            // already gone; nothing to release
+        }
     }
 
     /** Marks the shim's underlay DNS sockets as VPN-bypassing. */
