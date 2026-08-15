@@ -1,0 +1,55 @@
+# Builds the Android mesh app (TV + phone) and publishes the
+# debug-signed APK as a workflow artifact — the repo IS the
+# distribution channel (sideload onto the Shield). Debug signing is
+# deliberate for now: a release keystore is a later step because
+# changing the signature forces uninstall + re-enroll on every device.
+name: android-apk
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "android/**"
+      - "config-server/mobile/**"
+      - "config-server/devkey/**"
+      - "config-server/go.mod"
+      - ".github/workflows/android-apk.yml"
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: config-server/go.mod
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The ubuntu runner ships an Android SDK; gomobile needs an NDK.
+      - name: install NDK
+        run: |
+          set -eu
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> "$GITHUB_ENV"
+
+      - name: build gomobile AAR
+        run: ./android/build-aar.sh
+
+      - name: build APK
+        working-directory: android
+        run: gradle --no-daemon assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talos-mesh-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

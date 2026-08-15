@@ -1,0 +1,6 @@
+.gradle/
+build/
+app/build/
+app/libs/mobile.aar
+app/libs/mobile-sources.jar
+local.properties

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Talos Mesh</string>
+    <string name="enroll_title">Join the mesh</string>
+    <string name="hub_hint">Hub URL</string>
+    <string name="default_hub">https://marnyg-talos-config.fly.dev</string>
+    <string name="name_hint">Device name (e.g. parents-tv)</string>
+    <string name="enroll">Enroll</string>
+    <string name="starting_enrollment">Contacting hub…</string>
+    <string name="scan_prompt">Scan with your phone and approve at /status (wallet signature)</string>
+    <string name="enroll_denied">Enrollment denied</string>
+    <string name="enroll_expired">Code expired — try again</string>
+    <string name="error_fmt">Error: %1$s</string>
+    <string name="qr_description">Enrollment QR code</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="refresh">Refresh</string>
+    <string name="status_connected">Mesh: connected</string>
+    <string name="status_disconnected">Mesh: not connected</string>
+    <string name="hub_unreachable_fmt">Hub unreachable: %1$s</string>
+</resources>

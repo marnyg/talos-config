@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder mark: a hex "node" on dark ground. Good enough to find
+     the app in a launcher; replace at leisure. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#1A1B26"
+        android:pathData="M0,0h48v48h-48z" />
+    <path
+        android:fillColor="#7AA2F7"
+        android:pathData="M24,6 L39,15 L39,33 L24,42 L9,33 L9,15 Z" />
+    <path
+        android:fillColor="#1A1B26"
+        android:pathData="M24,14 L32,19 L32,29 L24,34 L16,29 L16,19 Z" />
+</vector>
