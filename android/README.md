@@ -32,7 +32,10 @@ cd android && gradle assembleDebug
 ```
 
 Install on a Shield: enable Developer Mode + unknown sources, then
-`adb install app-debug.apk` (or any sideload channel).
+`adb install app-debug.apk` — or skip adb entirely: every push publishes
+the APK to the rolling release, so the TV can fetch
+<https://github.com/marnyg/talos-config/releases/download/android-latest/talos-mesh.apk>
+directly (e.g. the Downloader app).
 
 ## Signing
 

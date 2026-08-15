@@ -1,8 +1,14 @@
 # Builds the Android mesh app (TV + phone) and publishes the
-# debug-signed APK as a workflow artifact — the repo IS the
-# distribution channel (sideload onto the Shield). Debug signing is
-# deliberate for now: a release keystore is a later step because
-# changing the signature forces uninstall + re-enroll on every device.
+# debug-signed APK two ways: a workflow artifact (per-run history) and
+# a rolling `android-latest` release, whose asset URL is stable and
+# unauthenticated — the address a TV's Downloader app fetches:
+#
+#   https://github.com/marnyg/talos-config/releases/download/android-latest/talos-mesh.apk
+#
+# The repo IS the distribution channel (sideload onto the Shield).
+# Debug signing is deliberate for now: a release keystore is a later
+# step because changing the signature forces uninstall + re-enroll on
+# every device.
 name: android-apk
 
 on:
@@ -15,6 +21,9 @@ on:
       - "config-server/devkey/**"
       - "config-server/go.mod"
       - ".github/workflows/android-apk.yml"
+
+permissions:
+  contents: write # rolling android-latest release
 
 jobs:
   apk:
@@ -53,3 +62,19 @@ jobs:
           name: talos-mesh-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Rolling release: one tag, one asset, always the tip of main.
+      # Prerelease so a future real release scheme can own "latest".
+      - name: publish android-latest release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cp android/app/build/outputs/apk/debug/app-debug.apk talos-mesh.apk
+          gh release view android-latest > /dev/null 2>&1 || \
+            gh release create android-latest --prerelease \
+              --title "Android app (rolling)" \
+              --notes "Debug-signed APK, rebuilt on every push that touches the app. Sideload: download this asset on the TV and install."
+          gh release upload android-latest talos-mesh.apk --clobber
+          gh release edit android-latest --notes "Debug-signed APK, rebuilt on every push that touches the app (last: ${GITHUB_SHA}). Sideload: download this asset on the TV and install."
