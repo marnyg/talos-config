@@ -178,12 +178,15 @@ func FetchConfig(hubURL, accessToken, privHex string) (string, error) {
 // configInfoJSON is what the VpnService builder needs from a completed
 // config: the device's own address (from its cert — the yaml never
 // states it), the route it should claim, the hub's overlay address
-// (DNS resolver + /hosts endpoint), and the MTU.
+// (/hosts endpoint), the magic split-DNS resolver to advertise via
+// addDnsServer (see dnsshim.go), the zone it serves, and the MTU.
 type configInfoJSON struct {
 	Name      string `json:"name"`
 	OwnIP     string `json:"ownIP"`
 	PrefixLen int    `json:"prefixLen"`
 	HubIP     string `json:"hubIP"`
+	DNSIP     string `json:"dnsIP"`
+	DNSZone   string `json:"dnsZone"`
 	MTU       int    `json:"mtu"`
 }
 
@@ -215,10 +218,16 @@ func ConfigInfo(cfgYAML string) (string, error) {
 	if len(nets) == 0 {
 		return "", fmt.Errorf("device cert carries no network")
 	}
+	magic, err := dnsMagicIP(nets[0])
+	if err != nil {
+		return "", fmt.Errorf("deriving DNS resolver address: %w", err)
+	}
 	info := configInfoJSON{
 		Name:      c.Name(),
 		OwnIP:     nets[0].Addr().String(),
 		PrefixLen: nets[0].Bits(),
+		DNSIP:     magic.String(),
+		DNSZone:   strings.TrimSuffix(meshDNSZone, "."),
 		MTU:       doc.Tun.MTU,
 	}
 	if len(doc.Lighthouse.Hosts) > 0 {

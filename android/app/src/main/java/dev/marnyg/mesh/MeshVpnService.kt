@@ -5,8 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ConnectivityManager
 import android.net.VpnService
 import android.util.Log
+import java.net.Inet4Address
 import mobile.Mobile
 import mobile.Tunnel
 import org.json.JSONObject
@@ -17,11 +19,13 @@ import org.json.JSONObject
  * the enrolled config via Mobile.configInfo); Go owns the nebula
  * instance (mobile.Tunnel).
  *
- * Deliberately no DNS server on the tun: the hub's mesh DNS answers
- * only the mesh zone (REFUSED otherwise), and Android sends *all*
- * queries to a VPN-provided resolver — setting it would break every
- * non-mesh lookup on the device. Mesh services are reached by overlay
- * IP (the /hosts list carries name + IP).
+ * DNS: Android sends *all* device queries to a VPN-provided resolver,
+ * and the hub answers only the mesh zone — so the resolver we
+ * advertise (dnsIP, a magic in-mesh address) is answered by a split
+ * shim inside the Go tunnel: mesh-zone names go to the hub through the
+ * tunnel, everything else is forwarded on the underlay via sockets
+ * protected with VpnService.protect. A sealed hub only costs mesh
+ * names, never general DNS. (Task 3b1734db; details in Go dnsshim.go.)
  */
 class MeshVpnService : VpnService() {
     private var tunnel: Tunnel? = null
@@ -43,15 +47,17 @@ class MeshVpnService : VpnService() {
             val info = JSONObject(Mobile.configInfo(cfg))
             val ownIP = info.getString("ownIP")
             val prefixLen = info.getInt("prefixLen")
+            val upstreamDns = underlayDnsServers() // before establish(): "active" must be the underlay
             val pfd = Builder()
                 .setSession("talos-mesh")
                 .setMtu(info.optInt("mtu", 1300))
                 .addAddress(ownIP, prefixLen)
                 .addRoute(networkBase(ownIP, prefixLen), prefixLen)
+                .addDnsServer(info.getString("dnsIP"))
                 .establish()
                 ?: throw IllegalStateException("VPN consent missing or revoked")
             // detachFd: Go owns the fd from here; nebula closes it on Stop.
-            tunnel = Mobile.newTunnel(cfg, pfd.detachFd().toLong(), "")
+            tunnel = Mobile.newTunnel(cfg, pfd.detachFd().toLong(), "", upstreamDns, protector)
             running = true
         } catch (e: Exception) {
             Log.e(TAG, "starting tunnel", e)
@@ -94,6 +100,24 @@ class MeshVpnService : VpnService() {
             .setContentIntent(open)
             .setOngoing(true)
             .build()
+    }
+
+    /** Marks the shim's underlay DNS sockets as VPN-bypassing. */
+    private val protector = object : mobile.SocketProtector {
+        override fun protect(fd: Int): Boolean = this@MeshVpnService.protect(fd)
+    }
+
+    /**
+     * The active network's IPv4 resolvers (comma-separated) for the
+     * shim's non-mesh forwards. Must be read before establish(), so
+     * "active" is the underlay. Empty is fine — Go falls back to 1.1.1.1.
+     */
+    private fun underlayDnsServers(): String {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val lp = cm.activeNetwork?.let { cm.getLinkProperties(it) } ?: return ""
+        return lp.dnsServers.filterIsInstance<Inet4Address>()
+            .mapNotNull { it.hostAddress }
+            .joinToString(",")
     }
 
     /** Network base address for (ip, prefixLen): 10.42.9.9/16 → 10.42.0.0. */
