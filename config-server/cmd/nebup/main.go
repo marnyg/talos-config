@@ -59,12 +59,11 @@ import (
 	"syscall"
 	"time"
 
-	"crypto/rand"
 	"encoding/hex"
 
-	"golang.org/x/crypto/curve25519"
 	"gopkg.in/yaml.v3"
 
+	"github.com/marnyg/talos-config/config-server/devkey"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/walletsign"
 )
@@ -123,7 +122,7 @@ func main() {
 		// than pointing at keyPath) so a printed config can still be
 		// scp'd or QR'd to another host — the same portability property
 		// the wg0 era had.
-		spliced, err := spliceKeyInline(cfg, priv)
+		spliced, err := devkey.SpliceKeyInline(cfg, priv)
 		if err != nil {
 			log.Fatalf("splicing device key into config: %v", err)
 		}
@@ -158,65 +157,19 @@ func main() {
 // stays stable across ceremony repeats.
 func loadOrCreateDeviceKey(keyPath string) (priv, pub [32]byte, err error) {
 	if b, ferr := os.ReadFile(keyPath); ferr == nil {
-		s := strings.TrimSpace(string(b))
-		raw, decErr := hex.DecodeString(s)
-		if decErr != nil || len(raw) != 32 {
+		priv, pub, err = devkey.ParsePrivHex(string(b))
+		if err != nil {
 			return priv, pub, fmt.Errorf("%s is not a 32-byte hex X25519 private key (rerun with -rekey to regenerate)", keyPath)
 		}
-		copy(priv[:], raw)
-		curve25519.ScalarBaseMult(&pub, &priv)
 		return priv, pub, nil
 	}
-	if _, err := rand.Read(priv[:]); err != nil {
+	if priv, pub, err = devkey.Generate(); err != nil {
 		return priv, pub, err
 	}
-	// X25519 clamp: RFC 7748.
-	priv[0] &= 248
-	priv[31] &= 127
-	priv[31] |= 64
-	curve25519.ScalarBaseMult(&pub, &priv)
 	if err := os.WriteFile(keyPath, []byte(hex.EncodeToString(priv[:])+"\n"), 0o600); err != nil {
 		return priv, pub, fmt.Errorf("writing %s: %w", keyPath, err)
 	}
 	return priv, pub, nil
-}
-
-// spliceKeyInline replaces the empty pki.key placeholder with the
-// device key as an inline PEM block. By text rather than yaml
-// round-trip because a full re-marshal would reflow the CA and cert
-// PEM blocks the hub sent (yaml.v3 folds block scalars
-// idiosyncratically). Indent-agnostic: matches whatever indentation
-// the sibling ca:/cert: use.
-func spliceKeyInline(cfg []byte, priv [32]byte) ([]byte, error) {
-	keyPEM := nebderive.HostKeyPEM(priv)
-	lines := strings.Split(string(cfg), "\n")
-	for i, l := range lines {
-		trimmed := strings.TrimLeft(l, " ")
-		if !strings.HasPrefix(trimmed, "key:") {
-			continue
-		}
-		after := strings.TrimSpace(strings.TrimPrefix(trimmed, "key:"))
-		if after != "" && after != "\"\"" && after != "''" {
-			// Non-empty key already: nothing to splice, and refusing here
-			// is safer than clobbering whatever it is.
-			return nil, fmt.Errorf("pki.key already set in hub config; refuse to overwrite")
-		}
-		indent := l[:len(l)-len(trimmed)]
-		var replacement strings.Builder
-		replacement.WriteString(indent + "key: |\n")
-		for _, pl := range strings.Split(strings.TrimRight(string(keyPEM), "\n"), "\n") {
-			replacement.WriteString(indent + "    " + pl + "\n")
-		}
-		var out strings.Builder
-		for _, prev := range lines[:i] {
-			out.WriteString(prev)
-			out.WriteByte('\n')
-		}
-		out.WriteString(replacement.String())
-		out.WriteString(strings.Join(lines[i+1:], "\n"))
-		return []byte(out.String()), nil
-	}
-	return nil, fmt.Errorf("pki.key placeholder not found in hub config (unexpected shape)")
 }
 
 // cachePaths returns the two-file device cache paths:
