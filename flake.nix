@@ -37,7 +37,18 @@
           packages.config-server-bin = pkgs.buildGo126Module {
             pname = "config-server";
             version = "0.1.0";
-            src = ./config-server;
+            # config-server plus the real talos/mesh-policy.yaml: the
+            # policy tests deliberately run against the shipped file
+            # (../talos/mesh-policy.yaml), so the sandbox must carry it
+            # — a fixture copy would un-guard the file (019ce97).
+            src = nixpkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = nixpkgs.lib.fileset.unions [
+                ./config-server
+                ./talos/mesh-policy.yaml
+              ];
+            };
+            modRoot = "config-server";
             # git add new packages BEFORE recomputing this hash. Flakes only
             # see tracked files, so an untracked directory is invisible to
             # `go mod vendor` and its imports get silently left out of the
@@ -47,7 +58,7 @@
             # store path matching the hash, so a stale-but-matching vendor
             # dir survives `go mod tidy`. Force a recompute by setting a
             # bogus hash and reading nix's "got:" line.
-            vendorHash = "sha256-kip4w1gFo8wWxPevZQXo9lxhKMpqx2+3b/RAckqpMn8=";
+            vendorHash = "sha256-TlTdc9kuLxNH6LziN5/eXyUtvpFJYw40+6S0YFFA7pE=";
           };
 
           packages.config-server = pkgs.writeShellApplication {
