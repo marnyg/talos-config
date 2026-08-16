@@ -202,6 +202,12 @@ class MainActivity : Activity() {
 
     private fun refreshHosts() {
         val cfg = Store.config(this) ?: return
+        if (!MeshVpnService.running) {
+            // Without the tun route the fetch would leave via wifi and
+            // time out with a misleading "hub unreachable".
+            connStatus.text = getString(R.string.status_disconnected)
+            return
+        }
         scope.launch {
             try {
                 val rows = withContext(Dispatchers.IO) {

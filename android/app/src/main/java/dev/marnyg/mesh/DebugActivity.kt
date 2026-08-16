@@ -67,6 +67,8 @@ class DebugActivity : Activity() {
                 dbg // show raw rather than nothing
             }
         )
+        append("\n\n== last tunnel start error ==\n")
+        append(MeshVpnService.lastError ?: getString(R.string.debug_no_error))
         append("\n\n== nebula log (tail) ==\n")
         append(logTail())
     }

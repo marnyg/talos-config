@@ -69,9 +69,13 @@ class MeshVpnService : VpnService() {
             tunnel = Mobile.newTunnel(cfg, pfd.detachFd().toLong(), log.absolutePath, upstreamDns, protector)
             registerUnderlayCallback()
             instance = this
+            lastError = null
             running = true
         } catch (e: Exception) {
             Log.e(TAG, "starting tunnel", e)
+            // Surface the failure where a TV user can see it: the
+            // debug screen reads this (adb/logcat is not a given).
+            lastError = Log.getStackTraceString(e)
             teardown()
             return START_NOT_STICKY
         }
@@ -194,6 +198,12 @@ class MeshVpnService : VpnService() {
         /** The running service, for the debug screen's shim snapshot. */
         @Volatile
         private var instance: MeshVpnService? = null
+
+        /** Stack trace of the last failed Connect (null after a
+         *  successful start), for the debug screen. */
+        @Volatile
+        var lastError: String? = null
+            private set
 
         /** Split-DNS shim state (JSON from Tunnel.DebugJSON), or null
          *  when no tunnel is running. */
