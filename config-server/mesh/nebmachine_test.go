@@ -5,7 +5,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +52,9 @@ func nodeParams(t *testing.T, mac string, m machines.Machine) nebNodeParams {
 		addr:     addr,
 		subnet:   nebNodeSubnet,
 		endpoint: nebTestEndpoint,
+		// The repo's real policy file: the firewall assertions below
+		// guard talos/mesh-policy.yaml itself.
+		inbound: nebRepoPolicy(t).Node.Inbound,
 	}
 }
 
@@ -194,17 +196,19 @@ func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
 			continue
 		case r.Group == GroupMedia:
 			// The media group's whole point is that it is narrow: one
-			// port, one protocol. "any" here would hand a shared-space
-			// appliance the node.
-			if r.Port != strconv.Itoa(nebMediaPort) || r.Proto != "tcp" {
-				t.Errorf("media rule %+v is wider than %d/tcp", r, nebMediaPort)
+			// port, one protocol (Jellyfin's NodePort). "any" here would
+			// hand a shared-space appliance the node. The port is pinned
+			// as a literal on purpose: widening it in mesh-policy.yaml
+			// must mean consciously updating this test too.
+			if r.Port != "30096" || r.Proto != "tcp" {
+				t.Errorf("media rule %+v is wider than 30096/tcp", r)
 			}
 		default:
 			t.Errorf("unexpected inbound rule %+v: only icmp, the hub, %q and %q may reach a node", r, GroupAdmins, GroupMedia)
 		}
 	}
-	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: strconv.Itoa(nebMediaPort), Proto: "tcp", Group: GroupMedia}) {
-		t.Errorf("the media group must reach jellyfin on %d", nebMediaPort)
+	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "30096", Proto: "tcp", Group: GroupMedia}) {
+		t.Error("the media group must reach jellyfin on 30096")
 	}
 	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "any", Proto: "any", Host: nebderive.HubName}) {
 		t.Error("the hub must be able to dial apid (auto-bootstrap, status probes)")
@@ -260,7 +264,7 @@ func certSANsOf(t *testing.T, doc map[string]any) []string {
 func TestNebMachinePatchIdentity(t *testing.T) {
 	mac := "b0:41:6f:15:3b:8f"
 	byMAC := nebTestMachines()
-	n := nebTestManager(t.TempDir())
+	n := nebTestManager(nebPolicyRoot(t))
 
 	raw, err := n.MachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
 	if err != nil {
@@ -332,7 +336,7 @@ func TestNebMachinePatchIdentity(t *testing.T) {
 func TestNebMachinePatchAgreesWithMeshDNS(t *testing.T) {
 	mac := "b0:41:6f:15:3b:8f"
 	byMAC := nebTestMachines()
-	n := nebTestManager(t.TempDir())
+	n := nebTestManager(nebPolicyRoot(t))
 
 	raw, err := n.MachinePatch(nebTestMaster, mac, byMAC[mac], byMAC)
 	if err != nil {
@@ -372,7 +376,7 @@ func TestNebMachinePatchRejectsCollision(t *testing.T) {
 	}
 	byMAC["aa:bb:cc:dd:ee:ff"] = machines.Machine{Name: "cp2", MeshIP: other.String()}
 
-	n := nebTestManager(t.TempDir())
+	n := nebTestManager(nebPolicyRoot(t))
 	if _, err := n.MachinePatch(nebTestMaster, mac, byMAC[mac], byMAC); err == nil {
 		t.Fatal("expected a collision error, got none")
 	}
@@ -384,7 +388,7 @@ func TestNebMachinePatchRejectsCollision(t *testing.T) {
 func TestNebMachinePatchNeedsEndpoint(t *testing.T) {
 	mac := "b0:41:6f:15:3b:8f"
 	byMAC := nebTestMachines()
-	n := nebTestManager(t.TempDir())
+	n := nebTestManager(nebPolicyRoot(t))
 	n.endpoint = ""
 	if _, err := n.MachinePatch(nebTestMaster, mac, byMAC[mac], byMAC); err == nil {
 		t.Fatal("expected an error without --mesh-endpoint, got none")
@@ -398,7 +402,7 @@ func TestNebMachinePatchNeedsEndpoint(t *testing.T) {
 // comes out. A hand-indented patch that yaml.Unmarshal tolerates but
 // Talos rejects would strand the node.
 func TestNebMachinePatchComposes(t *testing.T) {
-	root := t.TempDir()
+	root := nebPolicyRoot(t)
 	base := "version: v1alpha1\nmachine:\n  type: worker\n  token: aa.bbbbbbbbbbbbbbbb\n  certSANs:\n    - 10.0.0.20\ncluster:\n  clusterName: test\n"
 	if err := os.WriteFile(filepath.Join(root, "base.yaml"), []byte(base), 0o644); err != nil {
 		t.Fatal(err)

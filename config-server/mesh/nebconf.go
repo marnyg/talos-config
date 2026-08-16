@@ -69,7 +69,11 @@ type HubParams struct {
 	ServeDNS   bool         // hub answers overlay DNS (nebdns, not nebula's)
 	LogLevel   string       // nebula log level ("" = info)
 	Blocklist  []string     // revoked cert fingerprints (mesh-blocklist.txt)
-	Now        func() time.Time
+	// Inbound is the hub's firewall admission table: the hub scope of
+	// talos/mesh-policy.yaml (loadPolicy). Never empty — a hub that
+	// admits nothing cannot serve enrollment, /hosts, or DNS.
+	Inbound []nebRuleYAML
+	Now     func() time.Time
 }
 
 // YAML shapes. Written as structs rather than assembled by string
@@ -178,6 +182,12 @@ type nebFirewallYAML struct {
 	Inbound        []nebRuleYAML `yaml:"inbound"`
 }
 
+// FirewallRule is the exported name for a policy/firewall rule, for
+// callers outside the package that assemble HubParams (today the
+// server-level tests; the policy overlay UI will join them). Alias, so
+// the yaml shapes and the policy file stay one type.
+type FirewallRule = nebRuleYAML
+
 type nebRuleYAML struct {
 	Port  string `yaml:"port"`
 	Proto string `yaml:"proto"`
@@ -207,6 +217,9 @@ func HubConfig(p HubParams) ([]byte, error) {
 	}
 	if p.ListenHost == "" {
 		return nil, fmt.Errorf("mesh listen host must be set")
+	}
+	if len(p.Inbound) == 0 {
+		return nil, fmt.Errorf("hub inbound rules must be provided (%s, hub scope)", PolicyFile)
 	}
 	now := time.Now
 	if p.Now != nil {
@@ -268,33 +281,23 @@ func HubConfig(p HubParams) ([]byte, error) {
 		},
 		Firewall: nebFirewallYAML{
 			// Outbound open: the hub dials peers (apid over the overlay,
-			// auto-bootstrap). Inbound closed by default — every rule
-			// below is deliberate.
+			// auto-bootstrap). Inbound is the policy's who×what table —
+			// the rationale for each admission lives as comments in
+			// talos/mesh-policy.yaml, next to the rules themselves.
 			OutboundAction: "drop",
 			InboundAction:  "drop",
 			Outbound:       []nebRuleYAML{{Port: "any", Proto: "any", Host: "any"}},
-			Inbound: []nebRuleYAML{
-				// Reachability checks from any member.
-				{Port: "any", Proto: "icmp", Host: "any"},
-			},
+			Inbound:        append([]nebRuleYAML(nil), p.Inbound...),
 		},
 		Logging: nebLoggingYAML{Level: level, Format: "text"},
 	}
 	if p.ServeDNS {
-		// Every member resolves mesh names, machines included.
+		// Every member resolves mesh names, machines included. Appended
+		// in code rather than declared in the policy file because it
+		// follows the hub's DNS capability, not an access decision.
 		cfg.Firewall.Inbound = append(cfg.Firewall.Inbound,
 			nebRuleYAML{Port: "53", Proto: "udp", Host: "any"})
 	}
-	// The overlay HTTP surface admits both device groups; per-route
-	// gates in serveMeshHTTP decide who sees what (/config is
-	// admins-only, /hosts serves any enrolled device). The group is
-	// signed into the peer's certificate, so the firewall drops machines
-	// before a request is even accepted; the derived source-address
-	// check in serveMeshHTTP stays as the second layer (ADR-0007,
-	// carrying ADR-0003's property onto the mesh).
-	cfg.Firewall.Inbound = append(cfg.Firewall.Inbound,
-		nebRuleYAML{Port: "80", Proto: "tcp", Group: GroupAdmins},
-		nebRuleYAML{Port: "80", Proto: "tcp", Group: GroupMedia})
 
 	out, err := yaml.Marshal(cfg)
 	if err != nil {

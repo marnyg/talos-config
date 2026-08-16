@@ -42,6 +42,7 @@ func testTalosTree(t *testing.T) string {
 // the UDP socket is skipped.
 func testNebManager(t *testing.T, root string) (*Manager, *[]byte) {
 	t.Helper()
+	nebInstallPolicy(t, root) // every render path now needs mesh-policy.yaml
 	var rendered []byte
 	m := NewManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root)
 	m.Start = func(cfg []byte) (*nebstack.Service, error) {

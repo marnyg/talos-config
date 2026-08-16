@@ -20,13 +20,17 @@ import (
 
 var nebTestMaster = []byte("nebconf-test-master-key-32-bytes")
 
-func nebTestParams() HubParams {
+func nebTestParams(t *testing.T) HubParams {
+	t.Helper()
 	return HubParams{
 		Master:     nebTestMaster,
 		Subnet:     netip.MustParsePrefix("10.42.0.0/16"),
 		ListenHost: "0.0.0.0",
 		ListenPort: 4242,
 		ServeDNS:   true,
+		// The repo's real policy file: hub-config assertions guard
+		// talos/mesh-policy.yaml itself.
+		Inbound: nebRepoPolicy(t).Hub.Inbound,
 		// Real clock on purpose: nebula validates the cert's window
 		// against wall time, so a frozen clock would either be rejected
 		// as future-dated or quietly stop testing anything. The window
@@ -39,7 +43,7 @@ func nebTestParams() HubParams {
 // trail the hub's still accept it.
 func TestHubCertValidityWindow(t *testing.T) {
 	frozen := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
-	p := nebTestParams()
+	p := nebTestParams(t)
 	p.Now = func() time.Time { return frozen }
 	raw, err := HubConfig(p)
 	if err != nil {
@@ -67,7 +71,7 @@ func TestHubCertValidityWindow(t *testing.T) {
 // without starting the tunnel, so a typo'd key or a malformed rule fails
 // here rather than at unseal time on fly.
 func TestHubNebulaConfigValidates(t *testing.T) {
-	raw, err := HubConfig(nebTestParams())
+	raw, err := HubConfig(nebTestParams(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +90,7 @@ func TestHubNebulaConfigValidates(t *testing.T) {
 // derived hub identity at the reserved first host address, signed by the
 // derived CA.
 func TestHubNebulaConfigDerivedValues(t *testing.T) {
-	p := nebTestParams()
+	p := nebTestParams(t)
 	raw, err := HubConfig(p)
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +144,7 @@ func TestHubNebulaConfigDerivedValues(t *testing.T) {
 // what the design says it is; each of these has a reason recorded in
 // nebconf.go and would be easy to flip by accident.
 func TestHubNebulaConfigInvariants(t *testing.T) {
-	p := nebTestParams()
+	p := nebTestParams(t)
 	raw, err := HubConfig(p)
 	if err != nil {
 		t.Fatal(err)
@@ -194,7 +198,7 @@ func TestHubNebulaConfigInvariants(t *testing.T) {
 
 func TestHubNebulaConfigServeDNSGatesRule(t *testing.T) {
 	for _, serve := range []bool{true, false} {
-		p := nebTestParams()
+		p := nebTestParams(t)
 		p.ServeDNS = serve
 		raw, err := HubConfig(p)
 		if err != nil {
@@ -223,10 +227,11 @@ func TestHubNebulaConfigRejectsBadParams(t *testing.T) {
 		"empty host":      func(p *HubParams) { p.ListenHost = "" },
 		"bad subnet":      func(p *HubParams) { p.Subnet = netip.Prefix{} },
 		"subnet too tiny": func(p *HubParams) { p.Subnet = netip.MustParsePrefix("10.42.0.0/31") },
+		"no policy rules": func(p *HubParams) { p.Inbound = nil },
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
-			p := nebTestParams()
+			p := nebTestParams(t)
 			mutate(&p)
 			if _, err := HubConfig(p); err == nil {
 				t.Error("expected an error")
@@ -241,7 +246,7 @@ func TestHubNebulaConfigRejectsBadParams(t *testing.T) {
 // not resolve, which is the failure we want to see rather than a silent
 // wildcard bind.
 func TestFlyListenHostIsResolvedByNebula(t *testing.T) {
-	p := nebTestParams()
+	p := nebTestParams(t)
 	p.ListenHost = nebFlyListenHost
 	raw, err := HubConfig(p)
 	if err != nil {

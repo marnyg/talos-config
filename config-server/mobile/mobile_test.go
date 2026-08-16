@@ -45,9 +45,17 @@ func TestEnrollFlowAgainstMintedConfig(t *testing.T) {
 		t.Fatalf("PubkeyFromPriv = %s, want %s", got, kp.PubHex)
 	}
 
-	// Mint the config the hub would stash on approval.
+	// Mint the config the hub would stash on approval. The render
+	// needs the repo's real mesh-policy.yaml in the root (device scope).
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "machines"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := os.ReadFile(filepath.Join("..", "..", "talos", mesh.PolicyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, mesh.PolicyFile), policy, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	m := mesh.NewManager(4242, subnet, "127.0.0.1", "hub.example:4242", "mesh.internal", root)

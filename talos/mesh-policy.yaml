@@ -1,0 +1,67 @@
+# Mesh access policy: the who×what table — which cert identity may
+# reach which port on which member class. Loaded by the config server
+# (config-server/mesh/nebpolicy.go) and compiled into the firewall
+# section of every config it composes: the hub's own, every node's,
+# every enrolled device's. Sibling of mesh-blocklist.txt; git is the
+# single source of truth for both (invariant 2).
+#
+# Propagation, until live policy sync (task 6462fed4) lands: hub rules
+# apply on the next deploy/unseal, node rules on the next `apply`,
+# device rules on the next re-enrollment.
+#
+# Rule shape: {port, proto, host|group}
+#   port:  "any" or 1-65535 (quote numbers: the field is a string)
+#   proto: any | tcp | udp | icmp
+#   host:  a cert *name* ("hub") or "any"; group: a cert group.
+#   Exactly one of host/group per rule. Groups are signed into certs
+#   at enrollment approval — the wallet signature is what puts a
+#   device in a group. Unknown groups are rejected at load: a typo
+#   here would silently admit nobody.
+#
+# Inbound only: nebula's firewall is stateful and every member keeps
+# outbound open (members initiate; replies are admitted per-flow).
+# Everything not named here is dropped.
+
+hub:
+  inbound:
+    # Reachability checks from any member.
+    - {port: any, proto: icmp, host: any}
+    # The overlay HTTP surface admits both device groups; per-route
+    # gates in serveMeshHTTP decide who sees what (/config is
+    # admins-only, /hosts serves any enrolled device). The firewall
+    # drops machine certs before a request is even accepted; the
+    # derived source-address check in serveMeshHTTP stays as the
+    # second layer (ADR-0007, carrying ADR-0003's property onto the
+    # mesh).
+    - {port: "80", proto: tcp, group: admins}
+    - {port: "80", proto: tcp, group: media}
+    # (udp/53 for mesh DNS is appended in code when the hub serves the
+    # zone — it follows the hub's capability, not an access decision.)
+
+node:
+  inbound:
+    # Reachability checks from any member.
+    - {port: any, proto: icmp, host: any}
+    # The hub dials the node: apid for auto-bootstrap and /status
+    # probes. Matched by cert *name*, which only the CA can issue —
+    # the hub holds no group.
+    - {port: any, proto: any, host: hub}
+    # Owner devices, unrestricted: this is the access wg0 already
+    # granted them (allowed-ips, no firewall), so narrowing it here
+    # would be a regression dressed as hardening. What the rule does
+    # buy is that *machines* and the media group are not in it.
+    - {port: any, proto: any, group: admins}
+    # Shared-space appliances: the media they are for, and nothing
+    # else — Jellyfin's NodePort. No apid, no kube API, no other
+    # NodePort (sonarr and radarr are on neighbouring NodePorts and
+    # are admin tools).
+    - {port: "30096", proto: tcp, group: media}
+    # Deliberately absent: any `group: machines` rule — machines must
+    # not reach each other's control surfaces over the mesh
+    # (compromised-node blast radius; guarded by nebmachine_test).
+
+device:
+  inbound:
+    # Only ICMP: a device is the thing that initiates, and replies to
+    # flows it started are admitted statefully.
+    - {port: any, proto: icmp, host: any}

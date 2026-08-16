@@ -16,7 +16,6 @@ package mesh
 import (
 	"fmt"
 	"net/netip"
-	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -56,13 +55,6 @@ const nebNodeTunDev = "nebula0"
 // nebNodeMTU is nebula's default overlay MTU (1300), stated rather than
 // inherited so a change is a visible diff.
 const nebNodeMTU = 1300
-
-// nebMediaPort is the only thing the media group may reach on a node:
-// Jellyfin's NodePort. Kept a single port rather than "the NodePort
-// range" because the point of the group is that a shared-space appliance
-// reaches the one service it exists for — sonarr and radarr are on
-// neighbouring NodePorts and are admin tools.
-const nebMediaPort = 30096
 
 // nebMachineCertValidity bounds a machine's leaf certificate.
 //
@@ -108,6 +100,10 @@ func (n *Manager) MachinePatch(master []byte, mac string, m machines.Machine, by
 	if err != nil {
 		return "", fmt.Errorf("loading mesh blocklist: %w", err)
 	}
+	policy, err := loadPolicy(n.root)
+	if err != nil {
+		return "", fmt.Errorf("loading mesh policy: %w", err)
+	}
 	cfg, err := nodeNebulaConfig(nebNodeParams{
 		master:    master,
 		name:      name,
@@ -115,6 +111,7 @@ func (n *Manager) MachinePatch(master []byte, mac string, m machines.Machine, by
 		subnet:    n.subnet,
 		endpoint:  n.endpoint,
 		blocklist: blocklist,
+		inbound:   policy.Node.Inbound,
 	})
 	if err != nil {
 		return "", err
@@ -177,11 +174,12 @@ type nebConfigFileYAML struct {
 // nebNodeParams is everything needed to render one node's config.
 type nebNodeParams struct {
 	master    []byte
-	name      string       // nebula/DNS name; also the cert name
-	addr      netip.Addr   // overlay address
-	subnet    netip.Prefix // mesh CIDR
-	endpoint  string       // hub's public host:port, for static_host_map
-	blocklist []string     // revoked cert fingerprints (mesh-blocklist.txt)
+	name      string        // nebula/DNS name; also the cert name
+	addr      netip.Addr    // overlay address
+	subnet    netip.Prefix  // mesh CIDR
+	endpoint  string        // hub's public host:port, for static_host_map
+	blocklist []string      // revoked cert fingerprints (mesh-blocklist.txt)
+	inbound   []nebRuleYAML // firewall admissions (mesh-policy.yaml, node scope)
 }
 
 // nodeNebulaConfig renders a node's nebula config.
@@ -197,6 +195,9 @@ func nodeNebulaConfig(p nebNodeParams) ([]byte, error) {
 	}
 	if p.name == "" {
 		return nil, fmt.Errorf("node name must be set")
+	}
+	if len(p.inbound) == 0 {
+		return nil, fmt.Errorf("node inbound rules must be provided (%s, node scope)", PolicyFile)
 	}
 	hubIP, err := nebderive.HubIP(p.subnet)
 	if err != nil {
@@ -242,28 +243,13 @@ func nodeNebulaConfig(p nebNodeParams) ([]byte, error) {
 		},
 		Firewall: nebFirewallYAML{
 			// Outbound open (the node dials out: media, updates over the
-			// overlay if ever needed). Inbound closed — the rules below
-			// are the whole story.
+			// overlay if ever needed). Inbound is the policy's who×what
+			// table — the rationale for each admission lives as comments
+			// in talos/mesh-policy.yaml, next to the rules themselves.
 			OutboundAction: "drop",
 			InboundAction:  "drop",
 			Outbound:       []nebRuleYAML{{Port: "any", Proto: "any", Host: "any"}},
-			Inbound: []nebRuleYAML{
-				// Reachability checks from any member.
-				{Port: "any", Proto: "icmp", Host: "any"},
-				// The hub dials the node: apid for auto-bootstrap and
-				// /status probes. Matched by cert *name*, which only the
-				// CA can issue — the hub holds no group.
-				{Port: "any", Proto: "any", Host: nebderive.HubName},
-				// Owner devices, unrestricted: this is the access wg0
-				// already grants them (allowed-ips, no firewall), so
-				// narrowing it here would be a regression dressed as
-				// hardening. What the rule does buy is that *machines*
-				// and the media group are not in it.
-				{Port: "any", Proto: "any", Group: GroupAdmins},
-				// Shared-space appliances: the media they are for, and
-				// nothing else. No apid, no kube API, no other NodePort.
-				{Port: strconv.Itoa(nebMediaPort), Proto: "tcp", Group: GroupMedia},
-			},
+			Inbound:        append([]nebRuleYAML(nil), p.inbound...),
 		},
 		Logging: nebLoggingYAML{Level: "info", Format: "text"},
 	}

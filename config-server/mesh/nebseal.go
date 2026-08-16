@@ -141,6 +141,11 @@ func (m *Manager) UnsealWithMaster(master []byte) error {
 		return m.fail(fmt.Errorf("loading mesh blocklist: %w", err))
 	}
 
+	policy, err := loadPolicy(m.root)
+	if err != nil {
+		return m.fail(fmt.Errorf("loading mesh policy: %w", err))
+	}
+
 	cfg, err := HubConfig(HubParams{
 		Master:     master,
 		Subnet:     m.subnet,
@@ -148,6 +153,7 @@ func (m *Manager) UnsealWithMaster(master []byte) error {
 		ListenPort: m.port,
 		ServeDNS:   m.dnsZone != "",
 		Blocklist:  blocklist,
+		Inbound:    policy.Hub.Inbound,
 	})
 	if err != nil {
 		return m.fail(fmt.Errorf("rendering mesh config: %w", err))

@@ -103,6 +103,10 @@ func (m *Manager) renderDeviceConfig(master []byte, name, group string, addr net
 	if err != nil {
 		return nil, err
 	}
+	policy, err := loadPolicy(m.root)
+	if err != nil {
+		return nil, fmt.Errorf("loading mesh policy: %w", err)
+	}
 	caPEM, err := nebderive.CACertPEM(master)
 	if err != nil {
 		return nil, fmt.Errorf("deriving mesh CA: %w", err)
@@ -156,13 +160,12 @@ func (m *Manager) renderDeviceConfig(master []byte, name, group string, addr net
 		Relay:  nebRelayYAML{UseRelays: true, Relays: []string{hubIP.String()}},
 		Firewall: nebFirewallYAML{
 			// Outbound open: a device is the thing that initiates.
-			// Inbound needs only ICMP, because nebula's firewall is
-			// stateful — replies to flows this device started are
-			// already allowed.
+			// Inbound is the policy's who×what table (talos/
+			// mesh-policy.yaml, device scope — rationale lives there).
 			OutboundAction: "drop",
 			InboundAction:  "drop",
 			Outbound:       []nebRuleYAML{{Port: "any", Proto: "any", Host: "any"}},
-			Inbound:        []nebRuleYAML{{Port: "any", Proto: "icmp", Host: "any"}},
+			Inbound:        append([]nebRuleYAML(nil), policy.Device.Inbound...),
 		},
 		Logging: nebLoggingYAML{Level: "info", Format: "text"},
 	}

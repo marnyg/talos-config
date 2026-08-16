@@ -34,7 +34,7 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 	admin := nebtest.DeviceWithGroups(t, master, subnet, "laptop", lighthousePort, []string{GroupAdmins})
 	tv := nebtest.DeviceWithGroups(t, master, subnet, "tv", lighthousePort, []string{GroupMedia})
 
-	m := NewManager(lighthousePort, subnet, nebtest.Loopback, "hub.example:4242", "", t.TempDir())
+	m := NewManager(lighthousePort, subnet, nebtest.Loopback, "hub.example:4242", "", nebPolicyRoot(t))
 	m.TunnelConfig = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "composed-config")
 	})

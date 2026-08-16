@@ -28,6 +28,15 @@ const nebTestEndpoint = "203.0.113.7:4242"
 // one exists for the hub- and server-level tests in package main.)
 func testNebManager(t *testing.T, root string) (*mesh.Manager, *[]byte) {
 	t.Helper()
+	// Every render path needs mesh-policy.yaml; tests run against the
+	// repo's real file so they guard it, not a fixture that could drift.
+	policy, err := os.ReadFile(filepath.Join("..", "talos", mesh.PolicyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, mesh.PolicyFile), policy, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	var rendered []byte
 	m := mesh.NewManager(4242, nebSealSubnet, "0.0.0.0", nebTestEndpoint, nebderive.DNSZone, root)
 	m.Start = func(cfg []byte) (*nebstack.Service, error) {
@@ -114,6 +123,9 @@ func meshRendered(t *testing.T, m *hubManager) *[]byte {
 		Subnet:     m.mesh.Subnet(),
 		ListenHost: "0.0.0.0",
 		ListenPort: 4242,
+		// Any non-empty admission table renders; this helper only
+		// checks that a config comes out ("pki" present).
+		Inbound: []mesh.FirewallRule{{Port: "any", Proto: "icmp", Host: "any"}},
 	})
 	if err != nil {
 		t.Fatal(err)
