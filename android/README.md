@@ -12,9 +12,28 @@ Tailscale-style two-screen app.
   the tun fd; the host list comes from the hub's mesh-only
   `GET /hosts`. Boot autostart once enrolled + consented.
 
-No DNS is pushed to the tun (Android would send *all* queries to it,
-and the hub's resolver only answers the mesh zone) — services are
-reached by overlay IP; the list shows name + IP.
+DNS is split on-device (`config-server/mobile/dnsshim.go`): the tun
+advertises a magic resolver (mesh base + 53); mesh-zone queries ride
+the tunnel to the hub's resolver, everything else is forwarded on the
+underlay via protected sockets — a sealed hub only costs mesh names,
+never general DNS.
+
+## Debugging
+
+The **Debug** button (enrolled screen) opens an introspection view:
+
+- the split-DNS shim's live state (`Tunnel.DebugJSON`): magic/hub
+  addressing, current underlay upstreams, counters, and the last 64
+  per-query decisions (mesh / hub-reply / underlay, upstream, RTT).
+  A growing `meshQueries` vs `hubReplies` gap = the hub's resolver
+  isn't answering (sealed hub or tunnel down), not misclassification.
+- the tail of this session's nebula log (`cacheDir/nebula.log`,
+  truncated at each tunnel start — logcat swallows stderr, so the Go
+  side logs to a file).
+- **Test DNS**: resolves `hub.mesh.internal` and `example.com` through
+  the system resolver — with the tunnel up that's the tun's magic
+  resolver, so it exercises the exact mesh-vs-underlay split real apps
+  hit, and both lookups then appear in the event ring.
 
 ## Building
 

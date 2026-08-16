@@ -31,6 +31,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Introspection: split-DNS shim state + nebula log tail. -->
+        <activity
+            android:name=".DebugActivity"
+            android:exported="false" />
+
         <service
             android:name=".MeshVpnService"
             android:exported="false"

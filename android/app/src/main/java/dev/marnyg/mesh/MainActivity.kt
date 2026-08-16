@@ -49,6 +49,7 @@ class MainActivity : Activity() {
     private lateinit var enrollStatus: TextView
     private lateinit var toggleButton: Button
     private lateinit var refreshButton: Button
+    private lateinit var debugButton: Button
     private lateinit var connStatus: TextView
     private lateinit var hostsList: ListView
 
@@ -66,12 +67,14 @@ class MainActivity : Activity() {
         enrollStatus = findViewById(R.id.enroll_status)
         toggleButton = findViewById(R.id.toggle_button)
         refreshButton = findViewById(R.id.refresh_button)
+        debugButton = findViewById(R.id.debug_button)
         connStatus = findViewById(R.id.conn_status)
         hostsList = findViewById(R.id.hosts_list)
 
         enrollButton.setOnClickListener { startEnroll() }
         toggleButton.setOnClickListener { toggleVpn() }
         refreshButton.setOnClickListener { refreshHosts() }
+        debugButton.setOnClickListener { startActivity(Intent(this, DebugActivity::class.java)) }
     }
 
     override fun onResume() {

@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.LinkProperties
@@ -12,6 +13,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.VpnService
 import android.util.Log
+import java.io.File
 import java.net.Inet4Address
 import mobile.Mobile
 import mobile.Tunnel
@@ -48,6 +50,9 @@ class MeshVpnService : VpnService() {
 
         startForeground(NOTIFICATION_ID, notification())
         try {
+            // One session per log file: Go appends from here (debug
+            // screen shows this session, or the last one after a stop).
+            val log = logFile(this).apply { delete() }
             val info = JSONObject(Mobile.configInfo(cfg))
             val ownIP = info.getString("ownIP")
             val prefixLen = info.getInt("prefixLen")
@@ -61,8 +66,9 @@ class MeshVpnService : VpnService() {
                 .establish()
                 ?: throw IllegalStateException("VPN consent missing or revoked")
             // detachFd: Go owns the fd from here; nebula closes it on Stop.
-            tunnel = Mobile.newTunnel(cfg, pfd.detachFd().toLong(), "", upstreamDns, protector)
+            tunnel = Mobile.newTunnel(cfg, pfd.detachFd().toLong(), log.absolutePath, upstreamDns, protector)
             registerUnderlayCallback()
+            instance = this
             running = true
         } catch (e: Exception) {
             Log.e(TAG, "starting tunnel", e)
@@ -83,6 +89,7 @@ class MeshVpnService : VpnService() {
     }
 
     private fun teardown() {
+        instance = null
         unregisterUnderlayCallback()
         tunnel?.stop()
         tunnel = null
@@ -183,5 +190,23 @@ class MeshVpnService : VpnService() {
         @Volatile
         var running = false
             private set
+
+        /** The running service, for the debug screen's shim snapshot. */
+        @Volatile
+        private var instance: MeshVpnService? = null
+
+        /** Split-DNS shim state (JSON from Tunnel.DebugJSON), or null
+         *  when no tunnel is running. */
+        fun debugJson(): String? = instance?.tunnel?.let {
+            try {
+                it.debugJSON()
+            } catch (e: Exception) {
+                "{\"error\": \"${e.message}\"}"
+            }
+        }
+
+        /** Where nebula logs land: this session's while running, the
+         *  previous session's after a stop (truncated at each start). */
+        fun logFile(ctx: Context): File = File(ctx.cacheDir, "nebula.log")
     }
 }

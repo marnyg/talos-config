@@ -66,6 +66,11 @@ const (
 	dnsPort    = 53
 	dnsTimeout = 5 * time.Second
 
+	// dnsDebugEvents caps the shim's ring of recent DNS decisions
+	// (Tunnel.DebugJSON). Small on purpose: it is a debugging aid for
+	// the app's debug screen, not a query log.
+	dnsDebugEvents = 64
+
 	protoTCP = 6
 	protoUDP = 17
 )
@@ -96,6 +101,90 @@ type dnsDevice struct {
 
 	mu        sync.Mutex // guards upstreams: roaming swaps them mid-flight
 	upstreams []netip.AddrPort
+
+	// Debug state, snapshotted by Tunnel.DebugJSON for the app's debug
+	// screen: counters plus a ring of the most recent DNS decisions.
+	dbgMu    sync.Mutex
+	counters dnsCounters
+	events   []dnsEvent // newest last, capped at dnsDebugEvents
+}
+
+// dnsCounters totals every decision the shim has made this session.
+// meshQueries vs hubReplies is the key DNS-debugging signal: queries
+// leaving for the hub without replies coming back means the hub's
+// resolver is unreachable (sealed hub, tunnel down) rather than the
+// shim misclassifying.
+type dnsCounters struct {
+	MeshQueries     uint64 `json:"meshQueries"`
+	HubReplies      uint64 `json:"hubReplies"`
+	UnderlayQueries uint64 `json:"underlayQueries"`
+	UnderlayFails   uint64 `json:"underlayFails"`
+	TCPResets       uint64 `json:"tcpResets"`
+}
+
+// dnsEvent is one shim decision: a query routed to the hub ("mesh"),
+// a hub answer coming back ("hub-reply"), or an underlay forward
+// ("underlay", with the upstream that answered and the round trip).
+type dnsEvent struct {
+	Time     string `json:"time"` // wall clock, HH:MM:SS.mmm
+	QName    string `json:"qname"`
+	Route    string `json:"route"` // "mesh" | "hub-reply" | "underlay"
+	Upstream string `json:"upstream,omitempty"`
+	RTTMs    int64  `json:"rttMs,omitempty"`
+	OK       bool   `json:"ok"`
+}
+
+// bump updates counters without logging an event (TCP resets carry no
+// query name worth showing).
+func (d *dnsDevice) bump(f func(*dnsCounters)) {
+	d.dbgMu.Lock()
+	f(&d.counters)
+	d.dbgMu.Unlock()
+}
+
+// record logs one event into the ring and updates counters atomically
+// with it.
+func (d *dnsDevice) record(ev dnsEvent, f func(*dnsCounters)) {
+	ev.Time = time.Now().Format("15:04:05.000")
+	d.dbgMu.Lock()
+	f(&d.counters)
+	d.events = append(d.events, ev)
+	if len(d.events) > dnsDebugEvents {
+		d.events = d.events[1:]
+	}
+	d.dbgMu.Unlock()
+}
+
+// dnsDebugJSON is the DebugJSON wire shape: static addressing, live
+// upstreams, counters, recent events (newest last).
+type dnsDebugJSON struct {
+	MagicIP   string      `json:"magicIP"`
+	HubIP     string      `json:"hubIP"`
+	Zone      string      `json:"zone"`
+	Upstreams []string    `json:"upstreams"`
+	Counters  dnsCounters `json:"counters"`
+	Events    []dnsEvent  `json:"events"`
+}
+
+func (d *dnsDevice) debugSnapshot() dnsDebugJSON {
+	ups := d.getUpstreams()
+	upsStr := make([]string, len(ups))
+	for i, u := range ups {
+		upsStr[i] = u.String()
+	}
+	d.dbgMu.Lock()
+	events := make([]dnsEvent, len(d.events))
+	copy(events, d.events)
+	counters := d.counters
+	d.dbgMu.Unlock()
+	return dnsDebugJSON{
+		MagicIP:   d.magicIP.String(),
+		HubIP:     d.hubIP.String(),
+		Zone:      d.zone,
+		Upstreams: upsStr,
+		Counters:  counters,
+		Events:    events,
+	}
 }
 
 // setUpstreams replaces the underlay resolvers. Called (via
@@ -168,6 +257,7 @@ func (d *dnsDevice) Read(b []byte) (int, error) {
 			if rst := buildTCPRst(pkt, ip); rst != nil {
 				d.Device.Write(rst) //nolint:errcheck // best-effort, like any RST
 			}
+			d.bump(func(c *dnsCounters) { c.TCPResets++ })
 			continue // consumed either way; nebula never sees it
 		}
 		m, ok := parseIPv4UDP(pkt)
@@ -177,6 +267,8 @@ func (d *dnsDevice) Read(b []byte) (int, error) {
 		name, ok := dnsQName(m.payload)
 		if ok && (name == d.zone || strings.HasSuffix(name, "."+d.zone)) {
 			rewriteIPv4UDPAddr(pkt, m.ihl, 16, d.hubIP) // dst addr at offset 16
+			d.record(dnsEvent{QName: name, Route: "mesh", OK: true},
+				func(c *dnsCounters) { c.MeshQueries++ })
 			return n, nil
 		}
 		// Underlay path: copy what outlives this Read's buffer.
@@ -192,6 +284,9 @@ func (d *dnsDevice) Read(b []byte) (int, error) {
 func (d *dnsDevice) Write(b []byte) (int, error) {
 	if m, ok := parseIPv4UDP(b); ok && m.src == d.hubIP && m.sport == dnsPort {
 		rewriteIPv4UDPAddr(b, m.ihl, 12, d.magicIP) // src addr at offset 12
+		name, _ := dnsQName(m.payload)              // replies echo the question section
+		d.record(dnsEvent{QName: name, Route: "hub-reply", OK: true},
+			func(c *dnsCounters) { c.HubReplies++ })
 	}
 	return d.Device.Write(b)
 }
@@ -205,7 +300,24 @@ func (d *dnsDevice) SupportsMultiqueue() bool { return false }
 // from the magic resolver. Failures are silent drops — the client
 // retries, exactly as with a lost UDP datagram.
 func (d *dnsDevice) forwardUnderlay(clientIP netip.Addr, clientPort uint16, query []byte) {
-	resp, err := d.exchange(query)
+	name, _ := dnsQName(query)
+	start := time.Now()
+	resp, upstream, err := d.exchange(query)
+	d.record(
+		dnsEvent{
+			QName:    name,
+			Route:    "underlay",
+			Upstream: upstream,
+			RTTMs:    time.Since(start).Milliseconds(),
+			OK:       err == nil,
+		},
+		func(c *dnsCounters) {
+			c.UnderlayQueries++
+			if err != nil {
+				c.UnderlayFails++
+			}
+		},
+	)
 	if err != nil {
 		return
 	}
@@ -213,7 +325,9 @@ func (d *dnsDevice) forwardUnderlay(clientIP netip.Addr, clientPort uint16, quer
 	d.Device.Write(pkt) //nolint:errcheck // drop-on-failure, like any UDP
 }
 
-func (d *dnsDevice) exchange(query []byte) ([]byte, error) {
+// exchange tries each upstream in order and reports which one
+// answered (for the debug event trail).
+func (d *dnsDevice) exchange(query []byte) ([]byte, string, error) {
 	for _, up := range d.getUpstreams() {
 		dialer := net.Dialer{Timeout: dnsTimeout, Control: d.protectControl}
 		conn, err := dialer.Dial("udp", up.String())
@@ -231,9 +345,9 @@ func (d *dnsDevice) exchange(query []byte) ([]byte, error) {
 		if err != nil {
 			continue
 		}
-		return buf[:n], nil
+		return buf[:n], up.String(), nil
 	}
-	return nil, errors.New("no upstream answered")
+	return nil, "", errors.New("no upstream answered")
 }
 
 // protectControl runs at socket creation, before connect — the window

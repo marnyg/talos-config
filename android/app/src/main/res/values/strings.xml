@@ -18,4 +18,9 @@
     <string name="status_connected">Mesh: connected</string>
     <string name="status_disconnected">Mesh: not connected</string>
     <string name="hub_unreachable_fmt">Hub unreachable: %1$s</string>
+    <string name="debug">Debug</string>
+    <string name="test_dns">Test DNS</string>
+    <string name="dns_test_running">Resolving…</string>
+    <string name="debug_not_running">(tunnel not running — connect first)</string>
+    <string name="debug_no_log">(no log yet — the file appears when the tunnel starts)</string>
 </resources>

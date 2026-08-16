@@ -10,6 +10,7 @@ package mobile
 // (Jellyfin) through it.
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -144,6 +145,18 @@ func parseUpstreams(s string) []netip.AddrPort {
 		out = append(out, netip.AddrPortFrom(netip.AddrFrom4([4]byte{1, 1, 1, 1}), dnsPort))
 	}
 	return out
+}
+
+// DebugJSON snapshots the split-DNS shim for the app's debug screen:
+// static addressing (magic resolver, hub, zone), the live underlay
+// upstreams, per-route counters, and the most recent DNS decisions
+// (newest last). Read-only; call any time while the tunnel runs. The
+// meshQueries/hubReplies gap is the sealed-hub tell (see dnsCounters).
+func (t *Tunnel) DebugJSON() (string, error) {
+	if t.dns == nil {
+		return "", errors.New("no DNS shim (tunnel not started)")
+	}
+	return marshal(t.dns.debugSnapshot())
 }
 
 // Stop tears the tunnel down. Idempotent enough for a VpnService
