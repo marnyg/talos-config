@@ -22,6 +22,8 @@ package mesh
 // declared list.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -110,6 +112,30 @@ func (m *Manager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
 	})
 	mux.Handle("GET /hosts", requirePeerGroups(master, m.subnet, svc.Peers, hosts, GroupAdmins, GroupMedia))
 
+	// /policy: live policy sync (task 6462fed4 phase 3) — the device
+	// scope of the effective policy (git or overlay, loaded per request
+	// so /policy page experiments propagate on the next poll), tagged
+	// with an epoch devices compare before reloading their firewall.
+	// Same gate as /hosts: any enrolled device; it only learns rules it
+	// already holds in its own config.
+	policy := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		p, err := m.effectivePolicy()
+		if err != nil {
+			log.Printf("mesh /policy: loading policy: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		body, err := devicePolicyWire(p.Device.Inbound)
+		if err != nil {
+			log.Printf("mesh /policy: encoding response: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	})
+	mux.Handle("GET /policy", requirePeerGroups(master, m.subnet, svc.Peers, policy, GroupAdmins, GroupMedia))
+
 	listener, err := svc.Listen("tcp", ":80")
 	if err != nil {
 		return fmt.Errorf("mesh http listener: %w", err)
@@ -119,7 +145,7 @@ func (m *Manager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
 			log.Printf("mesh http server: %v", err)
 		}
 	}()
-	log.Printf("mesh http: hello + /config (admins) + /hosts (devices) on %s:80 (gated per-request by cert group + derived address)", svc.OverlayAddr())
+	log.Printf("mesh http: hello + /config (admins) + /hosts + /policy (devices) on %s:80 (gated per-request by cert group + derived address)", svc.OverlayAddr())
 	return nil
 }
 
@@ -142,6 +168,23 @@ func requirePeerGroups(master []byte, subnet netip.Prefix, peers func() []nebula
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// devicePolicyWire renders the GET /policy body: the device-scope
+// inbound rules plus an epoch derived from them. The epoch is a hash
+// of the rules themselves (not of the whole policy document), so an
+// overlay that only touches hub or node scopes does not make every
+// device rebuild an identical firewall. Pure function.
+func devicePolicyWire(inbound []nebRuleYAML) ([]byte, error) {
+	rules, err := json.Marshal(inbound)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(rules)
+	return json.Marshal(map[string]any{
+		"epoch":   hex.EncodeToString(sum[:]),
+		"inbound": inbound,
 	})
 }
 

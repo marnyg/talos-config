@@ -124,6 +124,52 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 			}
 		})
 	}
+
+	// /policy is the live-sync poll target (task 6462fed4 phase 3): a
+	// media device reads the device-scope rules through a real
+	// handshake, and an overlay installed on the hub changes what the
+	// next poll returns — the propagation path devices actually ride.
+	t.Run("media device polls policy, overlay propagates", func(t *testing.T) {
+		status, body, err := meshGet(tv, hub.OverlayAddr(), "/policy")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %q)", status, body)
+		}
+		var base struct {
+			Epoch   string        `json:"epoch"`
+			Inbound []nebRuleYAML `json:"inbound"`
+		}
+		if err := json.Unmarshal([]byte(body), &base); err != nil {
+			t.Fatalf("response is not the expected JSON: %v (body %q)", err, body)
+		}
+		if base.Epoch == "" || len(base.Inbound) == 0 {
+			t.Fatalf("empty policy response: %q", body)
+		}
+
+		if err := m.SetPolicyOverlay([]byte(nebOverlayDoc), "0xabc"); err != nil {
+			t.Fatal(err)
+		}
+		defer m.ClearPolicyOverlay()
+		_, body2, err := meshGet(tv, hub.OverlayAddr(), "/policy")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var over struct {
+			Epoch   string        `json:"epoch"`
+			Inbound []nebRuleYAML `json:"inbound"`
+		}
+		if err := json.Unmarshal([]byte(body2), &over); err != nil {
+			t.Fatal(err)
+		}
+		if over.Epoch == base.Epoch {
+			t.Error("overlay did not change the policy epoch")
+		}
+		if len(over.Inbound) != 1 || over.Inbound[0].Port != "18080" {
+			t.Errorf("overlay rules = %+v, want the overlay's single 18080 rule", over.Inbound)
+		}
+	})
 }
 
 // meshGet performs one HTTP GET through a member's netstack to the

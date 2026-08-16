@@ -1,7 +1,10 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -183,5 +186,75 @@ func TestOverlayLink(t *testing.T) {
 func TestPinTunDevNoTunBlock(t *testing.T) {
 	if _, err := pinTunDev([]byte("lighthouse:\n    hosts:\n        - 10.42.0.1\n"), nebTunDev); err == nil {
 		t.Fatal("want an error when the config has no tun block")
+	}
+}
+
+// TestSyncPolicyOnce pins the nebup half of live policy sync: fetch,
+// semantic compare against the cached file, rewrite only on a real
+// change (the SIGHUP decision rides the return value).
+func TestSyncPolicyOnce(t *testing.T) {
+	cfg := `pki:
+    ca: |
+        -----BEGIN NEBULA CERTIFICATE-----
+        dGVzdCBjYQ==
+        -----END NEBULA CERTIFICATE-----
+lighthouse:
+    hosts:
+        - 10.42.0.1
+firewall:
+    outbound_action: drop
+    inbound_action: drop
+    outbound:
+        - port: any
+          proto: any
+          host: any
+    inbound:
+        - port: any
+          proto: icmp
+          host: any
+`
+	path := filepath.Join(t.TempDir(), "laptop.yml")
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"epoch":"e1","inbound":[{"port":"any","proto":"icmp","host":"any"},{"port":"18080","proto":"tcp","group":"media"}]}`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer ts.Close()
+
+	changed, err := syncPolicyOnce(path, ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Error("first sync should rewrite the file")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"18080", "dGVzdCBjYQ=="} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("rewritten config missing %q", want)
+		}
+	}
+
+	// Same rules again: semantically equal, no rewrite, no SIGHUP.
+	changed, err = syncPolicyOnce(path, ts.URL)
+	if err != nil || changed {
+		t.Errorf("second sync = (%v, %v), want (false, nil)", changed, err)
+	}
+
+	// Unreachable hub: error, file untouched.
+	ts.Close()
+	before, _ := os.ReadFile(path)
+	if _, err := syncPolicyOnce(path, ts.URL); err == nil {
+		t.Error("expected an error once the hub is unreachable")
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Error("a failed sync rewrote the file")
 	}
 }

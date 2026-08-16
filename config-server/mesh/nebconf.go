@@ -188,11 +188,14 @@ type nebFirewallYAML struct {
 // the yaml shapes and the policy file stay one type.
 type FirewallRule = nebRuleYAML
 
+// JSON tags because the device scope of these rules is also the GET
+// /policy wire format (nebhttp.go); policyclient.Rule mirrors the
+// shape on the device side, guarded by the mesh e2e test.
 type nebRuleYAML struct {
-	Port  string `yaml:"port"`
-	Proto string `yaml:"proto"`
-	Host  string `yaml:"host,omitempty"`
-	Group string `yaml:"group,omitempty"`
+	Port  string `yaml:"port" json:"port"`
+	Proto string `yaml:"proto" json:"proto"`
+	Host  string `yaml:"host,omitempty" json:"host,omitempty"`
+	Group string `yaml:"group,omitempty" json:"group,omitempty"`
 }
 
 type nebLoggingYAML struct {

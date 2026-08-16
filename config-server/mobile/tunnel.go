@@ -17,11 +17,14 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/slackhq/nebula"
 	nebconfig "github.com/slackhq/nebula/config"
 	"github.com/slackhq/nebula/logging"
 	"github.com/slackhq/nebula/overlay"
+
+	"github.com/marnyg/talos-config/config-server/policyclient"
 )
 
 // tunnelBuildVersion is what the app reports to peers in handshakes.
@@ -33,6 +36,18 @@ const tunnelBuildVersion = "talos-config-mobile"
 type Tunnel struct {
 	control *nebula.Control
 	dns     *dnsDevice
+
+	// Live policy sync (task 6462fed4 phase 3). cfg is the running
+	// instance's config object: ReloadConfigString on it makes nebula
+	// rebuild the firewall in place (conntrack preserved, tunnel
+	// untouched). cfgYAML tracks the currently-applied text so each
+	// splice starts from what is actually running, policyEpoch the
+	// last applied /policy epoch.
+	polMu       sync.Mutex
+	cfg         *nebconfig.C
+	cfgYAML     string
+	hubIP       netip.Addr
+	policyEpoch string
 }
 
 // SetUpstreams replaces the underlay resolvers for non-mesh DNS.
@@ -119,7 +134,49 @@ func NewTunnel(cfgYAML string, tunFd int, logSink string, upstreamDNS string, pr
 		control.Stop()
 		return nil, fmt.Errorf("starting nebula: %w", err)
 	}
-	return &Tunnel{control: control, dns: shim}, nil
+	return &Tunnel{control: control, dns: shim, cfg: &c, cfgYAML: cfgYAML, hubIP: hubIP}, nil
+}
+
+// SyncPolicy polls the hub's GET /policy over the tunnel and, when the
+// epoch changed since the last apply, splices the new inbound rules
+// into the running config and hot-reloads nebula's firewall — no
+// tunnel restart, no re-enrollment, identity untouched (policy is
+// payload). Returns true when a new rule set was applied.
+//
+// Kotlin calls this on a timer. Failures are expected weather — a
+// sealed hub (every fly deploy) makes /policy unreachable — so the
+// caller should log-and-carry-on: the device keeps running on the
+// rules it has, which is always safe.
+func (t *Tunnel) SyncPolicy() (bool, error) {
+	t.polMu.Lock()
+	defer t.polMu.Unlock()
+	return t.syncPolicy("http://" + t.hubIP.String())
+}
+
+// syncPolicy is SyncPolicy against an explicit base URL (tests point
+// it at an httptest server; production at the hub's overlay address).
+// Caller holds polMu.
+func (t *Tunnel) syncPolicy(base string) (bool, error) {
+	if t.cfg == nil {
+		return false, errors.New("tunnel not started")
+	}
+	wire, err := policyclient.Fetch(policyclient.HTTPClient, base)
+	if err != nil {
+		return false, err
+	}
+	if wire.Epoch == t.policyEpoch {
+		return false, nil
+	}
+	spliced, err := policyclient.SpliceInbound([]byte(t.cfgYAML), wire.Inbound)
+	if err != nil {
+		return false, fmt.Errorf("splicing policy: %w", err)
+	}
+	if err := t.cfg.ReloadConfigString(string(spliced)); err != nil {
+		return false, fmt.Errorf("reloading nebula config: %w", err)
+	}
+	t.cfgYAML = string(spliced)
+	t.policyEpoch = wire.Epoch
+	return true, nil
 }
 
 // parseUpstreams turns Kotlin's comma-separated resolver list into

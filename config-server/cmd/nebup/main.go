@@ -65,6 +65,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/devkey"
 	"github.com/marnyg/talos-config/config-server/nebderive"
+	"github.com/marnyg/talos-config/config-server/policyclient"
 	"github.com/marnyg/talos-config/config-server/walletsign"
 )
 
@@ -288,7 +289,104 @@ func runNebula(path, dnsMode string) error {
 	log.Printf("running: %s (Ctrl-C to disconnect)", strings.Join(argv, " "))
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// Live policy sync (task 6462fed4 phase 3): poll the hub's mesh
+	// /policy route and, on a rule change, rewrite the cached config
+	// and SIGHUP nebula — it reloads the firewall in place (sudo
+	// relays the signal when the child is `sudo nebula`). The hub's
+	// overlay address doubles as the poll target, same as mesh DNS.
+	if hub, _ := meshResolver(raw); hub != "" {
+		done := make(chan struct{})
+		defer close(done)
+		go policySyncLoop(path, "http://"+hub, cmd.Process, done)
+	}
+	return cmd.Wait()
+}
+
+// Policy sync cadence: the first poll waits for the tunnel to come up
+// (handshakes take seconds, not minutes); after that the loop is slow
+// on purpose — policy changes are rare, and a sealed hub (every fly
+// deploy) makes the endpoint unreachable for a while, which is normal
+// weather, not an error state.
+const (
+	policySyncInitialDelay = 45 * time.Second
+	policySyncInterval     = 15 * time.Minute
+)
+
+// policySyncLoop polls until done closes. Errors are logged on
+// transition only (a sealed hub would otherwise log every poll for the
+// whole seal window); the device keeps running on the rules it has,
+// which is always safe.
+func policySyncLoop(cfgPath, base string, proc *os.Process, done <-chan struct{}) {
+	var lastErr string
+	timer := time.NewTimer(policySyncInitialDelay)
+	defer timer.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-timer.C:
+		}
+		changed, err := syncPolicyOnce(cfgPath, base)
+		switch {
+		case err != nil:
+			if s := err.Error(); s != lastErr {
+				log.Printf("policy sync: %v (keeping current rules, will retry)", err)
+				lastErr = s
+			}
+		case changed:
+			lastErr = ""
+			log.Printf("policy sync: new inbound rules from the hub — reloading nebula")
+			if err := proc.Signal(syscall.SIGHUP); err != nil {
+				log.Printf("policy sync: signaling nebula: %v", err)
+			}
+		default:
+			lastErr = ""
+		}
+		timer.Reset(policySyncInterval)
+	}
+}
+
+// syncPolicyOnce fetches the effective device rules and rewrites the
+// cached config when they differ from what the file carries. The
+// compare is semantic (parsed rules, not bytes), so the once-per-run
+// key-order difference between hub-rendered and re-marshaled yaml
+// never causes a spurious rewrite. Returns whether the file changed.
+func syncPolicyOnce(cfgPath, base string) (bool, error) {
+	wire, err := policyclient.Fetch(policyclient.HTTPClient, base)
+	if err != nil {
+		return false, err
+	}
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return false, err
+	}
+	current, err := policyclient.InboundRules(raw)
+	if err == nil && rulesEqual(current, wire.Inbound) {
+		return false, nil
+	}
+	spliced, err := policyclient.SpliceInbound(raw, wire.Inbound)
+	if err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(cfgPath, spliced, 0o600); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func rulesEqual(a, b []policyclient.Rule) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // nebTunDev is the interface name pinned into the cached config when

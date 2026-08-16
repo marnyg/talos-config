@@ -35,6 +35,7 @@ import org.json.JSONObject
  */
 class MeshVpnService : VpnService() {
     private var tunnel: Tunnel? = null
+    private var policyTimer: java.util.Timer? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -68,6 +69,7 @@ class MeshVpnService : VpnService() {
             // detachFd: Go owns the fd from here; nebula closes it on Stop.
             tunnel = Mobile.newTunnel(cfg, pfd.detachFd().toLong(), log.absolutePath, upstreamDns, protector)
             registerUnderlayCallback()
+            startPolicySync()
             instance = this
             lastError = null
             running = true
@@ -94,6 +96,8 @@ class MeshVpnService : VpnService() {
 
     private fun teardown() {
         instance = null
+        policyTimer?.cancel()
+        policyTimer = null
         unregisterUnderlayCallback()
         tunnel?.stop()
         tunnel = null
@@ -156,6 +160,35 @@ class MeshVpnService : VpnService() {
         }
     }
 
+    /**
+     * Live policy sync (task 6462fed4 phase 3): poll the hub's mesh
+     * /policy route; Go hot-reloads nebula's firewall when the rules
+     * changed (no tunnel restart, identity untouched). Failures are
+     * normal weather — a sealed hub makes the route unreachable — so
+     * they log at debug and the device keeps its current rules.
+     * Timer threads are fine here: syncPolicy blocks on a short-
+     * timeout HTTP call, never the main thread.
+     */
+    private fun startPolicySync() {
+        policyTimer = java.util.Timer("policy-sync", true).apply {
+            scheduleAtFixedRate(
+                object : java.util.TimerTask() {
+                    override fun run() {
+                        try {
+                            if (tunnel?.syncPolicy() == true) {
+                                Log.i(TAG, "policy sync: new firewall rules applied")
+                            }
+                        } catch (e: Exception) {
+                            Log.d(TAG, "policy sync: ${e.message}")
+                        }
+                    }
+                },
+                POLICY_SYNC_INITIAL_MS,
+                POLICY_SYNC_INTERVAL_MS
+            )
+        }
+    }
+
     /** Marks the shim's underlay DNS sockets as VPN-bypassing. */
     private val protector = object : mobile.SocketProtector {
         override fun protect(fd: Int): Boolean = this@MeshVpnService.protect(fd)
@@ -187,6 +220,8 @@ class MeshVpnService : VpnService() {
         private const val TAG = "MeshVpnService"
         private const val CHANNEL = "mesh"
         private const val NOTIFICATION_ID = 1
+        private const val POLICY_SYNC_INITIAL_MS = 60_000L
+        private const val POLICY_SYNC_INTERVAL_MS = 15 * 60_000L
         const val ACTION_STOP = "dev.marnyg.mesh.STOP"
 
         /** Read by MainActivity to render the toggle; volatile is enough
