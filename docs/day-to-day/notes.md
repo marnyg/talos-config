@@ -345,6 +345,14 @@
   `timeout -k 10 420 pi -p --no-session "…" @file </dev/null`. Used
   for the adversarial doc-review loop; will bite any scripted use.
 
+- 2026-08-16 — **A `/policy` overlay does not change the hub's own
+  running firewall** — the hub scope renders at unseal, which precedes
+  any overlay in the process's lifetime. Overlay experiments are
+  visible in *device* configs (next enrollment) and *node* configs
+  (next `apply`) only; don't misread the hub scope as a no-op bug.
+  Also: every deploy drops the overlay — export before deploying if it
+  should survive.
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have

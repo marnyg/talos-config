@@ -5,54 +5,43 @@
 
 ## Last session
 
-2026-08-16 — **Android app DNS debugged end-to-end on the owner's
-phone; mesh access policy extracted to data** (sketch `6462fed4`
-phase 1).
+2026-08-16 (second session) — **Mesh policy phase 2 landed and
+deployed; hub unsealed and verified** (sketch `6462fed4`).
 
-- App debug surface (`5104858`…`e60e9a3`): shim counters + event ring
-  (`Tunnel.DebugJSON`), nebula log to file, in-app debug screen with
-  arbitrary-name lookup, tunnel-start errors surfaced on-screen.
-- The debug screen immediately caught a real regression: the split-DNS
-  shim commits (`692b42f`/`323abf5`) were never device-tested and
-  lacked `ACCESS_NETWORK_STATE` — tunnel start died with
-  SecurityException on every device. Fixed (`d79fa93`); DNS (mesh,
-  scoped and underlay names) now verified working on the phone.
-- The remaining "Jellyfin timeout" was by-design firewall: media-group
-  devices reach nodes on tcp/30096 only. Working URL for app/TV
-  clients: `http://jellyfin.cp1.mesh.internal:30096` (local login —
-  SSO fronts only the admin-only :80 ingress). This settles the
-  Jellyfin-addressing question for the parents' TV.
-- Policy design session (groups → ACL discussion) → sketch `6462fed4`:
-  git-resident `mesh-policy.yaml` + ephemeral hub overlay + epoch'd
-  live sync + unseal reconciliation. **Phase 1 landed** (`019ce97`):
-  the who×what table now lives in `talos/mesh-policy.yaml`, all three
-  render sites derive from it, tests guard the real file. ADR-0014
-  drafted (Proposed).
+- Committed the previous session's docs (they had been left
+  uncommitted) + the sovereign-actor-protocol design doc.
+- Phase 2 (`06014d6`): ephemeral in-memory policy overlay on
+  `mesh.Manager` — `effectivePolicy()` now feeds all three render
+  sites; wallet-gated `/policy` page beside `/status` (SIWE session
+  views; set/clear are per-action signatures binding sha256(doc) +
+  single-use nonce; git→overlay diff + export-to-commit text).
+- Deployed twice (hub was still sealed between, so one unseal ceremony
+  covered both); owner unsealed and verified. `/hosts` healthy from
+  the laptop over the mesh: cp1 + tv online, w1 offline as expected.
+  The "hub runs the pre-policy-refactor image" thread is closed.
+- ADR-0014 actually written this session (last session's handoff
+  claimed it existed; it did not) — Proposed, includes the invariant-2
+  reading for ephemeral overlay state.
 
 ## Loose threads
 
-- **Hub on fly still runs the pre-policy-refactor image.** Renders are
-  identical by construction; rides the next deploy (+ unseal).
-- **Worker 6443 question** (task filed): node policy admits no
-  machines-group traffic, yet worker kubelets point at cp1's mesh
-  address — how do workers actually join? Untestable while w1 is down;
-  check when it's power-cycled, *before* the storage arc leans on it.
-- **Parents' TV still not deployed** — the original build-gate. All
-  known blockers now cleared (APK debuggable, DNS works, Jellyfin URL
-  proven on the owner's phone).
-- Phone is enrolled as group `media`; the enroll screen hardcodes it.
-  If the owner wants the :80 SSO ingress from the phone, re-enroll as
-  `admins` (or add a group picker to the app).
+- **ADR-0014 is Proposed** — owner flips to Accepted when happy; it
+  also records the invariant-2 interpretation (ephemeral
+  wallet-authorized state is not "server-owned state").
+- **Parents' TV still not deployed** — all blockers cleared; recipe:
+  `http://jellyfin.cp1.mesh.internal:30096`, local login.
+- **Worker 6443 question** (untestable while w1 is down): check how
+  workers join when w1 is power-cycled, before the storage arc.
+- Phone enrolled as group `media`; re-enroll as `admins` if the :80
+  SSO ingress is wanted from it.
 - 90-day device renewal automation (`49443c38`) owed before
   ~2026-11-12.
 
 ## Suggested next steps
 
-- Deploy the hub (picks up the policy refactor; needs a wallet unseal)
-  and re-verify enrollment + `/hosts` after.
-- Ship the APK to the parents' TV with the proven
-  `jellyfin.cp1.mesh.internal:30096` recipe; watch relay throughput.
-- Phase 2 of `6462fed4`: hub overlay + wallet-gated policy UI
-  (effective-vs-git diff, export-to-commit).
-- Power-cycle w1 → answers the worker-6443 question and unblocks the
-  storage arc.
+- Ship the APK to the parents' TV (the original build-gate).
+- Phase 3 of `6462fed4`: `/policy` endpoint on the mesh HTTP surface +
+  device hot-reload (`mobile.Tunnel` + nebup), building on the
+  `effectivePolicy()` seam.
+- Power-cycle w1 → answers the worker-6443 question, heals the
+  degraded Longhorn volumes, unblocks the storage arc.
