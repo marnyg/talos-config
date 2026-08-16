@@ -339,6 +339,12 @@
   don't resolve on the TV; the app's host list carries name + IP, and
   services are reached by IP.
 
+- 2026-08-16 — **`pi -p` hangs after completing its answer** when
+  stdin is a TTY/pipe left open: it produces output, then never exits.
+  Wrap non-interactive uses with `</dev/null` and a `timeout`:
+  `timeout -k 10 420 pi -p --no-session "…" @file </dev/null`. Used
+  for the adversarial doc-review loop; will bite any scripted use.
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have
