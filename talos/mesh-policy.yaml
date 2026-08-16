@@ -56,10 +56,16 @@ node:
     # buy is that *machines* and the media group are not in it.
     - {port: any, proto: any, group: admins}
     # Shared-space appliances: the media they are for, and nothing
-    # else — Jellyfin's NodePort. No apid, no kube API, no other
-    # NodePort (sonarr and radarr are on neighbouring NodePorts and
-    # are admin tools).
+    # else. Jellyfin's NodePort (LAN-direct TV path) plus the :80
+    # ingress — name-based URLs (jellyfin.cp1.mesh.internal) for
+    # phones/TVs on the mesh. The ingress exposes only SSO-gated
+    # admin UIs besides Jellyfin, so the :80 grant is bounded by the
+    # wallet login; it is still the smaller grant than enrolling a
+    # phone as admins (port any, apid, kube API). Supersedes the
+    # 2026-08-16 "NodePort only" stance. No apid, no kube API, no
+    # other NodePort.
     - {port: "30096", proto: tcp, group: media}
+    - {port: "80", proto: tcp, group: media}
     # Deliberately absent: any `group: machines` rule — machines must
     # not reach each other's control surfaces over the mesh
     # (compromised-node blast radius; guarded by nebmachine_test).

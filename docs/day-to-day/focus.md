@@ -20,6 +20,7 @@ outlive the process).
 **Out of scope:**
 - Phase 4 before phase 3's hot-reload loop proves itself; a node-side
   policy agent is rejected outright (ADR-0014).
-- Widening the media group's firewall (:80 ingress) — re-enroll the
-  device as `admins` instead if it matters.
+- ~~Widening the media group's firewall (:80 ingress)~~ Superseded
+  2026-08-16: media now gets :80 (bounded by SSO everywhere but
+  Jellyfin) — the smaller grant vs enrolling a phone as admins.
 - Any storage migration while `longhorn-bulk` is faulted (w1 down).
