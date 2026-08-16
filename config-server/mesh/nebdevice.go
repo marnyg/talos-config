@@ -103,7 +103,7 @@ func (m *Manager) renderDeviceConfig(master []byte, name, group string, addr net
 	if err != nil {
 		return nil, err
 	}
-	policy, err := loadPolicy(m.root)
+	policy, err := m.effectivePolicy()
 	if err != nil {
 		return nil, fmt.Errorf("loading mesh policy: %w", err)
 	}

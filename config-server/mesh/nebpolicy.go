@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -59,13 +60,26 @@ func loadPolicy(root string) (*meshPolicy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", PolicyFile, err)
 	}
+	p, err := parsePolicy(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", PolicyFile, err)
+	}
+	return p, nil
+}
+
+// parsePolicy parses and validates a policy document. Shared by the
+// git file (loadPolicy) and the ephemeral overlay (SetPolicyOverlay):
+// the overlay must clear exactly the bar the file does — a typo must
+// not brick composed members just because it arrived over HTTP instead
+// of a commit.
+func parsePolicy(raw []byte) (*meshPolicy, error) {
 	var p meshPolicy
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	// Strict fields: a typoed key ("inboud") must fail loudly, not
 	// leave a scope silently empty.
 	dec.KnownFields(true)
 	if err := dec.Decode(&p); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", PolicyFile, err)
+		return nil, fmt.Errorf("parsing: %w", err)
 	}
 	for scope, rules := range map[string][]nebRuleYAML{
 		"hub":    p.Hub.Inbound,
@@ -73,15 +87,84 @@ func loadPolicy(root string) (*meshPolicy, error) {
 		"device": p.Device.Inbound,
 	} {
 		if len(rules) == 0 {
-			return nil, fmt.Errorf("%s: scope %q declares no inbound rules — a member class that drops everything (even ICMP) is almost certainly a mistake", PolicyFile, scope)
+			return nil, fmt.Errorf("scope %q declares no inbound rules — a member class that drops everything (even ICMP) is almost certainly a mistake", scope)
 		}
 		for i, r := range rules {
 			if err := validatePolicyRule(r); err != nil {
-				return nil, fmt.Errorf("%s: %s inbound[%d]: %w", PolicyFile, scope, i, err)
+				return nil, fmt.Errorf("%s inbound[%d]: %w", scope, i, err)
 			}
 		}
 	}
 	return &p, nil
+}
+
+// --- Ephemeral policy overlay (task 6462fed4, phase 2) ---
+//
+// The overlay is a full replacement policy document held in memory
+// only: a redeploy or restart drops it, so git remains the only
+// durable owner of policy (invariant 2). It exists for the experiment
+// loop — install a candidate table, exercise it through the normal
+// propagation channels (device re-enrollment now, node configs on the
+// next apply), then export the exact text into talos/mesh-policy.yaml
+// and commit. The hub's OWN firewall renders at unseal, which in
+// practice precedes any overlay in this process's lifetime, so the hub
+// scope effectively always rides git until live sync (phases 3–4).
+
+type policyOverlay struct {
+	raw    []byte
+	parsed *meshPolicy
+	by     string // wallet address that signed the install
+	since  time.Time
+}
+
+// SetPolicyOverlay validates raw and installs it as the effective
+// policy. by is the wallet address whose signature authorized it,
+// recorded for the /policy page only — the signature itself was
+// verified by the caller.
+func (m *Manager) SetPolicyOverlay(raw []byte, by string) error {
+	p, err := parsePolicy(raw)
+	if err != nil {
+		return err
+	}
+	m.polMu.Lock()
+	defer m.polMu.Unlock()
+	m.polOver = &policyOverlay{raw: raw, parsed: p, by: by, since: time.Now()}
+	return nil
+}
+
+// ClearPolicyOverlay reverts the effective policy to the git file.
+func (m *Manager) ClearPolicyOverlay() {
+	m.polMu.Lock()
+	defer m.polMu.Unlock()
+	m.polOver = nil
+}
+
+// PolicyOverlay reports the installed overlay, if any.
+func (m *Manager) PolicyOverlay() (raw []byte, by string, since time.Time, ok bool) {
+	m.polMu.Lock()
+	defer m.polMu.Unlock()
+	if m.polOver == nil {
+		return nil, "", time.Time{}, false
+	}
+	return m.polOver.raw, m.polOver.by, m.polOver.since, true
+}
+
+// PolicyGitRaw returns the policy file as shipped in this hub's talos
+// tree — the base every diff on the /policy page is against.
+func (m *Manager) PolicyGitRaw() ([]byte, error) {
+	return os.ReadFile(filepath.Join(m.root, PolicyFile))
+}
+
+// effectivePolicy is what every render site composes with: the overlay
+// when one is installed, the git file otherwise.
+func (m *Manager) effectivePolicy() (*meshPolicy, error) {
+	m.polMu.Lock()
+	o := m.polOver
+	m.polMu.Unlock()
+	if o != nil {
+		return o.parsed, nil
+	}
+	return loadPolicy(m.root)
 }
 
 func validatePolicyRule(r nebRuleYAML) error {

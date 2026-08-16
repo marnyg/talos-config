@@ -100,7 +100,7 @@ func (n *Manager) MachinePatch(master []byte, mac string, m machines.Machine, by
 	if err != nil {
 		return "", fmt.Errorf("loading mesh blocklist: %w", err)
 	}
-	policy, err := loadPolicy(n.root)
+	policy, err := n.effectivePolicy()
 	if err != nil {
 		return "", fmt.Errorf("loading mesh policy: %w", err)
 	}

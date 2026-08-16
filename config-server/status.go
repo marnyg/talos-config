@@ -332,7 +332,7 @@ func (s *server) renderLogin(w http.ResponseWriter, msg string) {
 
 var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("Cluster status") + `
 <h1>Cluster status</h1>
-<p class="session-line">signed in as {{.Addr}}
+<p class="session-line">signed in as {{.Addr}} — <a href="/policy">mesh policy</a>
  <form class="inline" method="POST" action="/status/logout"><button>sign out</button></form>
 </p>
 {{if .Message}}<div class="msg">{{.Message}}</div>

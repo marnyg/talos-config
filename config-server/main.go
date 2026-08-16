@@ -241,6 +241,9 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("GET /mesh/enroll/config", s.handleMeshEnrollConfig)
 	mux.HandleFunc("GET /sealed", s.handleSealed)
 	mux.HandleFunc("GET /status", s.handleStatus)
+	mux.HandleFunc("GET /policy", s.handlePolicyPage)
+	mux.HandleFunc("POST /policy/overlay", s.handlePolicySet)
+	mux.HandleFunc("POST /policy/clear", s.handlePolicyClear)
 	mux.HandleFunc("POST /status/login", s.handleStatusLogin)
 	mux.HandleFunc("POST /status/logout", s.handleStatusLogout)
 	return mux
