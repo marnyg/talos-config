@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Button
+import android.widget.EditText
 import android.widget.TextView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,12 +29,14 @@ import java.net.InetAddress
 class DebugActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    private lateinit var lookupInput: EditText
     private lateinit var testStatus: TextView
     private lateinit var debugText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_debug)
+        lookupInput = findViewById(R.id.lookup_input)
         testStatus = findViewById(R.id.test_status)
         debugText = findViewById(R.id.debug_text)
         findViewById<Button>(R.id.debug_refresh_button).setOnClickListener { refresh() }
@@ -91,6 +94,7 @@ class DebugActivity : Activity() {
     // -- DNS self-test -----------------------------------------------
 
     private fun testDns() {
+        val extra = lookupInput.text.toString().trim()
         testStatus.text = getString(R.string.dns_test_running)
         scope.launch {
             val report = withContext(Dispatchers.IO) {
@@ -103,7 +107,8 @@ class DebugActivity : Activity() {
                 } catch (e: Exception) {
                     "mesh.internal"
                 }
-                listOf("hub.$zone", "example.com").joinToString("\n") { resolveOne(it) }
+                (listOf("hub.$zone", "example.com") + listOf(extra).filter { it.isNotEmpty() })
+                    .joinToString("\n") { resolveOne(it) }
             }
             testStatus.text = report
             refresh() // the lookups just landed in the shim's event ring

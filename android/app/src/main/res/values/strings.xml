@@ -24,4 +24,5 @@
     <string name="debug_not_running">(tunnel not running — connect first)</string>
     <string name="debug_no_log">(no log yet — the file appears when the tunnel starts)</string>
     <string name="debug_no_error">(none recorded since app start)</string>
+    <string name="lookup_hint">Extra name to resolve (e.g. jellyfin.cp1.mesh.internal)</string>
 </resources>
