@@ -5,9 +5,13 @@
 # every enrolled device's. Sibling of mesh-blocklist.txt; git is the
 # single source of truth for both (invariant 2).
 #
-# Propagation, until live policy sync (task 6462fed4) lands: hub rules
-# apply on the next deploy/unseal, node rules on the next `apply`,
-# device rules on the next re-enrollment.
+# Propagation, until live policy sync (task 6462fed4 phases 3-4)
+# lands: hub rules apply on the next deploy/unseal, node rules on the
+# next `apply`, device rules on the next re-enrollment. For
+# experiments, the hub's /policy page can install an ephemeral
+# wallet-signed overlay of this file (ADR-0014): it feeds the same
+# render sites but never survives a restart — this file remains the
+# only durable policy.
 #
 # Rule shape: {port, proto, host|group}
 #   port:  "any" or 1-65535 (quote numbers: the field is a string)

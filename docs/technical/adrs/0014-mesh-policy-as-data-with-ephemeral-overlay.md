@@ -1,6 +1,6 @@
 # ADR-0014: Mesh access policy as git data with an ephemeral wallet-gated overlay
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-16
 
 ## Context and Problem Statement
