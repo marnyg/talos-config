@@ -15,15 +15,19 @@ this list is the checkable form.
    zero runtime re-enrollment. Self-hosted token/cert issuance only
    with wallet-derived issuer keys. No third-party identity accounts,
    no chain RPC in any auth path. _(Amended 2026-07-29, see ADR-0002.)_
-   _(Amended 2026-08-05, see ADR-0012.)_ **Scope for mesh devices:** a
-   device's membership is the CA-signed cert it holds; its keypair is
-   generated and kept on-device, never derived from the master. The
-   device *set* is not enumerable from git — it is bounded by
-   wallet-signed enrollment acts, and any device's membership is
-   re-establishable at any time by one signature. Addresses and DNS
-   labels still derive from the approved name, so re-keying or
-   re-enrolling never moves a device. The control plane remains fully
-   re-derivable: hub, CA, machine identities, addresses.
+   _(Amended 2026-08-05, see ADR-0012.)_ _(Amended 2026-08-16, see
+   ADR-0015.)_ **Scope for mesh members (devices and machines):** a
+   member's membership is the CA-signed cert it holds; its keypair is
+   generated and kept on the member, never derived from the master and
+   never in transit. The device *set* is not enumerable from git — it
+   is bounded by wallet-signed enrollment acts; the machine *set* is
+   enumerable from git (`talos/machines/<mac>/`), and an approved
+   machine re-enrolls automatically at boot via a single-use token in
+   its served config. Addresses and DNS labels derive from the
+   approved name (devices) or MAC (machines), so re-keying or
+   re-enrolling never moves a member. Re-derivable with zero runtime
+   re-enrollment: hub, CA, addresses, DNS, configs — **not member
+   private keys**.
 2. **Git is the single source of truth.** Servers derive; they do not
    own state. Anything a server "remembers" must be recomputable from
    (repo + fly secrets + pure functions). If a slice of *this design*
@@ -59,8 +63,13 @@ this list is the checkable form.
    _(The phase-1 dual-overlay exception — wg0 51820 beside nebula 4242
    — closed 2026-07-30 when phase 2 step 3 stripped wg0; the invariant
    holds unqualified again.)_
-6. **Machine identity is hardware-anchored and human-ratified.**
-   Approval is per-machine, single-use, identity-bound.
+6. **Machine configuration is hardware-selected and human-ratified.**
+   Hardware anchors *configuration*, not key material: the MAC selects
+   the node's declared config (`talos/machines/<mac>/`), and approval
+   — per-machine, single-use — ratifies the name↔hardware binding.
+   Identity keys are minted on the machine, never derived from
+   hardware. _(Reworded 2026-08-16, see ADR-0015; was "machine
+   identity is hardware-anchored".)_
 7. **Ephemeral facts are never baked into durable identity.** A DHCP
    lease is not a cluster endpoint.
 8. **Secrets plaintext exists only in memory** (tmpfs on fly; never in

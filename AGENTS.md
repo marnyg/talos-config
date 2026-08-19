@@ -14,5 +14,5 @@ This repo uses a structured docs layout (see `docs/README.md`). Follow these rul
 
 4. **At the end of meaningful work** (feature done, milestone hit, before PR, or when the user signals end-of-session), invoke `/skill:docs-update` to refresh `day-to-day/` files and prompt for ADRs.
 
-5. **Budget:** keep each scope's `desired-state/` under ~300 lines total. Traverse at most ~3 scopes deep per session. If you're hitting the budget, propose pruning.
+5. **Budget:** keep each scope's `goals.md` + `invariants.md` under ~300 lines total; `domain-model.md` is exempt — as expressive as the domain requires, and it may split into `domain-model/<area>.md` files (root file = summary + diagram + glossary + links; follow links only into areas your work touches). Traverse at most ~3 scopes deep per session. If you're hitting the budget, propose pruning.
 <!-- docs-skill:end -->
