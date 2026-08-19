@@ -14,3 +14,8 @@ result
 config-server/config-server
 .claude/
 k8s/MIGRATION.md
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
