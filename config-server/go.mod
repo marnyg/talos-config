@@ -17,6 +17,7 @@ require (
 	google.golang.org/grpc v1.81.0
 	gopkg.in/yaml.v3 v3.0.1
 	gvisor.dev/gvisor v0.0.0-20250503011706-39ed1f5ac29c
+	pgregory.net/rapid v1.3.0
 )
 
 require (

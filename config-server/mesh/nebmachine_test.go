@@ -195,13 +195,15 @@ func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
 		case r.Host == nebderive.HubName, r.Group == GroupAdmins:
 			continue
 		case r.Group == GroupMedia:
-			// The media group's whole point is that it is narrow: one
-			// port, one protocol (Jellyfin's NodePort). "any" here would
-			// hand a shared-space appliance the node. The port is pinned
-			// as a literal on purpose: widening it in mesh-policy.yaml
-			// must mean consciously updating this test too.
-			if r.Port != "30096" || r.Proto != "tcp" {
-				t.Errorf("media rule %+v is wider than 30096/tcp", r)
+			// The media group's whole point is that it is narrow: two
+			// pinned tcp ports — Jellyfin's NodePort and the :80 ingress
+			// (7567336: name-based URLs for phones/TVs; every UI behind
+			// it besides Jellyfin is SSO-gated). "any" here would hand a
+			// shared-space appliance the node. The ports are pinned as
+			// literals on purpose: widening mesh-policy.yaml must mean
+			// consciously updating this test too.
+			if r.Proto != "tcp" || (r.Port != "30096" && r.Port != "80") {
+				t.Errorf("media rule %+v is wider than 30096/tcp + 80/tcp", r)
 			}
 		default:
 			t.Errorf("unexpected inbound rule %+v: only icmp, the hub, %q and %q may reach a node", r, GroupAdmins, GroupMedia)
@@ -209,6 +211,9 @@ func TestNodeFirewallGrantsHubAndAdminsOnly(t *testing.T) {
 	}
 	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "30096", Proto: "tcp", Group: GroupMedia}) {
 		t.Error("the media group must reach jellyfin on 30096")
+	}
+	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "80", Proto: "tcp", Group: GroupMedia}) {
+		t.Error("the media group must reach the :80 ingress (name-based URLs, 7567336)")
 	}
 	if !hasRule(got.Firewall.Inbound, nebRuleYAML{Port: "any", Proto: "any", Host: nebderive.HubName}) {
 		t.Error("the hub must be able to dial apid (auto-bootstrap, status probes)")

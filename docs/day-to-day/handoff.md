@@ -5,43 +5,49 @@
 
 ## Last session
 
-2026-08-16 (second session) — **Mesh policy phase 2 landed and
-deployed; hub unsealed and verified** (sketch `6462fed4`).
+2026-08-21 — **Formal law-checking landed** (beads epic
+`talos-config-7wg`): the design laws implicit in the invariants are
+now mechanically checked at two levels.
 
-- Committed the previous session's docs (they had been left
-  uncommitted) + the sovereign-actor-protocol design doc.
-- Phase 2 (`06014d6`): ephemeral in-memory policy overlay on
-  `mesh.Manager` — `effectivePolicy()` now feeds all three render
-  sites; wallet-gated `/policy` page beside `/status` (SIWE session
-  views; set/clear are per-action signatures binding sha256(doc) +
-  single-use nonce; git→overlay diff + export-to-commit text).
-- Deployed twice (hub was still sealed between, so one unseal ceremony
-  covered both); owner unsealed and verified. `/hosts` healthy from
-  the laptop over the mesh: cp1 + tv online, w1 offline as expected.
-  The "hub runs the pre-policy-refactor image" thread is closed.
-- ADR-0014 actually written this session (last session's handoff
-  claimed it existed; it did not) — Proposed, includes the invariant-2
-  reading for ephemeral overlay state.
+- **rapid property suites** (`config-server/{mesh,nebderive,
+  masterderive}/*_prop_test.go`): overlay-replaces-wholesale
+  (ADR-0014) through the real Manager path, master derivation
+  determinism + recovery-byte independence, addr = f(normalized name)
+  (re-enrolling never moves a member), CA/leaf cert byte-stability
+  (invariant 2 at the cert level). Pure `composeEffective` extracted
+  from `Manager.effectivePolicy` to name the ADR-0014 law in code.
+- **Quint design models** (`verification/quint/{hub,enroll,
+  approval}.qnt` + `check.sh`): seal lifecycle with crash-anywhere,
+  device enrollment (nonce single-use, certs survive redeploy,
+  ADR-0012 non-derivability as absence), machine approval as an
+  affine resource (invariant 6). All verify under Apalache (hub,
+  approval depth 15; enroll depth 8 + 300×30 simulation). Every
+  invariant mutation-tested: seeded bugs all caught.
+- **Fixed `TestNodeFirewallGrantsHubAndAdminsOnly`** — broken on HEAD
+  since `7567336` widened media to :80 without the test update the
+  policy file demands; it blocked `nix build .#config-server-bin`.
+- `quint` added to the devshell; go vendorHash recomputed (rapid dep).
+- **Beads initialized** in this repo (`.beads/`) — replaces
+  taskwarrior for new work; legacy migration not yet done.
 
 ## Loose threads
 
-- **ADR-0014 is Proposed** — owner flips to Accepted when happy; it
-  also records the invariant-2 interpretation (ephemeral
-  wallet-authorized state is not "server-owned state").
-- **Parents' TV still not deployed** — all blockers cleared; recipe:
-  `http://jellyfin.cp1.mesh.internal:30096`, local login.
-- **Worker 6443 question** (untestable while w1 is down): check how
-  workers join when w1 is power-cycled, before the storage arc.
-- Phone enrolled as group `media`; re-enroll as `admins` if the :80
-  SSO ingress is wanted from it.
-- 90-day device renewal automation (`49443c38`) owed before
-  ~2026-11-12.
+- `talos-config-bw5/lad/pwm` (Quint models) done but not closed —
+  awaiting owner confirmation; epic `talos-config-7wg` stays open.
+- Session proposed adding a short "Laws" section to
+  `desired-state/domain-model.md` (the equations the suites check) —
+  not yet written, owner to confirm.
+- Possible ADR: the two-tier verification choice (Quint + rapid over
+  Alloy/TLA+/proofs) — owner to decide if it warrants ADR-0015.
+- `nebderive.DeviceKey(master, name)` still mints device keys from
+  the master (contradicts ADR-0012's spirit; only `nebtest` uses it)
+  — undecided broken window.
+- Taskwarrior→beads legacy migration not checked yet this repo.
 
 ## Suggested next steps
 
-- Ship the APK to the parents' TV (the original build-gate).
-- Phase 3 of `6462fed4`: `/policy` endpoint on the mesh HTTP surface +
-  device hot-reload (`mobile.Tunnel` + nebup), building on the
-  `effectivePolicy()` seam.
-- Power-cycle w1 → answers the worker-6443 question, heals the
-  degraded Longhorn volumes, unblocks the storage arc.
+- Close the Quint tasks + epic if the owner is satisfied; wire
+  `verification/quint/check.sh` into CI next to `go test`.
+- Write the domain-model "Laws" section (proposal already drafted in
+  session transcript).
+- Decide the `DeviceKey` question: move into `nebtest` or keep.

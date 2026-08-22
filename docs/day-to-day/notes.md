@@ -353,6 +353,13 @@
   Also: every deploy drops the overlay — export before deploying if it
   should survive.
 
+2026-08-21 — `nix build .#config-server-bin` runs the full go test
+suite in its checkPhase: any failing test on HEAD blocks devshell
+rebuilds and deploys (bit us via `TestNodeFirewallGrantsHubAndAdminsOnly`,
+broken since `7567336`). Also: the devshell's quint is 0.30.0 (flake's
+nixpkgs pin) vs 0.32.0 on current nixpkgs — models run on both;
+`verification/quint/_apalache-out/` is checker scratch, gitignored.
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have

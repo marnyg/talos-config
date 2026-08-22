@@ -58,7 +58,7 @@
             # store path matching the hash, so a stale-but-matching vendor
             # dir survives `go mod tidy`. Force a recompute by setting a
             # bogus hash and reading nix's "got:" line.
-            vendorHash = "sha256-TlTdc9kuLxNH6LziN5/eXyUtvpFJYw40+6S0YFFA7pE=";
+            vendorHash = "sha256-wffIVZiCnXrizVshV9W9zivCO11ts511eawyK6j0ABQ=";
           };
 
           packages.config-server = pkgs.writeShellApplication {
@@ -232,6 +232,10 @@
               # skips when absent. Version must track the Sidero nebula
               # extension shipped by the factory (currently 1.10.3).
               nebula
+              # quint: design-level model checking of the seal/enrollment/
+              # approval lifecycles (verification/quint/, epic
+              # talos-config-7wg). Bundles Apalache + JVM for `quint verify`.
+              quint
             ];
             enterShell = ''
               cd_talos="$(git rev-parse --show-toplevel)/talos"

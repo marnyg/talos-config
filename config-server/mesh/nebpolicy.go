@@ -155,16 +155,34 @@ func (m *Manager) PolicyGitRaw() ([]byte, error) {
 	return os.ReadFile(filepath.Join(m.root, PolicyFile))
 }
 
+// composeEffective is the composition law behind effectivePolicy
+// (ADR-0014): an installed overlay REPLACES the base policy wholesale —
+// it never merges, never falls back per scope. Pure, so the law is
+// directly property-testable (nebpolicy_prop_test.go).
+func composeEffective(base, overlay *meshPolicy) *meshPolicy {
+	if overlay != nil {
+		return overlay
+	}
+	return base
+}
+
 // effectivePolicy is what every render site composes with: the overlay
 // when one is installed, the git file otherwise.
 func (m *Manager) effectivePolicy() (*meshPolicy, error) {
 	m.polMu.Lock()
-	o := m.polOver
-	m.polMu.Unlock()
-	if o != nil {
-		return o.parsed, nil
+	var overlay *meshPolicy
+	if m.polOver != nil {
+		overlay = m.polOver.parsed
 	}
-	return loadPolicy(m.root)
+	m.polMu.Unlock()
+	if overlay != nil {
+		return composeEffective(nil, overlay), nil
+	}
+	base, err := loadPolicy(m.root)
+	if err != nil {
+		return nil, err
+	}
+	return composeEffective(base, nil), nil
 }
 
 func validatePolicyRule(r nebRuleYAML) error {
