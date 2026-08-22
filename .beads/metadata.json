@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "talos_config",
-  "project_id": "40ea7728-92eb-4b4c-9417-1200c0ef0d4c"
-}
