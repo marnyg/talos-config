@@ -236,6 +236,11 @@
               # approval lifecycles (verification/quint/, epic
               # talos-config-7wg). Bundles Apalache + JVM for `quint verify`.
               quint
+              # nickel: contract-checks the real durable artifacts against
+              # their snapshot invariants (verification/nickel/, currently
+              # talos/mesh-policy.yaml) — the per-value complement to the
+              # quint models' all-traces verification.
+              nickel
             ];
             enterShell = ''
               cd_talos="$(git rev-parse --show-toplevel)/talos"
