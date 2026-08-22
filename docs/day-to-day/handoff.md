@@ -32,8 +32,6 @@ now mechanically checked at two levels.
 
 ## Loose threads
 
-- `talos-config-bw5/lad/pwm` (Quint models) done but not closed —
-  awaiting owner confirmation; epic `talos-config-7wg` stays open.
 - Session proposed adding a short "Laws" section to
   `desired-state/domain-model.md` (the equations the suites check) —
   not yet written, owner to confirm.
@@ -46,8 +44,9 @@ now mechanically checked at two levels.
 
 ## Suggested next steps
 
-- Close the Quint tasks + epic if the owner is satisfied; wire
-  `verification/quint/check.sh` into CI next to `go test`.
+- 2026-08-22 review session: Quint tasks + epic `talos-config-7wg`
+  closed after owner review; prop-test failures routed through
+  `*rapid.T`; CI wiring filed as `talos-config-cmi`.
 - Write the domain-model "Laws" section (proposal already drafted in
   session transcript).
 - Decide the `DeviceKey` question: move into `nebtest` or keep.
