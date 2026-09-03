@@ -377,6 +377,18 @@ nixpkgs pin) vs 0.32.0 on current nixpkgs — models run on both;
   are parked on the Phase 0 gate — do not treat "deferred" as
   "abandoned" and do not close them before `359.1.5`.
 
+- 2026-09-03 — **Read `domain-model.md` §"The three layers" before any
+  authority/identity discussion.** A design session lost an hour to
+  "sovereign" applied to members and an invented "presence" concept;
+  both are now defined/retired there. ADR-0017 is *Proposed*: the
+  running system is still nebula's receiver-side firewall, and
+  `mesh-policy.yaml`'s nebula render is what executes until Mesh v3
+  Phase 1. Don't "fix" nebula code toward ADR-0017.
+- 2026-09-03 — Beads: `359.2`–`.7` Q-threads were chained behind the
+  Phase 0 gate by mistake (design work doesn't need the gate) — deps
+  removed; `359.3`/`.5` closed as answered. Closing a child that is
+  `blocks`-chained needs `--force` and a stated reason.
+
 ### Absorbed from the legacy `handover.md` (2026-07-24), still open
 
 These were unchecked loose ends when that file was written; none have

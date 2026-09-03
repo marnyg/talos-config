@@ -3,7 +3,9 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Mesh v3 Phase 0 — the spike gate (`talos-config-359.1`).
+**Now:** Mesh v3 Phase 0 — the spike gate (`talos-config-359.1`) —
+with the authority model already pinned (ADR-0017, Proposed) so that
+Phase 1 and the protocol package (`k3o` M1) have a complete spec.
 Four checks on scratch infra, spike branch only: self-hosted iroh
 relay on fly with n0 infra verifiably absent; iroh inside an Android
 `VpnService` holding ≥80 Mbps 4K; a minimal Talos-extension node agent
@@ -11,7 +13,8 @@ surviving reboot; an API-churn probe. Any one fails ⇒ `359` is
 re-deferred and the deferred nebula backlog reopens. Plan and kill
 criteria: `docs/mesh-v3-iroh.md`.
 
-**Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
+**Toward goal:** **Mesh v3** and **Sovereign-actor protocol at the
+center** in `desired-state/goals.md` (ADR-0016, decision `5w1`):
 identity-addressed mesh, k8s off the mesh, and the four components
 double as the sovereign-actor sketch's gateway, device apps and
 membership certs — the trigger that made this worth starting

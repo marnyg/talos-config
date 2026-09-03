@@ -5,62 +5,58 @@
 
 ## Last session
 
-2026-09-03 — **Pivot to Mesh v3 (iroh) committed as direction**, and
-beads repaired.
+2026-09-03 — one long session, three arcs:
 
-- **Beads divergence resolved** per the `1g9` handover: this machine
-  had the pre-force-push local DB (demo data + two real issues) and
-  `bd` had silently fallen back to an empty default DB because
-  `120c73f` deleted `.beads/{config,metadata}` from the worktree.
-  Bootstrapped from `refs/dolt/data`, re-created the two real
-  local-only issues as `px2` (identity-lifecycle spike, notes intact)
-  and `359` (Mesh v3 epic). Divergent DB salvaged at
+- **Beads repaired** per `1g9` (local DB had diverged after the Aug-22
+  force-push; `bd` had silently fallen back to an empty default DB).
+  Bootstrapped from `refs/dolt/data`; two real local-only issues
+  re-created (`px2`, `359`). Salvage at
   `~/.local/share/beads-salvage/talos-config-2026-09-03/`.
-- **`docs/mesh-v3-iroh.md` committed** (`497ce65`; had sat untracked
-  since 2026-08-17). Visualisation leftovers (`graph.html`,
-  `scripts/beads-viz`) deleted.
-- **Decision `talos-config-dlk`**: pivot to v3; trigger = sovereign-
-  actor work (`8jf`) moving from sketch to build. Epic `359`
-  un-deferred (P1) and expanded into a 31-issue phase tree: P0 spike
-  gate (4 checks → gate decision) → 6 open-question threads → P1 dual
-  plane → P2 per-consumer cutover → P3 soak → P4 deletion, all
-  `blocks`-chained per the doc. Nebula-specific backlog (`cjo en6 4ns
-  41b 6gq ap2 90a`) **deferred, not closed**, with notes pointing at
-  the gate; reshaped issues `related`-linked to their replacing task.
+- **Mesh v3 pivot committed** — ADR-0016 (Accepted, gate-bound),
+  decision `dlk`, goal added, `docs/mesh-v3-iroh.md` committed. Epic
+  `359` expanded into a phase tree; nebula-era backlog deferred on the
+  Phase 0 gate, not closed. Decision `5w1`: **monorepo with the
+  sovereign-actor protocol at the center**, talos-config = consumer 1
+  (restructure task `k3o`, ADR-0018 reserved).
+- **Authority model pinned** (grill-me → grill-design on `359.2`,
+  closed): vocabulary in `domain-model.md` §"The three layers" (actor /
+  authority / negotiation; sovereign = root only; no presence
+  concept; network layer ≠ app layer); **ADR-0017 (Proposed)**:
+  caller-carried delegation certs, policy compiles to grants, groups
+  are issuer-scoped `aud` names, explicit consent grant, `authorize()`
+  once per stream; invariants 1+2 amended (*the grant is the record*;
+  *git is compiler input, never verifier input*). Economics for v0:
+  no per-message money, Base/EVM-L2 for per-relationship flows.
+  Contradiction sweep done: mesh-v3 doc, ADR-0016/0014/0007 headers,
+  sketch cert encoding, `mesh-policy.yaml` comment, `359.*` titles.
 
 ## Loose threads
 
-- `goals.md` gained the Mesh v3 goal and ADR-0016 is Accepted with
-  the Phase 0 gate as a binding condition (both written this session);
-  `focus.md` ties to the new goal. Exploration-log sections resolved
-  by ADR-0010/0013 pruned.
-- **Grill session outcomes (2026-09-03, recorded in beads):**
-  NodeId *complements* SIWE — network layer = cert chain + policy, no
-  per-session login, device custody = access; app sessions stay on the
-  SIWE→OIDC bridge (`359.9.3`). Economics: no per-message money in v0,
-  Base/EVM-L2 for per-relationship flows, stake-on-first-contact
-  dropped (`8jf` notes; sentence added to `sovereign-actor-protocol.md`
-  §Economics). **Decision `5w1`: monorepo with the actor protocol at
-  its center, talos-config = consumer 1** — restructure task `k3o`
-  (protocol package, docs sub-scope, ADR-0017). `8eq` closed.
-- **Next design session is `/skill:grill-design` on `359.2`** (P1):
-  the permission-hierarchy data structure — delegation cert as the
-  single authority primitive, define the `can`/verb vocabulary, map
-  groups onto it. Domain model gets the result.
-- The Aug-21 loose threads still stand: domain-model "Laws" section
-  unwritten; `nebderive.DeviceKey` question undecided (now moot if v3
-  passes — `nebderive` is deleted in P4).
-- `fbb` (deploy re-seals hub) gets more load-bearing under v3: sealed
-  hub = no relay = no remote path for anyone. Priority unchanged for
-  now; revisit at `359.8.2`.
-- `2y7` (SideroLink) vs the bespoke node agent is an unresolved
-  either/or — thread `359.7`, must land before `359.8.3`.
+- **ADR-0017 is Proposed** — promote when `359.8.1`/`359.8.5` are
+  built against it. Until then the domain model's §2 policy diagram
+  is explicitly nebula-era.
+- The decision trigger for v3 (`dlk`) and the monorepo decision
+  (`5w1`) both assume sovereign-actor work *actually starts*; ADR-0016
+  §Confirmation says the migration-for-elegance objection returns if
+  it stalls.
+- `fbb` (deploy re-seals hub) gets heavier under v3 (relay identity
+  derives from master) — priority unchanged, revisit at `359.8.2`.
+- Open Q-threads: `359.4` desktop presentation, `359.6` hub HTTP
+  surface (partly answered: facet `hub-http`; public HTTPS must
+  remain for provisioning, invariant 4), `359.7` SideroLink vs node
+  agent — must land before `359.8.3`.
+- `siweoidc` hardcodes `groups: ["admins"]` (`5kh`, P3).
+- Older: domain-model "Laws" section unwritten; `nebderive.DeviceKey`
+  moot if v3 passes.
 
 ## Suggested next steps
 
-- Start Phase 0: `bd ready` shows the four spike checks (`359.1.1–4`).
-  Order of cheapest-kill-first: `359.1.4` API-churn probe (desk work),
-  then `359.1.1` relay on fly, then `359.1.3` Talos extension, then
-  `359.1.2` Android 80 Mbps (needs the CI APK pipeline).
-- Before closing any session: `git ls-remote origin refs/dolt/data`
-  vs `bd dolt status` — the divergence above went unnoticed 12 days.
+- **Phase 0 spike**, cheapest-kill-first: `359.1.4` API-churn probe →
+  `359.1.1` relay on fly → `359.1.3` Talos extension → `359.1.2`
+  Android 80 Mbps.
+- Or start `k3o` M1: the cert primitive + `authorize()` as a Go
+  package with the five properties as a rapid suite — the spec is
+  complete (glossary Verb/Grant/Attenuation/Authorize + ADR-0017) and
+  it is shared by Mesh v3 P1.1 and the protocol.
+- Session-close check: `git ls-remote origin refs/dolt/data` must
+  move after `bd dolt push`.
