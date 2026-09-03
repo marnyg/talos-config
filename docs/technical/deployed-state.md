@@ -5,6 +5,14 @@ legacy `docs/handover.md` so it survives that file's deletion. Facts here
 decay — each block carries the date it was last confirmed. If you verify
 or change something, update the date.
 
+> **2026-09-03 delta, not a re-verification:** no runtime change since
+> the last dated blocks except: w1 down since 2026-08-04 (media volumes
+> faulted); hub redeployed 2026-08-15 with `/hosts` + media :80 rule;
+> Android app shipped (ADR-0013). **Mesh v3 / ADR-0017 are not
+> deployed** — nebula, as described below, is what runs. Blocks below
+> are ~5 weeks stale on cluster facts (etcd still advertises the DHCP
+> lease, `talos-config-6gq`, deferred pending v3 P2.5).
+
 ## Cluster — _last verified 2026-07-31_
 
 - Two nodes, Talos v1.12.6, k8s v1.32.3:

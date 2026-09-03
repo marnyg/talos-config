@@ -1,6 +1,7 @@
 # ADR-0010: A stateless in-cluster SIWE→OIDC bridge is the only IdP
 
-- Status: Proposed
+- Status: Accepted _(landed 2026-07-31 — serves ArgoCD, the media UIs
+  and Jellyfin; status header corrected 2026-09-03)_
 - Date: 2026-07-31
 
 ## Context and Problem Statement

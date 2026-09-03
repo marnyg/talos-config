@@ -60,9 +60,11 @@ The config server is a **minimal provisioning plane** — one Go binary that:
 - [x] authenticates machines via OAuth device flow, humans via wallet
 - [x] runs on fly with TLS, UDP, and tmpfs-only secrets
 - [x] maintains an overlay control channel to every machine so nodes are
-      reachable from anywhere, on any LAN (today: hub-and-spoke WireGuard;
-      end-state: nebula mesh with direct peer paths, hub as
-      lighthouse/relay — see `docs/mesh-v2-nebula.md`)
+      reachable from anywhere, on any LAN (**today: nebula mesh**, direct
+      LAN peer paths, hub as lighthouse/relay — `docs/mesh-v2-nebula.md`,
+      ADR-0002/0007; wg0 deleted 2026-07-30. **End state: Mesh v3**, an
+      identity-addressed iroh mesh where IP survives only as device-local
+      fiction — `docs/mesh-v3-iroh.md`, ADR-0016, gated on a spike)
 - [ ] bootstraps fresh control planes itself over the tunnel (zero-touch
       after the wallet signature)
 - [ ] serves a status page (SIWE session login): machine liveness, last
@@ -85,12 +87,14 @@ the choice inverts if the scope stops being small.)
 
 ## How future agents should use this
 
-- Check Taskwarrior first (`+repo_5efa11ff`): decisions are `+decision`
-  (query `status:any`), direction is in `+sketch` annotations, next actions
-  in `+handover`/`+next`.
+- Follow `AGENTS.md`: read `docs/desired-state/` (start with
+  `domain-model.md` §"The three layers"), then `docs/day-to-day/
+  {handoff,focus}.md`. Tasks and decisions live in **beads** (`bd ready`,
+  `bd list -t decision --status closed`); Taskwarrior was retired
+  2026-08-22.
 - Changes to the trust model or the non-goals list deserve an explicit
-  conversation with the owner and a new `+decision` — they are the load-
-  bearing walls of this design.
+  conversation with the owner and a new `decision` issue (and usually an
+  ADR) — they are the load-bearing walls of this design.
 - Measure any new feature against the north star: does it reduce the number
   of human acts between blank metal and cluster member, without adding an
   account, a database, or an always-up dependency we haven't consciously

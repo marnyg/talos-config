@@ -6,6 +6,16 @@
      budget: as expressive as the domain requires; pruned for
      accuracy and drift, never for length. -->
 
+> **Live vs. planned (2026-09-03).** This model is written for the
+> *desired* state and is deliberately ahead of the code. What runs
+> today: nebula mesh, CA-signed bindings, receiver-side firewall
+> compiled from `mesh-policy.yaml` (ADR-0014), SIWE→OIDC app sessions
+> (ADR-0010). **Planned, not built:** everything marked ADR-0016 /
+> ADR-0017 or `359.*` — iroh transport, grants, facets, consent
+> grants, `authorize()`, the name map. The §1–§4 structure and the
+> "three layers" vocabulary apply to both; the glossary says per term
+> which side it is on.
+
 What this system models, in one sentence: **decentralized,
 client-owned identity under wallet-rooted authority, organized into
 networks a sovereign offers and members consent to, with peer-to-peer
