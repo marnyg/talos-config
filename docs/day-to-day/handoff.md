@@ -30,6 +30,15 @@
   Contradiction sweep done: mesh-v3 doc, ADR-0016/0014/0007 headers,
   sketch cert encoding, `mesh-policy.yaml` comment, `359.*` titles.
 
+2026-09-04 — backlog grooming (beads only, no code): protocol spike
+`8jf` crystallized into epic **`0bc`** (M1–M5 chain, `0bc.1` = cert
+primitive, shared with `359.8.1`); `px2` closed (ADR-0015 impl → `359.8.3`,
+nebula fallback `7ci` deferred on the gate); `rc3` closed → decision `gar`
+(hub fungibility test). `359.4/.6/.7` retyped spike; `4te` → P2; `fbb`
++ `4zt` deferred to `359.8.2` / `359.9.1`; `ihn` now blocked on `359.11.3`;
+`k3o` title fixed (ADR-0018). Taskwarrior leftovers closed — migration
+complete for this repo.
+
 ## Loose threads
 
 - **ADR-0017 is Proposed** — promote when `359.8.1`/`359.8.5` are
@@ -54,7 +63,7 @@
 - **Phase 0 spike**, cheapest-kill-first: `359.1.4` API-churn probe →
   `359.1.1` relay on fly → `359.1.3` Talos extension → `359.1.2`
   Android 80 Mbps.
-- Or start `k3o` M1: the cert primitive + `authorize()` as a Go
+- Or start `0bc.1` (protocol M1, alongside `k3o`): the cert primitive + `authorize()` as a Go
   package with the five properties as a rapid suite — the spec is
   complete (glossary Verb/Grant/Attenuation/Authorize + ADR-0017) and
   it is shared by Mesh v3 P1.1 and the protocol.

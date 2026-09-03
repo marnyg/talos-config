@@ -5,7 +5,7 @@
 
 **Now:** Mesh v3 Phase 0 — the spike gate (`talos-config-359.1`) —
 with the authority model already pinned (ADR-0017, Proposed) so that
-Phase 1 and the protocol package (`k3o` M1) have a complete spec.
+Phase 1 and the protocol package (`0bc.1`, epic `0bc`; restructure `k3o`) have a complete spec.
 Four checks on scratch infra, spike branch only: self-hosted iroh
 relay on fly with n0 infra verifiably absent; iroh inside an Android
 `VpnService` holding ≥80 Mbps 4K; a minimal Talos-extension node agent
