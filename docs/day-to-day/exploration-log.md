@@ -137,3 +137,9 @@
   is sealed after every deploy until the wallet signs, so cert expiry
   is the mesh's runway without a hub. Propagation is by poll (~1 h
   when the hub is up); expiry (7 d) is the failure budget.
+- 2026-09-03 — Revocation as a **negative cert (`can: revoke`) ruled
+  out for v0** — pure one-primitive, but the plain git blocklist exists
+  and is compiled into every config; revisit only if cross-sovereign
+  revocation matters. **Per-request re-authorization ruled out** —
+  check once per stream (matches "once per connection"), gateway caps
+  stream lifetime at ≤ 1 h so expiry still bites.

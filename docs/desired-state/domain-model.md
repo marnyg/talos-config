@@ -306,6 +306,22 @@ provisioning or recovery path may depend on it.
   `member` cert whose `iss` is the *same key* as the grant's `iss`
   and whose `cav.groups` contains `<g>`. Groups are issuer-scoped
   names, never global, never actors.
+- **Authorize (the per-connect check)** _(pinned 2026-09-03, spike
+  `359.2`; the function the rapid suite and Quint model target)_ —
+  inputs: receiver key `R`, its accept table, its consent grant(s),
+  the ALPN, the caller's bundle {`member`, `invoke[]`}. Steps: (1)
+  ALPN → facet, unknown ⇒ reject; (2) verify `member` (sig, exp,
+  `aud` = the QUIC peer key); (3) for each grant, build the chain
+  [consent(R→iss), grant], verify every sig/exp/caveat, intersect,
+  require target ∋ R and facet ∋ facet, resolve `aud` (key = member
+  key, or group rule), reject if member key blocklisted, else accept
+  with identity {key, name, groups} from the *member cert only*; (4)
+  no grant matched ⇒ reject. Properties: deterministic and offline;
+  receiver-rooted (a chain not beginning with an R-signed cert is
+  unverifiable, not denied); monotone under attenuation; fail-closed
+  on any unknown. Runs **once per stream**; the gateway bounds stream
+  lifetime (≤ 1 h) so expiry has a ceiling. Blocklist stays the plain
+  git list in v0 (not a negative cert).
 - **Projection** — any centralized "who has access" or "what is
   reachable" view. Built from
   the issuance log or from receivers' observations; strictly a
