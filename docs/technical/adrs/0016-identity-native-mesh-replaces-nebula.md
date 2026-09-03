@@ -10,8 +10,9 @@
   over verbatim), ADR-0007 (per-request identity header replaces
   cert-group + source-IP inference), ADR-0009 (in-cluster gateway is
   the mesh side of ingress), ADR-0013 (app internals: iroh + fake-IP
-  instead of the nebula AAR), ADR-0014 (policy renders to ALPN accept
-  rules, not nebula firewall stanzas)
+  instead of the nebula AAR), ADR-0014 (policy compiles to
+  caller-carried grants — see ADR-0017, which owns the authority
+  model)
 - Related: ADR-0012, ADR-0015 (mint-on-member pattern is the identity
   model here), `docs/sovereign-actor-protocol.md`, decision
   `talos-config-dlk`, epic `talos-config-359`

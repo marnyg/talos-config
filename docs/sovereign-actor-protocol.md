@@ -100,12 +100,19 @@ certificate**:
 {
   "iss": "<granting identity>",
   "aud": "<receiving identity>",
-  "can": "<verb, e.g. invoke:P#report, speak-as, reach-me-at>",
-  "cav": { "<caveats: rate limits, spending caps, postage, ...>" },
+  "can": "<verb from a closed set: member | invoke | speak-as | reach-me-at | relay | publish>",
+  "cav": { "target": "<actor>", "facet": "<class>", "<other caveats: rate limits, spending caps, postage, ...>" },
   "exp": "<expiry>",
   "sig": "<iss's signature over all of the above>"
 }
 ```
+
+*Encoding pinned 2026-09-03 (ADR-0017, spike `talos-config-359.2`):
+the verb is a closed, versioned set and never carries its object;
+target and facet live in structured caveats so that chain
+attenuation is field-wise intersection. Examples further down still
+use the earlier shorthand `invoke:P#report` — read it as
+`can: invoke, cav: {target: P, facet: report}`.*
 
 Certs chain: a link may re-delegate what it received, adding caveats,
 never removing them. Effective authority is the intersection of the

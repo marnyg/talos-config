@@ -2,6 +2,11 @@
 
 - Status: Accepted _(supersedes ADR-0003; implemented with phase 2 step 3)_
 - Date: 2026-07-30
+- Revised by: ADR-0016 / ADR-0017 (Proposed, 2026-09-03) — under
+  Mesh v3 the group + derived-source-address inference is replaced by
+  `authorize()` over the caller's presented cert chain; the gateway
+  injects the verified identity as a header. Network-layer only; app
+  sessions stay on ADR-0010.
 
 ## Context and Problem Statement
 

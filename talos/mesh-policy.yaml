@@ -25,6 +25,12 @@
 # Inbound only: nebula's firewall is stateful and every member keeps
 # outbound open (members initiate; replies are admitted per-flow).
 # Everything not named here is dropped.
+#
+# Forward-looking (ADR-0017, Proposed): under Mesh v3 this file stays
+# the Owner's recipe but compiles to `invoke` grants that callers
+# carry, with `port` replaced by facet classes. Receivers hold no
+# copy of this table. Until Phase 1 lands, the nebula render above is
+# what runs.
 
 hub:
   inbound:

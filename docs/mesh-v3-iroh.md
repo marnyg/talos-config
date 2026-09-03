@@ -127,10 +127,13 @@ serialization.
   exclusion on the router). certSANs carry LAN name/IP. Remote
   kubectl/talosctl ride the desktop daemon's bridges.
 - **Policy**: `talos/mesh-policy.yaml` survives as the who×what
-  table; "what" changes from ports to **ALPN classes + forward
-  targets**. Compiled into gateway/agent accept rules instead of
-  nebula firewall stanzas. Blocklist (`mesh-blocklist.txt`) becomes
-  NodeId-based; expiry on membership certs finally gives the
+  table; "what" changes from ports to **facets** (ALPN classes with
+  producer-side forward targets). ~~Compiled into gateway/agent
+  accept rules instead of nebula firewall stanzas.~~ **Revised by
+  ADR-0017 (2026-09-03):** the recipe compiles into `invoke` grants
+  that *callers* fetch and present; receivers hold only their own
+  accept table (`facet → forward`) and a consent grant, never a policy
+  table. Blocklist (`mesh-blocklist.txt`) becomes NodeId-based; expiry on membership certs finally gives the
   revocation story thread dc04e3e8 wanted (nebula has no CRL; certs
   with short expiry + renewal beat do).
 
@@ -140,10 +143,11 @@ serialization.
    (e.g. `mesh/apid/v1`, `mesh/http/v1`, `mesh/frontdoor/v1`) —
    coarse classes, not fine-grained verbs. Fine dispatch stays in
    the (signed) application layer.
-2. **ALPN is unsigned — it routes, it never authorizes.** Membership
-   and per-class policy are checked after accept, against the
-   membership cert. Mismatch between ALPN and the authenticated
-   request = drop.
+2. **ALPN is unsigned — it routes, it never authorizes.** After
+   accept, the receiver runs `authorize()` (domain-model glossary,
+   ADR-0017) over the caller's presented bundle — `member` cert +
+   `invoke` grants — rooted in the receiver's own consent grant.
+   Mismatch between ALPN facet and the granted facet = drop.
 3. ALPN is visible in the QUIC ClientHello (relays and on-path
    observers see it). Coarse classes bound the metadata leak.
 

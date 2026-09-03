@@ -2,6 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-08-16
+- Revised by: ADR-0017 (Proposed, 2026-09-03) — policy stays git
+  data with the ephemeral overlay, but under Mesh v3 it compiles to
+  `invoke` grants carried by callers, not to firewall stanzas held by
+  receivers. The three render sites collapse into one.
 
 ## Context and Problem Statement
 
