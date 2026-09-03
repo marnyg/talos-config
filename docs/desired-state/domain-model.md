@@ -270,7 +270,28 @@ provisioning or recovery path may depend on it.
   config it accepted"); under the protocol it is a real cert the node
   agent holds, so a receiver can honor more than one sovereign and
   the verifier has no special case for "the CA".
-- **Projection** — any centralized "who has access" view. Built from
+- **Facet** — a named entry point an actor exposes, defined and held
+  **producer-side** as an accept table `facet → forward target`. Closed
+  per receiver kind: node agent `apid`, `kube-api`; gateway
+  `ingress-http` (one class for every HTTP UI — per-app authorization
+  stays app-layer), `jellyfin` (raw TCP); hub `hub-http`, `relay`.
+  Facets are what grants name (`cav.facet`); on the wire a facet is an
+  ALPN class (coarse, because ALPN is visible in the ClientHello).
+  Ports exist only inside a facet definition (forward) and in the
+  device-local map (expose) — never in a grant. Reachability (ICMP
+  today) is not a facet: an unauthenticated ping. Services are not
+  actors; a service is a facet on some actor (the gateway for
+  Kubernetes Services). _(Pinned 2026-09-03, spike `359.2`.)_
+- **Name map** — the signed directory members receive on the renewal
+  beat. Two halves with different owners: **name → NodeId** is the
+  Owner's namespace (authoritative, derived from git, invariant 1);
+  **NodeId → {port: facet}** is the producer's advertisement (the
+  protocol form is the actor's own `reach-me-at` record; the hub
+  compiles it for actors whose config the Owner writes). A dialing
+  convenience, never an authorization input. Replaces the mesh DNS
+  server under Mesh v3.
+- **Projection** — any centralized "who has access" or "what is
+  reachable" view. Built from
   the issuance log or from receivers' observations; strictly a
   reflection, never a data source. A valid cert beats a stale
   projection. Exact enumeration of current access is *not* a query

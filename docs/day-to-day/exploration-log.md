@@ -111,3 +111,19 @@
   accepted: exact "who has access now?" is not answerable — bound +
   log only, which invariant 1 already states for devices. Grantor
   state is optional and non-authoritative (a projection).
+- 2026-09-03 — Facet granularity: **port-level facets ruled out**
+  (ports are an artifact of the IP presentation v3 deletes; a grant
+  should say what it means). **Per-HTTP-route / admin-vs-media split
+  at the network layer ruled out** (encodes app roles at the network
+  layer — the layer merge forbidden in domain-model §"three layers";
+  and fine ALPNs leak metadata to relays). **ICMP as a facet ruled
+  out** (reachability is not authority). Landed on: service-level
+  facet classes per receiver kind, one `ingress-http` class, Jellyfin
+  raw TCP as a gateway facet, ping unauthenticated.
+- 2026-09-03 — Service registry: **central store of reachable
+  services ruled out** at the protocol level (facets are producer-side
+  advertisements; discovery = the actor's own `reach-me-at` record via
+  lighthouse `#lookup`). What stays central is the *namespace*
+  (name→NodeId, Owner's, git-derived). HTTP services need no
+  registration (wildcard name → gateway, route by Host); raw-TCP
+  services are one facet line in the recipe.
