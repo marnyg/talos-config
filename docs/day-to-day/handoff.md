@@ -34,13 +34,19 @@ beads repaired.
   the Phase 0 gate as a binding condition (both written this session);
   `focus.md` ties to the new goal. Exploration-log sections resolved
   by ADR-0010/0013 pruned.
-- **Crypto integration is documented only as design, never as
-  desired-state**: SIWE-for-NodeId is in `mesh-v3-iroh.md` (wallet
-  authorizes the locally minted NodeId) and payments/postage/tranche
-  funding live in `sovereign-actor-protocol.md` §Economics; nothing in
-  `goals.md`/`domain-model.md` names them. Decide whether the actor
-  economics belong to this repo's desired state or to a separate
-  project (the sketch itself says "future separate project").
+- **Grill session outcomes (2026-09-03, recorded in beads):**
+  NodeId *complements* SIWE — network layer = cert chain + policy, no
+  per-session login, device custody = access; app sessions stay on the
+  SIWE→OIDC bridge (`359.9.3`). Economics: no per-message money in v0,
+  Base/EVM-L2 for per-relationship flows, stake-on-first-contact
+  dropped (`8jf` notes; sentence added to `sovereign-actor-protocol.md`
+  §Economics). **Decision `5w1`: monorepo with the actor protocol at
+  its center, talos-config = consumer 1** — restructure task `k3o`
+  (protocol package, docs sub-scope, ADR-0017). `8eq` closed.
+- **Next design session is `/skill:grill-design` on `359.2`** (P1):
+  the permission-hierarchy data structure — delegation cert as the
+  single authority primitive, define the `can`/verb vocabulary, map
+  groups onto it. Domain model gets the result.
 - The Aug-21 loose threads still stand: domain-model "Laws" section
   unwritten; `nebderive.DeviceKey` question undecided (now moot if v3
   passes — `nebderive` is deleted in P4).

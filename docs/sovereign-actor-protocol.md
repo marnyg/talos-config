@@ -426,6 +426,18 @@ timeout/recovery clauses, since the successor of a dead actor is a
 **new identity** that cannot simply resume its predecessor's
 contracts.
 
+*Settlement layer, decided 2026-09-03 (`talos-config-8jf` notes):* an
+EVM L2 (Base) for every money flow, chosen for wallet/EIP-191
+compatibility, not fees. No per-message money in v0 — stranger contact
+is receiver-enforced PoW postage; children are invited via the spawn
+nonce and pay nothing. All remaining flows are per-relationship or
+slower, so plain transfers suffice; channels/tickets wait for a real
+per-message flow. Optimistic-rollup finality (~7 days) is why a stake
+is a deterrent and never a guarantee — no protocol property may depend
+on chain finality. Chain terms travel as opaque `cav` (`chainId`,
+`token`, `contract`); a second chain is deferred until a customer
+exists.
+
 **Growing up — how a child outlives its parent.** All of a newborn's
 authority chains from parent-issued certs, so a fresh orphan dies in
 one beat — by design. Independence is acquired, not granted: a
