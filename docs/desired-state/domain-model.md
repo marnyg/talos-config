@@ -248,6 +248,34 @@ provisioning or recovery path may depend on it.
 - **Delegate** — any actor whose authority chains from another
   actor's signature: every member (TV, laptop, cp1, gateway). Owns
   its key, not its authority.
+- **Verb (`can`)** — the action a delegation cert grants, drawn from a
+  small closed, versioned set (`member`, `invoke`, `speak-as`,
+  `reach-me-at`, `relay`, `publish`; unknown ⇒ reject). The verb
+  never carries its object: target and facet live in structured
+  caveats (`cav.target`, `cav.facet`) so that chain attenuation is
+  field-wise intersection, not string parsing. _(Pinned 2026-09-03,
+  spike `359.2`.)_
+- **Grant** — a delegation cert with `can: invoke`: the Owner (or any
+  grantor) authorizes an `aud` — an actor *or a group name* — to
+  reach `cav.target` on `cav.facet`. `talos/mesh-policy.yaml` is the
+  Owner's *recipe*; the hub compiles it into grants. **The grant is
+  the record**: the grantee stores and presents it; the grantor keeps
+  no authoritative state (it may log, never consult). Renewal =
+  present the expiring cert, grantor re-verifies its own signature
+  and re-issues. Lost grants ⇒ re-negotiate; lost key ⇒ new actor.
+  _(Pinned 2026-09-03, spike `359.2`.)_
+- **Consent grant** — the explicit first link of every chain: the
+  receiver grants `invoke {target: self, facet: *}` to the network's
+  Owner (delegable). Today implicit ("the node trusts the CA in the
+  config it accepted"); under the protocol it is a real cert the node
+  agent holds, so a receiver can honor more than one sovereign and
+  the verifier has no special case for "the CA".
+- **Projection** — any centralized "who has access" view. Built from
+  the issuance log or from receivers' observations; strictly a
+  reflection, never a data source. A valid cert beats a stale
+  projection. Exact enumeration of current access is *not* a query
+  this system answers (bound + log only — invariant 1 already says
+  the device set is not enumerable).
 - **Owner-only permission** — an action no delegate holds (approve a
   machine, mutate policy, unseal): the request is signed by the
   Owner's key itself. Not a "fresh signature" or "presence" check —
@@ -281,9 +309,12 @@ provisioning or recovery path may depend on it.
 - **Enrollment** — wallet-authorized minting of a binding: the member
   submits its own pubkey, the approver (at whatever signature
   distance) ratifies role + group, one signature mints the cert.
-- **Group** — the authorization unit signed into a binding
-  (`admins`, `media`, `machines`); what policy rules and per-route
-  HTTP gates match on.
+- **Group** — a *name for a set of members*, and nothing more: it
+  appears in a `member` cert's `cav.groups` and as the `aud` of
+  `invoke` grants. It has no semantics of its own — what a group may
+  reach is entirely the grants addressed to it. (`admins`, `media`,
+  `machines`; today also what nebula firewall rules and per-route
+  HTTP gates match on.) _(Redefined 2026-09-03, spike `359.2`.)_
 - **Mesh zone** — `*.mesh.internal`, served by the hub: declared
   roles from the derived namespace, device roles while their tunnel
   is live.

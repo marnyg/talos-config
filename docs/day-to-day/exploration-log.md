@@ -86,3 +86,28 @@
   work moving from sketch to build (decision `talos-config-dlk`, epic
   `talos-config-359`). Gated on the Phase 0 spike; a failed gate
   re-defers, it does not re-open the ruled-out list.
+
+## Permission hierarchy data structure (spike `talos-config-359.2`, 2026-09-03)
+
+- 2026-09-03 — Verb encoding: **verb-string grammar ruled out**
+  (`can: "invoke:P#report"` as written in the sketch). Reason: the
+  verifier ends up parsing a grammar inside a string, and chain
+  attenuation ("intersection of the chain") is only well-defined over
+  structured fields. Landed on: closed versioned verb set, object in
+  `cav.target` / `cav.facet` (UCAN's with/can separation, same reason).
+- 2026-09-03 — Where authorization is evaluated: **receiver-side
+  policy table ruled out** (today's nebula model; the `ap2` apid-push
+  design). Reason: a second authority mechanism beside the cert, with
+  its own sync protocol and unseal-reconciliation problem; cannot work
+  across sovereigns a receiver has never met. **Receiver fetching
+  grants by group ruled out** — the verifier must never dial anything
+  to authorize. Landed on: caller-carried grants presented on connect;
+  `mesh-policy.yaml` compiles into `invoke` grants whose `aud` is a
+  group; a group is just the `aud` of grants.
+- 2026-09-03 — **Authoritative grant registry at the grantor ruled
+  out.** Reason: the grant is the record and comes back to the grantor
+  at renewal (verify own signature, re-issue); revocation is by key
+  fingerprint or non-renewal; policy change is a recipe change. Cost
+  accepted: exact "who has access now?" is not answerable — bound +
+  log only, which invariant 1 already states for devices. Grantor
+  state is optional and non-authoritative (a projection).

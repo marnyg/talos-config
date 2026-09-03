@@ -27,7 +27,13 @@ this list is the checkable form.
    approved name (devices) or MAC (machines), so re-keying or
    re-enrolling never moves a member. Re-derivable with zero runtime
    re-enrollment: hub, CA, addresses, DNS, configs — **not member
-   private keys**.
+   private keys**. _(Amended 2026-09-03, spike `359.2`.)_ **The grant
+   is the record:** authority is carried by the party it empowers
+   (the grantee stores and presents its certs); grantor-side state
+   about issued authority is non-authoritative — a log or projection
+   at most — and nothing may depend on it. Renewal re-verifies the
+   grantor's own past signature; exact enumeration of current access
+   is not a query this system answers.
 2. **Git is the single source of truth.** Servers derive; they do not
    own state. Anything a server "remembers" must be recomputable from
    (repo + fly secrets + pure functions). If a slice of *this design*
@@ -39,6 +45,11 @@ this list is the checkable form.
    That bookkeeping is not recomputable from git and is not required to
    be; it shares the fate of the payload it describes, so its
    durability is a replication-and-backup problem, not a git problem.
+   **Git is compiler input, never verifier input** _(2026-09-03,
+   spike `359.2`)_: the hub compiles declared roles and policy into
+   certs; a verifier (node agent, gateway, any receiver) decides from
+   the certs presented to it alone — it never reads git, a registry,
+   or a network service to authorize.
    Corollary: **no single node's disk is exempt from a wipe.** A
    reinstall may forget anything that is either re-derivable from git or
    replicated elsewhere. _(Amended 2026-07-31, see ADR-0011; replaces
