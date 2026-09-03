@@ -127,3 +127,13 @@
   (name→NodeId, Owner's, git-derived). HTTP services need no
   registration (wildcard name → gateway, route by Host); raw-TCP
   services are one facet line in the recipe.
+- 2026-09-03 — Group indirection: **per-member `invoke` grants (no
+  groups in the chain) ruled out** — purer (every `aud` a key) but
+  N×targets certs re-minted on every policy change. Landed on:
+  issuer-scoped group names resolved by a `member` cert from the same
+  issuer. **Owner hot keys (`speak-as`) deferred** to the protocol
+  scope; Owner-only actions stay wallet-signed (invariant 1, EOA-only).
+- 2026-09-03 — Short `invoke` lifetimes (hours) **ruled out**: the hub
+  is sealed after every deploy until the wallet signs, so cert expiry
+  is the mesh's runway without a hub. Propagation is by poll (~1 h
+  when the hub is up); expiry (7 d) is the failure budget.

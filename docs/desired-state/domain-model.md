@@ -290,6 +290,22 @@ provisioning or recovery path may depend on it.
   compiles it for actors whose config the Owner writes). A dialing
   convenience, never an authorization input. Replaces the mesh DNS
   server under Mesh v3.
+- **Cert classes and lifetimes** _(pinned 2026-09-03, spike
+  `359.2`)_ — consent grant: bound to the accepted config, re-minted
+  at boot/apply, delegable. `member`: 90 d, renewed at ⅔ life by
+  background dial, non-delegable. `invoke` group grants: 7 d, polled
+  daily and re-fetched on policy-epoch change, non-delegable in v0.
+  `reach-me-at`: 1 h, piggybacked. `speak-as` for the Owner: deferred
+  — Owner-only actions stay wallet-signed. Rule: **propagation is by
+  poll, expiry is runway** — no class expires faster than the sealed-
+  hub window it must survive.
+- **Attenuation** — a chain link adds caveats, never removes;
+  effective authority is field-wise intersection over `target`,
+  `facet` and every recognised caveat; an unknown caveat rejects.
+  **Group resolution rule:** `aud: group:<g>` is satisfied by a
+  `member` cert whose `iss` is the *same key* as the grant's `iss`
+  and whose `cav.groups` contains `<g>`. Groups are issuer-scoped
+  names, never global, never actors.
 - **Projection** — any centralized "who has access" or "what is
   reachable" view. Built from
   the issuance log or from receivers' observations; strictly a
