@@ -32,6 +32,16 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   build-out); **gated on the Phase 0 spike** — a failed gate re-defers
   the goal, it does not weaken Mesh v2. Record in
   [`../mesh-v3-iroh.md`](../mesh-v3-iroh.md).
+- **Sovereign-actor protocol at the center** (decision `talos-config-5w1`,
+  2026-09-03): this repo becomes a monorepo around a reusable protocol
+  — actors as keypair+wallet, authority as delegation certs,
+  negotiation as signed proposals — with talos-config as its first
+  consumer. v0 has no per-message money (PoW postage for strangers,
+  invited children pay nothing); per-relationship flows settle on an
+  EVM L2 (Base) chosen for wallet compatibility. Mesh v3 builds the
+  protocol's transport, membership cert and gateway. Sketch:
+  [`../sovereign-actor-protocol.md`](../sovereign-actor-protocol.md);
+  restructure: `talos-config-k3o`.
 - **Provisioning plane stays minimal** — the Omni line in `vision.md`:
   no fleet management, no upgrade orchestration, no multi-cluster.
 - **Every exposed service authenticates against the wallet** —

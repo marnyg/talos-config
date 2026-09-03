@@ -14,7 +14,10 @@
   Azimuth"); revocation between expiries is best-effort by design.
   Raw `hash(pubkey)` addressing ruled out earlier (no rotation).
   Chain remains optional *outside* the auth path (smart-account
-  social recovery for roots). Design targets a future separate
+  social recovery for roots). ~~Design targets a future separate~~
+  _(2026-09-03: superseded by decision `talos-config-5w1` — the
+  protocol lives here; this repo becomes a monorepo around it.)_
+  Design targets a future separate
   project; captured here because the exploration happened in-repo.
 - 2026-08-16 — Messaging-primitive branch: **identity-addressed
   send ruled out as the primitive** (public id = floodable inbox,

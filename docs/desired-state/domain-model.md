@@ -18,6 +18,40 @@ deployment is the **N=1 instance** — one sovereign (the wallet), one
 network (`mesh.internal`), one node (the hub) providing all of the
 network's services.
 
+### The three layers (read this before the sections)
+
+Pinned 2026-09-03 after a design session that lost time to loose
+terms. Everything below sits in one of three layers; keep them apart.
+
+| Layer | What it is | Where in this doc |
+|---|---|---|
+| **Actor** | the universal unit: has a key, has a wallet, is reachable by knowing only its public key, can send to any other actor. No hierarchy at this layer. Owner, TV, cp1, hub, gateway are all actors. | §1 (key + runner) |
+| **Authority** | signed statements by one actor about what another may do: bindings/certs + declared policy. Durable (hours–90 days). | §2 |
+| **Negotiation** | how authority changes: an actor proposes a mutation, an actor with the right to grant it signs or not (device flow, machine approval). | §2 admission, §3 |
+
+Vocabulary that follows from this:
+
+- **Sovereign / Owner** is the *root* actor — the one whose key no
+  other actor's authority chains above. Do not call members
+  "sovereign": a TV's membership is a cert the Owner minted with an
+  expiry the Owner set. Members are **delegates** — they own their
+  *keys*, not their *authority*.
+- **There is no "presence" or "freshness" concept.** A request is
+  signed by the requesting actor's key and checked against the
+  authority it holds. Permissions that were never delegated (approve
+  a machine, mutate policy) are simply requests the *Owner actor
+  itself* signs — the wallet prompt is the Owner acting, not a
+  liveness check on a device.
+- **Two enforcement layers, never merged** (Tailscale/NetBird shape):
+  the **network layer** authorizes by binding + policy alone — no
+  per-session login, device custody *is* network access for the
+  binding's lifetime or until blocklist. The **app layer** keeps user
+  sessions on the SIWE→OIDC bridge (ADR-0010). Mesh v3's gateway
+  header *complements* SIWE; it does not replace it (`359.9.3`).
+- **Verbs are undefined.** Groups exist (`admins`, `media`,
+  `machines`); the "what" axis of authorization has no vocabulary yet.
+  Spike `talos-config-359.2` owns defining it.
+
 ## 1. The member stack: role ← binding ← key ← runner
 
 Every member is four layers, each independently replaceable:
@@ -98,7 +132,11 @@ Authority has exactly two tiers, both rooted at the wallet:
 
 - **Authorization** — what may this role reach: policy predicates
   (`host:`, `group:`) over binding attributes, enforced at handshake
-  and firewall — checked once per connection, not per message.
+  and firewall — checked once per connection, not per message. This
+  is the *network layer* only; application sessions are a separate
+  layer (see "The three layers" above). Under Mesh v3 the same rule
+  is evaluated by the gateway/node agent against the NodeId's cert
+  chain instead of nebula's firewall (ADR-0016).
 
 ### Policy: payload, not identity
 
@@ -198,10 +236,27 @@ provisioning or recovery path may depend on it.
 
 ## Glossary
 
-- **Sovereign / Owner** — the root identity: wallet address
+- **Actor** — the universal unit (see "The three layers"): key +
+  wallet + reachable by public key + can send. Owner, members, hub
+  and gateway are all actors; hierarchy is an authority-layer fact,
+  never an actor-layer one.
+- **Sovereign / Owner** — the *root* actor: wallet address
   `0xf568…9406`, proven by offline EIP-191 signature recovery.
   Stateless by construction. (Formerly glossed as "Identity";
-  renamed to free the word.)
+  renamed to free the word.) Reserved for the root — members are
+  delegates.
+- **Delegate** — any actor whose authority chains from another
+  actor's signature: every member (TV, laptop, cp1, gateway). Owns
+  its key, not its authority.
+- **Owner-only permission** — an action no delegate holds (approve a
+  machine, mutate policy, unseal): the request is signed by the
+  Owner's key itself. Not a "fresh signature" or "presence" check —
+  those terms are retired.
+- **Gateway** *(Mesh v3, planned)* — the member actor in front of
+  cluster services: verifies the caller's cert chain against policy,
+  forwards to the Service, injects the verified identity as a header.
+  Not a rendezvous point (that is the relay/lighthouse); issues no
+  authority of its own.
 - **Role** — abstract identity: a durable name in a network's
   namespace. Owns address, DNS labels, policy predicates. Never acts.
 - **Binding** — a CA-signed cert leasing a role to a key for a
@@ -249,6 +304,15 @@ where the shapes agree — client-born keys, revocation-as-expiry,
 lighthouse rendezvous, consensual hierarchy — and diverges knowingly
 where it doesn't: this system *embraces* the stable-name registry SAP
 refuses (made safe by being stateless), checks authority once per
-connection rather than per message, and has no economics. Members own
-their keys, not their authority: a single-sovereign instance of the
-SAP trust topology.
+connection rather than per message, and has no economics *yet*.
+Members own their keys, not their authority: a single-sovereign
+instance of the SAP trust topology.
+
+Decision `talos-config-5w1` (2026-09-03): the protocol is not a
+separate project — this repo becomes a monorepo with the protocol at
+its center and talos-config as its first consumer. Mesh v3's
+membership cert is the protocol's delegation cert (`359.2`); the
+protocol's economics (EVM-L2/Base for per-relationship flows, PoW
+postage for strangers, no per-message money in v0) live in the
+protocol's own desired-state once the sub-scope exists (`k3o`), not
+here.

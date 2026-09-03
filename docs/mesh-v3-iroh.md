@@ -104,6 +104,13 @@ serialization.
   streams and forwarding to Services — the mesh side of ingress
   (revises ADR-0009). Injects a verified per-request device-identity
   header (revises ADR-0007). Its NodeId enrolls like any member.
+  **Authorization rule (decided 2026-09-03, `359.9.3`):** the gateway
+  authorizes at the *network layer* only — caller's cert chain ×
+  git policy; no per-session login; device custody is access for the
+  cert lifetime. User sessions stay at the *app layer* on the
+  SIWE→OIDC bridge (ADR-0010). The header **complements** SIWE, it
+  does not replace it. Owner-only actions are requests signed by the
+  wallet itself; there is no "presence"/"freshness" concept.
 - **Desktop** (`irohup`, successor to `cmd/nebup`): daemon exposing
   (a) TCP bridges for talosctl/kubectl, (b) either SOCKS/PAC or the
   same fake-IP TUN as mobile for browser traffic. Enrollment flow
@@ -268,9 +275,12 @@ mesh-v2 lesson.
 
 ## Open questions (resolve during spike/phase 1)
 
-- Membership cert format: reuse the sovereign-actor delegation-cert
+- ~~Membership cert format: reuse the sovereign-actor delegation-cert
   JSON shape (aligning the two designs) vs a minimal bespoke blob.
-  Leaning: the delegation shape, `can: member`, caveats = groups.
+  Leaning: the delegation shape, `can: member`, caveats = groups.~~
+  Decided 2026-09-03: the delegation shape (decision `5w1` — the
+  protocol is this repo's center). What remains is the `can`/verb
+  vocabulary — spike `talos-config-359.2`.
 - Renewal beat for membership certs (revocation story): 90 days to
   match device re-enrollment cadence, or shorter now that renewal is
   a background dial instead of a human act?

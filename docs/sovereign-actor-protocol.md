@@ -5,6 +5,15 @@ for critique. Version 4 — thrice revised after adversarial
 cold-reader reviews; open problems are collected honestly at the end
 and are part of the document's claims, not an appendix.*
 
+*2026-09-03 — this protocol is now the **center of this repository**
+(decision `talos-config-5w1`): talos-config (hub, mesh, cluster) is
+its first consumer, and Mesh v3 (ADR-0016) builds its transport,
+membership certs and gateway. It will move into its own docs
+sub-scope (`talos-config-k3o`). Vocabulary is pinned in
+`desired-state/domain-model.md` §"The three layers" — actor /
+authority / negotiation; "sovereign" is reserved for the root actor,
+members are delegates. Settlement decisions are in §Economics.*
+
 ## Motivation
 
 Three existing things compose into something new:
