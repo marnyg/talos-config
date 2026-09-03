@@ -63,50 +63,23 @@
 
 ## Pod resolution of mesh names (2026-07-31)
 
-- 2026-07-31 — Tried to give cluster pods `.mesh.internal` resolution
-  via Talos `extraHostEntries` + `hostDNS.forwardKubeDNSToHost` (one
-  machine-config line, cluster-wide). Ruled out **before deploying**:
-  Talos host DNS explicitly does not serve `/etc/hosts` entries to
-  kube-dns queries (siderolabs/talos#9822, #13141) — it would also
-  have cost a fly deploy + unseal + apply cycle. CoreDNS Corefile
-  surgery ruled out too: Talos re-applies its bootstrap manifests, so
-  ConfigMap edits revert on reboot and nothing in machine config
-  exposes the Corefile. Landed on: `hostAliases` pinning
-  `auth.cp1.mesh.internal` → cp1's derived mesh address on each
-  relying-party pod (argocd-server via installer-job patch;
-  oauth2-proxy and jellyfin in their manifests). Only the issuer name
-  needs this — browsers resolve via hub DNS; pods never dial other
-  service names.
-- 2026-07-31 (later) — **that landing was half wrong, and the wrong
-  half was the address, not the mechanism.** `hostAliases` is still
-  right; pointing it at cp1's *mesh* address is not. nebula carries
-  10.42.0.0/16 source addresses and a pod's source is 10.244.x.x, so
-  the alias only resolves-and-connects while the pod happens to run on
-  cp1 — anywhere else the dial times out. cp1's reboot moved
-  oauth2-proxy to w1 and every SSO-protected service returned 500 for
-  ~70 minutes. Landed on: alias the issuer name to the **siwe-oidc
-  Service ClusterIP** (pinned in git). This satisfies OIDC's issuer-URL
-  equality rather than dodging it — siwe-oidc advertises issuer,
-  authorization_endpoint and jwks_uri as `http://auth.cp1.mesh.internal`
-  no matter how the discovery document is fetched, so only the transport
-  differs: server-side calls resolve in-cluster from any node,
-  browser-side calls still traverse the mesh via ingress.
-  The sentence above — "pods never dial other service names" — was the
-  buried assumption that made this a latent single-node bug.
-  ~~`argocd-server` still carries the old pin (`f9bac57c`)~~ fixed
-  2026-08-05 (`fed04b4`, SSA partial manifest), plus a third instance
-  in jellyfin (`f1f5dd4`).
+- Resolved by ADR-0010 (`hostAliases` pin the issuer name to the
+  siwe-oidc Service ClusterIP). Kept as a pointer only: the 70-min SSO
+  outage that motivated it was a pod dialing a *mesh* address from a
+  10.244.x source — nebula routes 10.42.0.0/16, so it only worked
+  while the pod ran on cp1. Rule: pods talk to Services; the mesh is
+  for hosts and browsers.
 
-## Android app: DNS on the tun (2026-08-15)
+## Mesh v3: nebula → iroh (2026-08-17 → 2026-09-03)
 
-- 2026-08-15 — Considered pushing the hub's mesh resolver into the
-  app's VpnService (`addDnsServer(10.42.0.1)`), giving the TV
-  `.mesh.internal` names. Ruled out: Android routes **all** device DNS
-  to a VPN-provided resolver (no split DNS below API 33+, Shield is
-  Android 9–11), and the hub's resolver answers only the mesh zone
-  (REFUSED otherwise) — every non-mesh lookup on the TV would break.
-  Landed on: no DNS on the tun; services by overlay IP from `/hosts`.
-  Revisit paths if names become necessary: hub DNS grows an
-  upstream-forwarding mode for device peers (adds a fly hairpin to
-  every TV query), or Android 13+ split-DNS on newer devices.
-
+- 2026-08-17 — Explored replacing the nebula IP overlay with
+  identity-addressed QUIC (iroh). **Paused by decision**: architecture
+  coherent, no dead ends, but no operational driver — "elegance is not
+  a driver" (mesh-v2 discipline). Full record incl. ruled-out options
+  (localhost-proxy-only clients, ALPN as authorization, n0-hosted
+  relays, keeping k8s on the identity mesh) in
+  [`../mesh-v3-iroh.md`](../mesh-v3-iroh.md) §Ruled out.
+- 2026-09-03 — **Landed on: proceed**, trigger fired — sovereign-actor
+  work moving from sketch to build (decision `talos-config-dlk`, epic
+  `talos-config-359`). Gated on the Phase 0 spike; a failed gate
+  re-defers, it does not re-open the ruled-out list.

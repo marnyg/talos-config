@@ -3,24 +3,26 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** two threads. (1) Finish the TV/phone arc: everything is
-verified on the owner's phone; what remains is the actual parents'-TV
-deployment with `http://jellyfin.cp1.mesh.internal:30096`. (2) Mesh
-policy as data (sketch `6462fed4`): phases 1–2 are live — git file +
-ephemeral wallet-gated overlay on `/policy` (ADR-0014, Proposed).
-Next is phase 3: `/policy` endpoint + device hot-reload, then phase 4
-(apid push to nodes + unseal reconciliation).
+**Now:** Mesh v3 Phase 0 — the spike gate (`talos-config-359.1`).
+Four checks on scratch infra, spike branch only: self-hosted iroh
+relay on fly with n0 infra verifiably absent; iroh inside an Android
+`VpnService` holding ≥80 Mbps 4K; a minimal Talos-extension node agent
+surviving reboot; an API-churn probe. Any one fails ⇒ `359` is
+re-deferred and the deferred nebula backlog reopens. Plan and kill
+criteria: `docs/mesh-v3-iroh.md`.
 
-**Toward goal:** both serve "Mesh v2" in `desired-state/goals.md` —
-the TV client closes its last open slice, and policy-as-data extends
-"one derivation tree" to the access rules themselves (invariant 2:
-git-derived, never server-owned; the overlay is deliberately unable to
-outlive the process).
+**Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
+identity-addressed mesh, k8s off the mesh, and the four components
+double as the sovereign-actor sketch's gateway, device apps and
+membership certs — the trigger that made this worth starting
+(decision `talos-config-dlk`).
 
 **Out of scope:**
-- Phase 4 before phase 3's hot-reload loop proves itself; a node-side
-  policy agent is rejected outright (ADR-0014).
-- ~~Widening the media group's firewall (:80 ingress)~~ Superseded
-  2026-08-16: media now gets :80 (bounded by SSO everywhere but
-  Jellyfin) — the smaller grant vs enrolling a phone as admins.
-- Any storage migration while `longhorn-bulk` is faulted (w1 down).
+- Anything in Phase 1+ before the gate decision (`359.1.5`), and any
+  repo change beyond a spike branch during Phase 0.
+- Closing the deferred nebula-era issues — they close only when the
+  gate passes.
+- Policy phase 3/4 (`ap2`) on the nebula path — superseded by
+  `359.8.5` if v3 proceeds; parked, not abandoned.
+- Parents'-TV deployment (`4te`) is LAN-direct and independent of the
+  mesh — still valid work, just not the focus.

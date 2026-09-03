@@ -24,6 +24,14 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   relay-by-default because ordinary remote networks (cellular CGNAT,
   corporate Wi-Fi) are symmetric NATs that no overlay can punch. Remote
   is wg0 parity via the hub; the LAN shortcut is the win. See ADR-0006.
+- **Mesh v3**: identity-addressed mesh (iroh) replaces the nebula IP
+  overlay — members are dialed by key, IP survives only as device-local
+  fiction, k8s leaves the mesh onto declared LAN addresses, per-request
+  device identity at the gateway. Direction committed 2026-09-03
+  (ADR-0016; decision `talos-config-dlk`, trigger: sovereign-actor
+  build-out); **gated on the Phase 0 spike** — a failed gate re-defers
+  the goal, it does not weaken Mesh v2. Record in
+  [`../mesh-v3-iroh.md`](../mesh-v3-iroh.md).
 - **Provisioning plane stays minimal** — the Omni line in `vision.md`:
   no fleet management, no upgrade orchestration, no multi-cluster.
 - **Every exposed service authenticates against the wallet** —

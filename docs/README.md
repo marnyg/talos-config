@@ -18,6 +18,7 @@ Pre-scaffold documents (authoritative, being gradually absorbed):
 
 - [`vision.md`](vision.md) — north star + trust model narrative
 - [`mesh-v2-nebula.md`](mesh-v2-nebula.md) — mesh design record (source for ADR-0002)
+- [`mesh-v3-iroh.md`](mesh-v3-iroh.md) — Mesh v3 (iroh) design record + migration plan; direction as of 2026-09-03 (`talos-config-359`)
 
 ## Sub-scopes
 
