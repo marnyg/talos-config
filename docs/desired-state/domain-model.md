@@ -155,6 +155,12 @@ classDiagram
     Effective --> DeviceScope : GET /policy, devices poll + hot-reload
 ```
 
+_Nebula-era render path, as built. Under ADR-0017 (Proposed) the
+effective policy compiles to `invoke` grants that **callers** carry
+and receivers verify; the three render sites above become one
+(grants fetched on the renewal beat) plus producer-side accept
+tables. Redraw when Mesh v3 Phase 1 lands._
+
 Policy names members by role predicates, so syncing rules never moves
 bindings, keys or addresses. The three scopes are member *classes* in
 the admission table, not kinds of member. Propagation is the
@@ -341,7 +347,10 @@ provisioning or recovery path may depend on it.
 - **Role** — abstract identity: a durable name in a network's
   namespace. Owns address, DNS labels, policy predicates. Never acts.
 - **Binding** — a CA-signed cert leasing a role to a key for a
-  bounded time (90 days). Holding one *is* membership.
+  bounded time (90 days). Holding one *is* membership. Under the
+  protocol this is exactly the `member` cert (`can: member`,
+  `cav: {name, groups}`) — one thing, two names; "binding" is the
+  mesh-side word.
 - **Key** — concrete identity: X25519 keypair born on the member,
   never travels. The only thing that acts.
 - **Runner** — the platform embodiment of a key: ext-nebula, Android
