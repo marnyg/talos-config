@@ -1,6 +1,9 @@
 # ADR-0015: Machine keys are minted on the machine; hardware selects configuration, not identity
 
-- Status: Proposed
+- Status: Proposed — implementation: `talos-config-359.8.3` (identity
+  plane, Mesh v3) or `talos-config-7ci` (nebula fallback if the Phase 0
+  gate fails); promote to Accepted when either lands. Design record:
+  spike `talos-config-px2` (closed 2026-09-04).
 - Date: 2026-08-16
 - Amends: invariants 1 and 6 (see `desired-state/invariants.md`)
 - Related: ADR-0012 (device-born device keys), sketch `6a80633d`,

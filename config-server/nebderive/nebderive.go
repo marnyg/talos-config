@@ -144,6 +144,11 @@ func HubKey(master []byte) (priv, pub [32]byte) {
 // MachineKey derives the X25519 keypair for the Talos node with the
 // given MAC. Minted into the node's config at compose time, the same
 // trust chain as today's wg0 key injection.
+//
+// Deprecated: hub-derived machine keys are rejected by ADR-0015 (keys
+// are minted on the machine; hardware selects configuration only).
+// Still live for the nebula render; do not build on it. Removed in
+// Mesh v3 Phase 4 (talos-config-359.11.2).
 func MachineKey(master []byte, mac string) (priv, pub [32]byte) {
 	return hostKey(master, machineInfoPfx+Normalize(mac))
 }
