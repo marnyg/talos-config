@@ -85,3 +85,31 @@ this list is the checkable form.
    lease is not a cluster endpoint.
 8. **Secrets plaintext exists only in memory** (tmpfs on fly; never in
    images, registries, or git).
+
+## Structural trade-offs (consequences of 1–3, stated so they are not "fixed")
+
+_Added 2026-09-05 after the ADR-0015/0017 model review. These are not
+defects; they are the price of stateless, owner-rooted, offline-
+verifiable authority. A change that removes one of them has almost
+certainly reintroduced a registry, an online check, or an authority
+above the owner — escalate._
+
+- **Revocation latency ≥ runway, for every cert class.** Revocation is
+  expiry and verifiers are offline, so the time a stolen credential
+  stays valid equals the time the system survives without the hub
+  (`verification/quint/runway.qnt`: 6 d grants, 30 d membership). The
+  blocklist is the one negative receiver-side table we tolerate, and
+  it propagates on the same beat, so it does not beat the runway
+  either (`talos-config-ure`).
+- **Stateless verification enforces "may", never "how much".** Any
+  counted caveat — rate, spend, single-use, at-most-once — needs
+  verifier state, which is volatile here and resets on crash
+  (`approval.qnt`, ADR-0015 residual). Economics built on the protocol
+  are therefore detection-and-response, not prevention.
+- **Capability discipline ends at the actor that terminates the
+  stream.** Past the gateway everything is ambient authority (a
+  header, a Service, an app trusting its caller); the app layer
+  (SIWE→OIDC, ADR-0010) is the seam, and the presentation layer
+  (fake IPs, `*.mesh.internal`, browser TLS, OIDC redirects) is where
+  the model meets a web that assumes global names and web PKI.
+  Expect it to stay the fragile part.

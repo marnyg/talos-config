@@ -41,6 +41,17 @@ into ADR-0017, ADR-0015 and the glossary:
    TTL-bounded**, with an embedded nonce; cross-redeploy replay of a
    leaked token is an accepted residual (`check.sh` asserts it stays).
 
+**Design review after the models** (conversation, no code): incidental
+issues separated from structural ones. Structural trade-offs (revocation
+latency ≥ runway; stateless ⇒ "may" not "how much"; capabilities end at
+the stream terminator) are now stated in `invariants.md` §Structural
+trade-offs. Unaddressed structural gaps filed: **`439`** time as trust
+dependency (spike, P1 — the one to actually worry about), **`7vv`**
+unseal as `speak-as` cert instead of KDF seed (spike, P1 — master-as-
+signature is phishable and unrotatable), `zph` bootstrap anchor is web
+PKI (inv. 3 honesty), `4un` policy-compiler round-trip property,
+`1gv` gateway header forgeable from LAN, `ure` blocklist propagation.
+
 ## Loose threads
 
 - ADR-0017 is still *Proposed*; the 2026-09-05 amendments live inline
@@ -59,6 +70,9 @@ into ADR-0017, ADR-0015 and the glossary:
 
 ## Suggested next steps
 
+- Rule on `7vv` (unseal design) and `439` (time) before `359.8.1` —
+  both change what Phase 1 builds.
 - `0bc.1`: the Go `authorize()` + rapid suite now has a Quint oracle
-  with a settled spec — port the 13 laws 1:1 (step 2b included).
+  with a settled spec — port the 13 laws 1:1 (step 2b included);
+  add ITF trace replay so spec and code cannot drift silently.
 - Or proceed with Phase 0 (`359.1.4` first); nothing here blocks it.
