@@ -24,6 +24,12 @@
   Deferred nebula-era issues (`cjo en6 4ns 41b 6gq ap2 90a`) are parked
   on the Phase 0 gate — "deferred" ≠ "abandoned"; do not close them
   before `talos-config-359.1.5`.
+- 2026-09-05 — **ADR-0017, ADR-0015 and the glossary contain sentences
+  the Quint models refute** (`3cx z1z sqm xwz vzj`; FINDING blocks in
+  `verification/quint/{authorize,runway,approval}.qnt`). Until ruled
+  on, treat the models as the sharper spec: authorize step (2b),
+  6-day invoke runway measured as starvation, per-process token
+  single-use. `check.sh` asserts the refuted claims *stay* refuted.
 
 ## Hub / mesh (nebula, as running)
 
@@ -162,6 +168,15 @@
   deploys. The devshell's quint is 0.30.0 (flake pin) vs 0.32.0 on
   current nixpkgs — models run on both; `verification/quint/
   _apalache-out/` is gitignored scratch.
+- 2026-09-05 — `nix develop` needs `--impure` (devenv: "was not able
+  to determine the current directory" otherwise). `check.sh verify`
+  takes ~3 min, dominated by `approval.qnt` at depth 12.
+- 2026-09-05 — **Quint laws over many nondet dimensions hold
+  vacuously.** `authorize.qnt` with ~40 independent `oneOf`s reached
+  Accept with p≈2⁻¹⁵; all 7 seeded mutants survived until a
+  boundary-biased generator (valid scenario + ≤2 injected faults)
+  was added. Always mutation-test a new model before trusting `[ok]`.
+  Also: never `powerset()` a 25-element set in a generator.
 - **`pi -p` hangs after completing its answer** when stdin is left
   open. Wrap non-interactive uses: `timeout -k 10 420 pi -p
   --no-session "…" </dev/null`.
