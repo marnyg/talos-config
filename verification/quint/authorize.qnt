@@ -30,16 +30,16 @@
 //   target/facet in chain      invTargetIsReceiver, invFacetMatchesAlpn
 //   blocklist                  invBlocklistRejects
 //
-// FINDING (2026-09-05, model-first): the glossary's step (2) verifies
-// the member cert's signature, expiry and `aud`, but never asks WHO
-// issued it. With the spec read literally, a grant `aud: <key>` from a
-// consented Owner plus a member cert self-signed by the caller (or by
-// any stranger sovereign) yields Accept with identity {name, groups}
-// chosen by the stranger — and the gateway injects that as the
-// per-request identity header. invMemberIssuerConsented catches it.
-// The model therefore adds step (2b): the member cert's `iss` must be
-// an issuer R holds a live consent grant for. ADR-0017 / the glossary
-// need the same line (thread filed at creation of this model).
+// FINDING (2026-09-05, model-first; ruled same day, talos-config-3cx):
+// the glossary's step (2) as first written verified the member cert's
+// signature, expiry and `aud`, but never asked WHO issued it. A grant
+// `aud: <key>` from a consented Owner plus a member cert self-signed by
+// the caller (or any stranger sovereign) yielded Accept with identity
+// {name, groups} chosen by the stranger — straight into the gateway's
+// per-request identity header. invMemberIssuerConsented catches it;
+// step (2b) — the member cert's `iss` must be an issuer R holds a live
+// consent grant for — is now in ADR-0017 and the glossary. Mutant m1
+// (drop 2b) is the regression test.
 //
 // Check:
 //   quint run    --invariant=invAll --max-steps=30 authorize.qnt
@@ -121,7 +121,7 @@ module authorize {
       and c.cav.facet.intersect(g.cav.facet).contains(facet))
     and audSatisfied(g, member, peer)
 
-  // authorize(): glossary steps (1)–(4), plus (2b) from the FINDING.
+  // authorize(): glossary steps (1)–(4), including (2b).
   pure def authorize(r: int, table: str -> str, consents: Set[Cert], blocklist: Set[int],
                      now: int, alpn: str, peer: int, member: Cert, grants: Set[Cert]): Result =
     // (1) ALPN → facet; unknown ⇒ reject
@@ -130,8 +130,8 @@ module authorize {
       val facet = table.get(alpn)
       // (2) verify member: sig, exp, aud = the QUIC peer key, verb = member
       if (not(member.can == Member and sigOk(member, now) and isKey(member.aud, peer))) Reject
-      // (2b) FINDING: the member cert must come from an issuer R consented to,
-      //      otherwise name/groups are stranger-chosen.
+      // (2b) the member cert must come from an issuer R consented to,
+      //      otherwise name/groups are stranger-chosen (3cx)
       else if (consentsFor(consents, r, member.iss, now) == Set()) Reject
       // (3) blocklist — plain git list keyed by member key in v0
       else if (blocklist.contains(peer)) Reject
@@ -352,7 +352,7 @@ module authorize {
       or not(isKey(member.aud, peer)) or member.cav.unknown)
     implies not(accepted(res))
 
-  // FINDING (see header): the member cert's issuer must be one R consented to.
+  // Step (2b): the member cert's issuer must be one R consented to (3cx).
   val invMemberIssuerConsented =
     accepted(res) implies consents.exists(c =>
       c.iss == R and isKey(c.aud, member.iss) and sigOk(c, NOW))

@@ -105,12 +105,22 @@ domain-model glossary):
   {target: self, facet: *}, delegable`; replaces the implicit "trust
   the CA in my config".
 - **Lifetimes**: consent bound to the accepted config; `member` 90 d;
-  `invoke` 7 d polled daily; `reach-me-at` 1 h; Owner `speak-as`
-  deferred. Propagation is by poll, expiry is runway.
+  `invoke` 7 d polled daily; `reach-me-at` 1 h, self-issued by every
+  actor (the hub never mints one on an actor's behalf); Owner
+  `speak-as` deferred. Propagation is by poll, expiry is runway —
+  **runway = lifetime − refresh cadence**, measured as *starvation*
+  (time since the member's last completed beat), so `invoke` gives
+  6 d and `member` 30 d. An expired cert does not renew (strict; the
+  holder re-negotiates). _(Amended 2026-09-05 from `runway.qnt`:
+  `z1z`, `sqm`, `xwz`.)_
 - **Authorize**: once per stream, deterministic, offline,
   receiver-rooted, monotone under attenuation, fail-closed on any
-  unknown; identity out comes from the member cert only. Gateway caps
-  stream lifetime at ≤ 1 h. Blocklist stays the plain git list in v0.
+  unknown; identity out comes from the member cert only, **and the
+  member cert's issuer must be one the receiver holds a live consent
+  grant for** (step 2b — without it a stranger-signed member cert
+  reaches the gateway header; found by `authorize.qnt`, `3cx`,
+  2026-09-05). Gateway caps stream lifetime at ≤ 1 h. Blocklist stays
+  the plain git list in v0.
 - **Name map**: name→NodeId is the Owner's namespace (git);
   NodeId→{port: facet} is the producer's advertisement; a dialing
   directory, never an authorization input.
@@ -133,7 +143,10 @@ domain-model glossary):
 Right if `authorize()` passes its property suite and Quint model with
 the same inputs the gateway sees in Phase 2.3; if a policy change in
 git reaches callers within one poll interval with no receiver
-redeploy; and if a sealed hub of < 7 days causes no loss of access.
+redeploy; and if **6 days of hub starvation** (no completed member
+beat) cause no loss of access — the model-checked bound
+(`verification/quint/runway.qnt`); the original "< 7 days sealed"
+wording was refuted 2026-09-05 (`z1z`).
 Wrong if any consumer needs a receiver-side table to express a rule —
 that is Option A returning, and this ADR should be superseded rather
 than patched.

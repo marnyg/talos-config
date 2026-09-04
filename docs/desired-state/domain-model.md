@@ -278,8 +278,11 @@ provisioning or recovery path may depend on it.
   the record**: the grantee stores and presents it; the grantor keeps
   no authoritative state (it may log, never consult). Renewal =
   present the expiring cert, grantor re-verifies its own signature
-  and re-issues. Lost grants ⇒ re-negotiate; lost key ⇒ new actor.
-  _(Pinned 2026-09-03, spike `359.2`.)_
+  and re-issues. **Strict:** an *expired* cert does not renew — there
+  is nothing left to re-verify; the holder re-negotiates (for
+  `member`, a wallet-signed re-enrollment). No grace window. Lost
+  grants ⇒ re-negotiate; lost key ⇒ new actor. _(Pinned 2026-09-03,
+  spike `359.2`; strictness ruled 2026-09-05, `sqm`.)_
 - **Consent grant** — the explicit first link of every chain: the
   receiver grants `invoke {target: self, facet: *}` to the network's
   Owner (delegable). Today implicit ("the node trusts the CA in the
@@ -301,20 +304,29 @@ provisioning or recovery path may depend on it.
 - **Name map** — the signed directory members receive on the renewal
   beat. Two halves with different owners: **name → NodeId** is the
   Owner's namespace (authoritative, derived from git, invariant 1);
-  **NodeId → {port: facet}** is the producer's advertisement (the
-  protocol form is the actor's own `reach-me-at` record; the hub
-  compiles it for actors whose config the Owner writes). A dialing
-  convenience, never an authorization input. Replaces the mesh DNS
-  server under Mesh v3.
+  **NodeId → {port: facet}** is the producer's advertisement — the
+  actor's own `reach-me-at` record, **self-issued by every actor,
+  machines included**; the hub relays and caches, it never issues
+  one on an actor's behalf (a hub-issued 1 h record would make nodes
+  unreachable after one sealed hour — `runway.qnt`, ruled
+  2026-09-05, `xwz`). A dialing convenience, never an authorization
+  input. Replaces the mesh DNS server under Mesh v3.
 - **Cert classes and lifetimes** _(pinned 2026-09-03, spike
   `359.2`)_ — consent grant: bound to the accepted config, re-minted
   at boot/apply, delegable. `member`: 90 d, renewed at ⅔ life by
   background dial, non-delegable. `invoke` group grants: 7 d, polled
   daily and re-fetched on policy-epoch change, non-delegable in v0.
-  `reach-me-at`: 1 h, piggybacked. `speak-as` for the Owner: deferred
-  — Owner-only actions stay wallet-signed. Rule: **propagation is by
-  poll, expiry is runway** — no class expires faster than the sealed-
-  hub window it must survive.
+  `reach-me-at`: 1 h, self-issued, piggybacked. `speak-as` for the
+  Owner: deferred — Owner-only actions stay wallet-signed. Rule:
+  **propagation is by poll, expiry is runway** — a class's runway is
+  **lifetime − refresh cadence** (worst case: refreshed just before
+  the hub went away), and the clock is **starvation**: hours since
+  the member last completed a beat against an unsealed hub, not
+  "hours sealed" (unseal → immediate redeploy is zero sealed time
+  with the outage still running). Hence: `invoke` runway 6 d, `member`
+  30 d; **6 days of starvation lose no access**, and only starvation
+  beyond 30 d costs a human act (re-enrollment). Checked by
+  `verification/quint/runway.qnt`. _(Restated 2026-09-05, `z1z`.)_
 - **Attenuation** — a chain link adds caveats, never removes;
   effective authority is field-wise intersection over `target`,
   `facet` and every recognised caveat; an unknown caveat rejects.
@@ -327,7 +339,11 @@ provisioning or recovery path may depend on it.
   inputs: receiver key `R`, its accept table, its consent grant(s),
   the ALPN, the caller's bundle {`member`, `invoke[]`}. Steps: (1)
   ALPN → facet, unknown ⇒ reject; (2) verify `member` (sig, exp,
-  `aud` = the QUIC peer key); (3) for each grant, build the chain
+  `aud` = the QUIC peer key); **(2b) the `member` cert's `iss` must be
+  an issuer R holds a live consent grant for** — otherwise its name
+  and groups are stranger-chosen and would reach the gateway header
+  (found by `authorize.qnt`, ruled 2026-09-05, `3cx`); (3) for each
+  grant, build the chain
   [consent(R→iss), grant], verify every sig/exp/caveat, intersect,
   require target ∋ R and facet ∋ facet, resolve `aud` (key = member
   key, or group rule), reject if member key blocklisted, else accept
@@ -337,7 +353,9 @@ provisioning or recovery path may depend on it.
   unverifiable, not denied); monotone under attenuation; fail-closed
   on any unknown. Runs **once per stream**; the gateway bounds stream
   lifetime (≤ 1 h) so expiry has a ceiling. Blocklist stays the plain
-  git list in v0 (not a negative cert).
+  git list in v0 (not a negative cert). Model:
+  `verification/quint/authorize.qnt` (13 laws, mutation-tested); the
+  Go `authorize()` in `0bc.1` ports them 1:1.
 - **Projection** — any centralized "who has access" or "what is
   reachable" view. Built from
   the issuance log or from receivers' observations; strictly a

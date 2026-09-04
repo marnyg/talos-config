@@ -6,8 +6,8 @@
 **Now:** Mesh v3 Phase 0 — the spike gate (`talos-config-359.1`) —
 with the authority model already pinned (ADR-0017, Proposed) so that
 Phase 1 and the protocol package (`0bc.1`, epic `0bc`; restructure `k3o`) have a complete spec.
-That spec is now model-checked (`verification/quint/{authorize,runway,approval}.qnt`);
-five refuted sentences await a ruling (`3cx z1z sqm xwz vzj`) before `0bc.1` ports the laws to Go.
+That spec is now model-checked (`verification/quint/{authorize,runway,approval}.qnt`)
+and the five refuted sentences are ruled and folded in — `0bc.1` can port the laws to Go.
 Four checks on scratch infra, spike branch only: self-hosted iroh
 relay on fly with n0 infra verifiably absent; iroh inside an Android
 `VpnService` holding ≥80 Mbps 4K; a minimal Talos-extension node agent

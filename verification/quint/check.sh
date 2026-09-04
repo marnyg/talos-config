@@ -12,12 +12,12 @@
 #   authorize  ADR-0017 authorize(): the per-connect chain check
 #   runway     ADR-0017 cert lifetimes vs. sealed-hub starvation
 #
-# Expected violations: some models carry an invariant that encodes a
-# design claim AS WRITTEN in the docs, which the model refutes (see the
-# FINDING block in each header). Those are checked negatively below so
-# that a later spec change flips them visibly:
-#   approval.invTokenSingleUse   ADR-0015 "single-use" token vs. stateless verify
-#   runway.invClaimAsWritten     ADR-0017 "sealed < 7 d loses no access"
+# Expected violation: approval.residualTokenReplayAcrossRedeploy is the
+# residual ADR-0015 accepts (a leaked token replays after a redeploy
+# inside its TTL). It is checked NEGATIVELY so that a design change
+# closing it is noticed and the ADR updated. (The 2026-09-05 findings
+# that refuted doc sentences — see FINDING blocks in the headers — were
+# ruled the same day and folded into ADR-0015/0017 + the glossary.)
 #
 # Depths: hub/approval verify at 12–15 steps; enroll's growing sets
 # verify at 8; authorize regenerates its whole scenario every step so
@@ -57,8 +57,7 @@ run)
   echo "== runway =="
   run_inv runway invAll 60 1000
   echo "== expected violations =="
-  expect_violation approval invTokenSingleUse 30
-  expect_violation runway invClaimAsWritten 20
+  expect_violation approval residualTokenReplayAcrossRedeploy 30
   ;;
 verify)
   quint verify --invariant=invAll --max-steps=15 hub.qnt

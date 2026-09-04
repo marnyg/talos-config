@@ -24,35 +24,31 @@ unmodeled. Three models now cover it, all mutation-tested, `run` and
   stateless HMAC token, leak/forge adversary, wipe + rejoin with no
   second approval, decommission.
 
-**Five spec defects found before any code exists** — each filed as a
-`thread` and encoded as an "expected violation" the suite checks
-negatively, so fixing the doc flips it visibly:
+**Five spec defects found before any code exists** — filed, then
+**ruled the same session** (decisions `h3c zqw dvf syw 6o1`) and folded
+into ADR-0017, ADR-0015 and the glossary:
 
-1. `3cx` (P1, bug) — glossary *Authorize* step (2) never checks the
-   member cert's **issuer**; stranger-signed member cert + an Owner's
-   `aud:<key>` grant ⇒ Accept with stranger-chosen name/groups in the
-   gateway header. Model adds step (2b).
-2. `z1z` (P1, bug) — ADR-0017 §Confirmation "sealed < 7 d loses no
-   access" is false: runway = lifetime − poll cadence = **6 d** for
-   invoke grants; and unseal→immediate redeploy (`fbb`) is "sealed
-   0 h" with access gone — state it in starvation terms.
-3. `sqm` (spike) — can an *expired* member cert renew? Strict reading
-   ⇒ > 30 d starvation costs a wallet act per device.
-4. `xwz` (spike) — who issues `reach-me-at` (1 h) for machines? If the
-   hub, one sealed hour kills name→endpoint for nodes.
-5. `vzj` (P2, bug) — ADR-0015 token cannot be both "single-use" and
-   "stateless, no pending table"; holds per hub process only. Token
-   also needs an embedded nonce.
+1. `3cx` → **step (2b)**: the member cert's issuer must hold a live
+   consent grant from the receiver (else stranger-chosen name/groups
+   reach the gateway header).
+2. `z1z` → runway claim is **6 days of starvation** (lifetime − poll
+   cadence; clock = time since last completed beat, so unseal→redeploy
+   flapping accumulates). Class lifetimes unchanged.
+3. `sqm` → renewal is **strict**: expired certs don't renew; > 30 d
+   starvation costs one wallet act per device.
+4. `xwz` → `reach-me-at` is **self-issued by every actor**; hub relays.
+5. `vzj` → ADR-0015 token is **single-use per hub process,
+   TTL-bounded**, with an embedded nonce; cross-redeploy replay of a
+   leaked token is an accepted residual (`check.sh` asserts it stays).
 
 ## Loose threads
 
-- The five findings above are **filed, not fixed**: ADR-0017, ADR-0015
-  and the glossary still carry the refuted sentences. Decide per item
-  (fix doc / change design), then flip the `expect_violation` lines in
-  `check.sh` and the FINDING blocks in the model headers.
-- Domain-model sync proposals from this session (not written — need
-  a decision): Authorize step (2b); lifetimes rule as "runway =
-  lifetime − cadence, measured as starvation"; reach-me-at issuer.
+- ADR-0017 is still *Proposed*; the 2026-09-05 amendments live inline
+  with dated notes rather than a new ADR — fold them into the text when
+  it is promoted at `359.8.1`/`359.8.5`.
+- `docs/mesh-v3-iroh.md` and `sovereign-actor-protocol.md` were not
+  re-swept for the 7-day / reach-me-at wording; grep `7 d`, `reach-me-at`
+  before Phase 1.
 - Nickel v3 targets (`6z9` note): facet-class policy contract is
   spec-ready; accept tables / name map wait on `359.8.5`'s schema.
 - `cmi` (wire `check.sh` into CI) is more urgent now: the suite drifted
@@ -63,8 +59,6 @@ negatively, so fixing the doc flips it visibly:
 
 ## Suggested next steps
 
-- Rule on `3cx`, `z1z`, `vzj` (one sentence each in the ADR/glossary),
-  then close `czi`/`jp2`/`54n` and turn their negative checks positive.
-- Then `0bc.1`: the Go `authorize()` + rapid suite now has a Quint
-  oracle — port the 13 laws 1:1.
+- `0bc.1`: the Go `authorize()` + rapid suite now has a Quint oracle
+  with a settled spec — port the 13 laws 1:1 (step 2b included).
 - Or proceed with Phase 0 (`359.1.4` first); nothing here blocks it.

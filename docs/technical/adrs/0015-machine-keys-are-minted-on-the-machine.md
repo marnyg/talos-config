@@ -66,9 +66,18 @@ no worse in exposure, and preserves unattended reinstall.
 Machines adopt the device identity lifecycle, with boot-time
 enrollment replacing baked-in keys:
 
-1. **Config serve injects a single-use enrollment token** (short-TTL,
-   bound to the MAC/name, HMAC-derived from the master so verification
-   is stateless — no pending table) instead of a private key.
+1. **Config serve injects an enrollment token** (short-TTL, bound to
+   the MAC/name, carrying a random nonce, HMAC-derived from the master
+   so verification is stateless — no pending table) instead of a
+   private key. **Single-use per hub process, TTL-bounded**: the hub
+   keeps only a volatile seen-set, so a token copied from a served
+   config can be redeemed again after a redeploy inside its TTL. That
+   residual is accepted — it is strictly less exposure than today's
+   config, which contains the key itself. The nonce is required: two
+   serves in one time bucket would otherwise be the same token and
+   the seen-set would reject a legitimate wipe-and-reboot. _(Reworded
+   2026-09-05 from `approval.qnt`, `vzj`; "single-use" without
+   qualification was refuted.)_
 2. **The node mints its keypair at first boot** (ext-nebula) and posts
    `{pubkey, token}` to a hub enrollment endpoint over HTTPS —
    provisioning-plane, honoring invariant 4.

@@ -17,28 +17,27 @@
 // VOLATILE replay guard (`seen`) that dies on redeploy, like every
 // other piece of hub memory (hub.qnt).
 //
-// FINDING (2026-09-05, model-first): ADR-0015 calls the token
-// "single-use" AND "stateless — no pending table". Both cannot hold:
-// single-use needs a record of use. With a volatile record, a redeploy
-// inside the token's TTL reopens the token (`invTokenSingleUse` is
-// violated by exactly that trace); with no record at all, every token
-// is replayable for its TTL. What DOES hold is `invSingleUsePerEpoch`
-// — one redemption per (token, hub process). ADR-0015's own argument
-// ("strictly no worse than serving the key itself") still stands, but
-// the word "single-use" in the ADR should become "single-use per hub
-// process, TTL-bounded", or the design must add a durable-enough
-// record (e.g. redemption bound to the machine's boot nonce).
+// FINDING (2026-09-05, model-first; ruled same day, talos-config-vzj):
+// ADR-0015 called the token "single-use" AND "stateless — no pending
+// table". Both cannot hold: single-use needs a record of use. With a
+// volatile record, a redeploy inside the token's TTL reopens a leaked
+// token (`residualTokenReplayAcrossRedeploy` is violated by exactly
+// that trace). ADR-0015 now says "single-use per hub process,
+// TTL-bounded" and accepts the residual (strictly less exposure than
+// serving the key). `invSingleUsePerEpoch` is the law that holds; the
+// residual is checked NEGATIVELY by check.sh so that a future design
+// change closing it is noticed.
 //
-// Minor finding, same session: a token that is only HMAC(master, mac,
+// Minor finding, same ruling: a token that is only HMAC(master, mac,
 // issue-time) is IDENTICAL for two serves in the same time bucket, so
 // the replay guard would reject a legitimate wipe-and-reboot inside
-// one bucket. The token must carry a fresh nonce (random, embedded,
+// one bucket. The token carries a fresh nonce (random, embedded,
 // covered by the HMAC — still stateless). Modeled as `nonce`.
 //
 // Check:
 //   quint run    --invariant=invAll approval.qnt
 //   quint verify --invariant=invAll --max-steps=12 approval.qnt
-//   quint run    --invariant=invTokenSingleUse approval.qnt   # expected: violation
+//   quint run    --invariant=residualTokenReplayAcrossRedeploy approval.qnt   # expected: violation
 module approval {
   pure val MACS = Set("aa:aa", "bb:bb")
   pure val KEYS = 1.to(3)            // machine-born keypairs (opaque ids)
@@ -277,10 +276,11 @@ module approval {
     invMemberHoldsCert,
   }
 
-  // ADR-0015's "single-use" as written. EXPECTED TO FAIL: redeploy
-  // inside TTL clears `seen`, and the same token redeems twice. The
-  // executable form of the FINDING in the header; not part of invAll.
-  val invTokenSingleUse = redemptions.forall(r1 => redemptions.forall(r2 =>
+  // The accepted residual (ADR-0015 as amended): a leaked token redeems
+  // again after a redeploy inside TTL clears `seen`. EXPECTED TO FAIL;
+  // not part of invAll. If this ever holds, the design changed — update
+  // ADR-0015 and check.sh together.
+  val residualTokenReplayAcrossRedeploy = redemptions.forall(r1 => redemptions.forall(r2 =>
     (r1.token == r2.token) implies r1 == r2))
 
   // Witness: approve once; join; wipe; rejoin with a NEW key and the

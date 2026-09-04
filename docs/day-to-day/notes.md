@@ -24,12 +24,12 @@
   Deferred nebula-era issues (`cjo en6 4ns 41b 6gq ap2 90a`) are parked
   on the Phase 0 gate — "deferred" ≠ "abandoned"; do not close them
   before `talos-config-359.1.5`.
-- 2026-09-05 — **ADR-0017, ADR-0015 and the glossary contain sentences
-  the Quint models refute** (`3cx z1z sqm xwz vzj`; FINDING blocks in
-  `verification/quint/{authorize,runway,approval}.qnt`). Until ruled
-  on, treat the models as the sharper spec: authorize step (2b),
-  6-day invoke runway measured as starvation, per-process token
-  single-use. `check.sh` asserts the refuted claims *stay* refuted.
+- 2026-09-05 — **The Quint models are the sharper spec for
+  ADR-0015/0017.** Five doc sentences were refuted and ruled the same
+  day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
+  `verification/quint/{authorize,runway,approval}.qnt` record the
+  trace). When the glossary and a model disagree, check the model's
+  header first — it says which ruling applied.
 
 ## Hub / mesh (nebula, as running)
 

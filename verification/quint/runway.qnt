@@ -14,16 +14,15 @@
 // (possibly already sealed), so every boundary state is a few steps
 // from init and Apalache can reach it.
 //
-// FINDINGS (2026-09-05, model-first):
+// FINDINGS (2026-09-05, model-first; all ruled the same day and folded
+// into ADR-0017 + the glossary "Cert classes and lifetimes"):
 //
-// 1. ADR-0017 §Confirmation claims "a sealed hub of < 7 days causes no
+// 1. ADR-0017 §Confirmation claimed "a sealed hub of < 7 days causes no
 //    loss of access". With invoke grants of 7 d polled every 24 h the
 //    worst case is: poll at p, deploy at p+24−ε, grant expires at
 //    p+168 ⇒ only 144 h (6 d) without a hub when access is lost. A
 //    class's runway is (lifetime − refresh cadence), not the lifetime.
-//    `invClaimAsWritten` encodes the ADR's sentence and is violated;
-//    `invRunway` encodes what holds (6 d). Either shorten the claim
-//    to 6 d, or make invoke 8 d / poll 12 h.
+//    Ruled (z1z): the claim is now 6 d; `invRunway` is that claim.
 //
 // 2. "Sealed for" is the wrong clock. Seal 7 d → unseal → redeploy
 //    before any member beat ran (the `fbb` pattern: every deploy
@@ -31,36 +30,33 @@
 //    that matters is STARVATION: hours since the hub was last unsealed
 //    during a beat. All laws below use it; flapping seals accumulate.
 //
-// 3. Renewal "presents the expiring cert" (glossary). Taken literally,
-//    an EXPIRED member cert cannot be renewed — the device re-enrolls,
-//    a wallet act. Right for security; it means starvation beyond
-//    MEMBER_RUNWAY (30 d) costs one wallet signature per device.
-//    `invReenrollOnlyAfterLongStarvation` pins that shorter outages
-//    never cost a human act. If a grace window is wanted, say so.
+// 3. Renewal "presents the expiring cert". Ruled strict (sqm): an
+//    EXPIRED member cert cannot be renewed — the device re-enrolls, a
+//    wallet act — so starvation beyond MEMBER_RUNWAY (30 d) costs one
+//    signature per device. `invReenrollOnlyAfterLongStarvation` pins
+//    that shorter outages never cost a human act.
 //
-// 4. `reach-me-at` is 1 h. Self-issued and piggybacked (glossary) a
-//    seal never touches it; if the hub compiles it "for actors whose
-//    config the Owner writes" (machines), one sealed hour loses
-//    name→endpoint for those actors. Flip RMA_HUB_ISSUED to see
-//    `invLifetimesCoverWindow` fail. The docs need to say which.
+// 4. `reach-me-at` (1 h) is self-issued by every actor, machines
+//    included; the hub only relays (ruled, xwz). RMA_HUB_ISSUED=false
+//    encodes that; flipping it makes `invLifetimesCoverWindow` fail,
+//    which is the reason for the ruling.
 //
 // Check:
 //   quint run    --invariant=invAll --max-steps=60 runway.qnt
 //   quint verify --invariant=invAll --max-steps=10 runway.qnt
-//   quint run    --invariant=invClaimAsWritten runway.qnt   # expected: violation
 module runway {
   pure val MEMBER_LIFE = 90 * 24
   pure val MEMBER_RENEW_AGE = 60 * 24      // ⅔ life elapsed ⇒ renew on the next beat
   pure val INVOKE_LIFE = 7 * 24
   pure val POLL_EVERY = 24
   pure val RMA_LIFE = 1
-  pure val RMA_HUB_ISSUED = false           // finding 4: who mints reach-me-at?
+  pure val RMA_HUB_ISSUED = false           // ruled xwz: actors self-issue reach-me-at
 
-  pure val SEALED_CLAIM = 7 * 24            // ADR-0017 §Confirmation, as written
-  // What actually holds, per class: lifetime minus the refresh cadence.
+  pure val INIT_LOOKBACK = 7 * 24           // how far back init may place the last served beat
+  // Runway per class: lifetime minus the refresh cadence.
   pure val INVOKE_RUNWAY = INVOKE_LIFE - POLL_EVERY
   pure val MEMBER_RUNWAY = MEMBER_LIFE - MEMBER_RENEW_AGE
-  pure val SEALED_WINDOW = 6 * 24           // the window this model promises
+  pure val SEALED_WINDOW = 6 * 24           // ADR-0017 §Confirmation (as amended, z1z)
 
   var t: int
   var sealed: bool
@@ -88,7 +84,7 @@ module runway {
   // either been older it would have refreshed on that beat).
   action init = {
     nondet s = Bool.oneOf()
-    nondet since = (0 - SEALED_CLAIM).to(0).oneOf()
+    nondet since = (0 - INIT_LOOKBACK).to(0).oneOf()
     nondet pollAge = 0.to(POLL_EVERY - 1).oneOf()
     nondet memberAge = 0.to(MEMBER_RENEW_AGE - 1).oneOf()
     nondet epochs = 0.to(2).oneOf()
@@ -225,12 +221,6 @@ module runway {
     invEpochChain,
     invPolicyPropagates,
   }
-
-  // ADR-0017 §Confirmation as written ("sealed < 7 days causes no loss
-  // of access"), read with the starvation clock. EXPECTED TO FAIL —
-  // the executable statement of finding 1, not part of invAll.
-  val invClaimAsWritten =
-    (starved < SEALED_CLAIM) implies (memberValid and invokeValid)
 
   // Witness: the worst case is reachable — one served beat, then seal,
   // then survive exactly INVOKE_RUNWAY hours, and not one more.
