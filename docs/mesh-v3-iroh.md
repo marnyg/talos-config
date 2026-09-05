@@ -191,6 +191,77 @@ All on scratch infra; no repo changes beyond a spike branch.
 4. **API-churn probe**: pin iroh version; note breaking-change rate
    over the spike window and the upgrade cost of one version bump.
 
+### P0.4 API-churn probe (2026-09-06)
+
+The premise of kill-criterion 4 ("iroh is pre-1.0") **no longer holds**:
+iroh shipped **1.0.0 on 2026-06-15** and is now **1.1.0 (2026-08-25)**,
+with a public semver commitment for the `1.x` line.
+
+| version | date | breaking? — what |
+|---|---|---|
+| 0.96.0 | 2026-01-28 | yes (~13) — pre-1.0 endpoint/discovery churn |
+| 0.98.0 | 2026-04-17 | yes (~8) — pre-1.0 API reshaping |
+| 1.0.0-rc.0 | 2026-05-07 | yes (~15) — the big pre-1.0 cleanup |
+| **1.0.0** | 2026-06-15 | yes (2) — relay `CaTlsConfig` rename; 1.0 deps |
+| 1.0.1 | 2026-06-29 | no — bugfix only |
+| 1.0.2 | 2026-07-06 | 1 — minor serialization fix |
+| 1.0.3 | 2026-07-20 | no — bugfix only |
+| **1.1.0** | 2026-08-25 | 1 — `CustomAddr` wire-serialization fix (unstable transport) |
+
+Cadence: ~20 releases in the last 12 months (roughly a minor every
+3–4 weeks pre-1.0). Breaking surface was almost entirely the
+`Endpoint`/discovery/relay-config APIs. **Post-1.0 the breaking rate
+dropped ~10×** (2→0→1→0→1) and remaining "breaking" tags are wire/
+unstable-transport fixes, not load-bearing `Endpoint` API changes.
+
+**Bindings (`iroh-ffi`, uniffi):** alive and tracking core — v1.1.0
+released 2026-07-16, repo last pushed 2026-08-18. First-party bindings
+ship for **Python, Swift, Kotlin/JVM (Maven `computer.iroh:iroh`),
+Node.js**. Kotlin/Android is therefore well-supported first-party.
+**Go is NOT first-party** — it is a *community-maintained* uniffi-Go
+binding (`git.coopcloud.tech/decentral1se/iroh-go`), currently pinned
+to iroh-ffi v1.1.0 / core v1.0.3 (one patch behind). This is the
+single real risk for our three **Go** embeddings (hub, Talos ext,
+desktop). Mitigation: generate Go bindings in-house from iroh-ffi via
+`uniffi-bindgen-go`, or fall back to a Rust sidecar — do not take the
+community binding as a load-bearing, unforked dependency.
+
+**Self-hosting / offline mode:** fully supported. `iroh-relay` is a
+first-party binary in the main repo (1.1.0) with bearer-token access
+control "without an external service", custom `ServerCertVerifier`,
+and Let's-Encrypt TLS. The `Endpoint` builder supports
+`RelayMode::Disabled` and `Endpoint::empty()` ("no address lookup
+services"), so a node runs with **only a custom relay and zero n0 DNS
+discovery / pkarr**. This corroborates P0.1.
+
+**Cost of one version bump (three embeddings), post-1.0:**
+- Go surfaces (hub + Talos ext + desktop) share one binding: regen +
+  fix 1–2 signatures + retest ≈ **4–6 h total** (they move together).
+- Android/Kotlin (`computer.iroh:iroh` bump + AAR rebuild + smoke) ≈
+  **1–2 h**.
+- Total ≈ **~1 engineer-day per quarterly bump** (was 2–3 days pre-1.0).
+  Well under the "½ day each on two consecutive bumps" fail threshold.
+
+**Pin:** start Phase 1 from **iroh / iroh-relay 1.1.0** and **iroh-ffi
+1.1.0** (Kotlin/Android from Maven `computer.iroh:iroh:1.1.0`; Go via
+in-house `uniffi-bindgen-go` off iroh-ffi 1.1.0). Rationale: latest
+stable, first past the 1.0 stabilization so the surface has settled,
+and ffi/core versions are aligned.
+
+**Verdict: PASS-WITH-CONDITION** against kill-criterion 4. Condition:
+own the **Go** binding generation (uniffi-bindgen-go in-house or Rust
+sidecar) — do not depend on the community `iroh-go` as an unforked
+load-bearing dependency. The pre-1.0 churn premise is retired; also
+satisfies the "iroh reaches 1.0" pickup trigger.
+
+Sources: crates.io `iroh`/`iroh-relay`/`iroh-base` (max 1.1.0);
+github.com/n0-computer/iroh releases (v0.96.0…v1.1.0);
+github.com/n0-computer/iroh-ffi (README + releases v1.0.0/v1.1.0);
+central.sonatype.com/artifact/computer.iroh/iroh;
+git.coopcloud.tech/decentral1se/iroh-go (README version-support);
+docs.rs/iroh/latest `endpoint::Endpoint`/`Builder` (`RelayMode::Disabled`,
+`empty()`).
+
 ### Phase 1 — identity plane beside nebula (dual plane)
 
 - `irohderive`-equivalent: issuer key from `masterderive`; membership
