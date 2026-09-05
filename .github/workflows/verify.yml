@@ -58,10 +58,11 @@ jobs:
         with:
           node-version: "20"
 
-      # Pin to the version flake.nix ships (nix run nixpkgs#quint --
-      # --version). Bump both together.
+      # Pin to the version the repo's flake input ships:
+      #   nix eval --raw --inputs-from . 'nixpkgs#quint.version'
+      # (NOT the registry nixpkgs — that can be newer). Bump together.
       - name: install quint
-        run: npm i -g @informalsystems/quint@0.32.0
+        run: npm i -g @informalsystems/quint@0.30.0
 
       - name: check.sh run
         run: verification/quint/check.sh run
@@ -85,7 +86,7 @@ jobs:
           node-version: "20"
 
       - name: install quint
-        run: npm i -g @informalsystems/quint@0.32.0
+        run: npm i -g @informalsystems/quint@0.30.0
 
       - name: check.sh verify
         run: verification/quint/check.sh verify
