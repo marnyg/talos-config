@@ -72,10 +72,24 @@ mid-batch and resumed; nothing was lost.
 - Stale worker `pi` sessions may still be open in terminal panes
   (their worktrees are removed).
 
+**Later the same session:** the four findings were **ruled**
+(decisions `4oz` `h90` `how` `w5s`; glossary + ADR-0018 `[amended]`):
+one consented wallet vouches for both ends of the group rule; member
+renewal also triggers on hub-key rotation; the `/sealed` nag **is a
+seal** (hub stops serving at < 30 d, 90 d unattended life, tight
+bound); grant-side `cav.groups ∋ g`. The three model broken windows
+were fixed (`invDeployBakesGit`, total ALPN lookup, `check.sh`). CI
+had been red since `cmi` on an upstream `slackhq/nebula` data race —
+the three in-process overlay e2e tests are now `!race`; `verify` is
+green.
+
 ## Suggested next steps
 
-- Rule `9l3`, `xfx`, `q8h`, `zpf` — they gate the glossary/ADR-0018
-  wording that `0bc.2`, `359.8.1` and `44r` build against. `9l3` first.
-- Batch 2 = Phase 0 probes `359.1.1–.3` once fly scratch + an Android
-  device exist; then the gate `359.1.5`.
-- `0bc.2` (two actors, envelope + runtime) is unblocked by `0bc.1`.
+- **Swarm batch 2 (owner-input-free, disjoint files):** `44r` (P1,
+  `protocol/cert`: align `Authorize` with `9l3`/`zpf`, port the 8 new
+  laws), `zev` (`clock.qnt` stranger law), `ow7` (in-house iroh Go
+  bindings, flake build, smoke test), `6z9` (Nickel v3 facet-class
+  contracts, spec-ready part (a) only). `2qp` follows `zev`.
+- `0bc.2` needs a `/skill:grill-design` pass before it can be briefed.
+- Phase 0 probes `359.1.1–.3` once fly scratch + an Android device
+  exist; then the gate `359.1.5`.
