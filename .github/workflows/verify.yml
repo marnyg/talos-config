@@ -1,0 +1,91 @@
+# Gates the Go code and the Quint design models on every change, so
+# neither drifts unnoticed again (verification/quint/check.sh went stale
+# for two weeks; there was no Go test workflow at all). Three jobs:
+#
+#   go            go vet + go test -race for each module (config-server,
+#                 protocol), Go version pinned from each module's go.mod.
+#   quint         the fast tier — `check.sh run` (witness tests + random
+#                 simulation), on every push/PR.
+#   quint-verify  the Apalache bounded-model-checking tier
+#                 (`check.sh verify`) — minutes long, so nightly +
+#                 manual only.
+#
+# check.sh's header names this workflow; keep the two in sync.
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *" # nightly, for the Apalache verify tier
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [config-server, protocol]
+    steps:
+      # Full checkout, not sparse: config-server's policy tests read the
+      # shipped ../talos/mesh-policy.yaml (see flake.nix config-server-bin).
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.mod
+
+      - name: go vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+      - name: go test
+        working-directory: ${{ matrix.module }}
+        run: go test ./... -race
+
+  quint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Pin to the version flake.nix ships (nix run nixpkgs#quint --
+      # --version). Bump both together.
+      - name: install quint
+        run: npm i -g @informalsystems/quint@0.32.0
+
+      - name: check.sh run
+        run: verification/quint/check.sh run
+
+  quint-verify:
+    # Apalache bounded model checking takes minutes; run it nightly and
+    # on demand, never inline on push/PR. `quint verify` downloads
+    # Apalache itself but needs a JDK 17+ on the runner.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: install quint
+        run: npm i -g @informalsystems/quint@0.32.0
+
+      - name: check.sh verify
+        run: verification/quint/check.sh verify
