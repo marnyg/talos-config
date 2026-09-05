@@ -1,3 +1,10 @@
+// Excluded under -race: slackhq/nebula v1.11.0 has an upstream data race
+// between HandshakeManager.continueHandshake and HandshakeHostInfo.cachePacket
+// (handshake_manager.go:963 / :98) that fires when two in-process nodes
+// handshake. Not our code; nebula-era, removed with Mesh v3 (359).
+//
+//go:build !race
+
 package mesh
 
 import (
