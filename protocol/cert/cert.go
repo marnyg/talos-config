@@ -27,6 +27,18 @@
 //
 // Both schemes sign the SAME bytes.
 //
+// # Speak-as (hot keys)
+//
+// A speak-as cert (can: speak-as) maps a signing key (its aud) to a
+// principal (its iss): Authorize treats certs signed by the aud key as
+// if signed by the iss, within cav, until exp (ADR-0018). A speak-as's
+// own cav.delegable governs whether the HOT KEY may re-delegate the
+// speak-as itself; it does NOT gate the member/invoke certs the hot key
+// issues — those are bounded by the speak-as's cav.verbs and cav.groups.
+// Resolution is single-level in v0: a speak-as whose own iss is not a
+// principal the receiver holds a direct consent for resolves to nothing
+// usable (the chain is not rooted at the receiver).
+//
 // # Canonical form (bytes signed)
 //
 // The signature covers the RFC 8785 (JCS) canonical JSON of the cert

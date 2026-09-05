@@ -88,6 +88,41 @@ func TestExpiredSpeakAsRejects(t *testing.T) {
 	}
 }
 
+// TestReUnsealExpiredSpeakAsBeforeValid: after re-unseal without a
+// redeploy, the bundle can carry a stale speak-as beside a fresh valid
+// one for the SAME hot key. resolve must consider all matches and use
+// the good (best-exp) one, so an honest caller is accepted regardless of
+// ordering (review round 2, fix #2).
+func TestReUnsealExpiredSpeakAsBeforeValid(t *testing.T) {
+	for _, order := range []string{"expired-first", "valid-first"} {
+		f := speakAsFixture(t)
+		id := f.id
+		saExpired := f.build(certSpec{iss: "WALLET", aud: string(id["HUBKEY_A"]), can: VerbSpeakAs,
+			cav: Caveats{Verbs: []string{"member", "invoke"}, Groups: []string{"admins"}}, exp: testNOW})
+		saValid := f.build(certSpec{iss: "WALLET", aud: string(id["HUBKEY_A"]), can: VerbSpeakAs,
+			cav: Caveats{Verbs: []string{"member", "invoke"}, Groups: []string{"admins"}}, exp: 100})
+		consent := f.build(certSpec{iss: "R", aud: string(id["WALLET"]), can: VerbInvoke,
+			cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}, Delegable: true}, exp: 100})
+		member := f.build(certSpec{iss: "HUBKEY_A", aud: string(id["CALLER"]), can: VerbMember,
+			cav: Caveats{Groups: []string{"admins"}, Name: "laptop"}, exp: 100})
+		grant := f.build(certSpec{iss: "HUBKEY_A", aud: "group:admins", can: VerbInvoke,
+			cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}}, exp: 100})
+		speakAs := []Cert{saExpired, saValid}
+		if order == "valid-first" {
+			speakAs = []Cert{saValid, saExpired}
+		}
+		in := Input{
+			Receiver: id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+			Consents: []Cert{consent}, Blocklist: map[ActorID]bool{}, Now: testNOW,
+			ALPN: "mesh/apid/v1", Peer: id["CALLER"],
+			Bundle: Bundle{Member: member, Grants: []Cert{grant}, SpeakAs: speakAs},
+		}
+		if res := Authorize(in); !res.OK {
+			t.Fatalf("%s: honest caller rejected despite a valid speak-as present", order)
+		}
+	}
+}
+
 // TestSpeakAsVerbMissingRejects: the speak-as does not authorize the
 // member verb (cav.verbs lacks "member") ⇒ Reject.
 func TestSpeakAsVerbMissingRejects(t *testing.T) {

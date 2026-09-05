@@ -46,6 +46,7 @@ type certSpec struct {
 	aud     string // literal aud (actor id or "group:x")
 	can     Verb
 	cav     Caveats
+	iat     int64 // defaults to 1 when zero
 	exp     int64
 	forged  bool // sign with FORGER but claim iss ⇒ signature fails
 	unknown bool // set Cav.Unknown after signing (verifier judgment)
@@ -56,7 +57,11 @@ func (f fixture) build(s certSpec) Cert {
 	if s.forged {
 		signer = f.signer["FORGER"]
 	}
-	c := Cert{Aud: s.aud, Can: s.can, Cav: s.cav, Iat: 1, Exp: s.exp}
+	iat := s.iat
+	if iat == 0 {
+		iat = 1
+	}
+	c := Cert{Aud: s.aud, Can: s.can, Cav: s.cav, Iat: iat, Exp: s.exp}
 	out, err := Sign(c, signer)
 	if err != nil {
 		panic(err)

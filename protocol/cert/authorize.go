@@ -36,10 +36,19 @@ type Identity struct {
 	Groups []string
 }
 
-// Result is the outcome. Verified lists every cert whose signature this
-// call verified (member, its speak-as, admitting grant, that grant's
-// speak-as, and the consents consulted) so the caller can fold their iat
-// into a clock.Mark. It is populated on both accept and reject.
+// Result is the outcome. Verified lists only the certs that both (a) had
+// a valid signature and (b) are ROOTED AT THE RECEIVER — R-signed
+// consents, speak-as certs whose iss is a principal R holds a live
+// consent for, and member/grant certs whose RESOLVED issuer is such a
+// principal. A stranger's validly-self-signed cert is NOT included even
+// though its signature verifies, because it is not on a chain rooted at
+// R; otherwise any peer that can connect could push a caller's
+// clock.Mark into the future (denial by strangers, which ADR-0019
+// excludes). Expired-but-rooted certs ARE included: an expired cert from
+// a consented issuer still proves its iat passed.
+//
+// The caller folds these into a clock.Mark via mark.ObserveAll — safe to
+// do on both accept and reject, as Verified is populated on both paths.
 type Result struct {
 	OK       bool
 	Identity Identity
@@ -50,31 +59,47 @@ type Result struct {
 // following link (delegable:false).
 var ErrNotDelegable = errors.New("cert: parent is not delegable")
 
-// authCtx carries the mutable verified-cert accumulator through the pure
-// check without threading it explicitly everywhere.
+// authCtx threads the signature-verification cache and the
+// rooted-cert accumulator through the pure check. The two are kept
+// separate on purpose: sigCache answers "does this signature verify"
+// (used everywhere), while rooted collects only certs proven to sit on a
+// chain rooted at R (what feeds the caller's clock.Mark — see Result).
 type authCtx struct {
-	verified []Cert
-	seen     map[string]bool
+	sigCache   map[string]bool
+	rooted     []Cert
+	rootedSeen map[string]bool
 }
 
-// verify checks a signature once, records the cert on success, and
-// memoizes so a cert consulted twice is neither re-verified nor
-// double-recorded.
-func (a *authCtx) verify(c Cert) bool {
-	key := string(c.Iss) + "|" + c.Aud + "|" + string(c.Can)
+func certKey(c Cert) string {
 	canon, err := canonicalBytes(c)
-	if err == nil {
-		key = string(canon)
+	if err != nil {
+		canon = []byte(string(c.Iss) + "|" + c.Aud + "|" + string(c.Can))
 	}
-	if a.seen[key] {
-		return true // already verified this exact cert
+	return string(canon) + "\x00" + string(c.Sig)
+}
+
+// verify checks a signature once and memoizes the result. It does NOT
+// record the cert for the mark — rootedness is decided separately (root).
+func (a *authCtx) verify(c Cert) bool {
+	key := certKey(c)
+	if v, ok := a.sigCache[key]; ok {
+		return v
 	}
-	if !verifies(c) {
-		return false
+	v := verifies(c)
+	a.sigCache[key] = v
+	return v
+}
+
+// root records a cert as rooted at R (dedup), so its iat may feed the
+// caller's clock.Mark. Callers must have established both a valid
+// signature and rootedness before calling.
+func (a *authCtx) root(c Cert) {
+	key := certKey(c)
+	if a.rootedSeen[key] {
+		return
 	}
-	a.seen[key] = true
-	a.verified = append(a.verified, c)
-	return true
+	a.rootedSeen[key] = true
+	a.rooted = append(a.rooted, c)
 }
 
 // sigOK ports the Quint sigOk with resolution: signature verifies, the
@@ -86,25 +111,56 @@ func (a *authCtx) sigOK(c Cert, effExp, now int64) bool {
 // resolve maps a cert's signing key to its principal through a speak-as
 // in the bundle (ADR-0018 "resolve before compare").
 //
-//   - If a speak-as's aud equals c.Iss and its can is speak-as, the
-//     resolved issuer is that speak-as's iss, the effective expiry is
-//     min(c.exp, speakas.exp) ("verification-time validity"), and the
-//     link is ok iff the speak-as verifies, is unexpired, carries no
-//     unknown caveat, its cav.verbs contains c.can, and (for member
-//     certs) its cav.groups ⊇ requireGroups.
+//   - It considers ALL speak-as certs whose aud equals c.Iss (not just
+//     the first): re-unseal without a redeploy leaves an expired
+//     speak-as beside a fresh valid one for the same hot key, and an
+//     honest caller must not be rejected because the stale one was
+//     listed first. A link is ok iff SOME matching speak-as is good
+//     (verifies, unexpired, no unknown caveat, cav.verbs contains c.can,
+//     and — for member certs — cav.groups ⊇ requireGroups); the
+//     effective expiry uses the BEST (max exp) good speak-as, min'd with
+//     c.exp ("verification-time validity").
 //   - With no matching speak-as the cert is directly issued: resolved
 //     issuer is c.Iss, effExp is c.Exp, link ok.
-func (a *authCtx) resolve(c Cert, speakAs []Cert, now int64, requireGroups []string) (issuer ActorID, effExp int64, ok bool) {
-	for _, sa := range speakAs {
+//
+// The speak-as's own cav.delegable is NOT consulted here: it governs
+// whether the HOT KEY may re-delegate the speak-as itself, not the certs
+// the hot key issues (those are gated by cav.verbs / cav.groups).
+// Resolution is single-level in v0: this returns the speak-as's iss as
+// the resolved issuer without recursively resolving THAT key, so a
+// speak-as whose own iss is not a directly consented principal resolves
+// to nothing usable (step 2b / the principal set reject it).
+//
+// used is the good speak-as selected (nil for direct issuance), so the
+// caller can also mark it rooted.
+func (a *authCtx) resolve(c Cert, speakAs []Cert, now int64, requireGroups []string) (issuer ActorID, effExp int64, ok bool, used *Cert) {
+	matched := false
+	found := false
+	var bestExp int64
+	var best Cert
+	for i := range speakAs {
+		sa := speakAs[i]
 		if sa.Can != VerbSpeakAs || sa.Aud != string(c.Iss) {
 			continue
 		}
+		matched = true
 		good := a.sigOK(sa, sa.Exp, now) &&
 			containsStr(sa.Cav.Verbs, string(c.Can)) &&
 			subset(requireGroups, sa.Cav.Groups)
-		return sa.Iss, min(c.Exp, sa.Exp), good
+		if good && (!found || sa.Exp > bestExp) {
+			found = true
+			bestExp = sa.Exp
+			best = sa
+		}
 	}
-	return c.Iss, c.Exp, true
+	if matched {
+		if !found {
+			return c.Iss, c.Exp, false, nil
+		}
+		bc := best
+		return best.Iss, min(c.Exp, bestExp), true, &bc
+	}
+	return c.Iss, c.Exp, true, nil
 }
 
 // consentsFor returns the consent grants receiver r has issued to
@@ -120,14 +176,59 @@ func (a *authCtx) consentsFor(consents []Cert, r, issuer ActorID, now int64) []C
 	return out
 }
 
+// consentedPrincipals is the set of actor ids R holds a live, delegable
+// consent grant for. These are the only issuers whose certs may feed the
+// mark (Result.Verified) or root a chain.
+func (a *authCtx) consentedPrincipals(consents []Cert, r ActorID, now int64) map[ActorID]bool {
+	set := map[ActorID]bool{}
+	for _, c := range consents {
+		if c.Iss == r && c.Can == VerbInvoke && c.Cav.Delegable && a.sigOK(c, c.Exp, now) {
+			set[ActorID(c.Aud)] = true
+		}
+	}
+	return set
+}
+
+// buildRooted populates ctx.rooted with every validly-signed cert that is
+// rooted at R (see Result). Independent of the accept/reject decision, so
+// the mark advances even when authorization fails.
+func (a *authCtx) buildRooted(in Input) {
+	principals := a.consentedPrincipals(in.Consents, in.Receiver, in.Now)
+	// (a) R-signed consents that verified (expiry irrelevant — R signed
+	// them, so they are rooted at R and their iat proves time passed).
+	for _, c := range in.Consents {
+		if c.Iss == in.Receiver && a.verify(c) {
+			a.root(c)
+		}
+	}
+	// (b) speak-as certs whose iss is a consented principal.
+	for _, sa := range in.Bundle.SpeakAs {
+		if sa.Can == VerbSpeakAs && a.verify(sa) && principals[sa.Iss] {
+			a.root(sa)
+		}
+	}
+	// (c) member/grant certs whose RESOLVED issuer is a consented
+	// principal (resolution single-level; a stranger hot key resolves to
+	// a non-principal and is dropped).
+	certs := append([]Cert{in.Bundle.Member}, in.Bundle.Grants...)
+	for _, c := range certs {
+		resIss, _, ok, _ := a.resolve(c, in.Bundle.SpeakAs, in.Now, nil)
+		if ok && a.verify(c) && principals[resIss] {
+			a.root(c)
+		}
+	}
+}
+
 // Authorize is the per-connect check: glossary steps (1)–(4), including
 // speak-as resolution (2a) and the consented-issuer rule (2b). It is
 // deterministic, offline, receiver-rooted, monotone under attenuation
 // and fail-closed on every unknown. Identity out comes from the member
 // cert only.
 func Authorize(in Input) Result {
-	ctx := &authCtx{seen: map[string]bool{}}
-	reject := func() Result { return Result{OK: false, Verified: ctx.verified} }
+	ctx := &authCtx{sigCache: map[string]bool{}, rootedSeen: map[string]bool{}}
+	// Populate the rooted set first so the mark advances on every path.
+	ctx.buildRooted(in)
+	reject := func() Result { return Result{OK: false, Verified: ctx.rooted} }
 
 	// (1) ALPN → facet; unknown ⇒ reject.
 	facet, ok := in.AcceptTable[in.ALPN]
@@ -137,7 +238,7 @@ func Authorize(in Input) Result {
 
 	m := in.Bundle.Member
 	// (2a) resolve the member issuer through a speak-as (if any).
-	mIssuer, mEffExp, mLinkOK := ctx.resolve(m, in.Bundle.SpeakAs, in.Now, m.Cav.Groups)
+	mIssuer, mEffExp, mLinkOK, _ := ctx.resolve(m, in.Bundle.SpeakAs, in.Now, m.Cav.Groups)
 
 	// (2) member cert: verb, signature, effective expiry, aud = peer.
 	if m.Can != VerbMember {
@@ -177,7 +278,7 @@ func Authorize(in Input) Result {
 					Name:   m.Cav.Name,
 					Groups: m.Cav.Groups,
 				},
-				Verified: ctx.verified,
+				Verified: ctx.rooted,
 			}
 		}
 	}
@@ -191,7 +292,7 @@ func (a *authCtx) grantAdmits(in Input, facet string, g Cert, resolvedMemberIssu
 	if g.Can != VerbInvoke {
 		return false
 	}
-	gIssuer, gEffExp, gLinkOK := a.resolve(g, in.Bundle.SpeakAs, now, nil)
+	gIssuer, gEffExp, gLinkOK, _ := a.resolve(g, in.Bundle.SpeakAs, now, nil)
 	if !gLinkOK || !a.sigOK(g, gEffExp, now) {
 		return false
 	}
