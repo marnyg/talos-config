@@ -9,12 +9,13 @@ vl4 j0b bjg`) and model-checked
 (`verification/quint/{authorize,runway,approval,clock}.qnt`). An
 orchestrator session hands bd issues to worker agents (one worktree
 per issue, branch `swarm/<id>`, review + gate before fast-forward to
-`main`). Batch 1: `k3o` monorepo restructure (lands first), `0bc.1`
-cert primitive + `authorize()`, `cmi` CI for the models, `czi`/`jp2`
-`speak-as` link in the models, `359.1.4` iroh API-churn probe. Phase 0
-probes needing fly scratch infra / an Android device (`359.1.1–.3`)
-run when the owner can provide them; Phase 1 (`359.8.*`) waits on the
-gate `359.1.5`.
+`main`). **Batch 1 landed** (`k3o`, `0bc.1`, `cmi`, `czi`/`jp2`,
+`359.1.4`). Before batch 2: rule the four `speak-as` findings the
+models surfaced (`9l3` group rule, `xfx` renew-on-rotation, `q8h` nag
+semantics, `zpf` grant-side groups) — they fix the wording `0bc.2` and
+`359.8.1` build against. Batch 2 = Phase 0 probes needing fly scratch
+infra / an Android device (`359.1.1–.3`), then the gate `359.1.5`;
+Phase 1 (`359.8.*`) waits on it. `0bc.2` is unblocked.
 
 **Toward goal:** **Sovereign-actor protocol at the center** and
 **Mesh v3** in `desired-state/goals.md` (ADR-0016, decision `5w1`).

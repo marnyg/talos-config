@@ -5,68 +5,77 @@
 
 ## Last session
 
-2026-09-06 — **the two structural gaps ahead of Phase 1 are ruled:
-`7vv` (unseal) → ADR-0018 and `439` (time) → ADR-0019.** Both
-spikes closed; both decisions recorded (`89v`, `dyf`). One new Quint
-model (`clock.qnt`), no Go.
+2026-09-06 — **swarm batch 1 landed** (`35c`): five bd issues run as
+worker agents in `~/git/swarm/<id>` worktrees, reviewed and
+fast-forwarded to `main`. The orchestrator session was interrupted
+mid-batch and resumed; nothing was lost.
 
-**`439` — time is a trust input (ADR-0019).** Split in two: the
-*upper* bound (roll-forward = denial) is the local clock, ops; the
-*lower* bound (rollback = resurrection of expired certs, the LAN-NTP
-attack) is protocol-enforced — every cert carries **`iat`**, the
-verifier keeps an **uncapped** monotone low-water mark `lw` over the
-`iat` of every wallet-rooted cert it verifies and judges with
-`now = max(local, lw)`. No time authority. Rollback exposure =
-verifier starvation, the same clock `runway.qnt` measures.
-**Model-first finding:** my first draft capped the mark at
-`local + s`; `clock.qnt` with `CAP=true` violates two laws — after a
-rollback the cap discards exactly the honest evidence that would catch
-it. Ruled uncapped; residual = a lying *trusted* issuer can deny until
-verifiers restart (weaker than what it can already do).
-`clock.qnt` is in `check.sh` (run + verify, 3 mutants die).
-Invariant 2 gained "safe-to-lose caches"; §Structural trade-offs
-gained "time is a trust input"; glossary *Time / lw*; primitive is now
-`{iss, aud, can, cav, iat, exp, sig}` — **`0bc.1` must fix field order
-before building.**
+- **`k3o`** — monorepo restructure: `protocol/` is its own Go module
+  with a docs sub-scope; ADR-0020. Landed `65c2f83`.
+- **`cmi`** — `.github/workflows/verify.yml` gates `go test` + the
+  Quint models; quint pinned to the flake's 0.30.0. `75940cf`, `2cf1aa5`.
+- **`359.1.4`** — P0.4 iroh API-churn probe: **PASS-WITH-CONDITION**.
+  iroh is 1.1.0 under semver; breaking rate down ~10×; the condition is
+  *own the Go binding* (Go is community-only). `docs/mesh-v3-iroh.md`.
+- **`0bc.1`** — `protocol/cert` (primitive, JCS canonical JSON, Ed25519
+  + EIP-191, strict decode, `Authorize`, `Attenuate`) and
+  `protocol/clock` (`Mark`). Rapid ports of all 13 `authorize.qnt` and
+  4 `clock.qnt` laws over real signatures. Two review rounds: round 2
+  fixed **mark poisoning** (`Result.Verified` now lists only certs
+  rooted at the receiver — ADR-0019/glossary amended on `main`,
+  `57049aa`; model side is `zev`) and made `resolve()` scan all
+  matching speak-as (re-unseal without redeploy). `952eeff`, `1dc4d20`.
+  Follow-up `44r`: re-port the 5 hand-written speak-as tests from the
+  model now that `czi` has landed.
+- **`czi` + `jp2`** — run twice (opus vs fable) to pick the best;
+  **fable's landed** (`09ae2d5`, `1081fa8`): 8 new speak-as laws, 15
+  faults in `genNear`, 24 + 16 mutants tabled. The opus attempt is kept
+  on branch `swarm/models` for reference — it encodes the hole below.
 
-**`7vv` — unseal as `speak-as` (ADR-0018).** Master roots two unlike
-things — authority and secret material; `speak-as` replaces only the
-first, so the hub becomes the protocol's *hot key for a cold root*
-(random key per process, wallet signs `speak-as` at unseal, 120 d,
-`/sealed` nags at < 30 d) and the master shrinks to a secrets seed.
-Three consequences captured: resolve issuer before compare (depth 3),
-verification-time validity (runway bound by the `speak-as`), literal
-caveats. Invariant 1 "wallet-derived" → "wallet-rooted"; invariant 2
-gained actor-owned state. Derived: `861` hub-as-actors spike, `qrb`
-actor-owned-state spike (P1, **open: Provisioner seed wallet-derived
-vs fly-held**). Also: exploration log pruned (ADR-0016/0017 sections),
-ADR-0004 records the KMS grace window as an accepted residual.
+**Model-first findings from `czi`/`jp2` (ruling needed, all filed):**
+- **`9l3` (P1 bug)** — "compare RESOLVED issuers" read as set overlap
+  is unsound: any wallet can self-sign a speak-as for any hub key, so
+  ROGUE→HUB_A + ROGUE→HUB_B makes OWNER2's member reach OWNER1's
+  `admins` facet. Sound rule: **one consented sovereign vouches for
+  both the grant's signer and the member's signer**
+  (`invGroupMatchRootedInChain`, m14). The Go `Authorize` rejects this
+  bundle today only because it resolves each cert to a *single* issuer
+  and compares equality — align it with the ruled wording.
+- **`xfx` (P1 bug)** — renewal at ⅔ life is insufficient under
+  ADR-0018: a cert signed by a dead process carries that process's
+  speak-as expiry; redeploy at speak-as day 90+ with a <60 d cert ⇒
+  access lost at starvation 0. Renew on the first beat after the hub
+  key changed (or schedule off *effective* expiry).
+- **`q8h` (thread)** — the number: max unattended hub-process life is
+  **90 d** (`SPEAKAS_LIFE − MEMBER_RUNWAY`); **120 d / 30 d-nag holds
+  with zero margin** and *only if* `/sealed` at <30 d **stops serving
+  beats**. Advisory-only nag breaks the 30 d promise past day 90. Also:
+  after a missed nag, unseal→beat→deploy rescues certs; deploy-first
+  strands them.
+- **`zpf` (thread)** — grant-side `cav.groups ∋ g` on the speak-as for
+  hot-key-signed group grants: modelled yes, brief said member only.
 
 ## Loose threads
 
-- `runway.qnt` (`jp2`) and `authorize.qnt` (`czi`) do not yet model
-  the `speak-as` link; the 30 d member-runway claim (`z1z`) is
-  unverified under the new bound until they do. (`clock.qnt` is done;
-  `authorize.qnt` only gained a header note — its `NOW` is now the
-  effective clock.)
-- Boot-token HMAC key source is an **open trade-off** in ADR-0018:
-  `hubkey` closes the replay residual but strands tokens served before
-  a redeploy; secrets seed keeps today's residual. Model both in
-  `approval.qnt` (`54n`); `check.sh`'s negative assertion flips only
-  if `hubkey` wins.
-- ADR-0019's node-agent consequence (gate *accepting* on NTP sync or a
-  persisted `lw`) is a probe item for `359.1.3`; noted there.
-- ADR numbering: `k3o`'s monorepo ADR is now **0020**.
-- Carried: ADR-0017 Proposed until `359.8.1`/`359.8.5`; the 2026-09-05
-  inline amendments still not folded; `cmi` CI for `check.sh`.
+- `zev`: `clock.qnt` should model untrusted issuers never advancing
+  `lw` (the Go side already does this).
+- `44r`: Go speak-as tests are ahead of their oracle until re-ported;
+  and `9l3`'s ruling may change `resolve()`.
+- Broken windows from `models-b` report: `runway.qnt`
+  `invPolicyPropagates` lets mutant o5 (deploy fails to bake
+  `gitEpoch`) survive; `authorize.qnt` step (1) fail-closed is backed
+  by a `Map.get` runtime error, not a `Reject`; `check.sh` header says
+  "Three tiers" and lists two.
+- Boot-token HMAC key source (`54n`), ADR-0017 still Proposed until
+  `359.8.1`/`359.8.5`, ADR-0019 node-agent NTP gate → `359.1.3` — all
+  carried unchanged.
+- Stale worker `pi` sessions may still be open in terminal panes
+  (their worktrees are removed).
 
 ## Suggested next steps
 
-- Rule `qrb` (Provisioner seed location) — it is the last open input
-  to ADR-0018 and to what `359.8.1` builds.
-- Extend `authorize.qnt`/`runway.qnt` with the `speak-as` link per
-  the notes on `czi`/`jp2`; that either confirms the 120 d / 30 d-nag
-  numbers or refutes them before any code.
-- With `7vv` and `439` ruled, **nothing structural blocks Phase 0**
-  (`359.1.4` first) or `0bc.1` (primitive with `iat`, `authorize()`
-  with effective `now`, rapid laws from `authorize.qnt` + `clock.qnt`).
+- Rule `9l3`, `xfx`, `q8h`, `zpf` — they gate the glossary/ADR-0018
+  wording that `0bc.2`, `359.8.1` and `44r` build against. `9l3` first.
+- Batch 2 = Phase 0 probes `359.1.1–.3` once fly scratch + an Android
+  device exist; then the gate `359.1.5`.
+- `0bc.2` (two actors, envelope + runtime) is unblocked by `0bc.1`.
