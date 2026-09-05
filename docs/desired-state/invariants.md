@@ -77,6 +77,14 @@ this list is the checkable form.
 3. **Roots of trust are keys the owner holds**, never accounts someone
    hosts (`~/.ssh/id_ed25519`, wallet `0xf568…9406`). Fly.io is
    trusted infrastructure, not a root of trust.
+   **Stated exception** _(2026-09-06, decision `bjg`)_: a blank
+   machine's *first* config fetch trusts web PKI (Let's Encrypt + DNS +
+   the fly hostname) and the MAC-selected config — nothing owner-held
+   is on the box yet. Everything after that fetch (consent grant,
+   member cert, every authorize) is wallet-rooted. Closing the
+   exception means baking the wallet address into the boot image and
+   serving a `speak-as`-signed config (idea filed under `359.8.3`);
+   not v0.
 4. **The mesh is post-bootstrap.** Nothing on the provisioning or
    recovery path may depend on the overlay network. Provisioning is
    HTTPS + device flow; recovery works from LAN with owner keys.

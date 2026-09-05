@@ -369,7 +369,12 @@ provisioning or recovery path may depend on it.
   unverifiable, not denied); monotone under attenuation; fail-closed
   on any unknown. Runs **once per stream**; the gateway bounds stream
   lifetime (≤ 1 h) so expiry has a ceiling. Blocklist stays the plain
-  git list in v0 (not a negative cert). `now` is the verifier's
+  git list in v0 (not a negative cert); it **rides the grant poll**
+  — the hub returns the current list with every beat and receivers
+  replace their copy wholesale (a safe-to-lose cache), so a blocked
+  device loses access within poll cadence (≤ 24 h) + stream cap (1 h),
+  or keeps it for runway + 1 h under hub starvation (ruled 2026-09-06,
+  `j0b`). `now` is the verifier's
   **effective clock** `max(local, lw)` — see *Time*. Model:
   `verification/quint/authorize.qnt` (13 laws, mutation-tested); the
   Go `authorize()` in `0bc.1` ports them 1:1.
