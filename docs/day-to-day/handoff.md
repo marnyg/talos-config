@@ -5,53 +5,58 @@
 
 ## Last session
 
-2026-09-06 — **spike `7vv` ruled: unseal becomes a `speak-as`
-delegation; the master shrinks to a secrets seed.** Docs only, no
-code. Record: **ADR-0018** (Proposed), decision `89v`, notes on `7vv`.
+2026-09-06 — **the two structural gaps ahead of Phase 1 are ruled:
+`7vv` (unseal) → ADR-0018 and `439` (time) → ADR-0019.** Both
+spikes closed; both decisions recorded (`89v`, `dyf`). One new Quint
+model (`clock.qnt`), no Go.
 
-- Framing that unlocked it: the master roots two unlike things —
-  *authority* (CA/issuer/hub key) and *secret material* (age seed,
-  KMS seal keys, recovery passphrases). `speak-as` replaces only the
-  first. So 7vv is a split, not a replacement; the phishable frozen-
-  message signature shrinks to "decrypt secrets / unlock disks" and
-  becomes rotatable. The hub is exactly the protocol sketch's *hot
-  key for a cold root* (§Identity) — nothing new was invented.
-- Three consequences the ticket lacked, now in ADR-0018 and the
-  glossary: (1) `speak-as` must **resolve issuer before compare** or
-  per-process hub keys break mixed-epoch bundles (group rule, step
-  2b); (2) **verification-time validity** ⇒ member runway is
-  `min(member.exp, speakas.exp) − last_beat`, and the `speak-as` is
-  per *process* — hence 120 d lifetime + `/sealed` nag at < 30 d;
-  (3) caveats are literal (verbs, groups, `delegable:false`) — never
-  "MACs in git", verifiers don't read git.
-- **Invariant 1 amended**: "wallet-derived issuer keys" → "wallet-
-  rooted" (derived *or* delegated); "re-derivable: CA" → "hub
-  authority". **Invariant 2 gained the actor-owned-state clause**:
-  state is encrypted to the actor's own durable key or re-derivable
-  from git + a startup delegation; ephemeral-key actors hold none.
-- Domain model §2 redrawn (wallet → speak-as → hubkey → certs; seed
-  → secrets only), depth two → three; glossary *Hub*, *Unseal*,
-  *Speak-as* (new), *Authorize* step 2a, *Cert classes*, *KMS*.
-- Derived issues: `861` hub-as-actors spike (Issuer/Enroll/Relay/
-  Gateway ephemeral-key; Provisioner alone holds a seed; modular
-  monolith with per-actor inboxes first); `qrb` actor-owned-state
-  spike, P1, carries the **open question: Provisioner seed wallet-
-  derived vs fly-held**. Downstream notes left on `359.8.1`, `0bc.1`,
-  `czi`, `jp2`, `k3o` (monorepo ADR is now 0019), `fbb`.
+**`439` — time is a trust input (ADR-0019).** Split in two: the
+*upper* bound (roll-forward = denial) is the local clock, ops; the
+*lower* bound (rollback = resurrection of expired certs, the LAN-NTP
+attack) is protocol-enforced — every cert carries **`iat`**, the
+verifier keeps an **uncapped** monotone low-water mark `lw` over the
+`iat` of every wallet-rooted cert it verifies and judges with
+`now = max(local, lw)`. No time authority. Rollback exposure =
+verifier starvation, the same clock `runway.qnt` measures.
+**Model-first finding:** my first draft capped the mark at
+`local + s`; `clock.qnt` with `CAP=true` violates two laws — after a
+rollback the cap discards exactly the honest evidence that would catch
+it. Ruled uncapped; residual = a lying *trusted* issuer can deny until
+verifiers restart (weaker than what it can already do).
+`clock.qnt` is in `check.sh` (run + verify, 3 mutants die).
+Invariant 2 gained "safe-to-lose caches"; §Structural trade-offs
+gained "time is a trust input"; glossary *Time / lw*; primitive is now
+`{iss, aud, can, cav, iat, exp, sig}` — **`0bc.1` must fix field order
+before building.**
+
+**`7vv` — unseal as `speak-as` (ADR-0018).** Master roots two unlike
+things — authority and secret material; `speak-as` replaces only the
+first, so the hub becomes the protocol's *hot key for a cold root*
+(random key per process, wallet signs `speak-as` at unseal, 120 d,
+`/sealed` nags at < 30 d) and the master shrinks to a secrets seed.
+Three consequences captured: resolve issuer before compare (depth 3),
+verification-time validity (runway bound by the `speak-as`), literal
+caveats. Invariant 1 "wallet-derived" → "wallet-rooted"; invariant 2
+gained actor-owned state. Derived: `861` hub-as-actors spike, `qrb`
+actor-owned-state spike (P1, **open: Provisioner seed wallet-derived
+vs fly-held**). Also: exploration log pruned (ADR-0016/0017 sections),
+ADR-0004 records the KMS grace window as an accepted residual.
 
 ## Loose threads
 
 - `runway.qnt` (`jp2`) and `authorize.qnt` (`czi`) do not yet model
   the `speak-as` link; the 30 d member-runway claim (`z1z`) is
-  unverified under the new bound until they do.
+  unverified under the new bound until they do. (`clock.qnt` is done;
+  `authorize.qnt` only gained a header note — its `NOW` is now the
+  effective clock.)
 - Boot-token HMAC key source is an **open trade-off** in ADR-0018:
   `hubkey` closes the replay residual but strands tokens served before
   a redeploy; secrets seed keeps today's residual. Model both in
   `approval.qnt` (`54n`); `check.sh`'s negative assertion flips only
   if `hubkey` wins.
-- `439` (time) gains a note-worthy angle: the hub's own `speak-as` is
-  the one cert it can check against a fresh wallet act. Not recorded
-  on `439` yet.
+- ADR-0019's node-agent consequence (gate *accepting* on NTP sync or a
+  persisted `lw`) is a probe item for `359.1.3`; noted there.
+- ADR numbering: `k3o`'s monorepo ADR is now **0020**.
 - Carried: ADR-0017 Proposed until `359.8.1`/`359.8.5`; the 2026-09-05
   inline amendments still not folded; `cmi` CI for `check.sh`.
 
@@ -62,4 +67,6 @@ code. Record: **ADR-0018** (Proposed), decision `89v`, notes on `7vv`.
 - Extend `authorize.qnt`/`runway.qnt` with the `speak-as` link per
   the notes on `czi`/`jp2`; that either confirms the 120 d / 30 d-nag
   numbers or refutes them before any code.
-- `439` (time) is still the unruled structural gap ahead of `359.8.1`.
+- With `7vv` and `439` ruled, **nothing structural blocks Phase 0**
+  (`359.1.4` first) or `0bc.1` (primitive with `iat`, `authorize()`
+  with effective `now`, rapid laws from `authorize.qnt` + `clock.qnt`).

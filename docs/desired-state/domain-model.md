@@ -369,9 +369,28 @@ provisioning or recovery path may depend on it.
   unverifiable, not denied); monotone under attenuation; fail-closed
   on any unknown. Runs **once per stream**; the gateway bounds stream
   lifetime (≤ 1 h) so expiry has a ceiling. Blocklist stays the plain
-  git list in v0 (not a negative cert). Model:
+  git list in v0 (not a negative cert). `now` is the verifier's
+  **effective clock** `max(local, lw)` — see *Time*. Model:
   `verification/quint/authorize.qnt` (13 laws, mutation-tested); the
   Go `authorize()` in `0bc.1` ports them 1:1.
+- **Time / low-water mark (`lw`)** _(pinned 2026-09-06, ADR-0019)_ —
+  time is a trust input with two halves. The *upper* bound (denial)
+  is the verifier's local clock: ops, not protocol. The *lower* bound
+  (resurrection of expired certs under clock rollback) is
+  protocol-enforced: every cert carries **`iat`** (issuer's clock at
+  signing; the primitive is `{iss, aud, can, cav, iat, exp, sig}`),
+  and a verifier keeps `lw = max(lw, iat)` over every cert whose
+  signature it verifies in a chain (all wallet-rooted issuers; never a
+  member's self-issued `reach-me-at`). Update first, then judge with
+  `now = max(local, lw)`. Uncapped — capping the advance at
+  `local + s` discards the honest evidence a rollback needs
+  (`clock.qnt` FINDING). `lw` is a **safe-to-lose cache**: volatile,
+  optionally persisted; loss degrades to the local clock. What rollback
+  can resurrect is bounded by the verifier's own starvation. `iat`
+  never participates in authority or attenuation. Residual: a trusted
+  issuer lying about `iat` can deny until verifiers restart.
+  `iat > local + s` is an alarm, not a rule. Members schedule renewal
+  off the hub's beat time, never their own clock.
 - **Projection** — any centralized "who has access" or "what is
   reachable" view. Built from
   the issuance log or from receivers' observations; strictly a

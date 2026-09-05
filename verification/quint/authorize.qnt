@@ -41,6 +41,12 @@
 // consent grant for — is now in ADR-0017 and the glossary. Mutant m1
 // (drop 2b) is the regression test.
 //
+// Time (ADR-0019, talos-config-439): `NOW` here is the verifier's
+// EFFECTIVE clock, max(local clock, low-water mark over verified `iat`s).
+// The primitive carries `iat`; how the mark is maintained and what it
+// bounds is clock.qnt's subject — authorize() only consumes the result,
+// so `iat` is not a field of this model's Cert.
+//
 // Check:
 //   quint run    --invariant=invAll --max-steps=30 authorize.qnt
 //   quint verify --invariant=invAll --max-steps=2  authorize.qnt

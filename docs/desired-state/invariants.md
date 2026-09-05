@@ -64,7 +64,11 @@ this list is the checkable form.
    plus a delegation the actor receives at startup. **An actor with an
    ephemeral key holds no durable state.** Hub actors (issuer, enroll,
    relay, gateway) are ephemeral-key actors; only the provisioner
-   holds a secrets seed. The outcome is unchanged: kill any hub
+   holds a secrets seed. **Safe-to-lose caches** are not state in this
+   sense _(ADR-0019)_: the `iat` low-water mark, `seq` high-water
+   marks, the blocklist copy — volatile, optionally persisted, and
+   losing one is never a security regression (it degrades to a weaker
+   check, never to a stronger grant). The outcome is unchanged: kill any hub
    process and lose nothing but in-flight delegations.
    Corollary: **no single node's disk is exempt from a wipe.** A
    reinstall may forget anything that is either re-derivable from git or
@@ -122,6 +126,15 @@ above the owner — escalate._
   verifier state, which is volatile here and resets on crash
   (`approval.qnt`, ADR-0015 residual). Economics built on the protocol
   are therefore detection-and-response, not prevention.
+- **Time is a trust input.** Every guarantee is `exp > now`, and `now`
+  at a verifier is an unauthenticated local clock. The protocol does
+  not fix this; it splits it. Roll-forward only denies (ops: NTP, RTC).
+  Rollback — the security direction — is bounded by the verifier's
+  monotone low-water mark over issuer-signed `iat`s: what a rolled-back
+  clock can resurrect is whatever expired after the verifier's last
+  legitimate contact, i.e. its own starvation, the same clock runway
+  bounds. There is no time authority; a time oracle would be authority
+  above the receiver. (ADR-0019, `verification/quint/clock.qnt`.)
 - **Capability discipline ends at the actor that terminates the
   stream.** Past the gateway everything is ambient authority (a
   header, a Service, an app trusting its caller); the app layer

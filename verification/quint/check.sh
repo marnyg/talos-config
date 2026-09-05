@@ -11,6 +11,7 @@
 #   approval   machine approval + ADR-0015 boot-token enrollment; reinstall
 #   authorize  ADR-0017 authorize(): the per-connect chain check
 #   runway     ADR-0017 cert lifetimes vs. sealed-hub starvation
+#   clock      ADR-0019 time as trust input: iat low-water mark vs. clock rollback
 #
 # Expected violation: approval.residualTokenReplayAcrossRedeploy is the
 # residual ADR-0015 accepts (a leaked token replays after a redeploy
@@ -25,7 +26,7 @@
 # Depths: hub/approval verify at 12–15 steps; enroll's growing sets
 # verify at 8; authorize regenerates its whole scenario every step so
 # depth 2 is exhaustive; runway's nondet init reaches boundaries in
-# ≤ 10 steps. Every invariant has been mutation-tested (seeding the bug
+# ≤ 10 steps; clock's 8-tick horizon is covered at 10. Every invariant has been mutation-tested (seeding the bug
 # it guards against produces a [violation]); authorize additionally
 # needed a boundary-biased generator before its mutants would die.
 set -euo pipefail
@@ -47,7 +48,7 @@ expect_violation() { # file invariant steps
 
 case "$mode" in
 run)
-  for f in approval authorize runway; do
+  for f in approval authorize runway clock; do
     echo "== $f (tests) =="
     quint test "$f.qnt"
   done
@@ -59,6 +60,8 @@ run)
   run_inv authorize invAll 20 1000
   echo "== runway =="
   run_inv runway invAll 60 1000
+  echo "== clock =="
+  run_inv clock invAll 30 500
   echo "== expected violations =="
   expect_violation approval residualTokenReplayAcrossRedeploy 30
   ;;
@@ -68,6 +71,7 @@ verify)
   quint verify --invariant=invAll --max-steps=8 enroll.qnt
   quint verify --invariant=invAll --max-steps=2 authorize.qnt
   quint verify --invariant=invAll --max-steps=10 runway.qnt
+  quint verify --invariant=invAll --max-steps=10 clock.qnt
   ;;
 *)
   echo "usage: $0 [run|verify]" >&2
