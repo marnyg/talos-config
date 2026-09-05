@@ -63,8 +63,9 @@
 // consent grant for — is now in ADR-0017 and the glossary. Mutant m1
 // (drop 2b) is the regression test.
 //
-// FINDING (2026-09-06, model-first, NOT yet ruled — see the report for
-// czi): ADR-0018 axiom 1 and the glossary say the group rule "compares
+// FINDING (2026-09-06, model-first; ruled the same day, talos-config-9l3:
+// glossary *Attenuation* + ADR-0018 axiom 1 [amended] now carry the
+// one-consented-wallet wording; grant-side groups ruled `zpf`): ADR-0018 axiom 1 and the glossary say the group rule "compares
 // RESOLVED issuers" and step (2a) says "take ITS iss as the effective
 // issuer" — singular. But the caller assembles the bundle, and any
 // wallet (the caller's own) can sign a speak-as naming any hub key, so

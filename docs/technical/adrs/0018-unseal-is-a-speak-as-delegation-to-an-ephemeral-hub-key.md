@@ -14,6 +14,11 @@
 - Related: `protocol/docs/sovereign-actor-protocol.md` §Identity (cold root /
   hot key), `verification/quint/{authorize,runway}.qnt`, spike
   `talos-config-439` (time), `talos-config-fbb` (deploy re-seals)
+- Amended 2026-09-06 after the models gained the `speak-as` link
+  (`czi`/`jp2`): axiom 1 restated as *one consented wallet vouches for
+  both ends* (`9l3`); renewal triggers on hub-key rotation (`xfx`);
+  the nag stops serving (`q8h`); grant-side group caveat (`zpf`).
+  Marked **[amended]** inline.
 
 ## Context and Problem Statement
 
@@ -132,12 +137,23 @@ Chosen: **Option B.** Concretely:
      ADR-0017 step 2b, the group-resolution rule — operates on the
      *resolved* issuer. Groups are sovereign-scoped, never hot-key-
      scoped; a member cert from `hubkey_A` and a grant from `hubkey_B`
-     resolve to the same wallet and match.
+     resolve to the same wallet and match. **[amended 2026-09-06,
+     `9l3`]** A signer resolves to a *set* of wallets (itself plus
+     every wallet with a valid `speak-as` naming it in the bundle),
+     because any wallet can sign a `speak-as` for any key. Rules
+     therefore quantify **one wallet W that R holds a live consent
+     for** which vouches for the grant's signer *and* for the member's
+     signer — never "the resolved issuers are equal" and never set
+     overlap, which lets a stranger wallet bridge two sovereigns' hub
+     keys (`authorize.qnt` `invGroupMatchRootedInChain`, mutant m14).
   2. **Verification-time validity.** Effective expiry of a member
      cert is `min(member.exp, speakas.exp)`.
 - **Caveats are literal.** `cav.verbs ⊆ {member, invoke}`,
   `cav.groups ⊆` the finite group list in `mesh-policy.yaml`,
-  `delegable: false`, `exp`. Names are not caveated: the machine set
+  `delegable: false`, `exp`. **[amended 2026-09-06, `zpf`]** Literal on
+  both sides: a hot-key-signed grant addressed to `group:g` resolves
+  only through a `speak-as` whose `cav.groups ∋ g`, as a member cert
+  resolves only through one covering its groups. Names are not caveated: the machine set
   is enumerable but the device set is not (invariant 1), and renewal
   must stay wallet-free (`sqm`). "MACs in git" cannot be a caveat —
   verifiers never read git.
@@ -149,6 +165,23 @@ Chosen: **Option B.** Concretely:
   **nags** — `/sealed` returns 503 when the `speak-as` has < 30 d
   left, so a wallet act is required at least every ~90 d even with no
   redeploy. `runway.qnt` models the extra bound.
+  **[amended 2026-09-06, `q8h`]** The nag **is a seal**: at < 30 d the
+  hub also *stops serving beats*, so no cert leaves with less than the
+  30 d member runway behind it. A process serves unattended for at
+  most `120 d − 30 d = 90 d`; the bound is tight (`NAG ==
+  MEMBER_RUNWAY`, zero margin). Ruled over an advisory nag because the
+  failure modes differ in kind: sealing at day 90 costs access at day
+  96 (invoke runway) while one wallet act on the *same* process still
+  renews every cert; serving to day 120 fails silently at the cliff
+  where every member cert is unresolvable at once and every device
+  must re-enroll. Order after a missed nag: unseal, one beat, then
+  deploy — deploying first strands what the dead key signed.
+  **[amended 2026-09-06, `xfx`]** Member renewal triggers at ⅔ life
+  **or on the first served beat after the issuing hub key changed**
+  (equivalently: off *effective* expiry). Without it a cert signed by
+  a dead process keeps that process's `speak-as` expiry, and a
+  redeploy at `speak-as` day 90+ strands any cert < 60 d old with the
+  hub healthy (`runway.qnt` `rotationConvergesTest`).
 - **The master shrinks to a secrets seed.** It roots only the age
   identity, KMS seal keys and recovery passphrases (the *Provisioner*
   concern), never a signing key. Addresses no longer derive from it
@@ -202,10 +235,12 @@ Chosen: **Option B.** Concretely:
 Right if: a phished unseal signature, replayed against a fresh hub
 process, is rejected (its `aud` is a key that process does not hold);
 a redeploy rotates the issuing key with no member re-enrollment and
-members converge within one beat; `authorize()` accepts a bundle whose
-member and grant were issued under different `hubkey`s; and
-`runway.qnt` shows 6 d of starvation still loses no access with the
-`speak-as` bound included.
+members converge within one beat (**the renewal trigger, `xfx`**);
+`authorize()` accepts a bundle whose member and grant were issued
+under different `hubkey`s *from the same wallet* and rejects one
+bridged only by a stranger's `speak-as` pair (`9l3`); and `runway.qnt`
+shows 6 d of starvation still loses no access with the `speak-as`
+bound included — confirmed 2026-09-06 with the nag sealing (`jp2`).
 Wrong if any verifier needs a pre-installed hub or CA public key to
 accept a chain — that is the master returning as authority, and this
 ADR should be superseded.

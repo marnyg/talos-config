@@ -55,7 +55,9 @@
 //    which is the reason for the ruling.
 //
 // FINDINGS (2026-09-06, model-first, on the ADR-0018 speak-as bound;
-// NOT yet ruled — see the czi/jp2 report):
+// ruled the same day: 5 → `xfx` (renew on rotation), 6 → `q8h` (the nag
+// seals; NAG_SEALS=true is the ruling), 7 → `q8h` (unseal, beat, then
+// deploy). ADR-0018 [amended] + glossary carry the wording):
 //
 // 5. The glossary's renewal rule for `member` ("renewed at ⅔ life") is
 //    insufficient under ADR-0018. A member cert signed by a dead

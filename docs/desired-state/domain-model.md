@@ -287,11 +287,16 @@ provisioning or recovery path may depend on it.
   the record**: the grantee stores and presents it; the grantor keeps
   no authoritative state (it may log, never consult). Renewal =
   present the expiring cert, grantor re-verifies its own signature
-  and re-issues. **Strict:** an *expired* cert does not renew — there
-  is nothing left to re-verify; the holder re-negotiates (for
-  `member`, a wallet-signed re-enrollment). No grace window. Lost
-  grants ⇒ re-negotiate; lost key ⇒ new actor. _(Pinned 2026-09-03,
-  spike `359.2`; strictness ruled 2026-09-05, `sqm`.)_
+  and re-issues. **Strict:** an *expired or unresolvable* cert does
+  not renew — there is nothing left to re-verify (unresolvable: its
+  signer's `speak-as` has expired, ADR-0018); the holder re-negotiates
+  (for `member`, a wallet-signed re-enrollment). No grace window. Lost
+  grants ⇒ re-negotiate; lost key ⇒ new actor. Corollary for a missed
+  nag: **unseal the same process, let one beat run, then deploy** —
+  the live key re-verifies and re-issues everything it signed;
+  deploying first strands every cert the dead key signed. _(Pinned
+  2026-09-03, spike `359.2`; strictness ruled 2026-09-05, `sqm`;
+  unresolvable + ordering 2026-09-06, `q8h`.)_
 - **Consent grant** — the explicit first link of every chain: the
   receiver grants `invoke {target: self, facet: *}` to the network's
   Owner (delegable). Today implicit ("the node trusts the CA in the
@@ -322,11 +327,21 @@ provisioning or recovery path may depend on it.
   input. Replaces the mesh DNS server under Mesh v3.
 - **Cert classes and lifetimes** _(pinned 2026-09-03, spike
   `359.2`)_ — consent grant: bound to the accepted config, re-minted
-  at boot/apply, delegable. `member`: 90 d, renewed at ⅔ life by
-  background dial, non-delegable. `invoke` group grants: 7 d, polled
+  at boot/apply, delegable. `member`: 90 d, renewed at ⅔ life **or on
+  the first served beat after the issuing hub key changed** (a cert
+  signed by a dead process keeps that process's `speak-as` expiry;
+  without this trigger a redeploy at `speak-as` day 90+ strands a
+  cert < 60 d old — `runway.qnt`, ruled 2026-09-06, `xfx`; equivalent:
+  schedule renewal off *effective* expiry) by background dial,
+  non-delegable. `invoke` group grants: 7 d, polled
   daily and re-fetched on policy-epoch change, non-delegable in v0.
   `reach-me-at`: 1 h, self-issued, piggybacked. `speak-as`
-  wallet→hub: 120 d, per process, renewed by unseal (ADR-0018);
+  wallet→hub: 120 d, per process, renewed by unseal; **the hub stops
+  serving beats when its `speak-as` has < 30 d left** (the `/sealed`
+  nag *is* a seal), so no cert ever leaves with less than the 30 d
+  member runway behind it — a process serves unattended for at most
+  90 d, and the bound is tight (`NAG == MEMBER_RUNWAY`, zero margin;
+  `runway.qnt`, ruled 2026-09-06, `q8h`) (ADR-0018);
   other Owner `speak-as` uses deferred — Owner-only actions stay
   wallet-signed. Rule:
   **propagation is by poll, expiry is runway** — a class's runway is
@@ -341,22 +356,31 @@ provisioning or recovery path may depend on it.
 - **Attenuation** — a chain link adds caveats, never removes;
   effective authority is field-wise intersection over `target`,
   `facet` and every recognised caveat; an unknown caveat rejects.
-  **Group resolution rule:** `aud: group:<g>` is satisfied by a
-  `member` cert whose `iss` is the *same key* as the grant's `iss`
-  and whose `cav.groups` contains `<g>`. Groups are issuer-scoped
-  names, never global, never actors.
+  **Group resolution rule:** `aud: group:<g>` is satisfied when **one
+  sovereign W that R holds a live consent for** both (i) vouches for
+  the grant's signer and (ii) vouches for the `member` cert's signer
+  — directly (W *is* the signer) or through a live `speak-as` whose
+  `cav.verbs` covers the cert's verb and whose `cav.groups` covers the
+  groups named — and the member's `cav.groups` contains `<g>`. Never
+  "resolved issuers are equal": a signer resolves to the *set* of
+  wallets that vouched for it, and any wallet can sign a `speak-as`
+  naming any hub key, so comparing sets for overlap lets a stranger
+  wallet bridge two sovereigns' hub keys (`authorize.qnt`
+  `invGroupMatchRootedInChain`, ruled 2026-09-06, `9l3`). Groups are
+  sovereign-scoped names, never global, never actors.
 - **Authorize (the per-connect check)** _(pinned 2026-09-03, spike
   `359.2`; the function the rapid suite and Quint model target)_ —
   inputs: receiver key `R`, its accept table, its consent grant(s),
   the ALPN, the caller's bundle {`member`, `invoke[]`}. Steps: (1)
   ALPN → facet, unknown ⇒ reject; (2) verify `member` (sig, exp,
-  `aud` = the QUIC peer key); **(2a) resolve the issuer** — if a
-  `speak-as` in the bundle has `aud` = `member.iss`, verify it and
-  take its `iss` as the effective issuer, checking `cav.verbs ∋
-  member` and `cav.groups ⊇ member.cav.groups` (ADR-0018; the same
-  resolution applies to every grant's `iss` in step 3, and the group
-  rule compares *resolved* issuers); **(2b) the resolved `iss` must be
-  an issuer R holds a live consent grant for** — otherwise its name
+  `aud` = the QUIC peer key); **(2a) resolve the issuer** — the
+  member's signer resolves to itself plus every wallet with a valid
+  `speak-as` in the bundle whose `aud` = `member.iss`, `cav.verbs ∋
+  member` and `cav.groups ⊇ member.cav.groups` (one hop; ADR-0018;
+  the same resolution applies to every grant's `iss` in step 3, and
+  the group rule binds both ends to *one consented* resolved wallet —
+  see *Attenuation*); **(2b) some resolved issuer must be one R holds
+  a live consent grant for** — otherwise its name
   and groups are stranger-chosen and would reach the gateway header
   (found by `authorize.qnt`, ruled 2026-09-05, `3cx`); (3) for each
   grant, build the chain
@@ -450,19 +474,27 @@ provisioning or recovery path may depend on it.
   by `iss`, within `cav`, until `exp`.* Not authority to reach
   anything. Two axioms: **resolve before compare** — every rule that
   names an issuer (step 2b, the group rule) operates on the resolved
-  issuer, so groups are sovereign-scoped, not hot-key-scoped; and
-  **verification-time validity** — a cert's effective expiry is
-  `min(own exp, speak-as exp)`. The caller's bundle carries the
-  `speak-as` alongside its member cert and grants.
+  issuer, so groups are sovereign-scoped, not hot-key-scoped —
+  resolution yields a *set* (any wallet can vouch for any key), so
+  rules quantify **one consented wallet**, never compare sets (`9l3`);
+  and **verification-time validity** — a cert's effective expiry is
+  `min(own exp, speak-as exp)`. Caveats are literal on both sides: a
+  hot-key-signed grant addressed to `group:<g>` needs a `speak-as`
+  whose `cav.groups ∋ <g>`, just as a member cert needs one covering
+  its groups (ruled 2026-09-06, `zpf`). The caller's bundle carries
+  the `speak-as` alongside its member cert and grants.
 - **Unseal** — the wallet signing one `speak-as` cert to the hub
   process's fresh key (`cav: {verbs: [member, invoke], groups ⊆
   policy's list, delegable: false}`, 120 d). Nothing about the
   signature is secret; replayed against another process it names a
   key that process does not hold. While sealed, minting and renewal
   are down; nothing is lost. Because the `speak-as` belongs to the
-  process, a long-lived hub approaches its expiry silently — `/sealed`
-  nags at < 30 d left, so a wallet act is due at least every ~90 d
-  even without a redeploy. _(Was: the signature over the frozen master
+  process, a long-lived hub approaches its expiry silently — at < 30 d
+  left `/sealed` returns 503 **and the hub stops serving beats**
+  (ruled `q8h`: fail loudly at day 90, while one wallet act on the
+  same process still renews every cert, rather than silently at day
+  120 when every member must re-enroll), so a wallet act is due at
+  least every 90 d even without a redeploy. _(Was: the signature over the frozen master
   message that recreates the HKDF master; that seed now roots secrets
   only.)_
 - **Enrollment** — wallet-authorized minting of a binding: the member
