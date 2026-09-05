@@ -6,6 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Declarative Talos Linux Kubernetes cluster configuration. Machines are provisioned via PXE boot and configured through a four-layer strategic merge patch system using `talosctl machineconfig patch`.
 
+**Monorepo layout (decision `talos-config-5w1`, ADR-0020).** This repo
+is a monorepo built around the **sovereign-actor protocol** — a reusable
+core (actors as keypair+wallet, authority as one delegation-cert
+primitive) with talos-config as its first consumer:
+
+- `protocol/` — the protocol as its own Go module
+  (`github.com/marnyg/talos-config/protocol`), with no dependency on
+  config-server, Talos, fly, or nebula. config-server imports it via a
+  `replace` directive when Mesh v3 Phase 1 wires it in. Its own docs
+  sub-scope lives at `protocol/docs/` (goals/invariants/domain-model
+  independent of any deployment; the design sketch
+  `sovereign-actor-protocol.md`; ADRs starting at 0001).
+- `config-server/`, `talos/`, `k8s/` — the talos deployment, the
+  protocol's N=1 single-sovereign consumer. Root docs in `docs/` stay
+  authoritative for the deployment.
+
 ## Key Commands
 
 ```bash

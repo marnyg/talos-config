@@ -14,7 +14,7 @@
   caller-carried grants — see ADR-0017, which owns the authority
   model)
 - Related: ADR-0012, ADR-0015 (mint-on-member pattern is the identity
-  model here), `docs/sovereign-actor-protocol.md`, decision
+  model here), `protocol/docs/sovereign-actor-protocol.md`, decision
   `talos-config-dlk`, epic `talos-config-359`
 
 ## Context and Problem Statement

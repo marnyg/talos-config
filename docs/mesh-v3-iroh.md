@@ -56,7 +56,7 @@ Buys:
 - Per-request cryptographic device identity at the gateway
   (successor to ADR-0007's cert-group + source-IP inference).
 - Native alignment with the sovereign-actor sketch
-  (`sovereign-actor-protocol.md`): NodeId ≈ actor identity, relays
+  (`protocol/docs/sovereign-actor-protocol.md`): NodeId ≈ actor identity, relays
   and lighthouses become ordinary self-hosted services, ALPN ≈ facet
   classes.
 - Kills the accepted wart in invariant 4 (lighthouse as hard

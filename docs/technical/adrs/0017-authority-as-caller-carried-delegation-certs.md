@@ -14,7 +14,7 @@
   ADR-0019 (primitive gains `iat`; `authorize()` consumes the effective
   clock `max(local, lw)`). Inline 2026-09-05 notes: `z1z sqm xwz 3cx`.
 - Related: ADR-0016 (Mesh v3), decision `talos-config-5w1` (protocol
-  at the repo's center), `docs/sovereign-actor-protocol.md` §One
+  at the repo's center), `protocol/docs/sovereign-actor-protocol.md` §One
   primitive, `desired-state/domain-model.md` glossary (Verb, Grant,
   Facet, Name map, Consent grant, Authorize)
 

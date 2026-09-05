@@ -487,7 +487,7 @@ provisioning or recovery path may depend on it.
 ## Relation to the sovereign-actor sketch
 
 The model deliberately mirrors
-[`../sovereign-actor-protocol.md`](../sovereign-actor-protocol.md)
+[`../../protocol/docs/sovereign-actor-protocol.md`](../../protocol/docs/sovereign-actor-protocol.md)
 where the shapes agree — client-born keys, revocation-as-expiry,
 lighthouse rendezvous, consensual hierarchy — and diverges knowingly
 where it doesn't: this system *embraces* the stable-name registry SAP
@@ -502,5 +502,7 @@ its center and talos-config as its first consumer. Mesh v3's
 membership cert is the protocol's delegation cert (`359.2`); the
 protocol's economics (EVM-L2/Base for per-relationship flows, PoW
 postage for strangers, no per-message money in v0) live in the
-protocol's own desired-state once the sub-scope exists (`k3o`), not
-here.
+protocol's own desired-state (`protocol/docs/desired-state/`, sub-scope
+`k3o`), not here. The sketch moved into that scope
+([`../../protocol/docs/sovereign-actor-protocol.md`](../../protocol/docs/sovereign-actor-protocol.md),
+ADR-0020).

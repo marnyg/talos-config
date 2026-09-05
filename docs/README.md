@@ -24,4 +24,14 @@ Pre-scaffold documents (authoritative, being gradually absorbed):
 
 In monorepos, services/apps/packages may have their own `docs/` mirroring this layout. Link relevant sub-scopes here:
 
+- [**protocol**](../protocol/docs/) — the sovereign-actor protocol, the
+  reusable core this repo is built around (decision `talos-config-5w1`,
+  ADR-0020). Its `docs/desired-state/` holds the protocol's OWN goals,
+  invariants, and domain model — deployment-independent (no talos, fly,
+  nebula, Kubernetes), and the home of the design sketch
+  [`sovereign-actor-protocol.md`](../protocol/docs/sovereign-actor-protocol.md).
+  Read it before touching `protocol/` code; this root scope stays
+  authoritative for the *talos deployment* (the protocol's first, N=1
+  consumer). See the sub-scope's own [`README.md`](../protocol/docs/README.md).
+
 <!-- e.g. - [config-server](../config-server/docs/) -->

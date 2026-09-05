@@ -7,7 +7,7 @@
 - Date: 2026-08-16
 - Amends: invariants 1 and 6 (see `desired-state/invariants.md`)
 - Related: ADR-0012 (device-born device keys), sketch `6a80633d`,
-  `docs/sovereign-actor-protocol.md` (design lens)
+  `protocol/docs/sovereign-actor-protocol.md` (design lens)
 
 ## Context and Problem Statement
 

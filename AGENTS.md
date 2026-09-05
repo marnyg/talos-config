@@ -1,3 +1,19 @@
+## Repository layout
+
+Monorepo around the **sovereign-actor protocol** (decision
+`talos-config-5w1`, ADR-0020):
+
+- `protocol/` — the protocol as its own Go module, with no dependency on
+  config-server, Talos, fly, or nebula. Docs sub-scope at
+  `protocol/docs/` (its own `desired-state/`, ADRs from 0001, the design
+  sketch `sovereign-actor-protocol.md`).
+- `config-server/`, `talos/`, `k8s/` — the talos deployment, the
+  protocol's first (N=1) consumer; root `docs/` is authoritative for it.
+
+When working under `protocol/`, read the root
+`docs/desired-state/{goals,invariants,domain-model}.md` **and**
+`protocol/docs/desired-state/` (see the traversal rule below).
+
 <!-- docs-skill:start -->
 ## Documentation contract
 

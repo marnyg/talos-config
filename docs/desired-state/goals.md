@@ -40,7 +40,7 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   invited children pay nothing); per-relationship flows settle on an
   EVM L2 (Base) chosen for wallet compatibility. Mesh v3 builds the
   protocol's transport, membership cert and gateway. Sketch:
-  [`../sovereign-actor-protocol.md`](../sovereign-actor-protocol.md);
+  [`../../protocol/docs/sovereign-actor-protocol.md`](../../protocol/docs/sovereign-actor-protocol.md);
   restructure: `talos-config-k3o`.
 - **Provisioning plane stays minimal** — the Omni line in `vision.md`:
   no fleet management, no upgrade orchestration, no multi-cluster.

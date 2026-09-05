@@ -11,7 +11,7 @@
   `desired-state/invariants.md`, 2026-09-06 note); domain-model §2
   ("delegation depth two", "unseal signature IS the key") and the
   glossary entries *Unseal*, *Hub*, *Speak-as*
-- Related: `docs/sovereign-actor-protocol.md` §Identity (cold root /
+- Related: `protocol/docs/sovereign-actor-protocol.md` §Identity (cold root /
   hot key), `verification/quint/{authorize,runway}.qnt`, spike
   `talos-config-439` (time), `talos-config-fbb` (deploy re-seals)
 
