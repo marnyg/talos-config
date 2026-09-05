@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Check the design models (epic talos-config-7wg; ADR-0015/0017 models
-# added 2026-09-05: czi, jp2, 54n). Three tiers:
+# added 2026-09-05: czi, jp2, 54n). Two tiers:
 #
 #   ./check.sh          fast: witness tests + random simulation
 #   ./check.sh verify   bounded model checking via Apalache (JVM; slower)
+#
+# quint comes from the flake (`nix develop`); it is not on PATH otherwise.
 #
 # CI: .github/workflows/verify.yml runs `check.sh run` on every push/PR
 # (job `quint`) and `check.sh verify` nightly + on workflow_dispatch (job
@@ -41,6 +43,8 @@
 # generator before its mutants would die.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+command -v quint >/dev/null || { echo "quint not on PATH — enter the dev shell (nix develop) first" >&2; exit 127; }
 
 mode="${1:-run}"
 

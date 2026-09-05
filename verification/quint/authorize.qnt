@@ -112,6 +112,7 @@ module authorize {
   pure val PEERS = Set(CALLER, ROGUE)
   pure val RECEIVERS = Set(R, OTHER_R)
   pure val FACETS = Set("apid", "kube-api")
+  pure val NO_FACET = ""          // total-lookup sentinel: no grant's cav.facet ever contains it
   pure val GROUPS = Set("admins", "media")
   pure val NAMES = Set("tv", "laptop")
   pure val NOW = 5
@@ -219,10 +220,14 @@ module authorize {
   pure def authorize(r: int, table: str -> str, consents: Set[Cert], blocklist: Set[int],
                      now: int, alpn: str, peer: int, member: Cert, speakAs: Set[Cert],
                      grants: Set[Cert]): Result =
-    // (1) ALPN → facet; unknown ⇒ reject
-    if (not(table.keys().contains(alpn))) Reject
+    // (1) ALPN → facet; unknown ⇒ reject. The lookup is TOTAL (NO_FACET
+    // for an unknown ALPN), so the guard is defence in depth: dropping it
+    // (mutant e1) still rejects at step (4) because no grant names NO_FACET,
+    // and mapping an unknown ALPN to a real facet (mutant e1b) is caught by
+    // invUnknownAlpnRejects — by the law, never by a Map.get crash.
+    val facet = if (table.keys().contains(alpn)) table.get(alpn) else NO_FACET
+    if (facet == NO_FACET) Reject
     else {
-      val facet = table.get(alpn)
       // (2) verify member: sig, exp, aud = the QUIC peer key, verb = member
       if (not(member.can == Member and sigOk(member, now) and isKey(member.aud, peer))) Reject
       // (2a)+(2b) resolve the member's issuer through the bundle's speak-as;

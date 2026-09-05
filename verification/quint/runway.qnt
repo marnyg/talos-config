@@ -146,6 +146,7 @@ module runway {
   var hubEpoch: int      // policy version the hub compiled (baked at deploy)
   var callerEpoch: int   // policy version the caller's grants encode
   var reenrolled: int    // wallet-signed re-enrollments forced by an expired member cert
+  var commitSinceDeploy: bool // a policy commit no deploy has compiled yet (witness for invDeployBakesGit)
 
   def speakAsExp = speakAsIssued + SPEAKAS_LIFE
   def sealedAt(h: int): bool = h >= speakAsExp                        // no live speak-as: nothing can be signed
@@ -203,6 +204,7 @@ module runway {
       hubEpoch' = epochs,
       callerEpoch' = epochs,
       reenrolled' = 0,
+      commitSinceDeploy' = false,
     }
   }
 
@@ -244,6 +246,7 @@ module runway {
       gitEpoch' = gitEpoch,
       hubEpoch' = hubEpoch,
       reenrolled' = reenrolled,
+      commitSinceDeploy' = commitSinceDeploy,
     }
   }
 
@@ -257,7 +260,7 @@ module runway {
     memberIssued' = memberIssued, memberProc' = memberProc, memberSAExp' = memberSAExp,
     invokeIssued' = invokeIssued, invokeSAExp' = invokeSAExp, lastPoll' = lastPoll,
     rmaIssued' = rmaIssued, gitEpoch' = gitEpoch, callerEpoch' = callerEpoch,
-    reenrolled' = reenrolled,
+    reenrolled' = reenrolled, commitSinceDeploy' = false,
   }
 
   // The wallet signs a speak-as to the current process's key: the hub
@@ -270,7 +273,7 @@ module runway {
     memberIssued' = memberIssued, memberProc' = memberProc, memberSAExp' = memberSAExp,
     invokeIssued' = invokeIssued, invokeSAExp' = invokeSAExp, lastPoll' = lastPoll,
     rmaIssued' = rmaIssued, gitEpoch' = gitEpoch, hubEpoch' = hubEpoch, callerEpoch' = callerEpoch,
-    reenrolled' = reenrolled,
+    reenrolled' = reenrolled, commitSinceDeploy' = commitSinceDeploy,
   }
 
   // An effectively expired member cert cannot be renewed (its own exp
@@ -283,7 +286,7 @@ module runway {
     memberIssued' = t,
     memberProc' = proc,
     memberSAExp' = speakAsExp,
-    reenrolled' = reenrolled + 1,
+    reenrolled' = reenrolled + 1, commitSinceDeploy' = commitSinceDeploy,
     t' = t, proc' = proc, speakAsIssued' = speakAsIssued, unsealedSince' = unsealedSince,
     lastServed' = lastServed, maxStarved' = maxStarved,
     invokeIssued' = invokeIssued, invokeSAExp' = invokeSAExp, lastPoll' = lastPoll,
@@ -299,7 +302,7 @@ module runway {
     memberIssued' = memberIssued, memberProc' = memberProc, memberSAExp' = memberSAExp,
     invokeIssued' = invokeIssued, invokeSAExp' = invokeSAExp, lastPoll' = lastPoll,
     rmaIssued' = rmaIssued, hubEpoch' = hubEpoch, callerEpoch' = callerEpoch,
-    reenrolled' = reenrolled,
+    reenrolled' = reenrolled, commitSinceDeploy' = true,
   }
 
   action step = any { tick, deploy, unseal, reenroll, commitPolicy }
@@ -354,6 +357,13 @@ module runway {
   val invPolicyPropagates =
     (serving and unsealedFor >= POLL_EVERY) implies callerEpoch == hubEpoch
 
+  // A deploy compiles git into the hub: unless a commit has landed since
+  // the last deploy, the hub's epoch IS git's. Closes mutant o5 (deploy
+  // forgets to bake gitEpoch), which invPolicyPropagates alone let live
+  // because it only compares caller with hub.
+  val invDeployBakesGit =
+    not(commitSinceDeploy) implies hubEpoch == gitEpoch
+
   // ADR-0018: a member never holds a cert whose speak-as outlives the
   // process that signed it, and its bundle's speak-as expiry is never
   // beyond the current process's when it is the signer.
@@ -368,6 +378,7 @@ module runway {
     invReenrollOnlyAfterLongStarvation,
     invEpochChain,
     invPolicyPropagates,
+    invDeployBakesGit,
     invBundleSpeakAsConsistent,
   }
 
@@ -377,7 +388,7 @@ module runway {
     t' = 0, proc' = 0, speakAsIssued' = 0, unsealedSince' = 0, lastServed' = 0, maxStarved' = 0,
     lastPoll' = 0, invokeIssued' = 0, invokeSAExp' = SPEAKAS_LIFE,
     memberIssued' = 0, memberProc' = 0, memberSAExp' = SPEAKAS_LIFE, rmaIssued' = 0,
-    gitEpoch' = 0, hubEpoch' = 0, callerEpoch' = 0, reenrolled' = 0,
+    gitEpoch' = 0, hubEpoch' = 0, callerEpoch' = 0, reenrolled' = 0, commitSinceDeploy' = false,
   }
 
   run worstCaseTest =
@@ -399,7 +410,7 @@ module runway {
     lastServed' = 0, maxStarved' = 0,
     lastPoll' = 0, invokeIssued' = 0, invokeSAExp' = NAG,
     memberIssued' = 0, memberProc' = 0, memberSAExp' = NAG, rmaIssued' = 0,
-    gitEpoch' = 0, hubEpoch' = 0, callerEpoch' = 0, reenrolled' = 0,
+    gitEpoch' = 0, hubEpoch' = 0, callerEpoch' = 0, reenrolled' = 0, commitSinceDeploy' = false,
   }
 
   run toNagCliff =
