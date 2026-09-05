@@ -108,59 +108,74 @@ func (a *authCtx) sigOK(c Cert, effExp, now int64) bool {
 	return a.verify(c) && effExp > now && !c.Cav.Unknown
 }
 
-// resolve maps a cert's signing key to its principal through a speak-as
-// in the bundle (ADR-0018 "resolve before compare").
+// sovereign is one vouching path for a signed cert: the wallet (or the
+// signer itself) the cert may be attributed to, and the cert's effective
+// expiry along that path — c.Exp for direct issuance, min(c.Exp, s.Exp)
+// through a speak-as s (ADR-0018 axiom 2, "verification-time validity").
+// Via is the speak-as that vouches (nil for the signer itself).
+type sovereign struct {
+	ID     ActorID
+	EffExp int64
+	Via    *Cert
+}
+
+// resolve ports the model's resolve(speakAs, signer, verb, groups, now):
+// the SET of sovereigns a cert signed by c.Iss may be attributed to
+// (ADR-0018 "resolve before compare", ruled 9l3 / decision 4oz).
 //
-//   - It considers ALL speak-as certs whose aud equals c.Iss (not just
-//     the first): re-unseal without a redeploy leaves an expired
-//     speak-as beside a fresh valid one for the same hot key, and an
-//     honest caller must not be rejected because the stale one was
-//     listed first. A link is ok iff SOME matching speak-as is good
-//     (verifies, unexpired, no unknown caveat, cav.verbs contains c.can,
-//     and — for member certs — cav.groups ⊇ requireGroups); the
-//     effective expiry uses the BEST (max exp) good speak-as, min'd with
-//     c.exp ("verification-time validity").
-//   - With no matching speak-as the cert is directly issued: resolved
-//     issuer is c.Iss, effExp is c.Exp, link ok.
+// The set is {c.Iss} ∪ {s.Iss | s ∈ speakAs, s.can = speak-as, sigOk(s,
+// now), s.aud = c.Iss, c.can ∈ s.cav.verbs, groups ⊆ s.cav.groups}:
+//
+//   - The signer itself is ALWAYS a member: direct issuance is just
+//     another vouching path. A hub key is never a consented principal,
+//     so it falls out at the consent check; a wallet signing directly
+//     stays in.
+//   - Every live speak-as naming c.Iss adds its wallet, each with its
+//     own effective expiry min(c.Exp, s.Exp). Stale links beside fresh
+//     ones for the same key (re-unseal without redeploy) simply
+//     contribute nothing; the fresh one still vouches.
+//   - `groups` is what the cert names: the member's cav.groups for a
+//     member cert, grantGroups(g) for a grant (decision w5s: caveats are
+//     literal on both sides).
+//
+// Resolution yields a set precisely because ANY wallet can sign a
+// speak-as for ANY key — the caller assembles the bundle. Rules over the
+// result therefore quantify ONE consented wallet (memberSovereigns,
+// grantAdmits); they never compare two resolved sets for equality or
+// overlap (authorize.qnt FINDING 2026-09-06, mutant m14).
 //
 // The speak-as's own cav.delegable is NOT consulted here: it governs
 // whether the HOT KEY may re-delegate the speak-as itself, not the certs
 // the hot key issues (those are gated by cav.verbs / cav.groups).
-// Resolution is single-level in v0: this returns the speak-as's iss as
-// the resolved issuer without recursively resolving THAT key, so a
-// speak-as whose own iss is not a directly consented principal resolves
-// to nothing usable (step 2b / the principal set reject it).
-//
-// used is the good speak-as selected (nil for direct issuance), so the
-// caller can also mark it rooted.
-func (a *authCtx) resolve(c Cert, speakAs []Cert, now int64, requireGroups []string) (issuer ActorID, effExp int64, ok bool, used *Cert) {
-	matched := false
-	found := false
-	var bestExp int64
-	var best Cert
+// Resolution is one hop: a speak-as is non-delegable, so the wallet it
+// names is not itself resolved further.
+func (a *authCtx) resolve(c Cert, speakAs []Cert, now int64, groups []string) []sovereign {
+	out := []sovereign{{ID: c.Iss, EffExp: c.Exp}}
 	for i := range speakAs {
 		sa := speakAs[i]
 		if sa.Can != VerbSpeakAs || sa.Aud != string(c.Iss) {
 			continue
 		}
-		matched = true
-		good := a.sigOK(sa, sa.Exp, now) &&
-			containsStr(sa.Cav.Verbs, string(c.Can)) &&
-			subset(requireGroups, sa.Cav.Groups)
-		if good && (!found || sa.Exp > bestExp) {
-			found = true
-			bestExp = sa.Exp
-			best = sa
+		if !a.sigOK(sa, sa.Exp, now) ||
+			!containsStr(sa.Cav.Verbs, string(c.Can)) ||
+			!subset(groups, sa.Cav.Groups) {
+			continue
 		}
+		via := sa
+		out = append(out, sovereign{ID: sa.Iss, EffExp: min(c.Exp, sa.Exp), Via: &via})
 	}
-	if matched {
-		if !found {
-			return c.Iss, c.Exp, false, nil
-		}
-		bc := best
-		return best.Iss, min(c.Exp, bestExp), true, &bc
+	return out
+}
+
+// grantGroups ports the model's grantGroups: the groups a grant names —
+// its group audience, if any. A hot key may only address group:g under
+// a speak-as whose cav.groups ∋ g (literal caveats, decision w5s); a
+// key-audience grant names no group and requires nothing of cav.groups.
+func grantGroups(g Cert) []string {
+	if grp, isGroup := strings.CutPrefix(g.Aud, groupPrefix); isGroup {
+		return []string{grp}
 	}
-	return c.Iss, c.Exp, true, nil
+	return nil
 }
 
 // consentsFor returns the consent grants receiver r has issued to
@@ -189,9 +204,30 @@ func (a *authCtx) consentedPrincipals(consents []Cert, r ActorID, now int64) map
 	return set
 }
 
+// memberSovereigns ports the model's memberSovereigns — step (2b) on the
+// RESOLVED issuer set: the consented sovereigns that vouch for the member
+// cert, i.e. those w ∈ resolve(member, member.cav.groups) for which R
+// holds a live delegable consent targeting R. Empty ⇒ the member's name
+// and groups are stranger-chosen (3cx) ⇒ reject.
+func (a *authCtx) memberSovereigns(in Input, m Cert) []sovereign {
+	var out []sovereign
+	for _, w := range a.resolve(m, in.Bundle.SpeakAs, in.Now, m.Cav.Groups) {
+		if w.EffExp > in.Now &&
+			consentTargets(a.consentsFor(in.Consents, in.Receiver, w.ID, in.Now), in.Receiver) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // buildRooted populates ctx.rooted with every validly-signed cert that is
 // rooted at R (see Result). Independent of the accept/reject decision, so
 // the mark advances even when authorization fails.
+//
+// Rootedness of a member/grant cert is "SOME resolved sovereign is a
+// consented principal" — the set-valued analogue of the pre-9l3 rule.
+// The receiver-rooting port proper is issue 2qp (behind zev); nothing
+// about the clock/Verified contract changes here.
 func (a *authCtx) buildRooted(in Input) {
 	principals := a.consentedPrincipals(in.Consents, in.Receiver, in.Now)
 	// (a) R-signed consents that verified (expiry irrelevant — R signed
@@ -207,14 +243,21 @@ func (a *authCtx) buildRooted(in Input) {
 			a.root(sa)
 		}
 	}
-	// (c) member/grant certs whose RESOLVED issuer is a consented
-	// principal (resolution single-level; a stranger hot key resolves to
-	// a non-principal and is dropped).
+	// (c) member/grant certs some RESOLVED sovereign of which is a
+	// consented principal (resolution single-level; a stranger hot key
+	// resolves only to itself and to stranger wallets, and is dropped).
+	// No group requirement: a consented wallet's live speak-as covering
+	// the verb is what proves the cert sits on an R-rooted chain.
 	certs := append([]Cert{in.Bundle.Member}, in.Bundle.Grants...)
 	for _, c := range certs {
-		resIss, _, ok, _ := a.resolve(c, in.Bundle.SpeakAs, in.Now, nil)
-		if ok && a.verify(c) && principals[resIss] {
-			a.root(c)
+		if !a.verify(c) {
+			continue
+		}
+		for _, w := range a.resolve(c, in.Bundle.SpeakAs, in.Now, nil) {
+			if principals[w.ID] {
+				a.root(c)
+				break
+			}
 		}
 	}
 }
@@ -224,6 +267,13 @@ func (a *authCtx) buildRooted(in Input) {
 // deterministic, offline, receiver-rooted, monotone under attenuation
 // and fail-closed on every unknown. Identity out comes from the member
 // cert only.
+//
+// Resolution (2a) yields a SET of sovereigns per signer (any wallet can
+// vouch for any key), so every rule quantifies ONE consented wallet w:
+// (2b) some w ∈ resolve(member) is consented; a grant admits iff some w
+// ∈ resolve(grant) roots its chain at R and — for a group audience —
+// that SAME w vouches for the member cert (decisions 4oz, w5s; model
+// verification/quint/authorize.qnt).
 func Authorize(in Input) Result {
 	ctx := &authCtx{sigCache: map[string]bool{}, rootedSeen: map[string]bool{}}
 	// Populate the rooted set first so the mark advances on every path.
@@ -236,28 +286,18 @@ func Authorize(in Input) Result {
 		return reject()
 	}
 
+	// (2) member cert: verb, signature, own expiry, no unknown caveat,
+	// aud = the QUIC peer key.
 	m := in.Bundle.Member
-	// (2a) resolve the member issuer through a speak-as (if any).
-	mIssuer, mEffExp, mLinkOK, _ := ctx.resolve(m, in.Bundle.SpeakAs, in.Now, m.Cav.Groups)
-
-	// (2) member cert: verb, signature, effective expiry, aud = peer.
-	if m.Can != VerbMember {
-		return reject()
-	}
-	if !mLinkOK {
-		return reject()
-	}
-	if !ctx.sigOK(m, mEffExp, in.Now) {
-		return reject()
-	}
-	if m.Aud != string(in.Peer) {
+	if m.Can != VerbMember || !ctx.sigOK(m, m.Exp, in.Now) || m.Aud != string(in.Peer) {
 		return reject()
 	}
 
-	// (2b) the RESOLVED member issuer must be one R holds a live,
-	// delegable consent grant for, targeting R — otherwise its name and
-	// groups are stranger-chosen (authorize.qnt, 3cx).
-	if !consentTargets(ctx.consentsFor(in.Consents, in.Receiver, mIssuer, in.Now), in.Receiver) {
+	// (2a)+(2b) resolve the member's issuer through the bundle's speak-as;
+	// some resolved sovereign must be one R holds a live, delegable
+	// consent grant for, targeting R — otherwise its name and groups are
+	// stranger-chosen (authorize.qnt, 3cx).
+	if len(ctx.memberSovereigns(in, m)) == 0 {
 		return reject()
 	}
 
@@ -266,11 +306,12 @@ func Authorize(in Input) Result {
 		return reject()
 	}
 
-	// (3) a grant admits if its chain [consent(R→resolved iss), grant]
-	// verifies, intersects to still name R and the facet, and its aud
-	// resolves to the peer or the member's group.
+	// (3) a grant admits if, for ONE consented w vouching for its
+	// signer, the chain [consent(R→w), speak-as(w→g.iss)?, g] verifies,
+	// intersects to still name R and the facet, and its aud resolves to
+	// the peer or — via the same w — to the member's group.
 	for _, g := range in.Bundle.Grants {
-		if ctx.grantAdmits(in, facet, g, mIssuer, in.Now) {
+		if ctx.grantAdmits(in, facet, g) {
 			return Result{
 				OK: true,
 				Identity: Identity{
@@ -286,40 +327,69 @@ func Authorize(in Input) Result {
 	return reject()
 }
 
-// grantAdmits ports the Quint grantAdmits with speak-as resolution on
-// the grant's issuer and the group rule comparing RESOLVED issuers.
-func (a *authCtx) grantAdmits(in Input, facet string, g Cert, resolvedMemberIssuer ActorID, now int64) bool {
-	if g.Can != VerbInvoke {
+// grantAdmits ports the model's grantAdmits 1:1. One grant admits if,
+// for ONE sovereign w ∈ resolve(g, grantGroups(g)) that R consented to,
+// the chain [consent(R→w), speak-as(w→g.iss)?, g] verifies, the
+// field-wise intersection still names R and the facet, and the audience
+// resolves:
+//
+//   - key audience: the aud is the QUIC peer (w only roots the chain);
+//   - group audience group:g: the SAME w ∈ resolve(member,
+//     member.cav.groups) — one consented wallet vouches for BOTH the
+//     grant's signer and the member's signer — and g ∈ member.cav.groups.
+//
+// Never "resolved issuers are equal", never set overlap: a stranger
+// wallet can vouch for both hub keys and would bridge two sovereigns
+// (authorize.qnt FINDING 2026-09-06, mutant m14, ruled 9l3). Groups are
+// sovereign-scoped names — never hot-key-scoped, never global.
+func (a *authCtx) grantAdmits(in Input, facet string, g Cert) bool {
+	if g.Can != VerbInvoke || !a.sigOK(g, g.Exp, in.Now) {
 		return false
 	}
-	gIssuer, gEffExp, gLinkOK, _ := a.resolve(g, in.Bundle.SpeakAs, now, nil)
-	if !gLinkOK || !a.sigOK(g, gEffExp, now) {
-		return false
-	}
-	// consent chain: R → resolved grant issuer, target ∋ R, facet ∋ facet.
-	chained := false
-	for _, c := range a.consentsFor(in.Consents, in.Receiver, gIssuer, now) {
-		if containsID(intersectID(c.Cav.Target, g.Cav.Target), in.Receiver) &&
-			containsStr(intersectStr(c.Cav.Facet, g.Cav.Facet), facet) {
-			chained = true
-			break
+	m := in.Bundle.Member
+	for _, w := range a.resolve(g, in.Bundle.SpeakAs, in.Now, grantGroups(g)) {
+		if w.EffExp <= in.Now {
+			continue
+		}
+		// consent chain: R → w, target ∋ R, facet ∋ facet (intersected
+		// with the grant's own caveats).
+		chained := false
+		for _, c := range a.consentsFor(in.Consents, in.Receiver, w.ID, in.Now) {
+			if containsID(intersectID(c.Cav.Target, g.Cav.Target), in.Receiver) &&
+				containsStr(intersectStr(c.Cav.Facet, g.Cav.Facet), facet) {
+				chained = true
+				break
+			}
+		}
+		if !chained {
+			continue
+		}
+		if a.audSatisfied(in, g, m, w.ID) {
+			return true
 		}
 	}
-	if !chained {
-		return false
-	}
-	return audSatisfied(g, gIssuer, in.Bundle.Member, resolvedMemberIssuer, in.Peer)
+	return false
 }
 
-// audSatisfied resolves a grant's aud: an actor id must equal the peer;
-// a group is satisfied only by a member cert whose RESOLVED issuer is the
-// grant's RESOLVED issuer and whose groups contain the name (issuer-
-// scoped groups; ADR-0018 "resolve before compare").
-func audSatisfied(g Cert, gIssuer ActorID, member Cert, memberIssuer, peer ActorID) bool {
-	if grp, isGroup := strings.CutPrefix(g.Aud, groupPrefix); isGroup {
-		return gIssuer == memberIssuer && containsStr(member.Cav.Groups, grp)
+// audSatisfied resolves a grant's aud under the consented sovereign w
+// that roots the grant's chain: an actor id must equal the peer; a group
+// group:g is satisfied only if that SAME w vouches for the member cert
+// (w ∈ resolve(member, member.cav.groups), live along that path) and the
+// member's groups contain g.
+func (a *authCtx) audSatisfied(in Input, g, member Cert, w ActorID) bool {
+	grp, isGroup := strings.CutPrefix(g.Aud, groupPrefix)
+	if !isGroup {
+		return g.Aud == string(in.Peer)
 	}
-	return g.Aud == string(peer)
+	if !containsStr(member.Cav.Groups, grp) {
+		return false
+	}
+	for _, mw := range a.resolve(member, in.Bundle.SpeakAs, in.Now, member.Cav.Groups) {
+		if mw.ID == w && mw.EffExp > in.Now {
+			return true
+		}
+	}
+	return false
 }
 
 // consentTargets reports whether any of the given consents names r in
