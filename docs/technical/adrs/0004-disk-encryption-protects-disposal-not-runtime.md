@@ -92,6 +92,15 @@ against someone who takes the machine.
 - Tightening to KMS-only stays open but is gated on: fixing early-boot
   DNS (or dialing the KMS by IP to sidestep resolution entirely) *and*
   building break-glass tooling for slot-0 blobs.
+- _(Noted 2026-09-06.)_ **Unseal grace window is an accepted residual.**
+  `kms.go` unseals blobs for UUIDs not yet in `machines/<mac>/meta.yaml`
+  if this hub *process* sealed them (`sessionSealed`), so a fresh
+  install can reboot before the admin records the UUID. That set is
+  volatile hub memory — the same shape as ADR-0015's replay guard — and
+  is not in `approval.qnt`. Accepted because Seal is open anyway and the
+  static slot is the effective boot path: the window grants nothing the
+  disk does not already grant. Revisit if KMS-only ever lands.
+  _(Refiled from the running code, not a new decision.)_
 
 ### Confirmation
 

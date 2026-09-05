@@ -15,7 +15,10 @@
 # Expected violation: approval.residualTokenReplayAcrossRedeploy is the
 # residual ADR-0015 accepts (a leaked token replays after a redeploy
 # inside its TTL). It is checked NEGATIVELY so that a design change
-# closing it is noticed and the ADR updated. (The 2026-09-05 findings
+# closing it is noticed and the ADR updated. ADR-0018 (2026-09-06)
+# names one such change — token HMAC keyed from the per-process hubkey —
+# but leaves it OPEN (it strands tokens served before a redeploy); if
+# approval.qnt adopts it, move this to run_inv. (The 2026-09-05 findings
 # that refuted doc sentences — see FINDING blocks in the headers — were
 # ruled the same day and folded into ADR-0015/0017 + the glossary.)
 #

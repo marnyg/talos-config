@@ -41,21 +41,19 @@ code. Record: **ADR-0018** (Proposed), decision `89v`, notes on `7vv`.
 
 ## Loose threads
 
-- `7vv` still open pending the user's close signal (fully derived).
 - `runway.qnt` (`jp2`) and `authorize.qnt` (`czi`) do not yet model
   the `speak-as` link; the 30 d member-runway claim (`z1z`) is
   unverified under the new bound until they do.
-- ADR-0015's accepted cross-redeploy replay residual should
-  *disappear* once the boot-token HMAC is keyed from `hubkey`;
-  `check.sh` still asserts it stays — flip when `approval.qnt` is
-  updated.
+- Boot-token HMAC key source is an **open trade-off** in ADR-0018:
+  `hubkey` closes the replay residual but strands tokens served before
+  a redeploy; secrets seed keeps today's residual. Model both in
+  `approval.qnt` (`54n`); `check.sh`'s negative assertion flips only
+  if `hubkey` wins.
 - `439` (time) gains a note-worthy angle: the hub's own `speak-as` is
   the one cert it can check against a fresh wallet act. Not recorded
   on `439` yet.
 - Carried: ADR-0017 Proposed until `359.8.1`/`359.8.5`; the 2026-09-05
-  inline amendments still not folded; `docs/mesh-v3-iroh.md`
-  architecture block still says "HKDF master → issuer key" (stale vs
-  ADR-0018 — fix when Phase 1 starts); `cmi` CI for `check.sh`.
+  inline amendments still not folded; `cmi` CI for `check.sh`.
 
 ## Suggested next steps
 

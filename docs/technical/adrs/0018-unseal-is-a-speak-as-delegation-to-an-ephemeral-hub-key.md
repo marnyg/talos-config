@@ -87,8 +87,6 @@ is not authority (age identity, KMS seal keys, recovery passphrases).
   lifetime, dies at restart. Verifiers hold no CA — their own consent
   grant is the root and `speak-as` is data. The hub becomes an
   ordinary actor, exactly the protocol's hot-key pattern.
-  ADR-0015's boot-token HMAC keyed from `hubkey` makes the
-  cross-redeploy replay residual (`vzj`) disappear.
 - Cons: one more link per chain (depth three); issuer comparisons
   must resolve through `speak-as`; member runway is now bounded by the
   `speak-as` lifetime too (see Outcome); a stable seed is still
@@ -181,9 +179,14 @@ Chosen: **Option B.** Concretely:
   `AgeIdentity`; loses its role as the root of `nebderive`/issuer
   keys. `MasterMessage` stays frozen for the secrets seed until the
   open question is decided.
-- ADR-0015: token HMAC keyed from `hubkey`; `approval.qnt`'s accepted
-  cross-redeploy replay residual is removed, and `check.sh` must stop
-  asserting it stays.
+- ADR-0015 boot token: **open trade-off, not decided here.** Keying
+  the token HMAC from `hubkey` closes the cross-redeploy replay
+  residual (`vzj`) but kills every token served before a redeploy — a
+  machine that fetched its config and has not yet redeemed is
+  stranded by the next `fly deploy` (`fbb`: deploys are frequent).
+  Keying it from the secrets seed keeps today's behaviour and residual.
+  Decide in `approval.qnt` (`54n`) by modelling both; `check.sh`'s
+  negative assertion flips only if the model moves to `hubkey`.
 - Domain-model §2 diagram is redrawn (wallet → speak-as → hubkey →
   certs; master → secrets only); glossary *Unseal*, *Hub*,
   *Speak-as* rewritten.

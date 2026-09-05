@@ -77,15 +77,18 @@ Costs:
 ## Architecture (end-state)
 
 ```
-wallet sig (EIP-191 over frozen message)
-  → HKDF master (masterderive, unchanged)
-    → membership issuer key            (talos-config/iroh/v1/issuer)
-    → hub relay+gateway identity       (…/hub)
+hub process boots → hubkey (Ed25519, random per process)
+wallet signs speak-as {aud: hubkey, cav: {verbs, groups}, exp 120 d}   (= unseal, ADR-0018)
+  → hubkey signs member certs + invoke grants; bundle carries the speak-as
+  → hubkey is also the relay+gateway identity for this process
+wallet sig over frozen message → HKDF secrets seed (masterderive)
+  → age identity, KMS seal keys, recovery passphrases ONLY — never a signing key
 member NodeIds: Ed25519 keypairs minted ON the member (ADR-0015
 pattern), never derived, never in transit. Membership = a
 wallet-authorized cert binding NodeId → name + groups + expiry,
-signed by the issuer. Same trust shape as the nebula CA; different
-serialization.
+signed by hubkey and resolved to the wallet through the speak-as.
+Verifiers hold no CA: their own consent grant is the root.
+_(Was: HKDF master → issuer key; replaced 2026-09-06 by ADR-0018.)_
 ```
 
 - **Hub (fly.io)**: config-server + KMS + enrollment (unchanged) +
