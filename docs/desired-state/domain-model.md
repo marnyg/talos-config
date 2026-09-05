@@ -385,8 +385,13 @@ provisioning or recovery path may depend on it.
   protocol-enforced: every cert carries **`iat`** (issuer's clock at
   signing; the primitive is `{iss, aud, can, cav, iat, exp, sig}`),
   and a verifier keeps `lw = max(lw, iat)` over every cert whose
-  signature it verifies in a chain (all wallet-rooted issuers; never a
-  member's self-issued `reach-me-at`). Update first, then judge with
+  signature it verifies **on a chain rooted at itself** — its own
+  consents, speak-as certs for principals it has consented to, and
+  member/grant certs whose *resolved* issuer is such a principal;
+  never a stranger's self-signed cert (which would let any peer that
+  can connect push the mark forward), never a member's self-issued
+  `reach-me-at`. Expired-but-rooted certs still count: they prove
+  time passed. Update first, then judge with
   `now = max(local, lw)`. Uncapped — capping the advance at
   `local + s` discards the honest evidence a rollback needs
   (`clock.qnt` FINDING). `lw` is a **safe-to-lose cache**: volatile,

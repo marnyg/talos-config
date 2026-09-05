@@ -113,10 +113,13 @@ Chosen: **Option D, uncapped.**
   issuer's clock at signing. It participates in the mark only — never
   in authority or attenuation (a child's `iat` is not constrained by
   its parent's; clocks are independent).
-- **Verifier rule:** for every cert whose signature verifies in a
-  chain (member, invoke, speak-as, consent — all wallet-rooted
-  issuers; never a member's self-issued `reach-me-at`, which is not an
-  authorize input anyway): `lw := max(lw, iat)`; then `authorize()`
+- **Verifier rule:** for every cert whose signature verifies **on a
+  chain rooted at the receiver** (its own consents; speak-as certs for
+  consented principals; member/invoke certs whose resolved issuer is a
+  consented principal — never a stranger's self-signed cert, which
+  would let any connecting peer push the mark; never a member's
+  self-issued `reach-me-at`, which is not an authorize input anyway):
+  `lw := max(lw, iat)`; then `authorize()`
   runs with `now = max(local, lw)`. Update first, then judge — a cert
   never rejects itself (`iat < exp`).
 - **State:** `lw` is a **safe-to-lose cache**: volatile in v0, may be
