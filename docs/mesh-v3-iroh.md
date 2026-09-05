@@ -68,8 +68,10 @@ Costs:
 - Four bespoke components owned forever: node agent (Talos
   extension), in-cluster gateway, desktop daemon, Android/TV fake-IP
   VPN app. No upstream Sidero extension, no official mobile app.
-- iroh is pre-1.0: API churn, a startup's roadmap, must run with n0's
-  hosted discovery/relay infrastructure fully disabled.
+- iroh is young (1.x since 2026-06, semver-committed — see P0.4 below;
+  was "pre-1.0" when this was written), a startup's roadmap, must run
+  with n0's hosted discovery/relay infrastructure fully disabled; Go
+  bindings are community-only.
 - Reverses one piece of mesh-v2 phase 2 (cluster endpoint back to
   LAN, now static).
 - Not reversible in an afternoon.
