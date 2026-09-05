@@ -1,0 +1,59 @@
+# SPEC FIXTURE — not consumed by any code. (talos-config-6z9 part (a))
+#
+# The Mesh v3 shape of the Owner's policy recipe under ADR-0017, held
+# here so verification/nickel/mesh-policy-v3.ncl has a real value to
+# validate before 359.8.5 lands the compiler. The live policy is still
+# talos/mesh-policy.yaml (port-based, nebula render); when 359.8.5
+# switches the schema, that file takes this shape and this fixture is
+# retired.
+#
+# Rule shape: {facet, host|group}
+#   facet: a named entry point the receiver exposes — closed set per
+#          receiver kind (domain-model glossary "Facet"):
+#            node     apid | kube-api
+#            gateway  ingress-http | jellyfin
+#            hub      hub-http | relay
+#          Never a port: ports live in the receiver's accept table
+#          (facet → forward) and the device-local map only.
+#          Reachability is not a facet.
+#   host:  a member *name* (the grant's `aud` is that one actor);
+#   group: a group name — the grant's `aud` is `group:<g>`.
+#   Exactly one of host/group per rule.
+#
+# Each rule compiles to one `invoke` grant {aud, cav: {target: <every
+# receiver of that kind>, facet}, 7 d} that the caller fetches and
+# presents; the receiver holds no copy of this table (ADR-0017). A kind
+# with `inbound: []` is legal and means "no grant names this receiver".
+
+node:
+  inbound:
+    # Owner devices: the machine's control surfaces. Same access v2
+    # gives admins with `port: any`, now spelled facet by facet.
+    - {facet: apid, group: admins}
+    - {facet: kube-api, group: admins}
+    # Deliberately absent: any `group: machines` rule — machines must
+    # not reach each other's control surfaces (nebmachine_test stance;
+    # a contract in mesh-policy-v3.ncl).
+
+gateway:
+  inbound:
+    # One class for every HTTP UI; per-app authorization stays at the
+    # app layer (SIWE→OIDC, ADR-0010).
+    - {facet: ingress-http, group: admins}
+    - {facet: ingress-http, group: media}
+    # Raw TCP for the shared-space appliances' Jellyfin apps.
+    - {facet: jellyfin, group: media}
+
+hub:
+  inbound:
+    # The hub's overlay HTTP surface (/config, /hosts, /policy): both
+    # device groups, as v2's :80 rules; per-route gates decide who
+    # sees what (/config is admins-only).
+    - {facet: hub-http, group: admins}
+    - {facet: hub-http, group: media}
+    # Every member may relay through the hub: machines dial the relay
+    # only (mesh-v3-iroh.md "Nodes"); remote devices fall back to it
+    # (ADR-0006).
+    - {facet: relay, group: admins}
+    - {facet: relay, group: media}
+    - {facet: relay, group: machines}
