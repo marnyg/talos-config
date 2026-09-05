@@ -26,9 +26,10 @@
 # Depths: hub/approval verify at 12–15 steps; enroll's growing sets
 # verify at 8; authorize regenerates its whole scenario every step so
 # depth 2 is exhaustive; runway's nondet init reaches boundaries in
-# ≤ 10 steps; clock's 8-tick horizon is covered at 10. Every invariant has been mutation-tested (seeding the bug
-# it guards against produces a [violation]); authorize additionally
-# needed a boundary-biased generator before its mutants would die.
+# ≤ 10 steps; clock's 8-tick horizon is covered at 10. Every invariant
+# has been mutation-tested (seeding the bug it guards against produces
+# a [violation]); authorize additionally needed a boundary-biased
+# generator before its mutants would die.
 set -euo pipefail
 cd "$(dirname "$0")"
 

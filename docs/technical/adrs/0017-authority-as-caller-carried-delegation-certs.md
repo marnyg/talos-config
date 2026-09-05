@@ -9,6 +9,10 @@
   chain verification at the receiver)
 - Amends: invariants 1 and 2 (see `desired-state/invariants.md`,
   2026-09-03 notes)
+- Amended by: ADR-0018 (issuer is a `speak-as`-delegated per-process
+  hub key; chain depth three; issuer rules compare *resolved* issuers),
+  ADR-0019 (primitive gains `iat`; `authorize()` consumes the effective
+  clock `max(local, lw)`). Inline 2026-09-05 notes: `z1z sqm xwz 3cx`.
 - Related: ADR-0016 (Mesh v3), decision `talos-config-5w1` (protocol
   at the repo's center), `docs/sovereign-actor-protocol.md` §One
   primitive, `desired-state/domain-model.md` glossary (Verb, Grant,

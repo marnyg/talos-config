@@ -17,6 +17,7 @@ config: base/worker.yaml
 # No sealed-secrets.yaml: that patch provisions the controller's key
 # pair via an inlineManifest, which is a control-plane concern.
 patches:
+  - clusters/homelab/time.yaml
   - clusters/homelab/worker-cluster.yaml
   - clusters/homelab/worker-secrets.yaml
   - hardware/alienware-x15.yaml

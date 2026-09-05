@@ -1,0 +1,12 @@
+# Time is a trust input (ADR-0019): every mesh guarantee is `exp > now`.
+# The protocol bounds clock ROLLBACK with the iat low-water mark; the
+# availability half — roll-forward, and the boot window before sync —
+# is this file. Talos defaults to plain NTP against time.cloudflare.com
+# (no NTS exists in Talos yet); we state it explicitly so the dependency
+# is declared, not inherited, and so `bootTimeout` is a chosen number.
+machine:
+  time:
+    disabled: false
+    servers:
+      - time.cloudflare.com
+    bootTimeout: 2m0s
