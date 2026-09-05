@@ -34,8 +34,10 @@
   is still the KDF (`masterderive.MasterMessage` → master → CA); the
   `speak-as` unseal, per-process hub key and hub-as-actors split are
   design only. The domain model §2 and glossary describe the *desired*
-  shape; `hubseal.go`/`masterderive` describe what runs. Don't refactor
-  the nebula-era hub toward ADR-0018 before Mesh v3 Phase 1.
+  shape; `hubseal.go`/`masterderive` describe what runs. **Owner
+  ruling 2026-09-06: nothing depends on the running system — break
+  nebula-era code wherever the new shape needs it.** (Supersedes the
+  2026-09-03 "don't fix nebula code toward ADR-0017" caution above.)
 
 ## Hub / mesh (nebula, as running)
 

@@ -3,35 +3,26 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Mesh v3 Phase 0 — the spike gate (`talos-config-359.1`) —
-with the authority model pinned (ADR-0017/0018/0019, all Proposed)
-so that Phase 1 and the protocol package (`0bc.1`, epic `0bc`;
-restructure `k3o`) have a complete spec: certs, `speak-as` unseal,
-`iat` low-water mark. ADR-0017 and 0019 are model-checked
-(`verification/quint/{authorize,runway,approval,clock}.qnt`);
-ADR-0018's `speak-as` link is not yet in the models, and one input
-(`qrb`: where the Provisioner's secrets seed lives) is still open.
-Nothing structural blocks starting Phase 0 or `0bc.1`.
-Four checks on scratch infra, spike branch only: self-hosted iroh
-relay on fly with n0 infra verifiably absent; iroh inside an Android
-`VpnService` holding ≥80 Mbps 4K; a minimal Talos-extension node agent
-surviving reboot; an API-churn probe. Any one fails ⇒ `359` is
-re-deferred and the deferred nebula backlog reopens. Plan and kill
-criteria: `docs/mesh-v3-iroh.md`.
+**Now:** **Implementation, orchestrated.** The authority model is
+fully ruled (ADR-0017/0018/0019 + decisions `89v dyf fje itb wms sn4
+vl4 j0b bjg`) and model-checked
+(`verification/quint/{authorize,runway,approval,clock}.qnt`). An
+orchestrator session hands bd issues to worker agents (one worktree
+per issue, branch `swarm/<id>`, review + gate before fast-forward to
+`main`). Batch 1: `k3o` monorepo restructure (lands first), `0bc.1`
+cert primitive + `authorize()`, `cmi` CI for the models, `czi`/`jp2`
+`speak-as` link in the models, `359.1.4` iroh API-churn probe. Phase 0
+probes needing fly scratch infra / an Android device (`359.1.1–.3`)
+run when the owner can provide them; Phase 1 (`359.8.*`) waits on the
+gate `359.1.5`.
 
-**Toward goal:** **Mesh v3** and **Sovereign-actor protocol at the
-center** in `desired-state/goals.md` (ADR-0016, decision `5w1`):
-identity-addressed mesh, k8s off the mesh, and the four components
-double as the sovereign-actor sketch's gateway, device apps and
-membership certs — the trigger that made this worth starting
-(decision `talos-config-dlk`).
+**Toward goal:** **Sovereign-actor protocol at the center** and
+**Mesh v3** in `desired-state/goals.md` (ADR-0016, decision `5w1`).
 
 **Out of scope:**
-- Anything in Phase 1+ before the gate decision (`359.1.5`), and any
-  repo change beyond a spike branch during Phase 0.
-- Closing the deferred nebula-era issues — they close only when the
-  gate passes.
-- Policy phase 3/4 (`ap2`) on the nebula path — superseded by
-  `359.8.5` if v3 proceeds; parked, not abandoned.
-- Parents'-TV deployment (`4te`) is LAN-direct and independent of the
-  mesh — still valid work, just not the focus.
+- Nothing in the repo is protected: no production system depends on
+  it (owner ruling 2026-09-06) — break the nebula-era code where the
+  new shape needs it; the deferred nebula-era issues close when the
+  gate passes, not before.
+- Phase 2+ decisions (`1gv` gateway header) until Phase 1 exists.
+- Parents'-TV deployment (`4te`) — valid, LAN-direct, not the focus.

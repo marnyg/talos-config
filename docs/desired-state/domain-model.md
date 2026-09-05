@@ -128,7 +128,7 @@ classDiagram
     SpeakAs --> HubKey : empowers, bounded
     Git --> HubKey : roles + policy compiled
     HubKey --> BindingC : signs; bundle carries the speak-as
-    Wallet ..> Seed : stable seed (provisioner only; source open)
+    Wallet ..> Seed : same EIP-712 act; provisioner only
 ```
 
 _Nebula-era shape, as built: `Wallet → Master (HKDF of the unseal
@@ -476,7 +476,8 @@ provisioning or recovery path may depend on it.
   the **secrets seed** per (machine, partition); unlock rides WAN
   HTTPS, never the overlay (invariant 4). The seed also roots the age
   identity and recovery passphrases and nothing else (ADR-0018);
-  whether it stays wallet-derived or becomes fly-held is open.
+  wallet-derived, from the same single EIP-712 unseal act as the
+  `speak-as` (ruled 2026-09-06, `qrb`).
 - **Workload plane** — Kubernetes on the machines: ArgoCD syncs
   `k8s/` from git; ingress-nginx routes `<svc>.cp1.mesh.internal` on
   :80; SIWE→OIDC bridge gates every exposed service with the wallet.

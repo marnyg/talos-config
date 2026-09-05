@@ -153,11 +153,15 @@ Chosen: **Option B.** Concretely:
   identity, KMS seal keys and recovery passphrases (the *Provisioner*
   concern), never a signing key. Addresses no longer derive from it
   (Mesh v3: machines have static LAN IPs from git; device IPs are
-  device-local). **Open:** whether the seed stays wallet-derived (a
-  second signature at unseal, or one EIP-712 act covering both) or
-  moves to a fly-held secret — fly as custodian of *secrets* but
-  never *authority*. Decided in the actor-owned-state spike derived
-  from `7vv`; the default until then is wallet-derived.
+  device-local). **Ruled 2026-09-06 (`qrb`, decision `talos-config-fje`): the
+  seed stays wallet-derived, and unseal is ONE EIP-712 typed-data
+  signature** whose message carries both the `speak-as` fields and a
+  frozen seed domain; the hub verifies the `speak-as` from it and
+  HKDFs the seed from the signature over the seed sub-message. Fly
+  holds no secret. Accepted cost: the seed half is still a
+  deterministic, phishable secret — narrow (repo secrets, KMS,
+  recovery) and rotatable. A fly-held seed was rejected (fly as
+  custodian; invariant 3/8 exceptions).
 - **Hub as several actors, cut by state.** Issuer (mint/renew),
   Enroll (device flow, approval, boot token), Relay (iroh relay, name
   map) and Gateway are pure hot-key actors with no durable secret;
