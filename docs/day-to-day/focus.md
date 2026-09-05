@@ -4,10 +4,12 @@
      The link between current work and a higher-order goal. -->
 
 **Now:** Mesh v3 Phase 0 — the spike gate (`talos-config-359.1`) —
-with the authority model already pinned (ADR-0017, Proposed) so that
-Phase 1 and the protocol package (`0bc.1`, epic `0bc`; restructure `k3o`) have a complete spec.
-That spec is now model-checked (`verification/quint/{authorize,runway,approval}.qnt`)
-and the five refuted sentences are ruled and folded in — `0bc.1` can port the laws to Go.
+with the authority model already pinned (ADR-0017 + ADR-0018, both
+Proposed) so that Phase 1 and the protocol package (`0bc.1`, epic
+`0bc`; restructure `k3o`) have a complete spec. ADR-0017 is
+model-checked (`verification/quint/{authorize,runway,approval}.qnt`);
+ADR-0018's `speak-as` link is not yet in the models, and one input
+(`qrb`: where the Provisioner's secrets seed lives) is still open.
 Four checks on scratch infra, spike branch only: self-hosted iroh
 relay on fly with n0 infra verifiably absent; iroh inside an Android
 `VpnService` holding ≥80 Mbps 4K; a minimal Talos-extension node agent

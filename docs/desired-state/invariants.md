@@ -11,9 +11,13 @@ this list is the checkable form.
 1. **Stateless identity and membership.** No identity or membership
    state outside git + owner-held keys: all authentication reduces to
    offline verification against the wallet (EIP-191, EOA only), and
-   the entire network (peers, certs, addresses) is re-derivable with
-   zero runtime re-enrollment. Self-hosted token/cert issuance only
-   with wallet-derived issuer keys. No third-party identity accounts,
+   the entire network (peers, certs, addresses) is re-derivable or
+   re-issuable on the next beat with zero runtime re-enrollment.
+   Self-hosted token/cert issuance only with **wallet-rooted** issuer
+   keys: derived from a wallet signature, *or* an ephemeral key
+   holding a wallet-signed `speak-as` cert _(2026-09-06, ADR-0018 —
+   was "wallet-derived"; the invariant had encoded the KDF mechanism,
+   not the property)_. No third-party identity accounts,
    no chain RPC in any auth path. _(Amended 2026-07-29, see ADR-0002.)_
    _(Amended 2026-08-05, see ADR-0012.)_ _(Amended 2026-08-16, see
    ADR-0015.)_ **Scope for mesh members (devices and machines):** a
@@ -25,9 +29,11 @@ this list is the checkable form.
    machine re-enrolls automatically at boot via a single-use token in
    its served config. Addresses and DNS labels derive from the
    approved name (devices) or MAC (machines), so re-keying or
-   re-enrolling never moves a member. Re-derivable with zero runtime
-   re-enrollment: hub, CA, addresses, DNS, configs — **not member
-   private keys**. _(Amended 2026-09-03, spike `359.2`.)_ **The grant
+   re-enrolling never moves a member. Re-derivable or re-issuable on
+   the next beat with zero runtime re-enrollment: hub authority (one
+   unseal), member certs and grants (renewal), addresses, DNS, configs
+   — **not member private keys**. _(Amended 2026-09-03, spike `359.2`;
+   2026-09-06, ADR-0018: "CA" → hub authority.)_ **The grant
    is the record:** authority is carried by the party it empowers
    (the grantee stores and presents its certs); grantor-side state
    about issued authority is non-authoritative — a log or projection
@@ -50,6 +56,16 @@ this list is the checkable form.
    certs; a verifier (node agent, gateway, any receiver) decides from
    the certs presented to it alone — it never reads git, a registry,
    or a network service to authorize.
+   **Actor-owned state** _(2026-09-06, spike `7vv`, ADR-0018)_: the
+   mechanism-level reading ("git + fly secrets + pure functions") is
+   restated per actor. An actor may hold durable state only if it is
+   (a) encrypted to the actor's own *durable* key — possession is the
+   credential, storage may be hostile — or (b) re-derivable from git
+   plus a delegation the actor receives at startup. **An actor with an
+   ephemeral key holds no durable state.** Hub actors (issuer, enroll,
+   relay, gateway) are ephemeral-key actors; only the provisioner
+   holds a secrets seed. The outcome is unchanged: kill any hub
+   process and lose nothing but in-flight delegations.
    Corollary: **no single node's disk is exempt from a wipe.** A
    reinstall may forget anything that is either re-derivable from git or
    replicated elsewhere. _(Amended 2026-07-31, see ADR-0011; replaces

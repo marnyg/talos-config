@@ -109,25 +109,34 @@ the role stays; swap runner and both stay. A NIC swap changes which
 *config* a box selects — a role change, correctly requiring fresh
 ratification — not a key event.
 
-## 2. Authority: one sovereign, delegation depth two
+## 2. Authority: one sovereign, one hot key, delegation depth three
 
-Everything reduces to two owner-held keys; servers hold no durable
-authority of their own (invariants 1–3).
+Everything reduces to one owner-held cold key; servers hold no durable
+authority of their own (invariants 1–3). The hub is the wallet's **hot
+key**: an ephemeral keypair per process, empowered by a `speak-as`
+cert the wallet signs at unseal (ADR-0018, Proposed).
 
 ```mermaid
 classDiagram
     class Wallet["Wallet (sovereign root, cold)"]
-    class Master["Master (HKDF, hub memory, per-unseal)"]
-    class CA["Mesh CA (derived)"]
+    class HubKey["Hub key (random per process, hot)"]
+    class SpeakAs["speak-as cert (wallet→hubkey, 120 d, narrow cav)"]
     class Git["Git (declared roles + policy)"]
-    class BindingC["Member bindings (certs)"]
-    Wallet --> Master : unseal signature IS the key
-    Master --> CA : derived
-    Git --> Master : roles + policy baked at deploy
-    CA --> BindingC : mints every lease
+    class BindingC["Member certs + invoke grants"]
+    class Seed["Secrets seed (age, KMS, recovery — never a signing key)"]
+    Wallet --> SpeakAs : signs at unseal
+    SpeakAs --> HubKey : empowers, bounded
+    Git --> HubKey : roles + policy compiled
+    HubKey --> BindingC : signs; bundle carries the speak-as
+    Wallet ..> Seed : stable seed (provisioner only; source open)
 ```
 
-Authority has exactly two tiers, both rooted at the wallet:
+_Nebula-era shape, as built: `Wallet → Master (HKDF of the unseal
+signature) → CA → certs`; the signature **is** the key, so hub = owner.
+ADR-0018 replaces it; the master survives only as the secrets seed._
+
+Authority has exactly two tiers, both rooted at the wallet and both
+exercised through the hot key:
 
 - **Admission** — may this key hold this role: every admission is
   **exactly one wallet signature**, verified by one mint core. Entry
@@ -316,8 +325,10 @@ provisioning or recovery path may depend on it.
   at boot/apply, delegable. `member`: 90 d, renewed at ⅔ life by
   background dial, non-delegable. `invoke` group grants: 7 d, polled
   daily and re-fetched on policy-epoch change, non-delegable in v0.
-  `reach-me-at`: 1 h, self-issued, piggybacked. `speak-as` for the
-  Owner: deferred — Owner-only actions stay wallet-signed. Rule:
+  `reach-me-at`: 1 h, self-issued, piggybacked. `speak-as`
+  wallet→hub: 120 d, per process, renewed by unseal (ADR-0018);
+  other Owner `speak-as` uses deferred — Owner-only actions stay
+  wallet-signed. Rule:
   **propagation is by poll, expiry is runway** — a class's runway is
   **lifetime − refresh cadence** (worst case: refreshed just before
   the hub went away), and the clock is **starvation**: hours since
@@ -339,7 +350,12 @@ provisioning or recovery path may depend on it.
   inputs: receiver key `R`, its accept table, its consent grant(s),
   the ALPN, the caller's bundle {`member`, `invoke[]`}. Steps: (1)
   ALPN → facet, unknown ⇒ reject; (2) verify `member` (sig, exp,
-  `aud` = the QUIC peer key); **(2b) the `member` cert's `iss` must be
+  `aud` = the QUIC peer key); **(2a) resolve the issuer** — if a
+  `speak-as` in the bundle has `aud` = `member.iss`, verify it and
+  take its `iss` as the effective issuer, checking `cav.verbs ∋
+  member` and `cav.groups ⊇ member.cav.groups` (ADR-0018; the same
+  resolution applies to every grant's `iss` in step 3, and the group
+  rule compares *resolved* issuers); **(2b) the resolved `iss` must be
   an issuer R holds a live consent grant for** — otherwise its name
   and groups are stranger-chosen and would reach the gateway header
   (found by `authorize.qnt`, ruled 2026-09-05, `3cx`); (3) for each
@@ -389,13 +405,37 @@ provisioning or recovery path may depend on it.
 - **Network** — a sovereign-rooted bundle: namespace + admission
   policy + rendezvous services. This deployment runs one.
 - **Hub** — the single config-server binary on fly.io implementing
-  the network's four services (mint, namespace, rendezvous,
-  provisioning) plus the `/status` and `/policy` admin pages.
-  Trusted infrastructure, not a root of trust; killable and
-  re-derivable (one unseal).
-- **Unseal** — the wallet signature over the frozen master message
-  that (re)creates the hub's HKDF master after each deploy. While
-  sealed, derived roles are down; nothing is lost.
+  the network's services plus the `/status` and `/policy` admin
+  pages. Trusted infrastructure, not a root of trust; killable and
+  re-derivable (one unseal). Under ADR-0018 it is the wallet's **hot
+  key** and, conceptually, several actors cut by the state they must
+  keep: **Issuer** (mint/renew member + invoke certs), **Enroll**
+  (device flow, machine approval, boot token), **Relay** (iroh relay,
+  name map), **Gateway** — all ephemeral-key actors with no durable
+  secret — and **Provisioner** (config serve, KMS), the only one
+  holding a secrets seed. First step is a modular monolith: one
+  binary, one inbox per actor, messages are the protocol's signed
+  envelopes.
+- **Speak-as** _(pinned 2026-09-06, ADR-0018)_ — the verb that maps a
+  signer to a principal: *treat anything signed by `aud` as if signed
+  by `iss`, within `cav`, until `exp`.* Not authority to reach
+  anything. Two axioms: **resolve before compare** — every rule that
+  names an issuer (step 2b, the group rule) operates on the resolved
+  issuer, so groups are sovereign-scoped, not hot-key-scoped; and
+  **verification-time validity** — a cert's effective expiry is
+  `min(own exp, speak-as exp)`. The caller's bundle carries the
+  `speak-as` alongside its member cert and grants.
+- **Unseal** — the wallet signing one `speak-as` cert to the hub
+  process's fresh key (`cav: {verbs: [member, invoke], groups ⊆
+  policy's list, delegable: false}`, 120 d). Nothing about the
+  signature is secret; replayed against another process it names a
+  key that process does not hold. While sealed, minting and renewal
+  are down; nothing is lost. Because the `speak-as` belongs to the
+  process, a long-lived hub approaches its expiry silently — `/sealed`
+  nags at < 30 d left, so a wallet act is due at least every ~90 d
+  even without a redeploy. _(Was: the signature over the frozen master
+  message that recreates the HKDF master; that seed now roots secrets
+  only.)_
 - **Enrollment** — wallet-authorized minting of a binding: the member
   submits its own pubkey, the approver (at whatever signature
   distance) ratifies role + group, one signature mints the cert.
@@ -409,8 +449,10 @@ provisioning or recovery path may depend on it.
   roles from the derived namespace, device roles while their tunnel
   is live.
 - **KMS / disk encryption** — node STATE/EPHEMERAL keys derive from
-  the master per (machine, partition); unlock rides WAN HTTPS, never
-  the overlay (invariant 4).
+  the **secrets seed** per (machine, partition); unlock rides WAN
+  HTTPS, never the overlay (invariant 4). The seed also roots the age
+  identity and recovery passphrases and nothing else (ADR-0018);
+  whether it stays wallet-derived or becomes fly-held is open.
 - **Workload plane** — Kubernetes on the machines: ArgoCD syncs
   `k8s/` from git; ingress-nginx routes `<svc>.cp1.mesh.internal` on
   :80; SIWE→OIDC bridge gates every exposed service with the wallet.
