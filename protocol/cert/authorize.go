@@ -38,17 +38,27 @@ type Identity struct {
 
 // Result is the outcome. Verified lists only the certs that both (a) had
 // a valid signature and (b) are ROOTED AT THE RECEIVER — R-signed
-// consents, speak-as certs whose iss is a principal R holds a live
-// consent for, and member/grant certs whose RESOLVED issuer is such a
-// principal. A stranger's validly-self-signed cert is NOT included even
-// though its signature verifies, because it is not on a chain rooted at
-// R; otherwise any peer that can connect could push a caller's
-// clock.Mark into the future (denial by strangers, which ADR-0019
-// excludes). Expired-but-rooted certs ARE included: an expired cert from
-// a consented issuer still proves its iat passed.
+// consents, speak-as certs whose iss is a principal R has signed a
+// delegable consent for, and member/grant certs signed by such a
+// principal or by a hot key such a principal vouches for via a
+// signature-valid speak-as. Rootedness is SIGNATURE-ONLY PROVENANCE
+// (decision 7ry): whether the consent or speak-as is expired at Now is
+// irrelevant, and so are the speak-as's cav.verbs / cav.groups (decision
+// jo8) — those gate authorization, not provenance. Now never enters the
+// rooting path, so there is no now → rooted → lw → now loop. A
+// stranger's validly-self-signed cert is NOT included even though its
+// signature verifies, because it is not on a chain rooted at R;
+// otherwise any peer that can connect could push a caller's clock.Mark
+// into the future (denial by strangers, which ADR-0019 excludes).
+// Expired-but-rooted certs ARE included: an expired cert from a consented
+// issuer still proves its iat passed.
 //
 // The caller folds these into a clock.Mark via mark.ObserveAll — safe to
 // do on both accept and reject, as Verified is populated on both paths.
+// ADR-0019's "update first, then judge" holds ACROSS bundles, not within
+// one (decision c4c): Authorize judges with the caller's Now, and
+// Verified feeds the mark afterwards; the presenter chooses the bundle,
+// so omitting fresh certs only weakens their own evidence.
 type Result struct {
 	OK       bool
 	Identity Identity
@@ -191,14 +201,31 @@ func (a *authCtx) consentsFor(consents []Cert, r, issuer ActorID, now int64) []C
 	return out
 }
 
-// consentedPrincipals is the set of actor ids R holds a live, delegable
-// consent grant for. These are the only issuers whose certs may feed the
-// mark (Result.Verified) or root a chain.
-func (a *authCtx) consentedPrincipals(consents []Cert, r ActorID, now int64) map[ActorID]bool {
+// rootedPrincipals is the set of actor ids R has SIGNED a delegable
+// invoke consent for — signature only, no expiry, no now (decision 7ry).
+// These are the issuers that root a chain at R for the purpose of the
+// mark (Result.Verified). It is deliberately NOT consentsFor: the
+// authorization path keeps its live-at-now check; rooting is provenance.
+func (a *authCtx) rootedPrincipals(consents []Cert, r ActorID) map[ActorID]bool {
 	set := map[ActorID]bool{}
 	for _, c := range consents {
-		if c.Iss == r && c.Can == VerbInvoke && c.Cav.Delegable && a.sigOK(c, c.Exp, now) {
+		if c.Iss == r && c.Can == VerbInvoke && c.Cav.Delegable && a.verify(c) {
 			set[ActorID(c.Aud)] = true
+		}
+	}
+	return set
+}
+
+// rootedHotKeys is the set of hot keys some rooted principal vouches for
+// via a signature-valid speak-as in the bundle — the provenance-only
+// analogue of resolve (decision jo8): cav.verbs, cav.groups, expiry and
+// unknown caveats are ignored here; they gate authorization, not
+// whether the hot key is provably that principal's. Single-level.
+func (a *authCtx) rootedHotKeys(speakAs []Cert, principals map[ActorID]bool) map[ActorID]bool {
+	set := map[ActorID]bool{}
+	for _, sa := range speakAs {
+		if sa.Can == VerbSpeakAs && principals[sa.Iss] && a.verify(sa) {
+			set[ActorID(sa.Aud)] = true
 		}
 	}
 	return set
@@ -224,12 +251,16 @@ func (a *authCtx) memberSovereigns(in Input, m Cert) []sovereign {
 // rooted at R (see Result). Independent of the accept/reject decision, so
 // the mark advances even when authorization fails.
 //
-// Rootedness of a member/grant cert is "SOME resolved sovereign is a
-// consented principal" — the set-valued analogue of the pre-9l3 rule.
-// The receiver-rooting port proper is issue 2qp (behind zev); nothing
-// about the clock/Verified contract changes here.
+// Rooted = signature-only provenance (decisions 7ry, jo8; the model's
+// isRooted in verification/quint/clock.qnt): a cert is rooted iff it
+// sits on a chain whose root consent R signed, regardless of any
+// expiry at in.Now and regardless of speak-as cav.verbs / cav.groups.
+// in.Now is NOT read here — the mark must not feed its own rooting.
+// Authorization (memberSovereigns, grantAdmits, resolve) keeps the full
+// live-at-now, verb- and group-scoped checks.
 func (a *authCtx) buildRooted(in Input) {
-	principals := a.consentedPrincipals(in.Consents, in.Receiver, in.Now)
+	principals := a.rootedPrincipals(in.Consents, in.Receiver)
+	hotKeys := a.rootedHotKeys(in.Bundle.SpeakAs, principals)
 	// (a) R-signed consents that verified (expiry irrelevant — R signed
 	// them, so they are rooted at R and their iat proves time passed).
 	for _, c := range in.Consents {
@@ -237,27 +268,19 @@ func (a *authCtx) buildRooted(in Input) {
 			a.root(c)
 		}
 	}
-	// (b) speak-as certs whose iss is a consented principal.
+	// (b) speak-as certs signed by a rooted principal.
 	for _, sa := range in.Bundle.SpeakAs {
 		if sa.Can == VerbSpeakAs && a.verify(sa) && principals[sa.Iss] {
 			a.root(sa)
 		}
 	}
-	// (c) member/grant certs some RESOLVED sovereign of which is a
-	// consented principal (resolution single-level; a stranger hot key
-	// resolves only to itself and to stranger wallets, and is dropped).
-	// No group requirement: a consented wallet's live speak-as covering
-	// the verb is what proves the cert sits on an R-rooted chain.
+	// (c) member/grant certs signed by a rooted principal, or by a hot
+	// key a rooted principal vouches for (single-level; a stranger hot
+	// key is vouched for only by stranger wallets, and is dropped).
 	certs := append([]Cert{in.Bundle.Member}, in.Bundle.Grants...)
 	for _, c := range certs {
-		if !a.verify(c) {
-			continue
-		}
-		for _, w := range a.resolve(c, in.Bundle.SpeakAs, in.Now, nil) {
-			if principals[w.ID] {
-				a.root(c)
-				break
-			}
+		if a.verify(c) && (principals[c.Iss] || hotKeys[c.Iss]) {
+			a.root(c)
 		}
 	}
 }
