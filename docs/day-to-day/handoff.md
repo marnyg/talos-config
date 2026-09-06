@@ -5,91 +5,61 @@
 
 ## Last session
 
-2026-09-06 — **swarm batch 1 landed** (`35c`): five bd issues run as
-worker agents in `~/git/swarm/<id>` worktrees, reviewed and
-fast-forwarded to `main`. The orchestrator session was interrupted
-mid-batch and resumed; nothing was lost.
+2026-09-06 — **swarm batch 2 landed** (`main a0e538a → 5c46b0e`): four
+bd issues run as `pi` workers in `~/git/swarm/<id>` worktrees, each
+reviewed + gated by the orchestrator, fast-forwarded, pushed. Briefs
+in `~/git/swarm/_briefs/`, reports in `~/git/swarm/_reports/`.
 
-- **`k3o`** — monorepo restructure: `protocol/` is its own Go module
-  with a docs sub-scope; ADR-0020. Landed `65c2f83`.
-- **`cmi`** — `.github/workflows/verify.yml` gates `go test` + the
-  Quint models; quint pinned to the flake's 0.30.0. `75940cf`, `2cf1aa5`.
-- **`359.1.4`** — P0.4 iroh API-churn probe: **PASS-WITH-CONDITION**.
-  iroh is 1.1.0 under semver; breaking rate down ~10×; the condition is
-  *own the Go binding* (Go is community-only). `docs/mesh-v3-iroh.md`.
-- **`0bc.1`** — `protocol/cert` (primitive, JCS canonical JSON, Ed25519
-  + EIP-191, strict decode, `Authorize`, `Attenuate`) and
-  `protocol/clock` (`Mark`). Rapid ports of all 13 `authorize.qnt` and
-  4 `clock.qnt` laws over real signatures. Two review rounds: round 2
-  fixed **mark poisoning** (`Result.Verified` now lists only certs
-  rooted at the receiver — ADR-0019/glossary amended on `main`,
-  `57049aa`; model side is `zev`) and made `resolve()` scan all
-  matching speak-as (re-unseal without redeploy). `952eeff`, `1dc4d20`.
-  Follow-up `44r`: re-port the 5 hand-written speak-as tests from the
-  model now that `czi` has landed.
-- **`czi` + `jp2`** — run twice (opus vs fable) to pick the best;
-  **fable's landed** (`09ae2d5`, `1081fa8`): 8 new speak-as laws, 15
-  faults in `genNear`, 24 + 16 mutants tabled. The opus attempt is kept
-  on branch `swarm/models` for reference — it encodes the hole below.
-
-**Model-first findings from `czi`/`jp2` (ruling needed, all filed):**
-- **`9l3` (P1 bug)** — "compare RESOLVED issuers" read as set overlap
-  is unsound: any wallet can self-sign a speak-as for any hub key, so
-  ROGUE→HUB_A + ROGUE→HUB_B makes OWNER2's member reach OWNER1's
-  `admins` facet. Sound rule: **one consented sovereign vouches for
-  both the grant's signer and the member's signer**
-  (`invGroupMatchRootedInChain`, m14). The Go `Authorize` rejects this
-  bundle today only because it resolves each cert to a *single* issuer
-  and compares equality — align it with the ruled wording.
-- **`xfx` (P1 bug)** — renewal at ⅔ life is insufficient under
-  ADR-0018: a cert signed by a dead process carries that process's
-  speak-as expiry; redeploy at speak-as day 90+ with a <60 d cert ⇒
-  access lost at starvation 0. Renew on the first beat after the hub
-  key changed (or schedule off *effective* expiry).
-- **`q8h` (thread)** — the number: max unattended hub-process life is
-  **90 d** (`SPEAKAS_LIFE − MEMBER_RUNWAY`); **120 d / 30 d-nag holds
-  with zero margin** and *only if* `/sealed` at <30 d **stops serving
-  beats**. Advisory-only nag breaks the 30 d promise past day 90. Also:
-  after a missed nag, unseal→beat→deploy rescues certs; deploy-first
-  strands them.
-- **`zpf` (thread)** — grant-side `cav.groups ∋ g` on the speak-as for
-  hot-key-signed group grants: modelled yes, brief said member only.
+- **`6z9` (part a)** — `verification/nickel/mesh-policy-v3.ncl` + spec
+  fixture: closed receiver kinds, closed per-kind facet sets, no
+  ports, one-of host/group, `group: machines` never on a node facet;
+  12 new mutations. Part (b) stays open behind `359.8.5`. `867beac`.
+- **`zev`** — `clock.qnt` issuer classes `Honest | Lying | Stranger`;
+  `invStrangerNeverAdvances` (equality form) + `invStrangerNeverAccepted`;
+  10 mutants. `verify clock.qnt` is now ~110 s. `15ef32f`.
+- **`44r`** — `protocol/cert`: set-valued `resolve()`, one-consented-`w`
+  group rule, grant-side `cav.groups ∋ g`, 8 rapid law ports,
+  `TestRogueVouchesBothHubsRejects`, exhaustive `TestFaultPairSweep`
+  (2424 scenarios — rapid at 100 checks was too shallow for
+  pair-faults; m14 died only ~6 %/run). `de21566`.
+- **`ow7`** — `iroh-go/`: in-house Go binding via uniffi-bindgen-go
+  0.7.1+v0.31.0 off iroh-ffi 1.1.0 (three textual fixups, no fork);
+  flake packages `iroh-go iroh-go-smoke iroh-ffi iroh-ffi-static
+  iroh-relay uniffi-bindgen-go`, app `iroh-go-regen`; direct and
+  custom-relay smokes pass on aarch64-darwin **and** aarch64-linux.
+  **Recommendation: bindgen, no sidecar.** `c043158`; data in
+  `docs/mesh-v3-iroh.md`.
+- Ruled with `44r`: the model's step 2b now also requires the member's
+  consent to `target ∋ R` (`5c46b0e`); Go already did.
 
 ## Loose threads
 
-- `zev`: `clock.qnt` should model untrusted issuers never advancing
-  `lw` (the Go side already does this).
-- `44r`: Go speak-as tests are ahead of their oracle until re-ported;
-  and `9l3`'s ruling may change `resolve()`.
-- Broken windows from `models-b` report: `runway.qnt`
-  `invPolicyPropagates` lets mutant o5 (deploy fails to bake
-  `gitEpoch`) survive; `authorize.qnt` step (1) fail-closed is backed
-  by a `Map.get` runtime error, not a `Reject`; `check.sh` header says
-  "Three tiers" and lists two.
+- **`2g6` (thread)** — "rooted at the receiver": signature-only
+  (`clock.qnt`) or live-at-`now` (Go `buildRooted` needs the consent
+  unexpired at `now`)? Plus verb-scoped rootedness in case (c) and
+  per-bundle judge-then-update ordering. `2qp` must not port blind.
+- **`359.8.5`** now carries two questions from `6z9`: is hub `relay`
+  an `invoke {facet: relay}` grant or membership-implied (glossary
+  lists `relay` as both a facet and a verb); does the hub still dial
+  node `apid` under v3?
+- **`htt`** — iroh-ffi 1.1.0's lock pins core iroh 1.0.2; bump tested
+  green (identical binding) but not committed. **`g3u`** — x86_64-linux
+  and static-musl Talos-extension link are unverified; a CI job on
+  `ubuntu-latest` closes the first.
+- Protocol sub-scope glossary drift: `protocol/docs/desired-state/
+  domain-model.md` *Attenuation* still says the group rule is "same
+  key as the grant's iss" (pre-`9l3`), and *Time / low-water mark*
+  lacks "rooted" (also `8vg` for `mark.go` + invariants §9).
+- Debt filed: `m60` (CI does not run the Nickel check), `81u`
+  (`nix flake check` red on `main`: yamlfmt on 17 YAML files).
 - Boot-token HMAC key source (`54n`), ADR-0017 still Proposed until
-  `359.8.1`/`359.8.5`, ADR-0019 node-agent NTP gate → `359.1.3` — all
+  `359.8.1`/`359.8.5`, ADR-0019 node-agent NTP gate → `359.1.3` —
   carried unchanged.
-- Stale worker `pi` sessions may still be open in terminal panes
-  (their worktrees are removed).
-
-**Later the same session:** the four findings were **ruled**
-(decisions `4oz` `h90` `how` `w5s`; glossary + ADR-0018 `[amended]`):
-one consented wallet vouches for both ends of the group rule; member
-renewal also triggers on hub-key rotation; the `/sealed` nag **is a
-seal** (hub stops serving at < 30 d, 90 d unattended life, tight
-bound); grant-side `cav.groups ∋ g`. The three model broken windows
-were fixed (`invDeployBakesGit`, total ALPN lookup, `check.sh`). CI
-had been red since `cmi` on an upstream `slackhq/nebula` data race —
-the three in-process overlay e2e tests are now `!race`; `verify` is
-green.
 
 ## Suggested next steps
 
-- **Swarm batch 2 (owner-input-free, disjoint files):** `44r` (P1,
-  `protocol/cert`: align `Authorize` with `9l3`/`zpf`, port the 8 new
-  laws), `zev` (`clock.qnt` stranger law), `ow7` (in-house iroh Go
-  bindings, flake build, smoke test), `6z9` (Nickel v3 facet-class
-  contracts, spec-ready part (a) only). `2qp` follows `zev`.
+- Rule `2g6`, then swarm `2qp` (Go port of the stranger laws) — the
+  zev report lists the 7 laws to port.
 - `0bc.2` needs a `/skill:grill-design` pass before it can be briefed.
 - Phase 0 probes `359.1.1–.3` once fly scratch + an Android device
-  exist; then the gate `359.1.5`.
+  exist; `359.1.1` can now use `nix build .#iroh-relay`.

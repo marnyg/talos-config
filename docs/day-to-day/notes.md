@@ -185,6 +185,25 @@
   boundary-biased generator (valid scenario + ≤2 injected faults)
   was added. Always mutation-test a new model before trusting `[ok]`.
   Also: never `powerset()` a 25-element set in a generator.
+- 2026-09-06 — **`iroh-go/` builds are slow cold and need the UA
+  backport.** crates.io returns 403 to the generic User-Agent the
+  flake's 2026-01 nixpkgs `fetchCargoVendor` sends; `iroh-go/nix/
+  default.nix` overrides two lines of the vendor script (fixed-output,
+  hashes unaffected) — delete it when nixpkgs is bumped past the
+  upstream fix. Cold on an M-series: iroh-ffi 7–10 min, iroh-relay
+  8 min, uniffi-bindgen-go ~45 min; warm `nix build .#iroh-go-smoke`
+  44 s. Hand-run `go build` in `iroh-go/` needs
+  `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`.
+- 2026-09-06 — `nix flake check` (full) is **red on `main`**: treefmt/
+  yamlfmt wants to reformat 17 YAML files (`81u`). Use `--no-build
+  --impure` for the eval-only check until fixed.
+- 2026-09-06 — **rapid at the default 100 checks is too shallow for
+  pair-faults.** In `protocol/cert` the m14 mutant (group rule as set
+  overlap) died in only ~6 % of runs at 100 checks; the killing pair is
+  ~0.06 % of samples. `TestFaultPairSweep` enumerates the model's fault
+  space exhaustively (2424 scenarios, 0.7 s) — add a case there when a
+  new law needs a specific pair. `check.sh verify` is now ~5.4 min
+  (`approval` 162 s, `clock` 110 s).
 - **`pi -p` hangs after completing its answer** when stdin is left
   open. Wrap non-interactive uses: `timeout -k 10 420 pi -p
   --no-session "…" </dev/null`.

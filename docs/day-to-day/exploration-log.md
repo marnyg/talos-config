@@ -45,6 +45,19 @@
   agent's recommendation — exposed a real inconsistency with the
   branch-1 sovereignty pin.
 
+## Mesh v3 Go embedding of iroh (2026-09-06, `ow7`)
+
+- 2026-09-06 — Considered a **Rust sidecar** (iroh in its own process,
+  bespoke IPC to Go) as the fallback if uniffi-bindgen-go proved
+  brittle against iroh-ffi 1.1.0. Not needed: bindgen 0.7.1+v0.31.0
+  generated a compiling Go package with three exact-match textual
+  fixups and no generator fork; async, foreign traits, errors all
+  work; both smokes pass on darwin + linux. **Landed on: in-house
+  bindgen, no sidecar** (data in `docs/mesh-v3-iroh.md`). Revisit only
+  if a uniffi minor bump breaks the fixups or the static-musl Talos
+  extension link proves impossible (`g3u`). Community `iroh-go` as an
+  unforked dependency remains ruled out (P0.4 condition).
+
 ## Unattended Windows guest on KubeVirt (2026-08-11→14)
 
 - 2026-08-12 — Tried scripting the "Press any key to boot from CD" EFI
