@@ -264,6 +264,45 @@ git.coopcloud.tech/decentral1se/iroh-go (README version-support);
 docs.rs/iroh/latest `endpoint::Endpoint`/`Builder` (`RelayMode::Disabled`,
 `empty()`).
 
+### Go binding: bindgen vs sidecar — data (2026-09-06)
+
+Task `talos-config-ow7`, the P0.4 condition. Pipeline lives in
+`iroh-go/` (own `go.mod`; `protocol/` untouched), flake outputs
+`packages.{iroh-go,iroh-go-smoke,iroh-ffi,iroh-relay,uniffi-bindgen-go}`,
+`apps.iroh-go-regen`. Bindgen produced a compiling, working Go package
+well inside the time-box, so the sidecar proof was **not** built.
+
+| question | data |
+|---|---|
+| pins landed | iroh-ffi **1.1.0** (git tag; not on crates.io) → its `Cargo.lock` pins **core iroh 1.0.2**, taken as-is. uniffi 0.31.2 in the ffi ↔ **uniffi-bindgen-go 0.7.1+v0.31.0** (uniffi 0.31.0) — same minor, contract-version + checksum check passes at `init()`. iroh-relay **1.1.0** from the core repo tag (nixpkgs has 0.95.1). |
+| did it generate? compile? | yes / yes after **3 textual fixups** (`iroh-go/regen/fixup.sh`): `HashMap<Vec<u8>,_>` → invalid `map[[]byte]T` (one field); `IrohError.Error()` by value returning `"IrohError"` (vet copylocks); package clause ignores `package_name`. No generator patch needed for async methods/constructors, foreign-implementable trait interfaces (`Preset`, `ProtocolHandler`), error objects, records, enums, `Display/Eq/Hash`. Bindgen also insists on `cargo metadata` in cwd → a dependency-free dummy crate satisfies it offline. |
+| smoke: direct | **PASS** — two `Endpoint`s, `PresetMinimal` (no n0 DNS/pkarr/relays), `RelayMode::Disabled`, dial B's bound `127.0.0.1` socket, ALPN `mesh/smoke/v1`, one bi-stream echo, clean close. Selected path `*ip:127.0.0.1:<port>`. |
+| smoke: custom relay | **PASS** — `iroh-relay 1.1.0 --dev` on loopback, `RelayMode::Custom(http://127.0.0.1:<port>)`, B dialed by id + relay URL only. Selected path `*relay:http://127.0.0.1:<port>/`, rtt 1 ms. (core 1.0.2 client ↔ relay 1.1.0: wire-compatible.) Both run in `nix build .#iroh-go-smoke`'s checkPhase and in `go test ./...`. |
+| build time | nix cold (aarch64-darwin, M-series): iroh-ffi **7–10 min**, iroh-relay **8 min**, uniffi-bindgen-go **~45 min** (one huge askama crate; built once, cached), bindgen run **1.4 s**, Go build **~2 s**. Warm: Go step only. |
+| native lib size | `libiroh_ffi.a` **21.8 MB**, `.dylib` **15.1 MB** (release + LTO, iroh-ffi's profile). |
+| Go binary size | smoke **15.0 MB** stripped, Rust archive linked statically; 3.8 MB if dynamically linked to the dylib. |
+| CGO required | **yes**, always (uniffi is a C ABI). C toolchain at build time; runtime deps = libc/libSystem (+ macOS frameworks). |
+| cross-compile | Go-alone cross-compile is gone: each (os, arch) needs its own `libiroh_ffi.a` + C toolchain → **one builder per target** (`pkgsCross` under nix). Derivations evaluate for `x86_64-linux`/`aarch64-linux`; **x86_64-linux build unverified** (no builder); aarch64-linux see report. Talos static/musl: `pkgsStatic` path identified, **not attempted**. |
+| API ergonomics | `preset := iroh.PresetMinimal(); mode := iroh.RelayModeDisabled(); ep, err := iroh.EndpointBind(iroh.EndpointOptions{Preset: &preset, BindAddr: &addr, Alpns: &alpns, RelayMode: &mode})` — then `ep.Connect(iroh.NewEndpointAddr(id, &relayURL, nil), alpn)`, `conn.OpenBi()`, `bi.Send().WriteAll/Finish`, `bi.Recv().ReadToEnd`. Warts: `Option<Arc<T>>` → `**T`; optional scalars are pointers; async calls block the goroutine; objects have `Destroy()`. Usable as-is; a thin idiomatic wrapper is a later nicety, not a need. |
+| version bump cost | pins in `nix/sources.nix` → `nix run .#iroh-go-regen` → drift check + smoke → commit lib pins + generated package together. Measured: core 1.0.2→1.1.0 inside the ffi lock = `cargo update` + 3 min build, **byte-identical Go output**, smoke green. An ffi-surface change adds compiler-guided consumer fixes. Consistent with the P0.4 estimate (4–6 h for the three Go embeddings). |
+| nix caveats hit | crates.io now 403s generic User-Agents; the flake's 2026-01 nixpkgs `fetchCargoVendor` has none → two-line backport (UA + `static.crates.io`) in `iroh-go/nix/default.nix`, drop when nixpkgs is bumped. uniffi-bindgen-go's workspace lock has uniffi 0.31.0 from two sources → vendored from a lock trimmed to the `bindgen` member. |
+
+**Recommendation: bindgen, in-house — no sidecar.** The generator
+works on iroh-ffi 1.1.0 with three exact-match textual fixups and zero
+forks; the whole chain is fixed-output vendored in the flake, the
+checked-in package is drift-checked on every build, and both the
+relay-less and custom-relay paths pass from Go. A sidecar would add a
+process boundary, a bespoke IPC protocol and its own version skew for no
+gain that this data shows. The risk I am least sure about is the
+**Talos system-extension link**: a fully static musl build of the Rust
+archive + cgo Go binary is identified (`pkgsStatic`) but was not
+attempted, and the x86_64-linux build itself is unverified here — run
+`nix build .#iroh-go-smoke` on an x86_64-linux builder before Phase 1
+commits to the extension shape. Second risk: uniffi-bindgen-go is a
+single-vendor (NordSecurity) project that tracks uniffi with a lag;
+pin it, and treat an iroh-ffi uniffi minor bump as the moment to
+re-check the fixups.
+
 ### Phase 1 — identity plane beside nebula (dual plane)
 
 - `irohderive`-equivalent: issuer key from `masterderive`; membership
