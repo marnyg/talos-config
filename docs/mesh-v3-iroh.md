@@ -266,7 +266,8 @@ docs.rs/iroh/latest `endpoint::Endpoint`/`Builder` (`RelayMode::Disabled`,
 
 ### Go binding: bindgen vs sidecar — data (2026-09-06)
 
-Task `talos-config-ow7`, the P0.4 condition. Pipeline lives in
+Task `talos-config-ow7`, the P0.4 condition; decision recorded as
+**ADR-0021**. Pipeline lives in
 `iroh-go/` (own `go.mod`; `protocol/` untouched), flake outputs
 `packages.{iroh-go,iroh-go-smoke,iroh-ffi,iroh-relay,uniffi-bindgen-go}`,
 `apps.iroh-go-regen`. Bindgen produced a compiling, working Go package

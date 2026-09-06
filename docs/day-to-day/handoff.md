@@ -46,10 +46,10 @@ in `~/git/swarm/_briefs/`, reports in `~/git/swarm/_reports/`.
   green (identical binding) but not committed. **`g3u`** — x86_64-linux
   and static-musl Talos-extension link are unverified; a CI job on
   `ubuntu-latest` closes the first.
-- Protocol sub-scope glossary drift: `protocol/docs/desired-state/
-  domain-model.md` *Attenuation* still says the group rule is "same
-  key as the grant's iss" (pre-`9l3`), and *Time / low-water mark*
-  lacks "rooted" (also `8vg` for `mark.go` + invariants §9).
+- **ADR-0021** (bindgen over sidecar for the iroh Go binding) is
+  Proposed; promote when `g3u` is green and Phase 1 links it.
+  Protocol glossary synced to the ruled group rule + rooted mark;
+  `8vg` still covers `mark.go` + protocol invariants §9.
 - Debt filed: `m60` (CI does not run the Nickel check), `81u`
   (`nix flake check` red on `main`: yamlfmt on 17 YAML files).
 - Boot-token HMAC key source (`54n`), ADR-0017 still Proposed until

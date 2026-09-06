@@ -235,10 +235,19 @@ protocol scope must never contradict these entries.
 - **Attenuation** — a chain link adds caveats, never removes;
   effective authority is field-wise intersection over `target`,
   `facet` and every recognised caveat; an unknown caveat rejects.
-  **Group resolution rule:** `aud: group:<g>` is satisfied by a
-  `member` cert whose `iss` is the *same key* as the grant's `iss`
-  and whose `cav.groups` contains `<g>`. Groups are issuer-scoped
-  names, never global, never actors. _(root glossary: Attenuation.)_
+  **Group resolution rule:** `aud: group:<g>` is satisfied when
+  **one sovereign W that R holds a live consent for** both (i)
+  vouches for the grant's signer and (ii) vouches for the `member`
+  cert's signer — directly (W *is* the signer) or through a live
+  `speak-as` whose `cav.verbs` covers the cert's verb and whose
+  `cav.groups` covers the groups named — and the member's
+  `cav.groups` contains `<g>`. Never "resolved issuers are equal": a
+  signer resolves to the *set* of wallets that vouched for it, and
+  any wallet can sign a `speak-as` naming any key, so comparing sets
+  for overlap lets a stranger wallet bridge two sovereigns' hot keys
+  (`authorize.qnt` `invGroupMatchRootedInChain`). Groups are
+  sovereign-scoped names, never global, never actors. _(root
+  glossary: Attenuation; ruled 2026-09-06, `9l3`.)_
 - **Speak-as** — the verb that maps a signer to a principal: *treat
   anything signed by `aud` as if signed by `iss`, within `cav`, until
   `exp`.* Not authority to reach anything. Two axioms: **resolve
@@ -255,8 +264,11 @@ protocol scope must never contradict these entries.
   ops, not protocol. The *lower* bound (resurrection of expired certs
   under clock rollback) is protocol-enforced: every cert carries
   **`iat`** (issuer's clock at signing), and a verifier keeps
-  `lw = max(lw, iat)` over every cert whose signature it verifies in a
-  chain. Update first, then judge with `now = max(local, lw)`.
+  `lw = max(lw, iat)` over every cert whose signature it verifies **on
+  a chain rooted at itself** — never a stranger's self-signed cert,
+  which would let any connecting peer push the mark
+  (`clock.qnt` `invStrangerNeverAdvances`). Update first, then judge
+  with `now = max(local, lw)`.
   Uncapped. `lw` is a **safe-to-lose cache**: volatile, optionally
   persisted; loss degrades to the local clock. `iat` never
   participates in authority or attenuation. _(root glossary: Time /

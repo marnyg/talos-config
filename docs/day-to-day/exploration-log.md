@@ -4,47 +4,6 @@
      Granularity: strategy-level pivots only. Not "used ripgrep instead of sed".
      Yes: "tried library X, ruled out for reason Y." -->
 
-## Sovereign-actor networking design exploration (task 51 sketch)
-
-- 2026-08-16 — Identity-handle branch: **chain-registry indirection
-  ruled out** for the identity layer (chain read in enrollment/auth
-  path; identity lifetime coupled to one chain's liveness). Landed
-  on: handle = cold root key's address; hot networking keys via
-  short-lived self-signed delegation certs ("everyone is their own
-  Azimuth"); revocation between expiries is best-effort by design.
-  Raw `hash(pubkey)` addressing ruled out earlier (no rotation).
-  Chain remains optional *outside* the auth path (smart-account
-  social recovery for roots). ~~Design targets a future separate~~
-  _(2026-09-03: superseded by decision `talos-config-5w1` — the
-  protocol lives here; this repo becomes a monorepo around it.)_
-  Design targets a future separate
-  project; captured here because the exploration happened in-repo.
-- 2026-08-16 — Messaging-primitive branch: **identity-addressed
-  send ruled out as the primitive** (public id = floodable inbox,
-  confused-deputy with wallets attached; publicness should be opt-in
-  policy, not default topology). **CapTP-style live session refs
-  ruled out as the model** (actors are intermittently-connected
-  sovereigns; must verify offline) — kept as a within-session
-  optimization. Landed on: UCAN/SPKI-shaped cert-chain capabilities;
-  same cert primitive as the branch-1 key delegations. Full worked
-  model in task 51 annotations.
-- 2026-08-16 — Rendezvous branch: **global DHT ruled out for v0**
-  (imports sybil/eclipse into the core lookup path; public who-is-
-  where table; domains want membership-gated publish anyway — can
-  join later as another lookup actor behind the same facet).
-  **Parent-as-sole-registry ruled out** (orphans long-lived actors on
-  parent death; kept as one channel). Landed on: piggybacked signed
-  location records + lighthouse-as-plain-actor per domain.
-- 2026-08-16 — Economics branch: **enforced allowances via parent-
-  owned smart accounts (ERC-4337 session keys) ruled out** — children
-  become puppets (can't earn, can't outlive parent), contradicting
-  actor sovereignty; also chain lock-in. Landed on: sovereign wallets
-  + tranche funding on the renewal beat + observability (public
-  ledger watching); blast radius bounded economically (tranche ×
-  detection lag), not cryptographically. User-driven reversal of the
-  agent's recommendation — exposed a real inconsistency with the
-  branch-1 sovereignty pin.
-
 ## Mesh v3 Go embedding of iroh (2026-09-06, `ow7`)
 
 - 2026-09-06 — Considered a **Rust sidecar** (iroh in its own process,
