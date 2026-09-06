@@ -109,9 +109,9 @@ type Caveats struct {
 	Facet     []string  // grants: the facet classes it may reach
 	Groups    []string  // member certs: the groups the member is in
 	Name      string    // member certs: the member's durable name
-	Delegable bool       // false ⇒ no chain link may follow
+	Delegable bool      // false ⇒ no chain link may follow
 	Verbs     []string  // speak-as: the verbs the delegated key may exercise
-	Unknown   bool       // verifier-side: carries an unrecognised caveat
+	Unknown   bool      // verifier-side: carries an unrecognised caveat
 }
 
 // Cert is the primitive: {iss, aud, can, cav, iat, exp, sig}.

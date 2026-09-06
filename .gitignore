@@ -19,3 +19,7 @@ k8s/MIGRATION.md
 .dolt/
 *.db
 .beads-credential-key
+
+# rapid (pgregory.net/rapid) writes a repro file per failing property;
+# useful locally, never committed.
+**/testdata/rapid/

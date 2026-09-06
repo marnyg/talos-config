@@ -2,7 +2,6 @@ package cert
 
 import (
 	"crypto/ed25519"
-	"encoding/hex"
 	"fmt"
 	"sync"
 	"testing"
@@ -828,5 +827,3 @@ func bytesFill(b byte) []byte {
 	}
 	return s
 }
-
-var _ = hex.EncodeToString

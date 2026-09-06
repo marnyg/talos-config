@@ -49,16 +49,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      # Pin to the version the repo's flake input ships:
-      #   nix eval --raw --inputs-from . 'nixpkgs#quint.version'
-      # (NOT the registry nixpkgs — that can be newer). Bump together.
-      - name: install quint
-        run: npm i -g @informalsystems/quint@0.30.0
+      - uses: DeterminateSystems/nix-installer-action@v22
+      # quint from the flake's own nixpkgs input (`--inputs-from .` reads
+      # flake.lock): the version is pinned by construction (0.30.0 today)
+      # and bumps with the flake. The package bundles Apalache + JVM.
       - name: check.sh run
-        run: verification/quint/check.sh run
+        run: nix shell --inputs-from . nixpkgs#quint -c verification/quint/check.sh run
   quint-verify:
     # Apalache bounded model checking takes minutes; run it nightly and
     # on demand, never inline on push/PR. `quint verify` downloads
@@ -67,26 +63,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: install quint
-        run: npm i -g @informalsystems/quint@0.30.0
+      - uses: DeterminateSystems/nix-installer-action@v22
       - name: check.sh verify
-        run: verification/quint/check.sh verify
+        run: nix shell --inputs-from . nixpkgs#quint -c verification/quint/check.sh verify
   nickel:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/nix-installer-action@v22
       # nickel comes from the flake's own nixpkgs input (`--inputs-from .`
       # reads flake.lock), so the version is pinned by construction —
-      # currently 1.16.0 — and bumps with the flake, unlike quint's
-      # hand-pinned npm install above. No `--impure` / devenv shell
-      # needed: only the nixpkgs package is evaluated.
+      # currently 1.16.0 — and bumps with the flake, like quint above. No
+      # `--impure` / devenv shell needed: only the nixpkgs package is
+      # evaluated.
       - name: check.sh
         run: nix shell --inputs-from . nixpkgs#nickel -c verification/nickel/check.sh

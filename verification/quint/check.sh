@@ -9,8 +9,9 @@
 #
 # CI: .github/workflows/verify.yml runs `check.sh run` on every push/PR
 # (job `quint`) and `check.sh verify` nightly + on workflow_dispatch (job
-# `quint-verify`). The quint version is pinned there; bump both together.
-# Keep this note and that workflow in sync.
+# `quint-verify`), both via `nix shell --inputs-from . nixpkgs#quint`, so
+# CI and the dev shell use the same flake-pinned quint. Keep this note
+# and that workflow in sync.
 #
 # Models:
 #   hub        seal lifecycle; ephemeral state dies with the process

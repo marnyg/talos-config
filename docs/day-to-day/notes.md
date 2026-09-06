@@ -194,9 +194,11 @@
   8 min, uniffi-bindgen-go ~45 min; warm `nix build .#iroh-go-smoke`
   44 s. Hand-run `go build` in `iroh-go/` needs
   `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`.
-- 2026-09-06 — `nix flake check` (full) is **red on `main`**: treefmt/
-  yamlfmt wants to reformat 17 YAML files (`81u`). Use `--no-build
-  --impure` for the eval-only check until fixed.
+- 2026-09-06 — `nix flake check --impure` is the canonical full check
+  and is green since `81u` (18 YAML files yamlfmt'd, 0 semantic
+  diffs). `--impure` is required by devenv, see the `flake.nix` header.
+  yamlfmt quirk: a flow mapping that is the last sequence item before a
+  comment gets a trailing `,}` — valid YAML, all parsers agree, ugly.
 - 2026-09-06 — **rapid at the default 100 checks is too shallow for
   pair-faults.** In `protocol/cert` the m14 mutant (group rule as set
   overlap) died in only ~6 % of runs at 100 checks; the killing pair is

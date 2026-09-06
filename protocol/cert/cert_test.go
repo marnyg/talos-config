@@ -203,7 +203,7 @@ func TestActorIDValidation(t *testing.T) {
 		}
 	}
 	bad := []ActorID{
-		"ed:" + ActorID(strings.Repeat("ab", 31)), // too short
+		"ed:" + ActorID(strings.Repeat("ab", 31)),    // too short
 		"eth:0x" + ActorID(strings.Repeat("AB", 20)), // uppercase
 		"eth:" + ActorID(strings.Repeat("cd", 20)),   // missing 0x
 		"foo:bar",
