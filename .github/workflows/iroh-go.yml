@@ -1,0 +1,94 @@
+# Builds the in-house iroh Go binding (iroh-go/, ADR-0021) on
+# x86_64-linux — the hub's fly image and the Talos system extension both
+# target it, and until this job the binding was only verified on
+# aarch64-{darwin,linux} (task talos-config-g3u). Two jobs:
+#
+#   smoke   nix build .#iroh-go-smoke — cgo Go binary statically linked
+#           against libiroh_ffi.a; its checkPhase runs the direct smoke
+#           and the custom-relay smoke (against .#iroh-relay --dev).
+#           Then runs the built binary outside the sandbox, both modes.
+#           Closure: iroh-ffi + iroh-relay + Go. Does NOT need the bindgen.
+#   drift   nix build .#iroh-go — regenerates the Go package with
+#           uniffi-bindgen-go and diffs it against the checked-in
+#           iroh-go/iroh/. Pulls the ~45 min (M-series; longer here)
+#           bindgen build, so it runs after `smoke` (shares iroh-ffi via
+#           the cache) with its own, larger timeout.
+#
+# Caching: Magic Nix Cache pushes every locally BUILT store path to the
+# GitHub Actions cache (substituted paths — rustc, go, stdenv — are not
+# re-uploaded), so a warm run fetches iroh-ffi / iroh-relay /
+# uniffi-bindgen-go instead of compiling them. Expected wall times on
+# ubuntu-latest (4 vCPU): smoke cold ≈ 45–60 min, drift cold ≈ 90–120
+# min on top of that (once, until a pin or the nixpkgs input moves);
+# warm ≈ 3–5 min each (nix install + cache fetch + Go build + tests).
+name: iroh-go
+on:
+  push:
+    branches: [main]
+    paths:
+      - iroh-go/**
+      - nix/**
+      - flake.nix
+      - flake.lock
+      - .github/workflows/iroh-go.yml
+  pull_request:
+    paths:
+      - iroh-go/**
+      - nix/**
+      - flake.nix
+      - flake.lock
+      - .github/workflows/iroh-go.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      # nix-installer-action + magic-nix-cache-action are the same
+      # vendor's pair and need no account or secret (unlike cachix);
+      # cache-nix-action would snapshot the whole /nix instead.
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: disk before build
+        run: df -h / /tmp
+      - name: nix build .#iroh-go-smoke (checkPhase = direct + relay smoke)
+        run: nix build .#iroh-go-smoke -L
+      - name: run the binary outside the sandbox (direct)
+        run: ./result/bin/smoke
+      - name: run the binary outside the sandbox (custom relay)
+        run: |
+          set -eu
+          relay=$(nix build .#iroh-relay --print-out-paths)
+          cat > relay.toml <<'EOF'
+          http_bind_addr = "127.0.0.1:3340"
+          enable_metrics = false
+          enable_quic_addr_discovery = false
+          EOF
+          "$relay/bin/iroh-relay" --dev --config-path relay.toml &
+          relay_pid=$!
+          trap 'kill "$relay_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 50); do
+            if (exec 3<>/dev/tcp/127.0.0.1/3340) 2>/dev/null; then break; fi
+            sleep 0.2
+          done
+          ./result/bin/smoke -relay http://127.0.0.1:3340
+      - name: binary facts (x86_64-linux)
+        run: |
+          file ./result/bin/smoke
+          ls -l ./result/bin/smoke
+          readelf -d ./result/bin/smoke | grep NEEDED
+  drift:
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+      - name: nix build .#iroh-go (bindgen regen + diff against iroh-go/iroh)
+        run: nix build .#iroh-go -L
+      - name: versions
+        run: cat ./result/VERSIONS
