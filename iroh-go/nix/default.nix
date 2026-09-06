@@ -149,15 +149,15 @@ let
     name = "iroh-go-${sources.iroh-ffi.version}";
     paths = [ iroh-ffi ];
     postBuild = ''
-      mkdir -p $out/go
-      cp -r ${../iroh} $out/go/iroh
-      # force the drift check into this closure
-      ln -s ${generated-check} $out/.generated-check
-      cat > $out/VERSIONS <<EOF
-iroh-ffi ${sources.iroh-ffi.version} (${sources.iroh-ffi.rev}), core iroh from its lock (1.0.2), uniffi ${sources.iroh-ffi.uniffi}
-uniffi-bindgen-go ${sources.uniffi-bindgen-go.version} (uniffi ${sources.uniffi-bindgen-go.uniffi})
-iroh-relay ${sources.iroh.version}
-EOF
+            mkdir -p $out/go
+            cp -r ${../iroh} $out/go/iroh
+            # force the drift check into this closure
+            ln -s ${generated-check} $out/.generated-check
+            cat > $out/VERSIONS <<EOF
+      iroh-ffi ${sources.iroh-ffi.version} (${sources.iroh-ffi.rev}), core iroh from its lock (1.0.2), uniffi ${sources.iroh-ffi.uniffi}
+      uniffi-bindgen-go ${sources.uniffi-bindgen-go.version} (uniffi ${sources.uniffi-bindgen-go.uniffi})
+      iroh-relay ${sources.iroh.version}
+      EOF
     '';
   };
 
