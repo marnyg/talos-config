@@ -54,7 +54,7 @@ result/bin/smoke                              # direct, RelayMode::Disabled
 result/bin/smoke -relay http://127.0.0.1:3340 # against a running iroh-relay --dev
 
 # plain go, outside nix: point cgo at a dir containing libiroh_ffi.a
-CGO_ENABLED=1 CGO_LDFLAGS="-L$(nix build .#iroh-ffi --print-out-paths)/lib" go test ./...
+CGO_ENABLED=1 CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib" go test ./...
 ```
 
 `go test ./...` runs `TestSmokeDirect` always and `TestSmokeRelay` when

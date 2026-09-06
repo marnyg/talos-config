@@ -72,6 +72,9 @@
           packages.iroh-go = irohGo.iroh-go;
           packages.iroh-go-smoke = irohGo.smoke;
           packages.iroh-ffi = irohGo.iroh-ffi;
+          # static-only lib dir for hand-run go builds:
+          #   CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"
+          packages.iroh-ffi-static = irohGo.iroh-ffi-static;
           packages.iroh-relay = irohGo.iroh-relay;
           packages.uniffi-bindgen-go = irohGo.uniffi-bindgen-go;
           apps.iroh-go-regen = {
