@@ -1,3 +1,19 @@
+# Dev shell + repo checks:
+#
+#   nix develop --impure         the devenv shell (talosctl, quint, nickel, …)
+#   nix fmt                      treefmt: nixpkgs-fmt + yamlfmt (repo defaults)
+#   nix flake check --impure     canonical full check — formatting + every
+#                                package/devShell derivation evaluates and builds
+#
+# `--impure` is required, not optional: the devenv flake-parts module
+# reads $PWD (builtins.getEnv) to find the project root, and a pure
+# evaluation fails with "devenv was not able to determine the current
+# directory" while checking devShells.default. devenv's own guide
+# (devenv.sh/guides/using-with-flakes) documents --impure as the way to
+# use it from a flake; the alternatives (a `devenv-root` file input
+# overridden per invocation, or dropping devShells from the outputs so
+# `nix flake check` skips them) trade a flag for a hack, so the flag it
+# is. Everything except the devShell evaluates pure.
 {
   description = "Homelab Kubernetes cluster configuration";
 
@@ -80,6 +96,7 @@
           apps.iroh-go-regen = {
             type = "app";
             program = "${irohGo.regen}/bin/iroh-go-regen";
+            meta.description = "Regenerate the iroh-go/iroh Go binding from iroh-ffi via uniffi-bindgen-go";
           };
 
           packages.config-server = pkgs.writeShellApplication {
@@ -94,6 +111,7 @@
           # nix run .#encrypt-secrets — encrypt secrets patches and talosconfig files
           apps.encrypt-secrets = {
             type = "app";
+            meta.description = "Encrypt talos/talosconfig and every clusters/**/*secrets.yaml to .age (ssh key + wallet-derived age recipient)";
             program = toString (pkgs.writeShellScript "encrypt-secrets" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)/talos"
@@ -131,6 +149,7 @@
           # nix run .#decrypt-secrets — decrypt all .age files
           apps.decrypt-secrets = {
             type = "app";
+            meta.description = "Decrypt talos/talosconfig.age and every clusters/**/*.age with the ssh key";
             program = toString (pkgs.writeShellScript "decrypt-secrets" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)/talos"
@@ -146,6 +165,7 @@
           # nix run .#edit-secrets -- <file> — decrypt, edit, re-encrypt
           apps.edit-secrets = {
             type = "app";
+            meta.description = "Decrypt one secrets file, open it in $EDITOR, re-encrypt if changed";
             program = toString (pkgs.writeShellScript "edit-secrets" ''
               set -euo pipefail
               EDITOR="''${EDITOR:-nano}"
@@ -179,6 +199,7 @@
           # (default http://10.42.0.1, the hub's mesh address).
           apps.apply = {
             type = "app";
+            meta.description = "talosctl apply-config the hub-composed config to every machine (or one MAC) over the mesh";
             program = toString (pkgs.writeShellScript "apply" ''
               set -euo pipefail
               cd "$(git rev-parse --show-toplevel)/talos"

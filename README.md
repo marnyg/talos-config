@@ -78,7 +78,7 @@ empty and filled in after the first config serve (`dig
 Enter the dev shell (provides `talosctl`, `kubectl`, `k9s`, `age`, `config-server`):
 
 ```bash
-nix develop  # or use direnv
+nix develop --impure  # or use direnv; --impure is required by devenv (see flake.nix header)
 ```
 
 Secrets are automatically decrypted on shell entry.
