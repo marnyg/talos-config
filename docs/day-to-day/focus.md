@@ -10,10 +10,13 @@ vl4 j0b bjg 4oz h90 how w5s`) and model-checked
 `protocol/cert` + `protocol/clock` match the models 1:1. An
 orchestrator session hands bd issues to worker agents (one worktree
 per issue, branch `swarm/<id>`, review + gate before fast-forward to
-`main`). **Batches 1 and 2 landed** (`k3o 0bc.1 cmi czi/jp2 359.1.4`;
-`6z9a zev 44r ow7`). The iroh Go binding is in-house (`iroh-go/`,
-bindgen, no sidecar). Next: rule `2g6` (rooted = signature-only vs
-live-at-`now`) then `2qp`; `/skill:grill-design` on `0bc.2`; Phase 0
+`main`). **Batches 1–3 landed** (`k3o 0bc.1 cmi czi/jp2 359.1.4`;
+`6z9a zev 44r ow7`; `2qp/8vg htt/g3u 81u/m60`). Rooted-at-the-receiver
+is ruled (`7ry jo8 c4c`) and the Go clock is pinned to `clock.qnt` by
+rapid laws. The iroh Go binding is in-house (`iroh-go/`, bindgen, core
+1.1.0) with an x86_64-linux CI job whose first run is pending (`3i3`).
+CI is green end to end (`nix flake check --impure`, quint, nickel, Go).
+Next: `/skill:grill-design` on `0bc.2` (M2 actor runtime); Phase 0
 probes `359.1.1–.3` need fly scratch infra / an Android device, then
 the gate `359.1.5`; Phase 1 (`359.8.*`) waits on it.
 

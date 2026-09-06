@@ -5,61 +5,61 @@
 
 ## Last session
 
-2026-09-06 — **swarm batch 2 landed** (`main a0e538a → 5c46b0e`): four
-bd issues run as `pi` workers in `~/git/swarm/<id>` worktrees, each
-reviewed + gated by the orchestrator, fast-forwarded, pushed. Briefs
-in `~/git/swarm/_briefs/`, reports in `~/git/swarm/_reports/`.
+2026-09-06 (evening) — **ruled `2g6`, then swarm batch 3 landed**
+(`main f814e99 → bbcec8f`). Workers ran as `pi` agents in herdr panes
+(tab `swarm-3`), one worktree each under `~/git/swarm/<id>`; briefs in
+`_briefs/`, reports in `_reports/`. Orchestrator re-ran every gate
+before fast-forwarding.
 
-- **`6z9` (part a)** — `verification/nickel/mesh-policy-v3.ncl` + spec
-  fixture: closed receiver kinds, closed per-kind facet sets, no
-  ports, one-of host/group, `group: machines` never on a node facet;
-  12 new mutations. Part (b) stays open behind `359.8.5`. `867beac`.
-- **`zev`** — `clock.qnt` issuer classes `Honest | Lying | Stranger`;
-  `invStrangerNeverAdvances` (equality form) + `invStrangerNeverAccepted`;
-  10 mutants. `verify clock.qnt` is now ~110 s. `15ef32f`.
-- **`44r`** — `protocol/cert`: set-valued `resolve()`, one-consented-`w`
-  group rule, grant-side `cav.groups ∋ g`, 8 rapid law ports,
-  `TestRogueVouchesBothHubsRejects`, exhaustive `TestFaultPairSweep`
-  (2424 scenarios — rapid at 100 checks was too shallow for
-  pair-faults; m14 died only ~6 %/run). `de21566`.
-- **`ow7`** — `iroh-go/`: in-house Go binding via uniffi-bindgen-go
-  0.7.1+v0.31.0 off iroh-ffi 1.1.0 (three textual fixups, no fork);
-  flake packages `iroh-go iroh-go-smoke iroh-ffi iroh-ffi-static
-  iroh-relay uniffi-bindgen-go`, app `iroh-go-regen`; direct and
-  custom-relay smokes pass on aarch64-darwin **and** aarch64-linux.
-  **Recommendation: bindgen, no sidecar.** `c043158`; data in
-  `docs/mesh-v3-iroh.md`.
-- Ruled with `44r`: the model's step 2b now also requires the member's
-  consent to `target ∋ R` (`5c46b0e`); Go already did.
+- **Rulings (decisions `7ry` `jo8` `c4c`, from `2g6`)**: "rooted at the
+  receiver" is **signature-only provenance** (consent expiry at `now`
+  irrelevant — kills the `now → rooted → lw → now` loop; residual: an
+  ex-principal's hot key can still push the mark, same class as Lying);
+  case (c) rooting ignores speak-as `cav.verbs`/`groups`; ADR-0019's
+  "update first, then judge" holds *across* bundles, not within one.
+- **`2qp`+`8vg`** — `buildRooted` is provenance-only (`rootedPrincipals`
+  + `rootedHotKeys`, no `resolve()`, no `now`); 7 `clock.qnt` laws
+  ported 1:1 in `protocol/clock/rooted_laws_test.go` over 7 issuer
+  shapes; 6 mutants killed incl. the pre-7ry/pre-jo8 behaviours; docs
+  synced (mark.go, protocol invariants §9, ADR-0019 addendum, both
+  glossaries). `authorize.qnt` unaffected — its rootedness is
+  authorization-rootedness, correctly live-at-`now`. `5245ff7` `b703369`.
+- **`81u`+`m60`** — `nix flake check --impure` is **green on `main`**
+  for the first time: 18 YAML files yamlfmt'd (0 semantic diffs, yq
+  re-proved by the orchestrator), `--impure` canonical (devenv reads
+  `$PWD`), `meta.description` on 5 apps; `nickel` job in `verify.yml`
+  via `nix shell --inputs-from . nixpkgs#nickel`. `4823d1b`…`c30b9f6`.
+- **`htt`+`g3u`** — iroh-ffi lock patched to **core iroh 1.1.0**
+  (regen byte-identical, eval-time assert ties lock to pin); new
+  `.github/workflows/iroh-go.yml` (`smoke` + `drift` on
+  `ubuntu-latest`, magic-nix-cache). `b0a7cd6` `d004258`.
+- **Orchestrator commit `bbcec8f`** — `verify.yml` quint jobs now use
+  the flake-pinned `nix shell … nixpkgs#quint` (no npm/java pins),
+  `nix-installer-action@v22` everywhere; `**/testdata/rapid/`
+  gitignored; gofmt + dead import in `protocol/cert`; mesh-v3 doc says
+  core 1.1.0.
 
 ## Loose threads
 
-- **`2g6` (thread)** — "rooted at the receiver": signature-only
-  (`clock.qnt`) or live-at-`now` (Go `buildRooted` needs the consent
-  unexpired at `now`)? Plus verb-scoped rootedness in case (c) and
-  per-bundle judge-then-update ordering. `2qp` must not port blind.
-- **`359.8.5`** now carries two questions from `6z9`: is hub `relay`
-  an `invoke {facet: relay}` grant or membership-implied (glossary
-  lists `relay` as both a facet and a verb); does the hub still dial
-  node `apid` under v3?
-- **`htt`** — iroh-ffi 1.1.0's lock pins core iroh 1.0.2; bump tested
-  green (identical binding) but not committed. **`g3u`** — x86_64-linux
-  and static-musl Talos-extension link are unverified; a CI job on
-  `ubuntu-latest` closes the first.
-- **ADR-0021** (bindgen over sidecar for the iroh Go binding) is
-  Proposed; promote when `g3u` is green and Phase 1 links it.
-  Protocol glossary synced to the ruled group rule + rooted mark;
-  `8vg` still covers `mark.go` + protocol invariants §9.
-- Debt filed: `m60` (CI does not run the Nickel check), `81u`
-  (`nix flake check` red on `main`: yamlfmt on 17 YAML files).
-- Boot-token HMAC key source (`54n`), ADR-0017 still Proposed until
-  `359.8.1`/`359.8.5`, ADR-0019 node-agent NTP gate → `359.1.3` —
-  carried unchanged.
+- **`iroh-go.yml` has not run yet** — first `main` run is cold
+  (~45–60 min smoke + 90–120 min drift, estimates). **`3i3`**: promote
+  ADR-0021 Proposed → Accepted once it is green, paste CI times into
+  `iroh-go/README.md`, fix `default.nix:7` "two" → three fixups. If the
+  4-vCPU runner blows `timeout-minutes`, raise it rather than split.
+- **`49x`** (debt) — yamlfmt trailing-comma quirk `{…,}` in
+  `talos/mesh-policy.yaml:46,72` and the v3 fixture; block-style rewrite
+  or upstream.
+- **`359.8.5`** still carries the two `6z9` questions (hub `relay` as
+  grant vs membership; does the hub dial node `apid` under v3).
+- Static-musl Talos-extension link (`pkgsStatic`) remains unattempted;
+  `iroh-go.yml` verifies the glibc-dynamic x86_64-linux path only.
+- Boot-token HMAC key source (`54n`), ADR-0017 Proposed until
+  `359.8.1`/`359.8.5`, ADR-0019 NTP gate → `359.1.3` — carried.
 
 ## Suggested next steps
 
-- Rule `2g6`, then swarm `2qp` (Go port of the stranger laws) — the
-  zev report lists the 7 laws to port.
-- `0bc.2` needs a `/skill:grill-design` pass before it can be briefed.
+- Check the first `iroh-go.yml` run; close `3i3` (ADR-0021 → Accepted).
+- `/skill:grill-design` on `0bc.2` (M2 envelope + actor runtime) — the
+  only un-briefed item on the protocol critical path.
 - Phase 0 probes `359.1.1–.3` once fly scratch + an Android device
-  exist; `359.1.1` can now use `nix build .#iroh-relay`.
+  exist (`359.1.1` can use `nix build .#iroh-relay`).
