@@ -7,9 +7,12 @@
 { fetchFromGitHub, lib }:
 {
   # iroh-ffi is `publish = false` on crates.io — the git tag is the only
-  # distribution. Its Cargo.lock pins core iroh 1.0.2 (not 1.1.0); we take
-  # the ffi crate's lock as-is (brief: "take the ffi crate's lock and say
-  # so"). See README "Versions".
+  # distribution. Its own Cargo.lock pins core iroh/iroh-relay 1.0.2 while
+  # declaring `iroh = "1.0.0"`; we build with a PATCHED lock
+  # (../regen/iroh-ffi.Cargo.lock: upstream's + `cargo update -p iroh
+  # --precise 1.1.0`, same for iroh-relay) so core is 1.1.0 everywhere
+  # (P0.4 pin; task talos-config-htt). `cargoHash` is for the patched lock.
+  # See README "Versions" and "Regenerating" step 2.
   iroh-ffi = rec {
     version = "1.1.0";
     rev = "v${version}"; # = 5e451092dba0c1a09ee83ff6e5be37b1152a5c58
@@ -19,7 +22,9 @@
       inherit rev;
       hash = "sha256-6j4Ns2mUPbn0nR8KxBZGEAv/xTHxnnPIA26h4HL/kt4=";
     };
-    cargoHash = "sha256-sa3TSSSiOA5xuWaQnFRt5mqlZuOQaSDg3d1SMBObq1g=";
+    cargoHash = "sha256-btNb6szMCjj9ZhvNveWb1/mdFtFQq46n0/NzbiRes5Q=";
+    # core iroh version the patched lock resolves to (asserted in default.nix)
+    core = "1.1.0";
     # uniffi version the ffi crate is built with (Cargo.lock). The bindgen
     # below MUST target the same 0.31.x line: uniffi checks a contract
     # version + per-function API checksums at Go init() and panics on
@@ -43,9 +48,8 @@
   };
 
   # The relay server, built from the core iroh repo at the 1.1.0 tag (nixpkgs
-  # ships 0.95.1, pre-1.0 — unusable). Note this is core 1.1.0 while the ffi
-  # lib links core 1.0.2: the relay protocol is 1.x-stable, and the smoke
-  # test exercises exactly that pair.
+  # ships 0.95.1, pre-1.0 — unusable). Same core version as the ffi lib's
+  # patched lock.
   iroh = rec {
     version = "1.1.0";
     rev = "v${version}"; # = fddf1a4ce29f92c6651eccff68fb366007b9be7d

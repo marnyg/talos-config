@@ -43,12 +43,31 @@ let
   };
   buildRustPackage = pkgs.rustPlatform.buildRustPackage.override { inherit fetchCargoVendor; };
 
+  # Upstream iroh-ffi's Cargo.lock pins core iroh 1.0.2; ours is that lock
+  # after `cargo update -p iroh --precise <core>` (+ iroh-relay), kept in
+  # ../regen/iroh-ffi.Cargo.lock and swapped in before vendoring so the
+  # vendor dir (fixed-output, cargoHash) matches what cargo will resolve.
+  # The assertion makes a lock/pin mismatch fail at eval, not at link time.
+  iroh-ffi-src =
+    let
+      lock = builtins.fromTOML (builtins.readFile ../regen/iroh-ffi.Cargo.lock);
+      ver = name: (lib.findFirst (p: p.name == name) (throw "${name} not in iroh-ffi.Cargo.lock") lock.package).version;
+    in
+    assert lib.assertMsg (ver "iroh" == sources.iroh-ffi.core && ver "iroh-relay" == sources.iroh-ffi.core)
+      "regen/iroh-ffi.Cargo.lock resolves iroh ${ver "iroh"} / iroh-relay ${ver "iroh-relay"}, sources.nix says core ${sources.iroh-ffi.core}";
+    pkgs.runCommand "iroh-ffi-src-core-${sources.iroh-ffi.core}" { } ''
+      cp -r ${sources.iroh-ffi.src} $out
+      chmod -R u+w $out
+      cp ${../regen/iroh-ffi.Cargo.lock} $out/Cargo.lock
+    '';
+
   # Native lib. iroh-ffi has crate-type = ["staticlib", "cdylib"]; both land
   # in $out/lib via cargoInstallHook. The workspace also contains iroh-js
   # (napi) — we build only the ffi package.
   iroh-ffi = buildRustPackage {
     pname = "iroh-ffi";
-    inherit (sources.iroh-ffi) version src cargoHash;
+    inherit (sources.iroh-ffi) version cargoHash;
+    src = iroh-ffi-src;
     cargoBuildFlags = [ "-p" "iroh-ffi" "--lib" ];
     # The Rust test-suite needs network-ish fixtures; the Go smoke test is
     # our gate.
@@ -62,7 +81,7 @@ let
       # anything that links the dylib would fail at load time.
       install_name_tool -id $out/lib/libiroh_ffi.dylib $out/lib/libiroh_ffi.dylib
     '';
-    meta.description = "iroh ${sources.iroh-ffi.version} uniffi scaffolding as a C-ABI library";
+    meta.description = "iroh ${sources.iroh-ffi.version} uniffi scaffolding as a C-ABI library (core iroh ${sources.iroh-ffi.core})";
   };
 
   # Upstream's workspace lock carries uniffi 0.31.0 twice (crates.io for the
@@ -154,7 +173,7 @@ let
             # force the drift check into this closure
             ln -s ${generated-check} $out/.generated-check
             cat > $out/VERSIONS <<EOF
-      iroh-ffi ${sources.iroh-ffi.version} (${sources.iroh-ffi.rev}), core iroh from its lock (1.0.2), uniffi ${sources.iroh-ffi.uniffi}
+      iroh-ffi ${sources.iroh-ffi.version} (${sources.iroh-ffi.rev}), core iroh ${sources.iroh-ffi.core} (lock patched), uniffi ${sources.iroh-ffi.uniffi}
       uniffi-bindgen-go ${sources.uniffi-bindgen-go.version} (uniffi ${sources.uniffi-bindgen-go.uniffi})
       iroh-relay ${sources.iroh.version}
       EOF

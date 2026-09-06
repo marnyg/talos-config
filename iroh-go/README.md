@@ -21,14 +21,16 @@ Go (cgo, static link of libiroh_ffi.a) ──▶ cmd/smoke, later hub / Talos ex
 | component | version | source | note |
 |---|---|---|---|
 | iroh-ffi | **1.1.0** | github `n0-computer/iroh-ffi` tag `v1.1.0` (`5e45109`) | `publish = false` — the git tag is the only distribution |
-| core iroh / iroh-relay (linked into the lib) | **1.0.2** | iroh-ffi's `Cargo.lock`, taken as-is | ffi declares `iroh = "1.0.0"`; the lock pins 1.0.2, not 1.1.0. Bumping the lock to core 1.1.0 was tried: compiles, identical Go output, smoke passes (see report) — deferred to the orchestrator whether to carry that lock delta |
+| core iroh / iroh-relay (linked into the lib) | **1.1.0** | `regen/iroh-ffi.Cargo.lock` — upstream's lock, **patched** | ffi declares `iroh = "1.0.0"` and its own lock pins 1.0.2; we swap in the patched lock before vendoring (`cargo update -p iroh --precise 1.1.0`, same for `iroh-relay`; task `htt`). Byte-identical Go output vs. the 1.0.2 lock. `sources.nix` `core` is asserted against the lock at eval |
 | uniffi (in iroh-ffi) | 0.31.2 | Cargo.lock | |
 | uniffi-bindgen-go | **0.7.1+v0.31.0** | github `NordSecurity/uniffi-bindgen-go` (`0b7fb4c`) | targets uniffi 0.31.x — MUST stay on the same minor as iroh-ffi's uniffi; Go `init()` checks a contract version + per-function checksums and panics on mismatch |
 | iroh-relay (server binary, tests only) | **1.1.0** | github `n0-computer/iroh` tag `v1.1.0` | nixpkgs ships 0.95.1 (pre-1.0), unusable |
 | Rust toolchain | 1.93.0 | nixpkgs (flake input) | iroh-ffi MSRV 1.91, uniffi-bindgen-go MSRV 1.87 |
 | Go | 1.26 | nixpkgs `buildGo126Module` | generated code needs ≥1.19 |
 
-All pins live in `nix/sources.nix`.
+All pins live in `nix/sources.nix`; the core iroh pin is the patched lock
+itself (`sources.iroh-ffi.core` must match what the lock resolves — the
+build asserts it).
 
 ## Layout
 
@@ -38,9 +40,10 @@ All pins live in `nix/sources.nix`.
 - `cmd/smoke/` — the acceptance test (`smoke.go` is also run by `go test`).
 - `regen/` — everything the generator needs: `uniffi.toml` (Go config),
   `fixup.sh` (post-processing), a dependency-free dummy crate (the bindgen
-  insists on `cargo metadata` in its cwd), copies of the upstream locks
-  (`iroh-ffi.Cargo.lock` for transparency; `uniffi-bindgen-go.Cargo.lock`
-  + `...workspace.Cargo.toml` are actually used — see nix/default.nix).
+  insists on `cargo metadata` in its cwd), and the locks the builds
+  actually use (`iroh-ffi.Cargo.lock` = upstream's patched to core 1.1.0;
+  `uniffi-bindgen-go.Cargo.lock` + `...workspace.Cargo.toml` = upstream's
+  pruned to the `bindgen` member — see nix/default.nix).
 - `nix/` — the derivations. `flake.nix` exposes them as
   `packages.{iroh-go,iroh-go-smoke,iroh-ffi,iroh-relay,uniffi-bindgen-go}`
   and `apps.iroh-go-regen`.
@@ -48,8 +51,8 @@ All pins live in `nix/sources.nix`.
 ## Build / test
 
 ```sh
-nix build .#iroh-go          # lib/libiroh_ffi.{a,dylib|so} + go/iroh/, drift-checked
-nix build .#iroh-go-smoke    # smoke binary; checkPhase runs the direct AND relay smoke
+nix build .#iroh-go          # lib/libiroh_ffi.{a,dylib|so} + go/iroh/, drift-checked (pulls uniffi-bindgen-go)
+nix build .#iroh-go-smoke    # smoke binary; checkPhase runs the direct AND relay smoke (no bindgen needed)
 result/bin/smoke                              # direct, RelayMode::Disabled
 result/bin/smoke -relay http://127.0.0.1:3340 # against a running iroh-relay --dev
 
@@ -74,22 +77,46 @@ against a static-only view (`iroh-ffi-static`). Do the same by hand.
    For uniffi-bindgen-go also refresh `regen/uniffi-bindgen-go.Cargo.lock`
    (copy `bindgen/` + upstream `Cargo.lock` next to the trimmed workspace
    `Cargo.toml`, run `cargo tree --offline`, take the pruned lock).
-2. `nix run .#iroh-go-regen` — rebuilds the lib, runs the bindgen, applies
+2. **Re-apply the core lock patch** (on an iroh-ffi bump). The build does
+   not use upstream's `Cargo.lock`; it uses `regen/iroh-ffi.Cargo.lock`.
+   Refresh it from the new tag, then move core to the version
+   `sources.iroh-ffi.core` says:
+   ```sh
+   src=$(nix build .#iroh-ffi.src --print-out-paths)   # upstream tree, unpatched
+   rm -rf /tmp/ffi && cp -r "$src" /tmp/ffi && chmod -R u+w /tmp/ffi && cd /tmp/ffi
+   cargo update -p iroh --precise <core> && cargo update -p iroh-relay --precise <core>
+   cp Cargo.lock <repo>/iroh-go/regen/iroh-ffi.Cargo.lock
+   ```
+   If upstream's lock already resolves to the wanted core, the `cargo
+   update` is a no-op and the copy is still required (the file is the
+   pin). Bump `core` in `sources.nix` when the target changes; the eval
+   assertion fails otherwise. Then set `iroh-ffi.cargoHash` to
+   `lib.fakeHash` again and paste the new `got:` (the vendor dir follows
+   the lock, not the tag). Measured on 1.0.2 → 1.1.0: `cargo update`
+   15 s, iroh-ffi rebuild ≈ 10.5 min wall (aarch64-darwin), Go output
+   byte-identical.
+3. `nix run .#iroh-go-regen` — rebuilds the lib, runs the bindgen, applies
    `regen/fixup.sh`, `gofmt`, and copies `iroh_ffi.go`/`iroh.h` into
    `iroh/`.
-3. `nix build .#iroh-go-smoke` (drift check + smoke) and fix whatever the
-   compiler says in the consumers.
-4. Commit `nix/sources.nix`, `regen/*`, `iroh/*` together.
+4. `nix build .#iroh-go` (drift check) and `nix build .#iroh-go-smoke`
+   (smoke); fix whatever the compiler says in the consumers.
+5. Commit `nix/sources.nix`, `regen/*`, `iroh/*` together.
 
 If `fixup.sh` stops matching (generator changed shape), the build fails
 loudly at `go vet`/compile — the fixes are exact-match `sed`/`perl`, no
 silent partial application. Check the three defects below against the
 new generator version and drop the ones that got fixed upstream.
 
-Measured on the 1.0.2 → 1.1.0 core bump (ffi crate unchanged): `cargo
-update` + rebuild ≈ 4 min wall, regenerated binding byte-identical,
-smoke green; no Go changes. A bump that changes the ffi surface costs
-that plus the compiler-guided fixes in the consumers.
+The 1.0.2 → 1.1.0 core bump (ffi crate unchanged) moved 27 lock entries
+(4 iroh crates + 6 transitive updated, 11 removed, 6 added; 477 → 472
+packages), regenerated a byte-identical binding, smoke green, no Go
+changes. A bump that changes the ffi surface costs that plus the
+compiler-guided fixes in the consumers.
+
+CI: `.github/workflows/iroh-go.yml` builds `.#iroh-go-smoke` on
+`ubuntu-latest` (x86_64-linux — the hub and Talos-extension target) and,
+in a second job, `.#iroh-go` (drift check; pulls the ~45 min cold
+uniffi-bindgen-go build, cached after the first run).
 
 ## Known bindgen defects (fixed in `regen/fixup.sh`)
 
