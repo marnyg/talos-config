@@ -39,6 +39,17 @@
 // principal the receiver holds a direct consent for resolves to nothing
 // usable (the chain is not rooted at the receiver).
 //
+// Because the caller assembles the bundle and ANY wallet can sign a
+// speak-as naming ANY key, a signer resolves to a SET of sovereigns
+// (itself plus every vouching wallet). Every rule in Authorize therefore
+// quantifies ONE wallet the receiver holds a live consent for: the group
+// rule admits `aud: group:g` only when the same consented wallet vouches
+// for both the grant's signer and the member cert's signer — never
+// "resolved issuers are equal", never set overlap (decision 4oz, ruled
+// from authorize.qnt mutant m14). Caveats are literal on both sides: a
+// hub-signed grant to group:g needs a speak-as whose cav.groups ∋ g
+// (decision w5s).
+//
 // # Canonical form (bytes signed)
 //
 // The signature covers the RFC 8785 (JCS) canonical JSON of the cert

@@ -3,6 +3,8 @@ package cert
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"fmt"
+	"sync"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -25,6 +27,10 @@ const testNOW = int64(5)
 type fixture struct {
 	signer map[string]Signer
 	id     map[string]ActorID
+	// built memoizes build() per spec: Ed25519 signing is deterministic
+	// and the sweep/laws rebuild the same few dozen certs thousands of
+	// times. Test-only; shared across goroutines, hence sync.Map.
+	built *sync.Map
 }
 
 // principalNames is the model's closed world of keys.
@@ -33,7 +39,7 @@ var principalNames = []string{"OWNER1", "OWNER2", "R", "OTHER_R", "CALLER", "ROG
 // detFixture builds principalNames with deterministic seeds (readable,
 // reproducible) for the hand-written scenario tests.
 func detFixture(seed byte) fixture {
-	f := fixture{signer: map[string]Signer{}, id: map[string]ActorID{}}
+	f := fixture{signer: map[string]Signer{}, id: map[string]ActorID{}, built: &sync.Map{}}
 	for _, name := range principalNames {
 		priv := ed25519.NewKeyFromSeed(bytesFill(seed))
 		s := NewEdSigner(priv)
@@ -51,7 +57,7 @@ var (
 )
 
 func newFixture(t *rapid.T) fixture {
-	f := fixture{signer: map[string]Signer{}, id: map[string]ActorID{}}
+	f := fixture{signer: map[string]Signer{}, id: map[string]ActorID{}, built: &sync.Map{}}
 	for _, name := range principalNames {
 		_, priv, err := ed25519.GenerateKey(nil)
 		if err != nil {
@@ -77,6 +83,19 @@ type certSpec struct {
 }
 
 func (f fixture) build(s certSpec) Cert {
+	if f.built == nil {
+		return f.buildUncached(s)
+	}
+	key := fmt.Sprintf("%+v", s)
+	if c, ok := f.built.Load(key); ok {
+		return c.(Cert)
+	}
+	c := f.buildUncached(s)
+	f.built.Store(key, c)
+	return c
+}
+
+func (f fixture) buildUncached(s certSpec) Cert {
 	signer := f.signer[s.iss]
 	if s.forged {
 		signer = f.signer["FORGER"]
@@ -172,19 +191,34 @@ type scenario struct {
 
 func has(f map[fault]bool, x fault) bool { return f[x] }
 
-// genNear builds a near-valid scenario with up to two faults — the Go
-// analogue of authorize.qnt's genNear action.
-func genNear(t *rapid.T, f fixture) scenario {
-	f1 := fault(rapid.IntRange(0, int(numFaults)-1).Draw(t, "f1"))
-	f2 := fault(rapid.IntRange(0, int(numFaults)-1).Draw(t, "f2"))
-	audKind := rapid.IntRange(0, 1).Draw(t, "audKind")
-	attKind := rapid.IntRange(0, numAtts-1).Draw(t, "att")
-	attG := rapid.SampledFrom(modelGroups).Draw(t, "attG")
+// scenarioParams are the nondet choices of the model's genNear.
+type scenarioParams struct {
+	f1, f2  fault
+	audKind int    // 0: grant to the key, 1: grant to group:admins
+	attKind int    // one of the att* kinds
+	attG    string // group dropped by attShrinkSpeakAsGroups
 	// false: wallets sign directly (pre-ADR-0018 shape); true: member by
 	// HUB_A, grant by HUB_B, speak-as links from OWNER1 (post-redeploy).
-	hubSigned := rapid.Bool().Draw(t, "hubSigned")
+	hubSigned bool
+}
 
-	flt := map[fault]bool{f1: true, f2: true}
+// genNear draws a near-valid scenario with up to two faults — the Go
+// analogue of authorize.qnt's genNear action.
+func genNear(t *rapid.T, f fixture) scenario {
+	return buildScenario(f, scenarioParams{
+		f1:        fault(rapid.IntRange(0, int(numFaults)-1).Draw(t, "f1")),
+		f2:        fault(rapid.IntRange(0, int(numFaults)-1).Draw(t, "f2")),
+		audKind:   rapid.IntRange(0, 1).Draw(t, "audKind"),
+		attKind:   rapid.IntRange(0, numAtts-1).Draw(t, "att"),
+		attG:      rapid.SampledFrom(modelGroups).Draw(t, "attG"),
+		hubSigned: rapid.Bool().Draw(t, "hubSigned"),
+	})
+}
+
+// buildScenario is the deterministic body of genNear.
+func buildScenario(f fixture, p scenarioParams) scenario {
+	audKind, attKind, attG, hubSigned := p.audKind, p.attKind, p.attG, p.hubSigned
+	flt := map[fault]bool{p.f1: true, p.f2: true}
 
 	id := f.id
 	facets := []string{"apid", "kube-api"}
@@ -494,13 +528,82 @@ func TestGenNearReachesAccept(t *testing.T) {
 	}
 }
 
+// TestFaultPairSweep enumerates the model's genNear fault space
+// EXHAUSTIVELY — every unordered fault pair {f1, f2} × hubSigned ×
+// audKind — and checks every law except invMonotone on each. The
+// random properties above give shrinking and breadth; this sweep is the
+// deterministic backbone: a mutant that any fault pair can expose (e.g.
+// m14 needs FSpeakAsAFromOwner2 + FSpeakAsRogueVouchesBoth, ~0.06 % of
+// random samples) dies here every run.
+func TestFaultPairSweep(t *testing.T) {
+	f := detFixture(50)
+	n := 0
+	for f1 := fault(0); f1 < numFaults; f1++ {
+		for f2 := f1; f2 < numFaults; f2++ {
+			for _, hubSigned := range []bool{false, true} {
+				// speak-as faults are no-ops when wallets sign directly:
+				// {saFault, X} ≡ {FNone, X}, already swept.
+				if !hubSigned && (f1 >= fSpeakAsAMissing || f2 >= fSpeakAsAMissing) {
+					continue
+				}
+				for audKind := 0; audKind < 2; audKind++ {
+					p := scenarioParams{f1: f1, f2: f2, audKind: audKind,
+						attKind: n % numAtts, attG: modelGroups[n%len(modelGroups)], hubSigned: hubSigned}
+					s := buildScenario(f, p)
+					res := Authorize(s.in)
+					st := sweepT{t, p}
+					// invMonotone is left to the rapid suite: the sweep
+					// passes res for resAtt (vacuous), halving its cost.
+					checkLaws(st, f, s, res, res)
+					for _, l := range speakAsLaws {
+						if _, ok := l.check(f.id, s, res); !ok {
+							st.Fatalf("%s violated", l.name)
+						}
+					}
+					n++
+				}
+			}
+		}
+	}
+	t.Logf("swept %d scenarios", n)
+}
+
+// sweepT prefixes failures with the scenario parameters.
+type sweepT struct {
+	t *testing.T
+	p scenarioParams
+}
+
+func (s sweepT) Fatal(args ...any) { s.t.Fatalf("%+v: %s", s.p, fmt.Sprint(args...)) }
+func (s sweepT) Fatalf(format string, args ...any) {
+	s.t.Fatalf("%+v: %s", s.p, fmt.Sprintf(format, args...))
+}
+
 // sigValid ports the model's not(forged): the signature verifies.
-func sigValid(c Cert) bool { return Verify(c) == nil }
+// Memoized by canonical bytes + sig (test-only; laws re-ask constantly).
+func sigValid(c Cert) bool {
+	key := certKey(c)
+	if v, ok := sigValidCache.Load(key); ok {
+		return v.(bool)
+	}
+	v := Verify(c) == nil
+	sigValidCache.Store(key, v)
+	return v
+}
+
+var sigValidCache sync.Map
 
 // sigOKlaw ports sigOk(c, NOW): verifies, unexpired, no unknown caveat.
 func sigOKlaw(c Cert) bool { return sigValid(c) && c.Exp > testNOW && !c.Cav.Unknown }
 
-func checkLaws(t *rapid.T, f fixture, s scenario, res, resAtt Result) {
+// failer is what the law checkers need from a test handle: *rapid.T,
+// *testing.T and sweepT all satisfy it.
+type failer interface {
+	Fatal(args ...any)
+	Fatalf(format string, args ...any)
+}
+
+func checkLaws(t failer, f fixture, s scenario, res, resAtt Result) {
 	id := f.id
 	table := s.in.AcceptTable
 	m := s.member
