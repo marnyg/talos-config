@@ -267,8 +267,12 @@ protocol scope must never contradict these entries.
   `lw = max(lw, iat)` over every cert whose signature it verifies **on
   a chain rooted at itself** — never a stranger's self-signed cert,
   which would let any connecting peer push the mark
-  (`clock.qnt` `invStrangerNeverAdvances`). Update first, then judge
-  with `now = max(local, lw)`.
+  (`clock.qnt` `invStrangerNeverAdvances`). Rootedness is
+  **signature-only provenance**: the rooting consent's expiry at `now`
+  and any speak-as verb/group caveats are irrelevant (decisions `7ry`,
+  `jo8`). Update first, then judge with `now = max(local, lw)` —
+  across bundles: `Authorize` judges with the caller's `Now`, its
+  `Verified` feeds the mark afterwards (`c4c`).
   Uncapped. `lw` is a **safe-to-lose cache**: volatile, optionally
   persisted; loss degrades to the local clock. `iat` never
   participates in authority or attenuation. _(root glossary: Time /

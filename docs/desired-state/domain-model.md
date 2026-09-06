@@ -415,8 +415,12 @@ provisioning or recovery path may depend on it.
   never a stranger's self-signed cert (which would let any peer that
   can connect push the mark forward), never a member's self-issued
   `reach-me-at`. Expired-but-rooted certs still count: they prove
-  time passed. Update first, then judge with
-  `now = max(local, lw)`. Uncapped — capping the advance at
+  time passed. Rootedness is **signature-only provenance** (decision
+  `7ry`): the rooting consent need not be live at `now`, and speak-as
+  `cav.verbs`/`cav.groups` are ignored for rooting (`jo8`). Update
+  first, then judge with `now = max(local, lw)` — *across* bundles:
+  `Authorize` judges with the caller's `Now`, `Verified` feeds the mark
+  afterwards (`c4c`). Uncapped — capping the advance at
   `local + s` discards the honest evidence a rollback needs
   (`clock.qnt` FINDING). `lw` is a **safe-to-lose cache**: volatile,
   optionally persisted; loss degrades to the local clock. What rollback

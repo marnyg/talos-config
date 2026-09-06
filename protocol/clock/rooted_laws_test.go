@@ -302,10 +302,28 @@ func (h *history) isStrangerKey(k cert.ActorID) bool {
 	return k == h.world.id["STRANGER"] || k == h.world.id["SHUB"]
 }
 
+// bundleCerts lists every cert a bundle presents.
+func bundleCerts(b cert.Bundle) []cert.Cert {
+	out := []cert.Cert{b.Member}
+	out = append(out, b.Grants...)
+	return append(out, b.SpeakAs...)
+}
+
+func verifiedHas(vs []cert.Cert, want cert.Cert) bool {
+	for _, v := range vs {
+		if v.Iss == want.Iss && v.Aud == want.Aud && v.Can == want.Can && v.Iat == want.Iat && string(v.Sig) == string(want.Sig) {
+			return true
+		}
+	}
+	return false
+}
+
 // TestInvStrangerNeverAdvances — clock.qnt invStrangerNeverAdvances:
 // lw == max iat over the ROOTED bundles seen since restart (0 if none;
 // R's consents carry iat 0). Strangers never move it, in either
-// direction; and no stranger-signed cert ever reaches Verified.
+// direction. The Go refinement of the model's `seen.filter(isRooted)`:
+// Verified carries EVERY cert of a rooted bundle (member, grant,
+// speak-as — including the 7ry/jo8 shapes) and NONE of a stranger's.
 func TestInvStrangerNeverAdvances(t *testing.T) {
 	w := newWorld(t)
 	rapid.Check(t, func(t *rapid.T) {
@@ -323,6 +341,11 @@ func TestInvStrangerNeverAdvances(t *testing.T) {
 				for _, v := range p.verified {
 					if h.isStrangerKey(v.Iss) {
 						t.Fatalf("invStrangerNeverAdvances: stranger-signed cert (iat %d) in Verified", v.Iat)
+					}
+				}
+				for _, c := range bundleCerts(p.c.bundle) {
+					if got := verifiedHas(p.verified, c); got != p.c.iss.rooted() {
+						t.Fatalf("invStrangerNeverAdvances: %s %s cert in Verified = %v, want %v", p.c.iss, c.Can, got, p.c.iss.rooted())
 					}
 				}
 			}

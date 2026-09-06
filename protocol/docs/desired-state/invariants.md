@@ -62,7 +62,9 @@
    clock. Roll-forward only *denies* (availability; an ops problem).
    Rollback — the security direction — is bounded by a monotone
    **low-water mark** over issuer-signed `iat`: a verifier keeps
-   `lw = max(lw, iat)` over every cert whose signature it verifies, and
+   `lw = max(lw, iat)` over every cert whose signature it verifies **on
+   a chain rooted at itself** (signature-only provenance; the consent's
+   expiry is irrelevant — never a stranger's self-signed cert), and
    judges with `now = max(local, lw)`. `iat` never participates in
    authority or attenuation. There is no time authority — a time oracle
    would be an authority above the receiver (violates 3). The mark is a

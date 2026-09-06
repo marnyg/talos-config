@@ -121,7 +121,14 @@ Chosen: **Option D, uncapped.**
   self-issued `reach-me-at`, which is not an authorize input anyway):
   `lw := max(lw, iat)`; then `authorize()`
   runs with `now = max(local, lw)`. Update first, then judge — a cert
-  never rejects itself (`iat < exp`).
+  never rejects itself (`iat < exp`). _(2026-09-06, decisions `7ry`,
+  `c4c`.)_ Rootedness is **signature-only provenance**: the consent (or
+  speak-as) that roots the chain need not be live at `now`, and its
+  `cav.verbs`/`cav.groups` are not consulted (`jo8`) — `now` never
+  enters rooting. "Update first, then judge" holds *across* bundles:
+  `Authorize` judges one bundle with the caller's `Now`, and its
+  `Verified` feeds the mark afterwards (equivalent for a single bundle,
+  `clock.qnt` mutant m8).
 - **State:** `lw` is a **safe-to-lose cache**: volatile in v0, may be
   persisted opportunistically (node STATE partition, app storage) to
   cover the boot window before NTP sync; loss degrades to the local

@@ -7,12 +7,14 @@ import (
 	"pgregory.net/rapid"
 )
 
-// This file ports verification/quint/clock.qnt 1:1: the four laws over a
-// verifier whose local clock an adversary sets freely, honest issuers
-// (iat = t) and a lying trusted issuer (future iat). The Mark under test
-// is the real clock.Mark; certs are minimal (only iat/exp matter here —
-// signature verification is authorize.qnt's job and assumed done before
-// Observe, as the model states).
+// This file ports verification/quint/clock.qnt over the bare Mark: the
+// four original laws over a verifier whose local clock an adversary sets
+// freely, honest issuers (iat = t) and a lying trusted issuer (future
+// iat). The model now has six laws; the two stranger laws and the
+// end-to-end port of all six through cert.Authorize (real signatures,
+// Result.Verified feeding the mark) live in rooted_laws_test.go. Certs
+// here are minimal (only iat/exp matter — rootedness is Authorize's job
+// and assumed done before Observe, as the model states).
 
 const (
 	horizon = 8
@@ -32,8 +34,8 @@ func max64(a, b int64) int64 {
 }
 
 type honestCert struct {
-	c       cert.Cert
-	honest  bool
+	c      cert.Cert
+	honest bool
 }
 
 type outcome struct {
