@@ -20,7 +20,8 @@
 #              speak-as resolution (step 2a) over per-process hub keys
 #   runway     ADR-0017/0018 cert lifetimes vs. sealed-hub starvation incl.
 #              the per-process speak-as bound and the 30 d nag
-#   clock      ADR-0019 time as trust input: iat low-water mark vs. clock rollback
+#   clock      ADR-0019 time as trust input: iat low-water mark vs. clock rollback;
+#              only receiver-rooted certs feed the mark (strangers never do)
 #
 # Expected violation: approval.residualTokenReplayAcrossRedeploy is the
 # residual ADR-0015 accepts (a leaked token replays after a redeploy
