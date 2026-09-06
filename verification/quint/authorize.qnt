@@ -191,11 +191,14 @@ module authorize {
   }
 
   // (2b) on resolved issuers: the consented sovereigns that vouch for
-  // the member cert. Empty ⇒ name/groups are stranger-chosen (3cx).
+  // the member cert — a live delegable consent from R whose `target`
+  // still names R (glossary step 2b; ruled 2026-09-06 with 44r: the Go
+  // port checked `target ∋ R` here and the model did not — the model
+  // now matches). Empty ⇒ name/groups are stranger-chosen (3cx).
   pure def memberSovereigns(r: int, consents: Set[Cert], speakAs: Set[Cert],
                             member: Cert, now: int): Set[int] =
     resolve(speakAs, member.iss, Member, member.cav.groups, now)
-      .filter(w => consentsFor(consents, r, w, now) != Set())
+      .filter(w => consentsFor(consents, r, w, now).exists(c => c.cav.target.contains(r)))
 
   // One grant admits if, for ONE sovereign w that R consented to, the
   // chain [consent(R→w), speak-as(w→g.iss)?, g] verifies, the field-wise
