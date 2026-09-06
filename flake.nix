@@ -20,9 +20,12 @@
       ];
       systems = nixpkgs.lib.systems.flakeExposed;
 
-      perSystem = { pkgs, self', ... }:
+      perSystem = { pkgs, self', lib, ... }:
         let
           sshKey = "$HOME/.ssh/id_ed25519";
+          # In-house iroh Go binding (task talos-config-ow7): iroh-ffi 1.1.0
+          # → uniffi-bindgen-go → iroh-go/iroh. See iroh-go/README.md.
+          irohGo = import ./iroh-go/nix { inherit pkgs lib; self = self'; };
         in
         {
           treefmt.config = {
@@ -59,6 +62,21 @@
             # dir survives `go mod tidy`. Force a recompute by setting a
             # bogus hash and reading nix's "got:" line.
             vendorHash = "sha256-wffIVZiCnXrizVshV9W9zivCO11ts511eawyK6j0ABQ=";
+          };
+
+          # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go
+          #                               package, drift-checked against iroh-go/iroh
+          # nix build .#iroh-go-smoke  — the smoke binary; its checkPhase runs the
+          #                               direct and relay smoke (go test)
+          # nix run   .#iroh-go-regen  — regenerate iroh-go/iroh after a pin bump
+          packages.iroh-go = irohGo.iroh-go;
+          packages.iroh-go-smoke = irohGo.smoke;
+          packages.iroh-ffi = irohGo.iroh-ffi;
+          packages.iroh-relay = irohGo.iroh-relay;
+          packages.uniffi-bindgen-go = irohGo.uniffi-bindgen-go;
+          apps.iroh-go-regen = {
+            type = "app";
+            program = "${irohGo.regen}/bin/iroh-go-regen";
           };
 
           packages.config-server = pkgs.writeShellApplication {
