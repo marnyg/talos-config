@@ -16,7 +16,6 @@
 # immutable — to change the script, bump the Job name (-v2, …).
 # Re-derivation chain stays intact: MS fwlink → win2k25-iso (CDI) →
 # this Job → win2k25-iso-noprompt; all three are disposable payload.
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

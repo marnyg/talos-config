@@ -15,7 +15,6 @@
 # These are partial ConfigMaps on purpose: upstream install.yaml creates
 # each one and owns the keys we do not declare. ArgoCD's apply semantics
 # leave undeclared keys alone.
----
 apiVersion: v1
 kind: ConfigMap
 metadata:

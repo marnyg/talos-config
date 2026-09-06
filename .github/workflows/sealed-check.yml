@@ -8,12 +8,10 @@
 # sealed machine, and every restart starts sealed — an unrecoverable
 # restart loop.
 name: sealed-check
-
 on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
-
 jobs:
   sealed:
     runs-on: ubuntu-latest

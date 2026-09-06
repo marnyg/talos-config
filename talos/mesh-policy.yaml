@@ -31,7 +31,6 @@
 # carry, with `port` replaced by facet classes. Receivers hold no
 # copy of this table. Until Phase 1 lands, the nebula render above is
 # what runs.
-
 hub:
   inbound:
     # Reachability checks from any member.
@@ -44,10 +43,9 @@ hub:
     # second layer (ADR-0007, carrying ADR-0003's property onto the
     # mesh).
     - {port: "80", proto: tcp, group: admins}
-    - {port: "80", proto: tcp, group: media}
+    - {port: "80", proto: tcp, group: media,}
     # (udp/53 for mesh DNS is appended in code when the hub serves the
     # zone — it follows the hub's capability, not an access decision.)
-
 node:
   inbound:
     # Reachability checks from any member.
@@ -71,11 +69,10 @@ node:
     # 2026-08-16 "NodePort only" stance. No apid, no kube API, no
     # other NodePort.
     - {port: "30096", proto: tcp, group: media}
-    - {port: "80", proto: tcp, group: media}
+    - {port: "80", proto: tcp, group: media,}
     # Deliberately absent: any `group: machines` rule — machines must
     # not reach each other's control surfaces over the mesh
     # (compromised-node blast radius; guarded by nebmachine_test).
-
 device:
   inbound:
     # Only ICMP: a device is the thing that initiates, and replies to

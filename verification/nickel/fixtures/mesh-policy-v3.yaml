@@ -24,17 +24,15 @@
 # receiver of that kind>, facet}, 7 d} that the caller fetches and
 # presents; the receiver holds no copy of this table (ADR-0017). A kind
 # with `inbound: []` is legal and means "no grant names this receiver".
-
 node:
   inbound:
     # Owner devices: the machine's control surfaces. Same access v2
     # gives admins with `port: any`, now spelled facet by facet.
     - {facet: apid, group: admins}
-    - {facet: kube-api, group: admins}
+    - {facet: kube-api, group: admins,}
     # Deliberately absent: any `group: machines` rule — machines must
     # not reach each other's control surfaces (nebmachine_test stance;
     # a contract in mesh-policy-v3.ncl).
-
 gateway:
   inbound:
     # One class for every HTTP UI; per-app authorization stays at the
@@ -43,7 +41,6 @@ gateway:
     - {facet: ingress-http, group: media}
     # Raw TCP for the shared-space appliances' Jellyfin apps.
     - {facet: jellyfin, group: media}
-
 hub:
   inbound:
     # The hub's overlay HTTP surface (/config, /hosts, /policy): both

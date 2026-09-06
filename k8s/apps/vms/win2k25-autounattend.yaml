@@ -14,7 +14,6 @@
 #   | kubeseal --controller-name sealed-secrets-controller \
 #              --controller-namespace kube-system -o yaml
 # The reinstall flow that consumes this is scripts/win2k25-reinstall.sh.
----
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:

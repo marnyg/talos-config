@@ -16,7 +16,6 @@
 # something now: hostPath ignored them, so 450Gi of claims sat on a
 # 300GiB partition. At one replica these fit w1's disk (736GB available)
 # with room, and stay expandable.
----
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

@@ -9,7 +9,6 @@
 #
 # The upstream Namespace already ships pod-security enforce=privileged,
 # which virt-handler (host devices, mount propagation) requires.
----
 apiVersion: v1
 kind: Namespace
 metadata:

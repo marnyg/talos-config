@@ -7,7 +7,6 @@
 # reduces to wallet signature verification against git-declared
 # addresses.
 name: siwe-oidc-image
-
 on:
   push:
     branches: [main]
@@ -20,7 +19,6 @@ on:
       - "Dockerfile.siweoidc"
       - ".github/workflows/siwe-oidc-image.yml"
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest

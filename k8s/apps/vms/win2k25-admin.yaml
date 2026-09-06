@@ -5,7 +5,6 @@
 #   kubectl -n vms get secret win2k25-admin -o jsonpath='{.data.password}' | base64 -d
 # If you rotate the password in the answer file, reseal BOTH secrets —
 # nothing links them mechanically.
----
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:

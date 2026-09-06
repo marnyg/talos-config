@@ -17,7 +17,6 @@
 # ServiceAccount token are the whole job, so the image is pinned curl.
 # RBAC is the narrowest that works: delete on exactly these two
 # resource types, in this namespace only.
----
 apiVersion: v1
 kind: ServiceAccount
 metadata:
