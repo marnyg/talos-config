@@ -1,6 +1,6 @@
 # Gates the Go code and the Quint design models on every change, so
 # neither drifts unnoticed again (verification/quint/check.sh went stale
-# for two weeks; there was no Go test workflow at all). Three jobs:
+# for two weeks; there was no Go test workflow at all). Four jobs:
 #
 #   go            go vet + go test -race for each module (config-server,
 #                 protocol), Go version pinned from each module's go.mod.
@@ -9,8 +9,11 @@
 #   quint-verify  the Apalache bounded-model-checking tier
 #                 (`check.sh verify`) — minutes long, so nightly +
 #                 manual only.
+#   nickel        verification/nickel/check.sh — the durable artifacts
+#                 (talos/mesh-policy.yaml, the v3 fixture) against their
+#                 snapshot contracts, on every push/PR.
 #
-# check.sh's header names this workflow; keep the two in sync.
+# Both check.sh headers name this workflow; keep them in sync.
 name: verify
 on:
   push:
@@ -75,3 +78,15 @@ jobs:
         run: npm i -g @informalsystems/quint@0.30.0
       - name: check.sh verify
         run: verification/quint/check.sh verify
+  nickel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      # nickel comes from the flake's own nixpkgs input (`--inputs-from .`
+      # reads flake.lock), so the version is pinned by construction —
+      # currently 1.16.0 — and bumps with the flake, unlike quint's
+      # hand-pinned npm install above. No `--impure` / devenv shell
+      # needed: only the nixpkgs package is evaluated.
+      - name: check.sh
+        run: nix shell --inputs-from . nixpkgs#nickel -c verification/nickel/check.sh

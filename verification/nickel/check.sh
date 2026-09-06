@@ -19,6 +19,13 @@
 #                 accept tables and the name map wait on 359.8.5's
 #                 schema.
 #
+# nickel comes from the flake (`nix develop --impure`); it is not on
+# PATH otherwise.
+#
+# CI: .github/workflows/verify.yml runs this on every push/PR (job
+# `nickel`), with nickel taken from the flake's nixpkgs input. Keep
+# this note and that workflow in sync.
+#
 # Every contract has been mutation-tested: seeding the bug it guards
 # against produces a contract blame.
 #   v2 (mesh-policy.ncl):
