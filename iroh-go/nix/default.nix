@@ -4,7 +4,7 @@
 #         |                                              |
 #   uniffi-bindgen-go --library libiroh_ffi ----------> iroh/iroh_ffi.go + iroh.h
 #         |                                              |
-#   fixup.sh (two known bindgen defects)                  |
+#   fixup.sh (three known bindgen defects)                |
 #         v                                              v
 #   ../iroh/ (checked in, verified identical by `generated-check`)
 #         |

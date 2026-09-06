@@ -1,9 +1,11 @@
 # ADR-0021: Own the iroh Go binding via in-house uniffi-bindgen-go; no sidecar
 
-- Status: Proposed _(2026-09-06, from task `talos-config-ow7`; promote
-  when the x86_64-linux build is verified in CI (`g3u`) and the first
-  real consumer — the hub or the Talos extension, Mesh v3 Phase 1 —
-  links against it)_
+- Status: Accepted _(2026-09-06, from task `talos-config-ow7`; accepted
+  by owner ruling the same day once `htt` (core 1.1.0 lock) and `g3u`
+  (x86_64-linux CI job `.github/workflows/iroh-go.yml`) landed. The
+  first real consumer — the hub or the Talos extension, Mesh v3
+  Phase 1 — has not linked against it yet; if that link fails the
+  static-musl path, revisit here.)_
 - Date: 2026-09-06
 - Related: ADR-0016 (identity-native mesh replaces nebula), ADR-0020
   (monorepo; the protocol module stays transport-independent),
@@ -107,8 +109,9 @@ API subset) are structural and permanent. The pipeline lives in
 uniffi-bindgen-go}` and `apps.iroh-go-regen`; the checked-in
 generated package is drift-checked on every `nix build .#iroh-go`.
 Pins: iroh-ffi **1.1.0**, uniffi-bindgen-go **0.7.1+v0.31.0**,
-iroh-relay **1.1.0**. The ffi crate's own lock pins core iroh 1.0.2;
-bumping it to 1.1.0 is tested green and tracked as `htt`.
+iroh-relay **1.1.0**, core iroh / iroh-relay **1.1.0** (the ffi crate's
+own lock pinned 1.0.2; patched in `iroh-go/regen/iroh-ffi.Cargo.lock`
+with an eval-time assert, `htt`).
 
 ### Consequences
 

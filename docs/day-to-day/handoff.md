@@ -41,11 +41,11 @@ before fast-forwarding.
 
 ## Loose threads
 
-- **`iroh-go.yml` has not run yet** — first `main` run is cold
-  (~45–60 min smoke + 90–120 min drift, estimates). **`3i3`**: promote
-  ADR-0021 Proposed → Accepted once it is green, paste CI times into
-  `iroh-go/README.md`, fix `default.nix:7` "two" → three fixups. If the
-  4-vCPU runner blows `timeout-minutes`, raise it rather than split.
+- **`iroh-go.yml`** first `main` run is in flight, cold (~45–60 min
+  smoke + 90–120 min drift, estimates). ADR-0021 is **Accepted** (owner
+  ruling, ahead of the run). **`3i3`**: check the run, paste CI times
+  into `iroh-go/README.md`. If the 4-vCPU runner blows
+  `timeout-minutes`, raise it rather than split.
 - **`49x`** (debt) — yamlfmt trailing-comma quirk `{…,}` in
   `talos/mesh-policy.yaml:46,72` and the v3 fixture; block-style rewrite
   or upstream.
@@ -58,7 +58,7 @@ before fast-forwarding.
 
 ## Suggested next steps
 
-- Check the first `iroh-go.yml` run; close `3i3` (ADR-0021 → Accepted).
+- Check the first `iroh-go.yml` run; close `3i3`.
 - `/skill:grill-design` on `0bc.2` (M2 envelope + actor runtime) — the
   only un-briefed item on the protocol critical path.
 - Phase 0 probes `359.1.1–.3` once fly scratch + an Android device
