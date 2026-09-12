@@ -21,8 +21,10 @@ import (
 const testNOW = int64(5)
 
 // principals — the model's OWNER1, OWNER2, R, OTHER_R, CALLER, ROGUE,
-// the two hub process keys HUB_A, HUB_B (ADR-0018 epochs), plus a
-// distinct FORGER key used to produce invalid signatures.
+// the two hub process keys HUB_A, HUB_B (ADR-0018 epochs), a distinct
+// FORGER key used to produce invalid signatures, and CALLER_HOT — the
+// caller's own hot key that presents chains under a speak-as
+// CALLER→CALLER_HOT (ADR-0001 aud-side binding).
 type fixture struct {
 	signer map[string]Signer
 	id     map[string]ActorID
@@ -33,7 +35,7 @@ type fixture struct {
 }
 
 // principalNames is the model's closed world of keys.
-var principalNames = []string{"OWNER1", "OWNER2", "R", "OTHER_R", "CALLER", "ROGUE", "HUB_A", "HUB_B", "FORGER"}
+var principalNames = []string{"OWNER1", "OWNER2", "R", "OTHER_R", "CALLER", "ROGUE", "HUB_A", "HUB_B", "FORGER", "CALLER_HOT"}
 
 // detFixture builds principalNames with deterministic seeds (readable,
 // reproducible) for the hand-written scenario tests.
@@ -162,11 +164,14 @@ const (
 	numFaults
 )
 
-// attenuation kinds — the model's Att. The first four attenuate the
-// grant link; the last three every speak-as link.
+// attenuation kinds — the model's Att. The first five attenuate the
+// grant / chain link; the last three every speak-as link. NOT among
+// them: adding postage — it UNLOCKS aud "*", so it is not an
+// attenuation in the monotone sense (see the chain laws).
 const (
 	attShrinkTarget = iota
 	attShrinkFacet
+	attShrinkEndpoints
 	attAddUnknownCaveat
 	attShortenExpiry
 	attShrinkSpeakAsGroups
@@ -220,43 +225,12 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 	flt := map[fault]bool{p.f1: true, p.f2: true}
 
 	id := f.id
-	facets := []string{"apid", "kube-api"}
 	memberSigner, grantSigner := "OWNER1", "OWNER1"
 	if hubSigned {
 		memberSigner, grantSigner = "HUB_A", "HUB_B"
 	}
 
-	// consent1 (R → OWNER1) with its faults.
-	consent1Iss := "R"
-	if has(flt, fConsentSignedByOtherR) {
-		consent1Iss = "OTHER_R"
-	}
-	consent1Target := []ActorID{id["R"]}
-	if has(flt, fConsentTargetOtherR) {
-		consent1Target = []ActorID{id["OTHER_R"]}
-	}
-	consent1Facet := facets
-	if has(flt, fConsentFacetKubeOnly) {
-		consent1Facet = []string{"kube-api"}
-	}
-	consent1Exp := int64(10)
-	if has(flt, fConsentExpired) {
-		consent1Exp = testNOW
-	}
-	consent1 := f.build(certSpec{
-		iss: consent1Iss, aud: string(id["OWNER1"]), can: VerbInvoke,
-		cav: Caveats{Target: consent1Target, Facet: consent1Facet, Delegable: !has(flt, fConsentNotDelegable)},
-		exp: consent1Exp, forged: has(flt, fConsentForged),
-	})
-	consent2 := f.build(certSpec{
-		iss: "R", aud: string(id["OWNER2"]), can: VerbInvoke,
-		cav: Caveats{Target: []ActorID{id["R"]}, Facet: facets, Delegable: true},
-		exp: 10,
-	})
-	consents := []Cert{consent1, consent2}
-	if has(flt, fNoConsentOwner2) {
-		consents = []Cert{consent1}
-	}
+	consents := buildConsents(f, flt, "")
 
 	// member cert with its faults.
 	memberIss := memberSigner
@@ -455,6 +429,46 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 
 	return scenario{in: base, att: att, member: member, grant: grant, speakAs: speakAs,
 		consents: consents, alpn: alpn, facet: "apid", hubSigned: hubSigned, f: flt}
+}
+
+// buildConsents is the receiver's consent set of the model's genNear:
+// consent1 (R → OWNER1) with its faults — and, since ADR-0001, the
+// model's ENDPOINTS and an optional postage on the consent itself — plus
+// the fault-free CONSENT2 (R → OWNER2) unless fNoConsentOwner2.
+func buildConsents(f fixture, flt map[fault]bool, postage string) []Cert {
+	id := f.id
+	facets := []string{"apid", "kube-api"}
+	consent1Iss := "R"
+	if has(flt, fConsentSignedByOtherR) {
+		consent1Iss = "OTHER_R"
+	}
+	consent1Target := []ActorID{id["R"]}
+	if has(flt, fConsentTargetOtherR) {
+		consent1Target = []ActorID{id["OTHER_R"]}
+	}
+	consent1Facet := facets
+	if has(flt, fConsentFacetKubeOnly) {
+		consent1Facet = []string{"kube-api"}
+	}
+	consent1Exp := int64(10)
+	if has(flt, fConsentExpired) {
+		consent1Exp = testNOW
+	}
+	consent1 := f.build(certSpec{
+		iss: consent1Iss, aud: string(id["OWNER1"]), can: VerbInvoke,
+		cav: Caveats{Target: consent1Target, Facet: consent1Facet, Delegable: !has(flt, fConsentNotDelegable),
+			Endpoints: modelEndpoints, Postage: postage},
+		exp: consent1Exp, forged: has(flt, fConsentForged),
+	})
+	consent2 := f.build(certSpec{
+		iss: "R", aud: string(id["OWNER2"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{id["R"]}, Facet: facets, Delegable: true, Endpoints: modelEndpoints},
+		exp: 10,
+	})
+	if has(flt, fNoConsentOwner2) {
+		return []Cert{consent1}
+	}
+	return []Cert{consent1, consent2}
 }
 
 // scenarioGen wraps genNear as a rapid generator so coverage tests can

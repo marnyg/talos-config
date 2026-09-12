@@ -18,7 +18,8 @@
 #   enroll     device enrollment (ADR-0012): nonce single-use, addr=f(name)
 #   approval   machine approval + ADR-0015 boot-token enrollment; reinstall
 #   authorize  ADR-0017/0018 authorize(): the per-connect chain check incl.
-#              speak-as resolution (step 2a) over per-process hub keys
+#              speak-as resolution (step 2a) over per-process hub keys, and
+#              protocol ADR-0001 verifyChain(): the N-link fold it is a case of
 #   runway     ADR-0017/0018 cert lifetimes vs. sealed-hub starvation incl.
 #              the per-process speak-as bound and the 30 d nag
 #   clock      ADR-0019 time as trust input: iat low-water mark vs. clock rollback;
@@ -36,7 +37,7 @@
 #
 # Depths: hub/approval verify at 12–15 steps; enroll's growing sets
 # verify at 8; authorize regenerates its whole scenario every step so
-# depth 2 is exhaustive (~20 s since the speak-as link); runway's nondet
+# depth 2 is exhaustive (~95 s since the N-link chain scenario); runway's nondet
 # init reaches the 6 d boundaries in ≤ 10 steps — the 30 d speak-as
 # cliff is 720 h out and is covered by its witness tests (nag*Test,
 # rotationConvergesTest) instead; clock's 8-tick horizon is covered at 10. Every invariant
