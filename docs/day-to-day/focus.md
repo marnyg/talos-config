@@ -14,8 +14,9 @@ per issue, branch `swarm/<id>`, review + gate before fast-forward to
 `6z9a zev 44r ow7`; `2qp/8vg htt/g3u 81u/m60`). Rooted-at-the-receiver
 is ruled (`7ry jo8 c4c`) and the Go clock is pinned to `clock.qnt` by
 rapid laws. The iroh Go binding is in-house (`iroh-go/`, bindgen, core
-1.1.0) with an x86_64-linux CI job whose first run is pending (`3i3`).
-CI is green end to end (`nix flake check --impure`, quint, nickel, Go).
+1.1.0), verified on x86_64-linux by `iroh-go.yml` (smoke + bindgen
+drift, ~1 min warm). CI is green end to end (`nix flake check
+--impure`, quint, nickel, Go, iroh-go).
 Next: `/skill:grill-design` on `0bc.2` (M2 actor runtime); Phase 0
 probes `359.1.1–.3` need fly scratch infra / an Android device, then
 the gate `359.1.5`; Phase 1 (`359.8.*`) waits on it.

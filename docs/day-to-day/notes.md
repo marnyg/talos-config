@@ -222,13 +222,14 @@
 - KMS slot 0 is never used at boot (early-boot DNS loses the race).
   Accepted; a KMS endpoint by IP would dodge DNS.
 - Old kubeconfigs pointing at `10.0.0.x` are dead — regenerate.
-- 2026-09-06 — `.github/workflows/iroh-go.yml` is path-filtered
-  (`iroh-go/**`, flake files) and **cold-builds iroh-ffi / iroh-relay /
-  uniffi-bindgen-go on a 4-vCPU runner** (est. 45–60 min `smoke`,
-  90–120 min `drift`; warm 3–5 min). GH cache evicts after 7 idle days,
-  so a quiet fortnight means a cold run again; add a weekly `schedule:`
-  if that bites. Until the first `main` run is green, ADR-0021 stays
-  Proposed (`3i3`).
+- 2026-09-12 — `.github/workflows/iroh-go.yml` is path-filtered
+  (`iroh-go/**`, flake files). Measured on the 4-vCPU runner: `smoke`
+  16 m 39 s cold / 45 s warm, `drift` 8 m 41 s (bindgen ~8 min there
+  vs ~45 min on M-series). GH cache evicts after 7 idle days, so a
+  quiet fortnight means a ~25 min cold run; add a weekly `schedule:`
+  if that bites. **Upstream iroh's `.cargo/config.toml` pins
+  `-fuse-ld=lld` for x86_64-linux** — the `iroh-relay` derivation
+  `rm`s it in `postPatch`; keep that when bumping iroh.
 - 2026-09-06 — Swarm orchestration via herdr: `herdr tab create` +
   `pane split` per worker, `herdr agent start <name> --kind pi --pane
   <id>`, `herdr agent prompt <name> "<pointer to brief>"`; poll with
