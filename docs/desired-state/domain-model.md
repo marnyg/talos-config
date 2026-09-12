@@ -308,13 +308,23 @@ provisioning or recovery path may depend on it.
   per receiver kind: node agent `apid`, `kube-api`; gateway
   `ingress-http` (one class for every HTTP UI — per-app authorization
   stays app-layer), `jellyfin` (raw TCP); hub `hub-http`, `relay`.
-  Facets are what grants name (`cav.facet`); on the wire a facet is an
-  ALPN class (coarse, because ALPN is visible in the ClientHello).
+  Facets are what grants name (`cav.facet`). Two kinds, one cert
+  shape. The **actor facet** is the primary form; the **stream facet**
+  is the **compatibility mode** that lets an actor stand in front of a
+  service that knows nothing of actors (a plain VPN in front of
+  Jellyfin). A stream facet (the forwarded services above) is
+  identified by ALPN class at connect — coarse, because ALPN is
+  visible in the ClientHello — and the connection is the invocation,
+  checked once; an **actor facet** (`#renew`, `#publish`, `#frontdoor`
+  …) rides one fixed ALPN class and is named by `to.facet` inside the
+  QUIC-encrypted envelope, checked per message. The verifier takes
+  `facet` as an input and never sees how the caller derived it.
   Ports exist only inside a facet definition (forward) and in the
   device-local map (expose) — never in a grant. Reachability (ICMP
   today) is not a facet: an unauthenticated ping. Services are not
   actors; a service is a facet on some actor (the gateway for
-  Kubernetes Services). _(Pinned 2026-09-03, spike `359.2`.)_
+  Kubernetes Services). _(Pinned 2026-09-03, spike `359.2`; stream vs
+  actor facet ruled 2026-09-12, `0bc.2` grill-design.)_
 - **Name map** — the signed directory members receive on the renewal
   beat. Two halves with different owners: **name → NodeId** is the
   Owner's namespace (authoritative, derived from git, invariant 1);

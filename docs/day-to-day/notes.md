@@ -38,6 +38,13 @@
   ruling 2026-09-06: nothing depends on the running system — break
   nebula-era code wherever the new shape needs it.** (Supersedes the
   2026-09-03 "don't fix nebula code toward ADR-0017" caution above.)
+- 2026-09-12 — **Protocol ADR-0001 is Proposed, not built.**
+  `protocol/cert.Authorize` still builds the fixed 2-link chain and
+  matches `aud` raw against `Peer`; `Caveats` has no `Endpoints` /
+  `Postage`; `Attenuate` is still uncalled. The glossary (Envelope,
+  Reply, Location record, stream vs actor Facet) describes the
+  *desired* M2 shape. Change `authorize.qnt` before touching the Go —
+  the rapid laws pin them 1:1 (`0bc.2.1` → `0bc.2.2`).
 
 ## Hub / mesh (nebula, as running)
 
@@ -119,7 +126,7 @@
 
 ## Workloads / storage
 
-- **w1 is down** (since 2026-08-04; no LAN ping, no apid). Media
+- **w1 is down** (since 2026-08-04; no LAN ping, no apid). <!-- stale? --> Media
   library offline — all `longhorn-bulk` volumes `faulted` (single
   replica on w1). Needs physical attention; data presumed intact. Do
   not start storage work until it returns (`talos-config-kso`,
@@ -217,7 +224,7 @@
   refs/dolt/data` must move after `bd dolt push`. Q-threads that are
   `blocks`-chained need `--force` to close with a reason.
 
-## Unverified leftovers (from the 2026-07-24 handover; ask before filing)
+## Unverified leftovers (from the 2026-07-24 handover; ask before filing) <!-- stale? -->
 
 - KMS slot 0 is never used at boot (early-boot DNS loses the race).
   Accepted; a KMS endpoint by IP would dodge DNS.

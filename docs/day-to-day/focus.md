@@ -3,31 +3,29 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** **Implementation, orchestrated.** The authority model is
-fully ruled (ADR-0017/0018/0019 + decisions `89v dyf fje itb wms sn4
-vl4 j0b bjg 4oz h90 how w5s`) and model-checked
-(`verification/quint/{authorize,runway,approval,clock}.qnt`); the Go
-`protocol/cert` + `protocol/clock` match the models 1:1. An
-orchestrator session hands bd issues to worker agents (one worktree
-per issue, branch `swarm/<id>`, review + gate before fast-forward to
-`main`). **Batches 1–3 landed** (`k3o 0bc.1 cmi czi/jp2 359.1.4`;
-`6z9a zev 44r ow7`; `2qp/8vg htt/g3u 81u/m60`). Rooted-at-the-receiver
-is ruled (`7ry jo8 c4c`) and the Go clock is pinned to `clock.qnt` by
-rapid laws. The iroh Go binding is in-house (`iroh-go/`, bindgen, core
-1.1.0), verified on x86_64-linux by `iroh-go.yml` (smoke + bindgen
-drift, ~1 min warm). CI is green end to end (`nix flake check
---impure`, quint, nickel, Go, iroh-go).
-Next: `/skill:grill-design` on `0bc.2` (M2 actor runtime); Phase 0
-probes `359.1.1–.3` need fly scratch infra / an Android device, then
-the gate `359.1.5`; Phase 1 (`359.8.*`) waits on it.
+**Now:** **Protocol M2 — build what ADR-0001 ruled.** The authority
+model (ADR-0017/18/19, Quint-checked, Go `protocol/cert` + `clock`
+1:1) is done; M2's design is ruled (protocol ADR-0001, 2026-09-12):
+one N-link chain verifier, self-authenticating envelopes, serial
+actor mailbox, `#renew` as an ordinary facet, `reach-me-at` piggyback
+as the discovery layer. Work runs in dependency order `0bc.2.1`
+(Quint first) `→ .2 cert → .3 envelope → .5 actor → .6 iroh adapter`;
+acceptance is two actors in one Go test over in-memory + iroh
+transports. Orchestrated as before: one worktree per bead, branch
+`swarm/<id>`, review + gate before fast-forward to `main`.
+Phase 0 probes `359.1.1–.3` still need fly scratch / Android; the
+Talos-node deployment of M2 (`0bc.2.7`) waits on `359.1.3`.
 
 **Toward goal:** **Sovereign-actor protocol at the center** and
-**Mesh v3** in `desired-state/goals.md` (ADR-0016, decision `5w1`).
+**Mesh v3** in `desired-state/goals.md` (ADR-0016, decision `5w1`);
+protocol goals "one primitive" and "deployment-independent transport".
 
 **Out of scope:**
-- Nothing in the repo is protected: no production system depends on
-  it (owner ruling 2026-09-06) — break the nebula-era code where the
-  new shape needs it; the deferred nebula-era issues close when the
-  gate passes, not before.
-- Phase 2+ decisions (`1gv` gateway header) until Phase 1 exists.
-- Parents'-TV deployment (`4te`) — valid, LAN-direct, not the focus.
+- Nothing in the repo is protected (owner ruling 2026-09-06) — break
+  nebula-era code where the new shape needs it.
+- M3+ (lighthouse, frontdoor postage enforcement, spawn, money) —
+  M2 only makes `aud:*` fail closed without postage; it enforces none.
+- Choosing the open numbers (chain cap, `max_bytes`, mailbox depth,
+  renewal fraction) — pick when a test forces it, record in the
+  glossary.
+- Parents'-TV deployment (`4te`).

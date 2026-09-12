@@ -223,15 +223,24 @@ protocol scope must never contradict these entries.
   grant; ADR-0017.)_
 - **Facet** — a named entry point an actor exposes, defined and held
   **producer-side** as an accept table `facet → forward target`.
-  Facets are what grants name (`cav.facet`); on the wire a facet is an
-  ALPN class (coarse, because ALPN is visible in the ClientHello).
-  Ports exist only inside a facet definition (forward) and in the
-  device-local map (expose) — never in a grant. Services are not
-  actors; a service is a facet on some actor. _(root glossary: Facet;
-  the closed talos set — `apid`, `kube-api`, `ingress-http`,
-  `jellyfin`, `hub-http`, `relay` — is that deployment's instantiation.
-  The sketch writes a facet `P#report`. Pinned 2026-09-03, spike
-  `359.2`.)_
+  Facets are what grants name (`cav.facet`). Two kinds, one cert
+  shape. The **actor facet** is the primary form; the **stream facet**
+  is the **compatibility mode** that lets an actor stand in front of a
+  service that knows nothing of actors (a plain VPN in front of
+  Jellyfin). A stream facet is identified by ALPN class at connect —
+  coarse, because ALPN is visible in the ClientHello — and the
+  connection is the invocation, checked once; an **actor facet**
+  (`#renew`, `#publish`, `#frontdoor` …) rides one fixed ALPN class
+  and is named by `to.facet` inside the QUIC-encrypted envelope,
+  checked per message. The verifier takes `facet` as an input and
+  never sees how the caller derived it. Ports exist only inside a
+  facet definition (forward) and in the device-local map (expose) —
+  never in a grant. Services are not actors; a service is a facet on
+  some actor. _(root glossary: Facet; the closed talos set — `apid`,
+  `kube-api`, `ingress-http`, `jellyfin`, `hub-http`, `relay` — is
+  that deployment's stream facets. The sketch's `P#report` is an actor
+  facet. Pinned 2026-09-03, spike `359.2`; stream vs actor facet ruled
+  2026-09-12, `0bc.2` grill-design.)_
 - **Attenuation** — a chain link adds caveats, never removes;
   effective authority is field-wise intersection over `target`,
   `facet` and every recognised caveat; an unknown caveat rejects.
@@ -304,9 +313,36 @@ whose deployment-free form differs from the talos wording. Source:
 - **Identity** — the *address* of a keypair: a short hash of the
   public key. `iss` and `aud` always hold addresses; public keys
   travel alongside signatures when needed.
+- **Location record (`reach-me-at`)** — a Cert, not a second record
+  type: `{iss: P, aud: "*", can: reach-me-at, cav: {endpoints:
+  […]}, iat, exp ≈ 1 h}`. `cav.endpoints` is the verb's object in a
+  structured caveat (the same move ADR-0017 made for `target`/`facet`);
+  attenuation is intersection. Entries are **transport-tagged opaque
+  strings** (`iroh:relay=https://…`, `iroh:udp=ip:port`, `mem:<name>`
+  for tests); `Transport.Dial(ctx, id, hints)` takes the list and
+  ignores tags it does not own — the protocol never parses an address.
+  Piggybacking on every Envelope/Reply (`loc?`) **is** the discovery
+  layer: iroh runs `PresetMinimal` (no n0 DNS/pkarr), so a moved peer is
+  dialable only through a record it or a lighthouse handed you. The
+  actor keeps `id → latest valid record` in a volatile cache; an
+  incoming `loc` that fails signature or expiry rejects the whole
+  envelope (one fail-closed rule). Together with `postage` this is the
+  first caveat-vocabulary version bump since ADR-0017. _(Ruled
+  2026-09-12, `0bc.2`.)_
 - **Renewal beat** — the short recurring cycle (days, not months) on
   which credentials are re-signed. **Per-relationship**: every edge
   renews with its own counterparty. There is no global clock tick.
+  **`#renew` is an ordinary actor facet behind an ordinary grant**
+  (`{target: grantor, facet: renew}`, part of every starter kit /
+  membership bundle, renewing itself through the same loop) — never a
+  verifier special case where "any cert I signed" authorizes asking.
+  Payload = the certs to renew (batch, one grantor); the grantor checks
+  own-signature (resolving through its own speak-as for hot-key
+  issuers), unexpired, and re-issues **same `aud`, same or narrower
+  `cav`, fresh `iat`/`exp`** — never wider; wider is a new
+  negotiation. Reply = per-cert result (new cert or refusal). The
+  holder's beat runs at a fraction of the shortest lifetime it holds
+  (fraction unchosen). _(Ruled 2026-09-12, `0bc.2`.)_
 - **Network** — a bundle a founder roots: `{lighthouse endpoints,
   lighthouse identity, your publish-cap}`. Holding a publish-cap is
   what "being in a network" means. One identity, many networks.
@@ -336,3 +372,40 @@ whose deployment-free form differs from the talos wording. Source:
 - **`seq` (replay high-water mark)** — a per-sender monotonic counter;
   the receiver keeps a volatile high-water mark per correspondent and
   drops replays. Lost on restart (window bounded by cert expiry).
+  **Load-bearing, not defence in depth**: the envelope path does not
+  bind signer to transport peer, so any observer of a valid envelope
+  can resend it over its own connection. _(Ruled 2026-09-12, `0bc.2`.)_
+- **Envelope** — the signed unit of actor messaging: `{from, to:
+  {target, facet}, seq, payload, proof: [cert…], loc?, sig}`. JCS
+  canonical form and scheme-selected signature as for certs; `payload`
+  is opaque bytes (hashed, never canonicalized — the protocol does not
+  parse payloads); `from` is required because `ed:` signatures do not
+  recover the key; `to.target` must equal the receiver (cheap check
+  before the chain); `loc` is an optional piggybacked `reach-me-at`
+  cert. The envelope is **self-authenticating**: the transport peer
+  key is a hint, never an authority input. Verified in cost order:
+  `sig`, then `to.target`/`seq`, then the proof chain. _(Ruled
+  2026-09-12, `0bc.2`.)_
+- **Invocation** — one capability invocation = one bidirectional
+  transport stream: request envelope in, at most one Reply back,
+  stream closed. Request/reply correlation comes from the stream, not
+  from ids or a pending table. Errors are Replies with a status
+  payload, never transport-level closes. _(Ruled 2026-09-12, `0bc.2`.)_
+- **Reply** — `{re: <hash of the request envelope>, from, payload,
+  loc?, sig}`: signed, bound to its request, and **carries no proof
+  chain**. `loc?` is the replier's piggybacked `reach-me-at` — the
+  renewal response is the one call a moved parent is guaranteed to
+  receive from its children.
+  The open stream is the authority to reply — the requester invited it
+  by asking, and only the requester could have opened that stream, so
+  invariant 2 (authority over an actor originates at that actor)
+  holds without a cert. Requiring a proof would invert the capability
+  direction (every caller holding a grant *from* every callee). The
+  requester checks `re` and `from == to.target` of its request. _(Ruled
+  2026-09-12, `0bc.2`.)_
+- **Stream facet / actor facet** — see **Facet** above: a stream facet
+  is identified by ALPN class at connect and the connection is the
+  invocation (talos forwarding, no envelope); an actor facet rides one
+  fixed ALPN class and is named by `to.facet` in the envelope, checked
+  per Invocation. The chain verifier takes `facet` and is
+  derivation-blind.

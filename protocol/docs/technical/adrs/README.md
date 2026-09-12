@@ -2,7 +2,12 @@
 
 Architecture decisions scoped to the **sovereign-actor protocol
 itself** (not the talos deployment). Protocol ADRs start at **0001** in
-this scope; there are none yet.
+this scope.
+
+- [0001](0001-one-chain-verifier-self-authenticating-envelopes.md) —
+  one N-link chain verifier (connection-level `Authorize` is its
+  special case); self-authenticating envelopes; stream vs actor facets.
+  _Proposed._
 
 The protocol's **founding** decisions are root ADRs, referenced here,
 not copied:
