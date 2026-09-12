@@ -1,0 +1,545 @@
+// Package actor is the sovereign-actor protocol's runtime: the piece
+// that binds envelope messaging (protocol/envelope) and the chain
+// verifier (cert.VerifyChain) into a running actor. Spec: protocol/docs
+// ADR-0001 § Decision Outcome (Actor facet, Invocation, Reply, Renewal
+// beat, serial mailbox) and the glossary in
+// protocol/docs/desired-state/domain-model.md.
+//
+// # Shape
+//
+// An Actor is a signer, an accept table (facet → Handler), the consents
+// it issued (roots of every chain that may reach it, invariant 2), the
+// grants and speak-as certs it holds for calling others, a volatile seq
+// high-water mark table, a clock low-water Mark, and a location cache.
+// It talks to the world through a Transport; the in-memory
+// MemoryNetwork is the reference implementation.
+//
+// # Concurrency: the serial mailbox
+//
+// Inbound processing is a two-stage pipeline:
+//
+//  1. Transport goroutines (one per accepted stream) do only the pure,
+//     cheap rejects — decode, envelope signature, to.target == me — and
+//     enqueue into a BOUNDED mailbox. When the mailbox is full the
+//     invocation is dropped (invariant 12: at-most-once, best-effort;
+//     the sender retries). They never touch actor state.
+//  2. ONE goroutine (the mailbox loop) dequeues and does everything
+//     stateful, in order: effective now = Mark.Now(local), seq
+//     high-water mark, location record, VerifyChain with the receiver's
+//     own consents prepended, Mark.ObserveAll(verified) on accept AND
+//     reject, the Handler, the Reply. Handlers therefore never run
+//     concurrently with each other and see a consistent actor.
+//
+// The reply's bytes are handed back to the stream goroutine, so the
+// loop never blocks on I/O. Send (outbound) may run on any goroutine —
+// including inside a handler — and shares only the Mark, the location
+// cache and the outbound seq counters with the loop; those are guarded
+// by one small mutex that is never held across I/O or a handler.
+//
+// Sends to ONE receiver are serialised (one invocation in flight per
+// edge): the receiver's seq high-water mark is strictly monotone, so
+// two concurrent invocations that overtook each other on the wire
+// would have the straggler rejected as a replay. Sends to different
+// receivers proceed in parallel.
+//
+// # Errors are replies
+//
+// Every decoded envelope gets exactly one Reply whose payload is a
+// Status {code, msg, body}; transport-level closes are reserved for
+// undecodable bytes and mailbox drops. The requester sees a remote
+// rejection as *RemoteError from Send.
+package actor
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/talos-config/protocol/clock"
+	"github.com/marnyg/talos-config/protocol/envelope"
+)
+
+// DefaultMailbox is the mailbox depth when Actor.Mailbox is 0 (ADR-0001
+// open problem 9 — a number, not a rule).
+const DefaultMailbox = 64
+
+// Invocation is one verified inbound envelope as a handler sees it.
+type Invocation struct {
+	Envelope *envelope.Envelope
+	// From is the envelope's signer — the authority the chain bound.
+	From cert.ActorID
+	// Peer is the transport-authenticated dialler; may differ from From.
+	Peer cert.ActorID
+	// Eff is the effective cert the chain folded to (VerifyChain).
+	Eff cert.Cert
+}
+
+// Handler serves one facet. The returned payload becomes the reply's
+// body under Status ok; an error becomes Status "error" with its text.
+type Handler func(ctx context.Context, inv *Invocation) (payload []byte, err error)
+
+// GrantKey addresses the caller-held chain for one (target, facet).
+type GrantKey struct {
+	Target cert.ActorID
+	Facet  string
+}
+
+// Actor is the runtime for one identity. Zero-value maps are allocated
+// by New; the exported fields are configuration read at Listen/Send
+// time and must not be mutated while the actor runs (use the methods).
+type Actor struct {
+	Signer cert.Signer
+	// Transport carries envelopes; an Endpoint additionally lets
+	// PublishLocation mint the reach-me-at record from its tags.
+	Transport Transport
+	// AcceptTable maps facet → handler. New pre-registers FacetRenew.
+	AcceptTable map[string]Handler
+	// Consents are the invoke certs this actor signed (iss == me): the
+	// roots VerifyChain prepends to every caller chain.
+	Consents []cert.Cert
+	// Grants are the chain links this actor holds for calling others,
+	// root-first, EXCLUDING the target's own consent (the receiver
+	// prepends that). Empty is legal: the consented principal itself.
+	Grants map[GrantKey][]cert.Cert
+	// SpeakAs holds both roles of speak-as cert: those naming this
+	// actor's signer as aud (attached to outbound proofs so receivers
+	// can resolve a hot key) and those this actor issued to its own hot
+	// keys (used by #renew to recognise its own issuance).
+	SpeakAs []cert.Cert
+	// Mailbox is the bounded inbound queue depth; 0 ⇒ DefaultMailbox.
+	Mailbox int
+	// Clock is the local unauthenticated clock (Unix seconds); nil ⇒
+	// time.Now. The effective clock is Mark.Now(Clock()).
+	Clock func() int64
+	// RenewTTL is the lifetime of a re-issued cert in seconds; 0 ⇒ the
+	// original cert's own lifetime (exp − iat).
+	RenewTTL int64
+
+	hwm  *envelope.HWM
+	mail chan *inbound
+
+	// dropped counts mailbox-full drops (diagnostics).
+	dropped atomic.Int64
+
+	// mu guards the fields below: shared between the mailbox loop and
+	// Send. Never held across I/O or a handler.
+	mu     sync.Mutex
+	mark   clock.Mark
+	loc    *cert.Cert                   // own current reach-me-at
+	locs   map[cert.ActorID]cert.Cert   // id → latest valid reach-me-at
+	seqOut map[cert.ActorID]int64       // per-receiver outbound counter
+	edges  map[cert.ActorID]*sync.Mutex // per-receiver in-flight lock
+}
+
+// New returns an actor for signer over transport with the #renew facet
+// registered. Configure the exported fields before Listen.
+func New(signer cert.Signer, t Transport) *Actor {
+	a := &Actor{
+		Signer:      signer,
+		Transport:   t,
+		AcceptTable: make(map[string]Handler),
+		Grants:      make(map[GrantKey][]cert.Cert),
+		hwm:         envelope.NewHWM(),
+		locs:        make(map[cert.ActorID]cert.Cert),
+		seqOut:      make(map[cert.ActorID]int64),
+		edges:       make(map[cert.ActorID]*sync.Mutex),
+	}
+	a.AcceptTable[FacetRenew] = a.renewHandler
+	return a
+}
+
+// ID is the actor's identity (its signer's id).
+func (a *Actor) ID() cert.ActorID { return a.Signer.ActorID() }
+
+// Grant records the caller-held chain for (target, facet).
+func (a *Actor) Grant(target cert.ActorID, facet string, chain ...cert.Cert) {
+	a.Grants[GrantKey{Target: target, Facet: facet}] = append([]cert.Cert(nil), chain...)
+}
+
+// HWM exposes the seq high-water mark table (diagnostics / tests).
+func (a *Actor) HWM() *envelope.HWM { return a.hwm }
+
+// Dropped reports how many invocations were dropped on a full mailbox.
+func (a *Actor) Dropped() int64 { return a.dropped.Load() }
+
+// LowWater reports the clock low-water mark.
+func (a *Actor) LowWater() int64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.mark.LowWater()
+}
+
+func (a *Actor) local() int64 {
+	if a.Clock != nil {
+		return a.Clock()
+	}
+	return time.Now().Unix()
+}
+
+// nowLocked returns the effective clock max(local, lw). Caller holds mu.
+func (a *Actor) nowLocked() int64 { return a.mark.Now(a.local()) }
+
+// Now returns the effective clock the actor judges with.
+func (a *Actor) Now() int64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.nowLocked()
+}
+
+// ---- status wrapper on reply payloads ----------------------------------
+
+// Status codes carried in every Reply payload.
+const (
+	StatusOK           = "ok"
+	StatusBadSig       = "bad-sig"       // envelope sig does not verify
+	StatusWrongTarget  = "wrong-target"  // to.target is not this actor
+	StatusReplay       = "replay"        // seq at or below high-water mark
+	StatusBadLoc       = "bad-loc"       // piggybacked loc invalid (fail closed)
+	StatusUnauthorized = "unauthorized"  // proof chain rejected
+	StatusUnknownFacet = "unknown-facet" // no handler for to.facet
+	StatusError        = "error"         // handler returned an error
+	StatusRejected     = "rejected"      // any other verifier rejection
+)
+
+// Status is the reply payload envelope: the protocol's one way to say
+// "no" (errors are replies, never transport closes).
+type Status struct {
+	Code string `json:"code"`
+	Msg  string `json:"msg,omitempty"`
+	Body []byte `json:"body,omitempty"`
+}
+
+// EncodeStatus renders a Status as reply payload bytes.
+func EncodeStatus(s Status) []byte {
+	b, _ := json.Marshal(s) // fixed shape; cannot fail
+	return b
+}
+
+// DecodeStatus parses a reply payload.
+func DecodeStatus(payload []byte) (Status, error) {
+	var s Status
+	if err := json.Unmarshal(payload, &s); err != nil {
+		return Status{}, fmt.Errorf("actor: reply payload is not a status: %w", err)
+	}
+	if s.Code == "" {
+		return Status{}, errors.New("actor: reply status has no code")
+	}
+	return s, nil
+}
+
+// RemoteError is a non-ok Status the callee replied with.
+type RemoteError struct {
+	Code string
+	Msg  string
+}
+
+func (e *RemoteError) Error() string {
+	if e.Msg == "" {
+		return "actor: remote replied " + e.Code
+	}
+	return "actor: remote replied " + e.Code + ": " + e.Msg
+}
+
+// Reply is what Send returns: the decoded status, the handler body, the
+// callee's validated location record (if any), and the wire reply.
+type Reply struct {
+	Status  Status
+	Payload []byte
+	Loc     *cert.Cert
+	Wire    envelope.Reply
+}
+
+var (
+	// ErrNoTransport marks Send/Listen on an actor without a Transport.
+	ErrNoTransport = errors.New("actor: no transport")
+	// ErrNoReply marks a stream the callee closed without replying
+	// (dropped on a full mailbox, or undecodable request).
+	ErrNoReply = errors.New("actor: no reply")
+)
+
+// ---- inbound: transport goroutines → mailbox → serial loop -------------
+
+type inbound struct {
+	env  envelope.Envelope
+	peer cert.ActorID
+	done chan []byte // signed reply wire bytes, exactly one
+}
+
+// Listen runs the actor: the serial mailbox loop plus the accept loop
+// on a.Transport, until ctx is cancelled (returns ctx.Err()) or Accept
+// fails permanently.
+func (a *Actor) Listen(ctx context.Context) error {
+	if a.Transport == nil {
+		return ErrNoTransport
+	}
+	depth := a.Mailbox
+	if depth <= 0 {
+		depth = DefaultMailbox
+	}
+	a.mail = make(chan *inbound, depth)
+
+	loopCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		a.loop(loopCtx)
+	}()
+	defer wg.Wait()
+
+	for {
+		s, peer, err := a.Transport.Accept(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+		go a.serve(ctx, s, peer)
+	}
+}
+
+// serve is the transport goroutine for one accepted stream: read the
+// request, do the pure cheap rejects, enqueue, relay the reply.
+func (a *Actor) serve(ctx context.Context, s Stream, peer cert.ActorID) {
+	defer s.Close()
+	raw, err := s.RecvMsg(ctx)
+	if err != nil {
+		return
+	}
+	env, err := envelope.Decode(raw)
+	if err != nil {
+		return // undecodable: nothing to bind a reply to
+	}
+	if err := envelope.VerifySig(env); err != nil {
+		a.replyStatus(ctx, s, env, Status{Code: StatusBadSig, Msg: err.Error()})
+		return
+	}
+	if env.To.Target != a.ID() {
+		a.replyStatus(ctx, s, env, Status{Code: StatusWrongTarget})
+		return
+	}
+	in := &inbound{env: env, peer: peer, done: make(chan []byte, 1)}
+	select {
+	case a.mail <- in:
+	default:
+		a.dropped.Add(1) // invariant 12: drop on full, sender retries
+		return
+	}
+	select {
+	case wire := <-in.done:
+		_ = s.SendMsg(ctx, wire)
+	case <-ctx.Done():
+	}
+}
+
+// replyStatus signs and sends a status reply from a transport goroutine
+// (cheap rejects). Signing touches no loop-owned state.
+func (a *Actor) replyStatus(ctx context.Context, s Stream, env envelope.Envelope, st Status) {
+	wire, err := a.signReply(env, st)
+	if err != nil {
+		return
+	}
+	_ = s.SendMsg(ctx, wire)
+}
+
+func (a *Actor) signReply(env envelope.Envelope, st Status) ([]byte, error) {
+	rep, err := envelope.NewReply(env, EncodeStatus(st), a.CurrentLocation())
+	if err != nil {
+		return nil, err
+	}
+	rep, err = envelope.SignReply(rep, a.Signer)
+	if err != nil {
+		return nil, err
+	}
+	return envelope.EncodeReply(rep)
+}
+
+// loop is the ONE goroutine that owns inbound processing.
+func (a *Actor) loop(ctx context.Context) {
+	for {
+		select {
+		case in := <-a.mail:
+			st := a.process(ctx, in)
+			if wire, err := a.signReply(in.env, st); err == nil {
+				in.done <- wire
+			} else {
+				close(in.done)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// process runs the stateful steps for one invocation and returns the
+// Status to reply with.
+func (a *Actor) process(ctx context.Context, in *inbound) Status {
+	env := in.env
+
+	a.mu.Lock()
+	now := a.nowLocked()
+	// Capture verified on BOTH paths: envelope.Verify discards it on
+	// rejection, but the mark must advance from rooted certs regardless
+	// of the verdict (clock contract, ADR-0019).
+	var verified []cert.Cert
+	chain := func(receiver cert.ActorID, consents, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
+		eff, v, err := cert.VerifyChain(receiver, consents, chain, speakAs, signer, facet, now)
+		verified = v
+		return eff, v, err
+	}
+	res, err := envelope.Verify(env, envelope.Receiver{
+		ID:       a.ID(),
+		Consents: a.Consents,
+		Chain:    chain,
+		HWM:      a.hwm,
+	}, now)
+	a.mark.ObserveAll(verified)
+	if err == nil && res.Loc != nil {
+		a.updateLocationLocked(env.From, *res.Loc, now)
+	}
+	a.mu.Unlock()
+
+	if err != nil {
+		return rejectStatus(err)
+	}
+	h, ok := a.AcceptTable[env.To.Facet]
+	if !ok {
+		return Status{Code: StatusUnknownFacet, Msg: env.To.Facet}
+	}
+	inv := &Invocation{Envelope: &env, From: env.From, Peer: in.peer, Eff: res.Eff}
+	body, herr := h(ctx, inv)
+	if herr != nil {
+		return Status{Code: StatusError, Msg: herr.Error()}
+	}
+	return Status{Code: StatusOK, Body: body}
+}
+
+func rejectStatus(err error) Status {
+	code := StatusRejected
+	switch {
+	case errors.Is(err, envelope.ErrReplay):
+		code = StatusReplay
+	case errors.Is(err, envelope.ErrBadLoc):
+		code = StatusBadLoc
+	case errors.Is(err, envelope.ErrChain):
+		code = StatusUnauthorized
+	case errors.Is(err, envelope.ErrSig):
+		code = StatusBadSig
+	case errors.Is(err, envelope.ErrWrongTarget):
+		code = StatusWrongTarget
+	}
+	return Status{Code: code, Msg: err.Error()}
+}
+
+// ---- outbound ------------------------------------------------------------
+
+// proofFor assembles the caller-carried proof for (to, facet): the held
+// chain links plus every speak-as that names this actor's signer.
+func (a *Actor) proofFor(to cert.ActorID, facet string) []cert.Cert {
+	proof := append([]cert.Cert(nil), a.Grants[GrantKey{Target: to, Facet: facet}]...)
+	for _, s := range a.SpeakAs {
+		if s.Can == cert.VerbSpeakAs && s.Aud == string(a.ID()) {
+			proof = append(proof, s)
+		}
+	}
+	return proof
+}
+
+// edge returns the per-receiver in-flight lock.
+func (a *Actor) edge(to cert.ActorID) *sync.Mutex {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	m, ok := a.edges[to]
+	if !ok {
+		m = &sync.Mutex{}
+		a.edges[to] = m
+	}
+	return m
+}
+
+// Send builds, signs and sends one Invocation to facet on actor to, then
+// awaits and verifies the Reply. The callee's location record, if the
+// reply carried one, is cached. A non-ok Status is returned as
+// *RemoteError alongside the decoded Reply. Sends to the same receiver
+// are serialised (see the package doc); a dropped invocation surfaces
+// as ErrNoReply and the seq it used is gone — retry means a new seq.
+func (a *Actor) Send(ctx context.Context, to cert.ActorID, facet string, payload []byte) (*Reply, error) {
+	if a.Transport == nil {
+		return nil, ErrNoTransport
+	}
+	edge := a.edge(to)
+	edge.Lock()
+	defer edge.Unlock()
+
+	a.mu.Lock()
+	a.seqOut[to]++
+	seq := a.seqOut[to]
+	loc := a.loc
+	hints := a.hintsLocked(to)
+	a.mu.Unlock()
+
+	env := envelope.Envelope{
+		To:      envelope.Address{Target: to, Facet: facet},
+		Seq:     seq,
+		Payload: payload,
+		Proof:   a.proofFor(to, facet),
+		Loc:     loc,
+	}
+	env, err := envelope.Sign(env, a.Signer)
+	if err != nil {
+		return nil, err
+	}
+	wire, err := envelope.Encode(env)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := a.Transport.Dial(ctx, to, hints)
+	if err != nil {
+		return nil, err
+	}
+	defer s.Close()
+	if err := s.SendMsg(ctx, wire); err != nil {
+		return nil, err
+	}
+	raw, err := s.RecvMsg(ctx)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, ErrNoReply
+		}
+		return nil, err
+	}
+	rep, err := envelope.DecodeReply(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	a.mu.Lock()
+	now := a.nowLocked()
+	rloc, err := envelope.VerifyReply(rep, env, now)
+	if err == nil && rloc != nil {
+		a.updateLocationLocked(rep.From, *rloc, now)
+	}
+	a.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
+	st, err := DecodeStatus(rep.Payload)
+	if err != nil {
+		return nil, err
+	}
+	out := &Reply{Status: st, Payload: st.Body, Loc: rloc, Wire: rep}
+	if st.Code != StatusOK {
+		return out, &RemoteError{Code: st.Code, Msg: st.Msg}
+	}
+	return out, nil
+}
