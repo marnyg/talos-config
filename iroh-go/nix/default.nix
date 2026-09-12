@@ -113,6 +113,15 @@ let
     pname = "iroh-relay";
     inherit (sources.iroh) version src cargoHash;
     cargoBuildFlags = [ "-p" "iroh-relay" "--bin" "iroh-relay" "--features" "server" ];
+    # Upstream's .cargo/config.toml pins linker = clang + -fuse-ld=lld for
+    # x86_64-unknown-linux-gnu (their CI convenience). Inside the nix sandbox
+    # that makes the cc wrapper look for an `lld` that is not in the closure
+    # ("collect2: fatal error: cannot find 'ld'"). Darwin never hits that
+    # target section, which is why it only failed in iroh-go.yml. Let nix's
+    # stdenv own the linker instead.
+    postPatch = ''
+      rm -f .cargo/config.toml
+    '';
     doCheck = false;
     meta.description = "iroh relay server ${sources.iroh.version}";
   };
