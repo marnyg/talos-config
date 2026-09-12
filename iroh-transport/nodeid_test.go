@@ -51,11 +51,11 @@ func TestActorIDEndpointIdRoundTrip(t *testing.T) {
 
 func TestEndpointIDOfRejectsNonEd(t *testing.T) {
 	cases := map[string]error{
-		"eth:0x1234567890abcdef1234567890abcdef12345678": ErrNotEdActor,
+		"eth:0x1234567890abcdef1234567890abcdef12345678":                                ErrNotEdActor,
 		"ed:" + "zz" + "00000000000000000000000000000000000000000000000000000000000000": cert.ErrBadActorID,
-		"ed:00":                cert.ErrBadActorID,
-		"sol:whatever":         cert.ErrUnknownScheme,
-		"ed:" + upperHex(32):   cert.ErrBadActorID, // uppercase hex is not canonical
+		"ed:00":              cert.ErrBadActorID,
+		"sol:whatever":       cert.ErrUnknownScheme,
+		"ed:" + upperHex(32): cert.ErrBadActorID, // uppercase hex is not canonical
 		"ed:" + hex.EncodeToString(bytes.Repeat([]byte{0xff}, 32)): nil, // syntactically fine; on-curve-ness is iroh's call
 	}
 	for id, want := range cases {
