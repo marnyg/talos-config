@@ -10,17 +10,18 @@
 #           Closure: iroh-ffi + iroh-relay + Go. Does NOT need the bindgen.
 #   drift   nix build .#iroh-go — regenerates the Go package with
 #           uniffi-bindgen-go and diffs it against the checked-in
-#           iroh-go/iroh/. Pulls the ~45 min (M-series; longer here)
-#           bindgen build, so it runs after `smoke` (shares iroh-ffi via
+#           iroh-go/iroh/. Pulls the bindgen build (~45 min on M-series,
+#           ~8 min here), so it runs after `smoke` (shares iroh-ffi via
 #           the cache) with its own, larger timeout.
 #
 # Caching: Magic Nix Cache pushes every locally BUILT store path to the
 # GitHub Actions cache (substituted paths — rustc, go, stdenv — are not
 # re-uploaded), so a warm run fetches iroh-ffi / iroh-relay /
-# uniffi-bindgen-go instead of compiling them. Expected wall times on
-# ubuntu-latest (4 vCPU): smoke cold ≈ 45–60 min, drift cold ≈ 90–120
-# min on top of that (once, until a pin or the nixpkgs input moves);
-# warm ≈ 3–5 min each (nix install + cache fetch + Go build + tests).
+# uniffi-bindgen-go instead of compiling them. Measured wall times on
+# ubuntu-latest (4 vCPU), 2026-09-12: smoke cold 16m39s, warm 45s;
+# drift 8m41s with iroh-ffi cached (bindgen buildPhase 7m49s). Cold
+# happens once, until a pin or the nixpkgs input moves. See
+# iroh-go/README.md §Sizes/times.
 name: iroh-go
 on:
   push:

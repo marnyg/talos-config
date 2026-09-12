@@ -190,3 +190,18 @@ builder per (os, arch)** rather than cross-compiling from macOS.
   askama crate — build once, cached); iroh-relay ≈ 8 min; bindgen run
   1.4 s; Go build of the binding + smoke ≈ 2 s. Warm (all cached): the Go
   step only.
+
+### x86_64-linux (GitHub `ubuntu-latest`, 4 vCPU, 2026-09-12)
+
+Measured by `.github/workflows/iroh-go.yml` runs 34694089667 (cold) and
+34694970750 (warm, Magic Nix Cache):
+
+- smoke binary: **18.1 MB** (glibc-dynamic: `NEEDED` libm libdl libpthread
+  libgcc_s libc ld-linux only — libiroh_ffi is linked from the `.a`).
+- `smoke` job: **16 m 39 s cold** (iroh-ffi + iroh-relay + Go, incl. nix
+  install), **45 s warm**.
+- `drift` job: **8 m 41 s** first run with iroh-ffi already cached; the
+  uniffi-bindgen-go `buildPhase` alone was 7 m 49 s (vs ≈ 45 min on
+  M-series — the linux runner is *faster* for that crate). Warm: not yet
+  measured, expect ≈ 1 min.
+- `timeout-minutes` (90 / 180) are therefore generous; left as is.
