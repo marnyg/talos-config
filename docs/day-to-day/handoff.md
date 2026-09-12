@@ -10,7 +10,7 @@
 walked, one ADR, six worker-sized beads. Protocol-scope detail is in
 `protocol/docs/day-to-day/handoff.md`.
 
-- **Protocol ADR-0001** (Proposed): one N-link chain verifier folding
+- **Protocol ADR-0001** (Accepted, owner ruling same day): one N-link chain verifier folding
   `cert.Attenuate`; today's `Authorize` becomes its connection-level
   special case. Envelopes are self-authenticating (transport peer is a
   hint, never authority ⇒ `seq` HWM is load-bearing). Facets split:
@@ -49,5 +49,5 @@ walked, one ADR, six worker-sized beads. Protocol-scope detail is in
 
 - `0bc.2.1` — extend `verification/quint/authorize.qnt` per ADR-0001
   (swarmable alone; `0bc.2.2` follows it).
-- Promote ADR-0001 to Accepted once `.1` + `.2` land.
+- ADR-0001 Accepted 2026-09-12 (owner ruling).
 - Phase 0 probes `359.1.1–.3` when fly scratch + Android exist.

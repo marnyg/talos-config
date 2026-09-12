@@ -7,7 +7,7 @@ this scope.
 - [0001](0001-one-chain-verifier-self-authenticating-envelopes.md) —
   one N-link chain verifier (connection-level `Authorize` is its
   special case); self-authenticating envelopes; stream vs actor facets.
-  _Proposed._
+  _Accepted 2026-09-12._
 
 The protocol's **founding** decisions are root ADRs, referenced here,
 not copied:

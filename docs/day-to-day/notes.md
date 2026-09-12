@@ -126,7 +126,7 @@
 
 ## Workloads / storage
 
-- **w1 is down** (since 2026-08-04; no LAN ping, no apid). <!-- stale? --> Media
+- **w1 is down** (since 2026-08-04; no LAN ping, no apid). Media
   library offline — all `longhorn-bulk` volumes `faulted` (single
   replica on w1). Needs physical attention; data presumed intact. Do
   not start storage work until it returns (`talos-config-kso`,
@@ -224,11 +224,8 @@
   refs/dolt/data` must move after `bd dolt push`. Q-threads that are
   `blocks`-chained need `--force` to close with a reason.
 
-## Unverified leftovers (from the 2026-07-24 handover; ask before filing) <!-- stale? -->
+## CI / orchestration
 
-- KMS slot 0 is never used at boot (early-boot DNS loses the race).
-  Accepted; a KMS endpoint by IP would dodge DNS.
-- Old kubeconfigs pointing at `10.0.0.x` are dead — regenerate.
 - 2026-09-12 — `.github/workflows/iroh-go.yml` is path-filtered
   (`iroh-go/**`, flake files). Measured on the 4-vCPU runner: `smoke`
   16 m 39 s cold / 45 s warm, `drift` 8 m 41 s (bindgen ~8 min there

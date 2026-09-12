@@ -8,7 +8,7 @@
 2026-09-12 — **M2 (`0bc.2`) designed via `/skill:grill-design`.** First
 session with protocol-scope day-to-day files of its own.
 
-- **ADR-0001** (Proposed) `technical/adrs/0001-one-chain-verifier-self-authenticating-envelopes.md`:
+- **ADR-0001** (Accepted, owner ruling same day) `technical/adrs/0001-one-chain-verifier-self-authenticating-envelopes.md`:
   one N-link `VerifyChain` folding `cert.Attenuate`; `Authorize` =
   ALPN→facet + that verifier on `[consent, grant]` + talos-only layer;
   aud ∈ {signer, `*`+postage, principal via aud-side speak-as};
@@ -41,4 +41,4 @@ session with protocol-scope day-to-day files of its own.
 ## Suggested next steps
 
 - Start `0bc.2.1` (Quint). Swarmable alone.
-- Promote ADR-0001 to Accepted when `.1` + `.2` are green.
+- ADR-0001 is Accepted; the exploration-log §M2 can be pruned once `.1` + `.2` land.

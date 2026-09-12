@@ -1,7 +1,8 @@
 # ADR-0001: One N-link chain verifier; self-authenticating envelopes; stream vs actor facets
 
-- Status: Proposed _(2026-09-12, from grill-design on `talos-config-0bc.2`;
-  promote when the N-link `authorize.qnt` and the Go port land)_
+- Status: Accepted _(owner ruling 2026-09-12, same day as the
+  grill-design on `talos-config-0bc.2`; the N-link `authorize.qnt` and
+  the Go port are `0bc.2.1`/`0bc.2.2`)_
 - Date: 2026-09-12
 - Revises: root ADR-0017 (the fixed 2-link `[consent, grant]` chain
   becomes the connection-level special case of an N-link verifier; the
