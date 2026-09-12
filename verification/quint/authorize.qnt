@@ -80,8 +80,9 @@
 // overlap on ROGUE ⇒ Accept: OWNER2's member reaches OWNER1's admins
 // facet. The sound rule binds both ends to ONE consented sovereign: the
 // wallet whose consent roots the grant's chain must itself vouch for the
-// member cert. `authorize` below does that (`grantAdmits` quantifies one
-// `w`); invGroupMatchRootedInChain is the law; mutant m14 (overlap
+// member cert. `authorize` below does that (`grantAdmits` binds the
+// group rule to the `w` named by the verdict's rooting consent);
+// invGroupMatchRootedInChain is the law; mutant m14 (overlap
 // instead of the same `w`) is the regression test. Proposed glossary
 // wording: "the group rule is satisfied when one sovereign W that R
 // holds a live consent for both (i) vouches for the grant's signer and
