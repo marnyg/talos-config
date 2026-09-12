@@ -80,8 +80,12 @@ without growing a second authority mechanism (invariant 1).
 Options **2, 4, 7**, plus aud-side speak-as (the negation of 5).
 
 - **One chain verifier**, `VerifyChain(receiver, consents, chain,
-  speakAs, now)`, folds `cert.Attenuate` over N links and enforces
-  the sketch's four rules: first link signed by the receiver (the
+  speakAs, signer, facet, now) → (eff, verified, err)`, folds
+  `cert.Attenuate` over N links and enforces the sketch's four rules
+  (`signer` is the presenting key — the envelope's `from` or the QUIC
+  peer; `facet` is caller-derived, see below; a `group:` audience
+  returns the sentinel `ErrGroupAud` and the talos layer resolves it
+  as today): first link signed by the receiver (the
   receiver prepends its own consents; the caller carries only the
   links it holds); last link's `aud` binds to the presenting signer;
   nothing expired under the effective clock; no unknown caveat.
@@ -107,8 +111,10 @@ Options **2, 4, 7**, plus aud-side speak-as (the negation of 5).
   the invitation; invariant 2 holds because only the requester could
   have opened it).
 - **Caveat vocabulary v2**: `endpoints []string` (transport-tagged
-  opaque strings, the object of `reach-me-at`) and `postage`. Both
-  attenuate by intersection.
+  opaque strings, the object of `reach-me-at`; attenuates by
+  intersection) and `postage` (opaque requirement string; presence is
+  **monotone** — a link may add it, none may remove it; two links that
+  both set it must agree, else reject).
 - **Ordering**: `authorize.qnt` gains the N-link chain, aud-side
   speak-as, `"*"`+postage and the two caveats **before** the Go port;
   the rapid laws follow the model.
