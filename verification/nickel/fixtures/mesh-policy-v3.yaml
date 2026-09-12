@@ -29,10 +29,11 @@ node:
     # Owner devices: the machine's control surfaces. Same access v2
     # gives admins with `port: any`, now spelled facet by facet.
     - {facet: apid, group: admins}
-    - {facet: kube-api, group: admins,}
-    # Deliberately absent: any `group: machines` rule — machines must
-    # not reach each other's control surfaces (nebmachine_test stance;
-    # a contract in mesh-policy-v3.ncl).
+    - facet: kube-api
+      group: admins
+      # Deliberately absent: any `group: machines` rule — machines must
+      # not reach each other's control surfaces (nebmachine_test stance;
+      # a contract in mesh-policy-v3.ncl).
 gateway:
   inbound:
     # One class for every HTTP UI; per-app authorization stays at the
