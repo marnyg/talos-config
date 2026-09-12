@@ -61,7 +61,9 @@ jobs:
       - name: run the binary outside the sandbox (custom relay)
         run: |
           set -eu
-          relay=$(nix build .#iroh-relay --print-out-paths)
+          # --no-link: a bare `nix build` here would re-point ./result at the
+          # relay and the later ./result/bin/smoke steps would 127.
+          relay=$(nix build .#iroh-relay --no-link --print-out-paths)
           cat > relay.toml <<'EOF'
           http_bind_addr = "127.0.0.1:3340"
           enable_metrics = false
