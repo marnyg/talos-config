@@ -38,13 +38,15 @@
   ruling 2026-09-06: nothing depends on the running system — break
   nebula-era code wherever the new shape needs it.** (Supersedes the
   2026-09-03 "don't fix nebula code toward ADR-0017" caution above.)
-- 2026-09-12 — **Protocol ADR-0001 is Proposed, not built.**
-  `protocol/cert.Authorize` still builds the fixed 2-link chain and
-  matches `aud` raw against `Peer`; `Caveats` has no `Endpoints` /
-  `Postage`; `Attenuate` is still uncalled. The glossary (Envelope,
-  Reply, Location record, stream vs actor Facet) describes the
-  *desired* M2 shape. Change `authorize.qnt` before touching the Go —
-  the rapid laws pin them 1:1 (`0bc.2.1` → `0bc.2.2`).
+- 2026-09-13 — **Protocol ADR-0001 is Accepted and built** (M2 swarm,
+  `0bc.2.1–.6`): `cert.VerifyChain` folds `Attenuate` over N links,
+  `Authorize` is its `[g]` special case + group rule, `envelope/` and
+  `actor/` exist, `iroh-transport/` is the iroh adapter module. The
+  Quint model still leads: change `authorize.qnt` before the Go — the
+  chain laws (`authorize_chain_laws_test.go`, 18) pin them 1:1.
+  **Canonical cert form changed** (`postage` always emitted): no signed
+  certs existed in-repo, but any cert signed before `40c1755` will not
+  verify.
 
 ## Hub / mesh (nebula, as running)
 
@@ -240,3 +242,24 @@
   `herdr agent list | jq '.result.agents[]|select(.name!=null)'`.
   Workers write `~/git/swarm/_reports/<id>.md`; orchestrator rebases +
   `--ff-only` merges in dependency order and re-runs gates on `main`.
+  _2026-09-12 update:_ `herdr worktree create --branch swarm/<name>`
+  gives each worker its own workspace + worktree under
+  `~/.herdr/worktrees/talos-config/`; briefs and reports live in
+  `/tmp/swarm/<name>.{task,context,md}` (see `MANIFEST.txt`).
+- 2026-09-13 — **`git pull --rebase` destroys merge commits.** The
+  repo's default rebase flattened all six `merge swarm/*` commits of
+  the M2 swarm (content intact, SHAs in bead notes gone). Either
+  `git pull --rebase=merges`, or `git fetch` + inspect before merging.
+- 2026-09-13 — **A worker cut off by API 429 is not lost.** The herdr
+  agent stays alive and `idle` with its context; `herdr pane read
+  <pane> --source recent-unwrapped` shows exactly where it stopped.
+  Check that before re-doing work; uncommitted files survive in the
+  worktree (`git status` there).
+- 2026-09-13 — `nix flake check --impure` now includes
+  `.#iroh-transport` (runs the iroh handshake suite, ~25 s warm).
+  Hand-run `go test` in `iroh-transport/` needs both
+  `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`
+  and `IROH_RELAY_BIN=$(nix build .#iroh-relay --print-out-paths)/bin/iroh-relay`
+  (relay test skips without the latter). `.#iroh-transport-static`
+  exists only on Linux; no Linux builder is configured on the Mac —
+  the CI `static` job is the only place the musl link runs.
