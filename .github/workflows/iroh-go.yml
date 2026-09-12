@@ -47,12 +47,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # nix-installer-action + magic-nix-cache-action are the same
       # vendor's pair and need no account or secret (unlike cachix);
       # cache-nix-action would snapshot the whole /nix instead.
       - uses: DeterminateSystems/nix-installer-action@v22
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-flakehub: false # no FlakeHub account; silences the per-job auth ##[error]
       - name: disk before build
         run: df -h / /tmp
       - name: nix build .#iroh-go-smoke (checkPhase = direct + relay smoke)
@@ -88,9 +90,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@v22
       - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-flakehub: false # no FlakeHub account; silences the per-job auth ##[error]
       - name: nix build .#iroh-go (bindgen regen + diff against iroh-go/iroh)
         run: nix build .#iroh-go -L
       - name: versions

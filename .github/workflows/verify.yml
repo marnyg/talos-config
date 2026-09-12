@@ -34,7 +34,7 @@ jobs:
     steps:
       # Full checkout, not sparse: config-server's policy tests read the
       # shipped ../talos/mesh-policy.yaml (see flake.nix config-server-bin).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-go@v5
         with:
           go-version-file: ${{ matrix.module }}/go.mod
@@ -48,7 +48,7 @@ jobs:
   quint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@v22
       # quint from the flake's own nixpkgs input (`--inputs-from .` reads
       # flake.lock): the version is pinned by construction (0.30.0 today)
@@ -62,14 +62,14 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@v22
       - name: check.sh verify
         run: nix shell --inputs-from . nixpkgs#quint -c verification/quint/check.sh verify
   nickel:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@v22
       # nickel comes from the flake's own nixpkgs input (`--inputs-from .`
       # reads flake.lock), so the version is pinned by construction —
