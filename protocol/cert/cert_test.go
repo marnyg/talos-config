@@ -14,7 +14,8 @@ import (
 func TestCanonicalBytesVector(t *testing.T) {
 	// A member cert with a mix of empty and non-empty caveats. The
 	// expected form: top keys sorted aud,can,cav,exp,iat,iss; cav keys
-	// sorted delegable,facet,groups,name,target,verbs; empty arrays [].
+	// sorted delegable,endpoints,facet,groups,name,postage,target,verbs;
+	// empty arrays []; absent postage "".
 	c := Cert{
 		Iss: ActorID("ed:" + strings.Repeat("ab", 32)),
 		Aud: "ed:" + strings.Repeat("cd", 32),
@@ -29,7 +30,7 @@ func TestCanonicalBytesVector(t *testing.T) {
 	}
 	want := `{"aud":"ed:` + strings.Repeat("cd", 32) + `",` +
 		`"can":"member",` +
-		`"cav":{"delegable":false,"facet":[],"groups":["admins","media"],"name":"laptop","target":[],"verbs":[]},` +
+		`"cav":{"delegable":false,"endpoints":[],"facet":[],"groups":["admins","media"],"name":"laptop","postage":"","target":[],"verbs":[]},` +
 		`"exp":200,"iat":100,` +
 		`"iss":"ed:` + strings.Repeat("ab", 32) + `"}`
 	if string(got) != want {
@@ -189,6 +190,38 @@ func TestDecodeEncodeRoundTrip(t *testing.T) {
 	}
 	if err := Verify(dec); err != nil {
 		t.Fatalf("decoded cert fails verify: %v", err)
+	}
+}
+
+// Encode emits [] (never null) for nil caveat arrays, matching
+// canonicalBytes, and round-trips the v2 caveats and the "*" audience.
+func TestEncodeNoNullArraysAndV2Caveats(t *testing.T) {
+	_, priv, _ := ed25519.GenerateKey(nil)
+	s := NewEdSigner(priv)
+	c, _ := Sign(Cert{
+		Aud: "*", Can: VerbReachMeAt,
+		Cav: Caveats{Endpoints: []string{"quic:a"}, Postage: "pow:20"},
+		Iat: 5, Exp: 6,
+	}, s)
+	enc, err := Encode(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(enc), "null") {
+		t.Fatalf("Encode emitted null: %s", enc)
+	}
+	dec, err := DecodeCert(enc)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if dec.Aud != "*" || dec.Cav.Postage != "pow:20" || len(dec.Cav.Endpoints) != 1 || dec.Cav.Endpoints[0] != "quic:a" {
+		t.Fatalf("v2 caveats lost in round trip: %+v", dec)
+	}
+	if err := Verify(dec); err != nil {
+		t.Fatalf("decoded cert fails verify: %v", err)
+	}
+	if err := validateAud("group:"); err == nil {
+		t.Fatal("empty group name accepted")
 	}
 }
 

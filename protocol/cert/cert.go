@@ -56,13 +56,23 @@
 // WITHOUT its "sig" field. The field set and canonical key order are
 // fixed:
 //
-//	{"aud","can","cav":{"delegable","facet","groups","name","target",
-//	 "verbs"},"exp","iat","iss"}
+//	{"aud","can","cav":{"delegable","endpoints","facet","groups","name",
+//	 "postage","target","verbs"},"exp","iat","iss"}
 //
 // Keys are sorted by UTF-16 code units (JCS); iat and exp are Unix
 // seconds (int64); array element order is preserved as the issuer
-// signed it; empty arrays serialize as [] (never null). See
-// canonicalBytes.
+// signed it; empty arrays serialize as [] (never null); an absent
+// postage is the empty string. See canonicalBytes.
+//
+// # Chains (protocol ADR-0001)
+//
+// VerifyChain is the one N-link verifier: the caller presents only the
+// links it holds, the receiver prepends its own consent and folds
+// Attenuate over [consent, chain...]. Authorize is that verifier on a
+// one-link caller chain plus the talos-only layer (member identity,
+// group audiences, blocklist). Caveat vocabulary v2 adds Endpoints
+// (plain intersection) and Postage (monotone presence; unlocks
+// aud "*").
 package cert
 
 import (
@@ -103,7 +113,15 @@ func ValidVerb(v Verb) bool { return knownVerbs[v] }
 // decoded cert carried a caveat key this verifier does not recognise.
 // It rejects (fail-closed) inside Authorize, mirroring the Quint model's
 // cav.unknown. On the wire, an unknown caveat key is caught earlier by
-// DecodeCert's strict decoding.
+// DecodeCert's strict decoding. Attenuate also sets it when two links
+// carry conflicting Postage (the chain is tainted).
+//
+// Caveat vocabulary v2 (ADR-0001): Endpoints are transport-tagged opaque
+// strings attenuated by plain intersection, exactly like Target/Facet —
+// an absent set is EMPTY, not "unconstrained". Postage is an opaque
+// requirement string; its presence is MONOTONE over a chain (a link may
+// add it, none may remove it; two links that set it must agree) and it
+// never gates invoke by itself — it only unlocks aud "*" (VerifyChain).
 type Caveats struct {
 	Target    []ActorID // grants: the actors this authority may reach
 	Facet     []string  // grants: the facet classes it may reach
@@ -111,6 +129,8 @@ type Caveats struct {
 	Name      string    // member certs: the member's durable name
 	Delegable bool      // false ⇒ no chain link may follow
 	Verbs     []string  // speak-as: the verbs the delegated key may exercise
+	Endpoints []string  // v2: transport-tagged opaque strings; intersection
+	Postage   string    // v2: opaque requirement; "" = absent; monotone
 	Unknown   bool      // verifier-side: carries an unrecognised caveat
 }
 
@@ -118,7 +138,8 @@ type Caveats struct {
 //
 //   - Iss is the issuer's actor id (the signing key; a hot key resolves
 //     to its principal through a speak-as, see Authorize).
-//   - Aud is either an actor id or "group:<name>".
+//   - Aud is an actor id, "group:<name>", or "*" (anyone — bindable
+//     only when the effective chain carries Postage, see VerifyChain).
 //   - Iat/Exp are Unix seconds. Iat feeds the low-water mark only; it
 //     never participates in authority or attenuation (ADR-0019).
 //   - Sig is the raw signature over canonicalBytes: 65-byte r||s||v for
@@ -139,9 +160,11 @@ type Cert struct {
 // deliberately absent: it is a verifier judgment, not signed data.
 type canonCav struct {
 	Delegable bool     `json:"delegable"`
+	Endpoints []string `json:"endpoints"`
 	Facet     []string `json:"facet"`
 	Groups    []string `json:"groups"`
 	Name      string   `json:"name"`
+	Postage   string   `json:"postage"`
 	Target    []string `json:"target"`
 	Verbs     []string `json:"verbs"`
 }
@@ -178,9 +201,11 @@ func canonicalBytes(c Cert) ([]byte, error) {
 		Can: string(c.Can),
 		Cav: canonCav{
 			Delegable: c.Cav.Delegable,
+			Endpoints: nonNil(c.Cav.Endpoints),
 			Facet:     nonNil(c.Cav.Facet),
 			Groups:    nonNil(c.Cav.Groups),
 			Name:      c.Cav.Name,
+			Postage:   c.Cav.Postage,
 			Target:    targetsToStrings(c.Cav.Target),
 			Verbs:     nonNil(c.Cav.Verbs),
 		},

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
@@ -76,39 +75,15 @@ func Sign(c Cert, s Signer) (Cert, error) {
 var ErrSigMismatch = errors.New("cert: signature does not verify under iss")
 
 // Verify checks c.Sig over c's canonical bytes under the algorithm the
-// c.Iss scheme selects. It is authority verification only: expiry,
-// caveats, chain resolution and the low-water mark are Authorize's job.
+// c.Iss scheme selects (VerifyBytes). It is authority verification
+// only: expiry, caveats, chain resolution and the low-water mark are
+// VerifyChain's / Authorize's job.
 func Verify(c Cert) error {
 	canon, err := canonicalBytes(c)
 	if err != nil {
 		return err
 	}
-	switch {
-	case strings.HasPrefix(string(c.Iss), schemeEth):
-		want, err := c.Iss.ethAddress()
-		if err != nil {
-			return err
-		}
-		got, err := recoverPersonalSign(canon, c.Sig)
-		if err != nil {
-			return err
-		}
-		if got != want {
-			return ErrSigMismatch
-		}
-		return nil
-	case strings.HasPrefix(string(c.Iss), schemeEd):
-		pub, err := c.Iss.edPublicKey()
-		if err != nil {
-			return err
-		}
-		if len(c.Sig) != ed25519.SignatureSize || !ed25519.Verify(pub, canon, c.Sig) {
-			return ErrSigMismatch
-		}
-		return nil
-	default:
-		return ErrUnknownScheme
-	}
+	return VerifyBytes(c.Iss, canon, c.Sig)
 }
 
 // verifies reports whether c's signature is valid under c.Iss (a

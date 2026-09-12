@@ -19,6 +19,8 @@ type wireCav struct {
 	Name      string   `json:"name"`
 	Delegable bool     `json:"delegable"`
 	Verbs     []string `json:"verbs"`
+	Endpoints []string `json:"endpoints"`
+	Postage   string   `json:"postage"`
 }
 
 type wireCert struct {
@@ -78,6 +80,8 @@ func DecodeCert(data []byte) (Cert, error) {
 			Name:      w.Cav.Name,
 			Delegable: w.Cav.Delegable,
 			Verbs:     w.Cav.Verbs,
+			Endpoints: w.Cav.Endpoints,
+			Postage:   w.Cav.Postage,
 		},
 		Iat: w.Iat,
 		Exp: w.Exp,
@@ -86,8 +90,9 @@ func DecodeCert(data []byte) (Cert, error) {
 }
 
 // Encode renders a cert as wire JSON with sig as lowercase hex. The
-// authority-bearing fields go through canonicalBytes-compatible shaping;
-// this form is for transport, not for signing.
+// authority-bearing fields go through canonicalBytes-compatible shaping
+// (nil arrays as [], never null, matching canonicalBytes); this form is
+// for transport, not for signing.
 func Encode(c Cert) ([]byte, error) {
 	w := wireCert{
 		Iss: string(c.Iss),
@@ -95,11 +100,13 @@ func Encode(c Cert) ([]byte, error) {
 		Can: string(c.Can),
 		Cav: wireCav{
 			Target:    targetsToStrings(c.Cav.Target),
-			Facet:     c.Cav.Facet,
-			Groups:    c.Cav.Groups,
+			Facet:     nonNil(c.Cav.Facet),
+			Groups:    nonNil(c.Cav.Groups),
 			Name:      c.Cav.Name,
 			Delegable: c.Cav.Delegable,
-			Verbs:     c.Cav.Verbs,
+			Verbs:     nonNil(c.Cav.Verbs),
+			Endpoints: nonNil(c.Cav.Endpoints),
+			Postage:   c.Cav.Postage,
 		},
 		Iat: c.Iat,
 		Exp: c.Exp,
@@ -110,8 +117,16 @@ func Encode(c Cert) ([]byte, error) {
 
 const groupPrefix = "group:"
 
-// validateAud accepts either an actor id or "group:<name>".
+// AudAny is the wildcard audience: anyone may present the chain, but
+// VerifyChain binds it only when the effective cert carries Postage
+// (ADR-0001 reach-me-at / frontdoor records).
+const AudAny = "*"
+
+// validateAud accepts an actor id, "group:<name>", or the literal "*".
 func validateAud(aud string) error {
+	if aud == AudAny {
+		return nil
+	}
 	if strings.HasPrefix(aud, groupPrefix) {
 		if strings.TrimPrefix(aud, groupPrefix) == "" {
 			return fmt.Errorf("%w: empty group name", ErrBadActorID)

@@ -65,9 +65,43 @@ type Result struct {
 	Verified []Cert
 }
 
-// ErrNotDelegable is returned by Attenuate when the parent forbids a
-// following link (delegable:false).
-var ErrNotDelegable = errors.New("cert: parent is not delegable")
+// Chain errors. Every one of them is fail-closed; ErrGroupAud is the
+// single non-fatal sentinel (see VerifyChain).
+var (
+	// ErrNotDelegable is returned by Attenuate when the parent forbids a
+	// following link (delegable:false).
+	ErrNotDelegable = errors.New("cert: parent is not delegable")
+	// ErrVerbMismatch is returned by Attenuate when a child link carries
+	// another verb than its parent: a chain is uniform in `can`.
+	ErrVerbMismatch = errors.New("cert: child verb differs from parent")
+	// ErrGroupAud is returned by VerifyChain BESIDE a verified effective
+	// cert when the last link addresses `group:<name>`: the chain itself
+	// verified; resolving the group against a member cert is the talos
+	// layer's job (Authorize's same-w rule). Protocol-level callers
+	// (envelope) treat it as a rejection.
+	ErrGroupAud = errors.New("cert: last link addresses a group")
+	// ErrChainUnrooted: no receiver-signed invoke consent verifies (rule 1).
+	ErrChainUnrooted = errors.New("cert: no receiver-signed consent roots the chain")
+	// ErrChainVerb: a chain link's verb is not invoke.
+	ErrChainVerb = errors.New("cert: chain link verb is not invoke")
+	// ErrChainLinkage: a link's signer does not resolve (itself or via
+	// speak-as) to the principal the previous link's aud names (rule 2).
+	ErrChainLinkage = errors.New("cert: link signer does not resolve to the previous audience")
+	// ErrChainExpired: the effective cert (min exp over the chain, and
+	// every speak-as used) is not live at now.
+	ErrChainExpired = errors.New("cert: effective chain is expired")
+	// ErrUnknownCaveat: some link carries a caveat this verifier does not
+	// recognise, or two links set conflicting postage (taint).
+	ErrUnknownCaveat = errors.New("cert: effective chain carries an unknown caveat")
+	// ErrTargetMismatch: the effective target omits the receiver.
+	ErrTargetMismatch = errors.New("cert: effective target omits the receiver")
+	// ErrFacetMismatch: the effective facet omits the requested facet.
+	ErrFacetMismatch = errors.New("cert: effective facet omits the requested facet")
+	// ErrAudUnbound: the last link's aud binds neither the signer, nor a
+	// principal with a live invoke-covering speak-as to it, nor "*"
+	// with postage (rule 3).
+	ErrAudUnbound = errors.New("cert: last link audience does not bind the presenting signer")
+)
 
 // authCtx threads the signature-verification cache and the
 // rooted-cert accumulator through the pure check. The two are kept
@@ -78,6 +112,10 @@ type authCtx struct {
 	sigCache   map[string]bool
 	rooted     []Cert
 	rootedSeen map[string]bool
+}
+
+func newAuthCtx() *authCtx {
+	return &authCtx{sigCache: map[string]bool{}, rootedSeen: map[string]bool{}}
 }
 
 func certKey(c Cert) string {
@@ -189,7 +227,9 @@ func grantGroups(g Cert) []string {
 }
 
 // consentsFor returns the consent grants receiver r has issued to
-// issuer: r-signed, invoke, delegable, and currently valid.
+// issuer: r-signed, invoke, delegable, and currently valid. Used by
+// step (2b) (memberSovereigns); the grant side is judged by the fold in
+// VerifyChain instead.
 func (a *authCtx) consentsFor(consents []Cert, r, issuer ActorID, now int64) []Cert {
 	var out []Cert
 	for _, c := range consents {
@@ -247,43 +287,232 @@ func (a *authCtx) memberSovereigns(in Input, m Cert) []sovereign {
 	return out
 }
 
-// buildRooted populates ctx.rooted with every validly-signed cert that is
-// rooted at R (see Result). Independent of the accept/reject decision, so
-// the mark advances even when authorization fails.
+// rootCerts populates ctx.rooted with every validly-signed cert that is
+// rooted at r (see Result). Independent of the accept/reject decision,
+// so the mark advances even when authorization fails.
 //
 // Rooted = signature-only provenance (decisions 7ry, jo8; the model's
 // isRooted in verification/quint/clock.qnt): a cert is rooted iff it
-// sits on a chain whose root consent R signed, regardless of any
-// expiry at in.Now and regardless of speak-as cav.verbs / cav.groups.
-// in.Now is NOT read here — the mark must not feed its own rooting.
-// Authorization (memberSovereigns, grantAdmits, resolve) keeps the full
-// live-at-now, verb- and group-scoped checks.
-func (a *authCtx) buildRooted(in Input) {
-	principals := a.rootedPrincipals(in.Consents, in.Receiver)
-	hotKeys := a.rootedHotKeys(in.Bundle.SpeakAs, principals)
+// sits on a chain whose root consent r signed, regardless of any expiry
+// at now and regardless of speak-as cav.verbs / cav.groups. now is NOT
+// read here — the mark must not feed its own rooting. Authorization
+// (memberSovereigns, VerifyChain, resolve) keeps the full live-at-now,
+// verb- and group-scoped checks.
+//
+// certs are visited in order. With chained=false (Authorize: member and
+// grants are alternatives) the principal set is fixed by the consents.
+// With chained=true (VerifyChain) each rooted, delegable link whose aud
+// is a key extends the principal set for the links after it — the
+// signature-only shadow of the fold, so link i+1 signed by link i's aud
+// (or by a hot key that aud vouches for) is rooted too.
+func (a *authCtx) rootCerts(r ActorID, consents, speakAs, certs []Cert, chained bool) []Cert {
+	principals := a.rootedPrincipals(consents, r)
 	// (a) R-signed consents that verified (expiry irrelevant — R signed
 	// them, so they are rooted at R and their iat proves time passed).
-	for _, c := range in.Consents {
-		if c.Iss == in.Receiver && a.verify(c) {
+	for _, c := range consents {
+		if c.Iss == r && a.verify(c) {
 			a.root(c)
 		}
 	}
 	// (b) speak-as certs signed by a rooted principal.
-	for _, sa := range in.Bundle.SpeakAs {
-		if sa.Can == VerbSpeakAs && a.verify(sa) && principals[sa.Iss] {
-			a.root(sa)
+	rootSpeakAs := func() {
+		for _, sa := range speakAs {
+			if sa.Can == VerbSpeakAs && a.verify(sa) && principals[sa.Iss] {
+				a.root(sa)
+			}
 		}
 	}
-	// (c) member/grant certs signed by a rooted principal, or by a hot
-	// key a rooted principal vouches for (single-level; a stranger hot
-	// key is vouched for only by stranger wallets, and is dropped).
-	certs := append([]Cert{in.Bundle.Member}, in.Bundle.Grants...)
+	rootSpeakAs()
+	// (c) certs signed by a rooted principal, or by a hot key a rooted
+	// principal vouches for (single-level; a stranger hot key is vouched
+	// for only by stranger wallets, and is dropped).
 	for _, c := range certs {
-		if a.verify(c) && (principals[c.Iss] || hotKeys[c.Iss]) {
-			a.root(c)
+		hotKeys := a.rootedHotKeys(speakAs, principals)
+		if !a.verify(c) || !(principals[c.Iss] || hotKeys[c.Iss]) {
+			continue
+		}
+		a.root(c)
+		if chained && c.Cav.Delegable && isKeyAud(c.Aud) && !principals[ActorID(c.Aud)] {
+			principals[ActorID(c.Aud)] = true
+			rootSpeakAs()
 		}
 	}
+	return a.rooted
 }
+
+// isKeyAud reports whether aud names a single key (not a group, not "*").
+func isKeyAud(aud string) bool {
+	return aud != AudAny && !strings.HasPrefix(aud, groupPrefix)
+}
+
+// --- the N-link chain verifier (protocol ADR-0001) --------------------
+
+// chainVerdict is one accepted fold of the caller's chain under one of
+// the receiver's consents — the model's Verdict {eff, consent, aud}.
+// group is the model's AudGroup(grp) sentinel: non-empty means the
+// chain verified but its last link addresses group:grp, which only the
+// talos layer can resolve; "" means AudBound. (AudUnbound verdicts are
+// never returned — they are the ErrAudUnbound rejection.)
+type chainVerdict struct {
+	eff     Cert
+	consent Cert
+	group   string
+}
+
+// VerifyChain is the one chain verifier (protocol ADR-0001; model
+// verification/quint/authorize.qnt `verifyChain`). chain holds only the
+// links the CALLER presented; the verifier prepends a receiver-signed
+// consent itself and folds Attenuate over [consent, chain...]. Rules:
+//
+//  1. First link signed by the receiver: every admitting root is one of
+//     receiver's own consents (iss == receiver, signature verifies,
+//     can: invoke). Everything else about the consent (target, facet,
+//     delegability, expiry, taint) is judged by the fold like any link.
+//  2. Linkage: link i's signer resolves — itself, or a principal with a
+//     live speak-as to it covering invoke and the groups the link names
+//     (resolve, ADR-0018 step 2a) — to the principal link i-1's aud
+//     names. A group or "*" audience can therefore never be followed.
+//  3. Aud binding on the LAST link (eff.Aud): aud == signer; or aud == S
+//     with a live speak-as S→signer in speakAs whose cav.verbs ∋ invoke;
+//     or aud == "*" only if eff.Postage != "" (fail closed without). A
+//     group: audience returns ErrGroupAud BESIDE eff/verified — the
+//     chain verified; the caller resolves the group (Authorize).
+//  4. On the effective cert: Target ∋ receiver, Facet ∋ facet, no
+//     Unknown caveat (taint is OR over the chain, including conflicting
+//     postage), Exp > now (min over the chain), every speak-as used live
+//     at now. Delegable:false admits no following link.
+//
+// An empty caller chain is legal: the consented sovereign presents the
+// receiver's consent alone and binds as its aud (or via its hot key).
+// Grants at connection level are ALTERNATIVES, never a chain among
+// themselves — Authorize calls this once per grant.
+//
+// verified is the rooted certs for clock.Mark.ObserveAll — the same
+// signature-only provenance rule as Result.Verified — and is populated
+// on every path, error or not. When several consents root the chain
+// the first accepting one (in consents order) is returned; Authorize
+// uses the full set internally for its group rule. err on rejection is
+// the failure of the consent that got furthest through the fold.
+func VerifyChain(receiver ActorID, consents, chain, speakAs []Cert, signer ActorID, facet string, now int64) (eff Cert, verified []Cert, err error) {
+	ctx := newAuthCtx()
+	verified = ctx.rootCerts(receiver, consents, speakAs, chain, true)
+	vs, err := ctx.verifyChain(receiver, consents, chain, speakAs, signer, facet, now)
+	if err != nil {
+		return Cert{}, verified, err
+	}
+	for _, v := range vs {
+		if v.group == "" {
+			return v.eff, verified, nil
+		}
+	}
+	return vs[0].eff, verified, ErrGroupAud
+}
+
+// verifyChain ports the model's verifyChain: the SET of verdicts, one
+// per receiver-signed invoke consent that roots the chain (R may hold
+// consents for N>1 sovereigns). Empty ⇒ err (the furthest failure).
+func (a *authCtx) verifyChain(receiver ActorID, consents, chain, speakAs []Cert, signer ActorID, facet string, now int64) ([]chainVerdict, error) {
+	var out []chainVerdict
+	var best error
+	bestRank := -1
+	for _, c := range consents {
+		if c.Iss != receiver || c.Can != VerbInvoke || !a.verify(c) {
+			continue
+		}
+		v, rank, err := a.chainUnder(c, chain, speakAs, receiver, signer, facet, now)
+		if err != nil {
+			if rank > bestRank {
+				best, bestRank = err, rank
+			}
+			continue
+		}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		if best == nil {
+			best = ErrChainUnrooted
+		}
+		return nil, best
+	}
+	return out, nil
+}
+
+// chainUnder folds the caller's chain under one consent (the model's
+// chainUnder + linkStep + effAdmits + audBinding). rank says how far the
+// fold got, so verifyChain can report the most informative error.
+func (a *authCtx) chainUnder(consent Cert, chain, speakAs []Cert, receiver, signer ActorID, facet string, now int64) (chainVerdict, int, error) {
+	eff := consent
+	for i, l := range chain {
+		switch {
+		case l.Can != VerbInvoke:
+			return chainVerdict{}, i, ErrChainVerb
+		case !a.verify(l):
+			return chainVerdict{}, i, ErrSigMismatch
+		case !a.linksTo(eff.Aud, l, speakAs, now):
+			return chainVerdict{}, i, ErrChainLinkage
+		}
+		var err error
+		if eff, err = Attenuate(eff, l); err != nil {
+			return chainVerdict{}, i, err
+		}
+	}
+	rank := len(chain)
+	switch {
+	case !containsID(eff.Cav.Target, receiver):
+		return chainVerdict{}, rank, ErrTargetMismatch
+	case !containsStr(eff.Cav.Facet, facet):
+		return chainVerdict{}, rank, ErrFacetMismatch
+	case eff.Cav.Unknown:
+		return chainVerdict{}, rank, ErrUnknownCaveat
+	case eff.Exp <= now:
+		return chainVerdict{}, rank, ErrChainExpired
+	}
+	rank++
+	// Rule 3 — the last link's aud (Attenuate keeps the child's aud, so
+	// it is eff.Aud) against the presenting signer.
+	if grp, isGroup := strings.CutPrefix(eff.Aud, groupPrefix); isGroup {
+		return chainVerdict{eff: eff, consent: consent, group: grp}, rank, nil
+	}
+	bound := false
+	if eff.Aud == AudAny {
+		bound = eff.Cav.Postage != ""
+	} else {
+		bound = eff.Aud == string(signer) || a.speaksFor(ActorID(eff.Aud), signer, speakAs, now)
+	}
+	if !bound {
+		return chainVerdict{}, rank, ErrAudUnbound
+	}
+	return chainVerdict{eff: eff, consent: consent}, rank, nil
+}
+
+// linksTo is rule 2: link l's signer resolves (itself or via a live,
+// invoke-covering, group-covering speak-as) to the key prevAud names.
+// A group or "*" prevAud matches no resolved principal, so it ends the
+// chain.
+func (a *authCtx) linksTo(prevAud string, l Cert, speakAs []Cert, now int64) bool {
+	for _, p := range a.resolve(l, speakAs, now, grantGroups(l)) {
+		if prevAud == string(p.ID) {
+			return true
+		}
+	}
+	return false
+}
+
+// speaksFor is the aud-side speak-as of rule 3: some live speak-as
+// S→signer in the proof whose cav.verbs ∋ invoke. Only the verb is
+// consulted (cav.groups gate issuer-side resolution, not audience
+// binding — orchestrator ruling, see the report).
+func (a *authCtx) speaksFor(s, signer ActorID, speakAs []Cert, now int64) bool {
+	for _, sp := range speakAs {
+		if sp.Iss == s && sp.Aud == string(signer) && sp.Can == VerbSpeakAs &&
+			a.sigOK(sp, sp.Exp, now) && containsStr(sp.Cav.Verbs, string(VerbInvoke)) {
+			return true
+		}
+	}
+	return false
+}
+
+// --- the connection-level check (ADR-0017/0018) on top of it ---------
 
 // Authorize is the per-connect check: glossary steps (1)–(4), including
 // speak-as resolution (2a) and the consented-issuer rule (2b). It is
@@ -291,16 +520,22 @@ func (a *authCtx) buildRooted(in Input) {
 // and fail-closed on every unknown. Identity out comes from the member
 // cert only.
 //
+// It IS VerifyChain on the one-link caller chain [grant] with signer =
+// Peer and facet = AcceptTable[ALPN], plus the talos-only layer: member
+// identity, group: audiences (the same-w rule), blocklist. Grants are
+// alternatives — one chain each.
+//
 // Resolution (2a) yields a SET of sovereigns per signer (any wallet can
 // vouch for any key), so every rule quantifies ONE consented wallet w:
 // (2b) some w ∈ resolve(member) is consented; a grant admits iff some w
-// ∈ resolve(grant) roots its chain at R and — for a group audience —
-// that SAME w vouches for the member cert (decisions 4oz, w5s; model
+// roots its chain at R and — for a group audience — that SAME w vouches
+// for the member cert (decisions 4oz, w5s; model
 // verification/quint/authorize.qnt).
 func Authorize(in Input) Result {
-	ctx := &authCtx{sigCache: map[string]bool{}, rootedSeen: map[string]bool{}}
+	ctx := newAuthCtx()
 	// Populate the rooted set first so the mark advances on every path.
-	ctx.buildRooted(in)
+	certs := append([]Cert{in.Bundle.Member}, in.Bundle.Grants...)
+	ctx.rootCerts(in.Receiver, in.Consents, in.Bundle.SpeakAs, certs, false)
 	reject := func() Result { return Result{OK: false, Verified: ctx.rooted} }
 
 	// (1) ALPN → facet; unknown ⇒ reject.
@@ -329,10 +564,8 @@ func Authorize(in Input) Result {
 		return reject()
 	}
 
-	// (3) a grant admits if, for ONE consented w vouching for its
-	// signer, the chain [consent(R→w), speak-as(w→g.iss)?, g] verifies,
-	// intersects to still name R and the facet, and its aud resolves to
-	// the peer or — via the same w — to the member's group.
+	// (3) any grant whose one-link chain verifies admits — grants are
+	// alternatives; identity from the member cert ONLY.
 	for _, g := range in.Bundle.Grants {
 		if ctx.grantAdmits(in, facet, g) {
 			return Result{
@@ -350,60 +583,36 @@ func Authorize(in Input) Result {
 	return reject()
 }
 
-// grantAdmits ports the model's grantAdmits 1:1. One grant admits if,
-// for ONE sovereign w ∈ resolve(g, grantGroups(g)) that R consented to,
-// the chain [consent(R→w), speak-as(w→g.iss)?, g] verifies, the
-// field-wise intersection still names R and the facet, and the audience
-// resolves:
-//
-//   - key audience: the aud is the QUIC peer (w only roots the chain);
-//   - group audience group:g: the SAME w ∈ resolve(member,
-//     member.cav.groups) — one consented wallet vouches for BOTH the
-//     grant's signer and the member's signer — and g ∈ member.cav.groups.
+// grantAdmits ports the model's grantAdmits 1:1: the grant admits if
+// VerifyChain admits the one-link caller chain [g] with the QUIC peer
+// as signer and, for a group audience (the ErrGroupAud sentinel), the
+// SAME sovereign w whose consent roots the chain (the verdict's
+// consent.aud) vouches for the member cert and the member's groups
+// contain it.
 //
 // Never "resolved issuers are equal", never set overlap: a stranger
 // wallet can vouch for both hub keys and would bridge two sovereigns
 // (authorize.qnt FINDING 2026-09-06, mutant m14, ruled 9l3). Groups are
 // sovereign-scoped names — never hot-key-scoped, never global.
 func (a *authCtx) grantAdmits(in Input, facet string, g Cert) bool {
-	if g.Can != VerbInvoke || !a.sigOK(g, g.Exp, in.Now) {
+	vs, err := a.verifyChain(in.Receiver, in.Consents, []Cert{g}, in.Bundle.SpeakAs, in.Peer, facet, in.Now)
+	if err != nil {
 		return false
 	}
-	m := in.Bundle.Member
-	for _, w := range a.resolve(g, in.Bundle.SpeakAs, in.Now, grantGroups(g)) {
-		if w.EffExp <= in.Now {
-			continue
-		}
-		// consent chain: R → w, target ∋ R, facet ∋ facet (intersected
-		// with the grant's own caveats).
-		chained := false
-		for _, c := range a.consentsFor(in.Consents, in.Receiver, w.ID, in.Now) {
-			if containsID(intersectID(c.Cav.Target, g.Cav.Target), in.Receiver) &&
-				containsStr(intersectStr(c.Cav.Facet, g.Cav.Facet), facet) {
-				chained = true
-				break
-			}
-		}
-		if !chained {
-			continue
-		}
-		if a.audSatisfied(in, g, m, w.ID) {
+	for _, v := range vs {
+		if v.group == "" || a.groupSatisfied(in, v.group, in.Bundle.Member, ActorID(v.consent.Aud)) {
 			return true
 		}
 	}
 	return false
 }
 
-// audSatisfied resolves a grant's aud under the consented sovereign w
-// that roots the grant's chain: an actor id must equal the peer; a group
-// group:g is satisfied only if that SAME w vouches for the member cert
-// (w ∈ resolve(member, member.cav.groups), live along that path) and the
-// member's groups contain g.
-func (a *authCtx) audSatisfied(in Input, g, member Cert, w ActorID) bool {
-	grp, isGroup := strings.CutPrefix(g.Aud, groupPrefix)
-	if !isGroup {
-		return g.Aud == string(in.Peer)
-	}
+// groupSatisfied is the talos-layer group rule under the consented
+// sovereign w that roots the grant's chain: group:grp is satisfied only
+// if that SAME w vouches for the member cert (w ∈ resolve(member,
+// member.cav.groups), live along that path) and the member's groups
+// contain grp.
+func (a *authCtx) groupSatisfied(in Input, grp string, member Cert, w ActorID) bool {
 	if !containsStr(member.Cav.Groups, grp) {
 		return false
 	}
@@ -427,20 +636,33 @@ func consentTargets(consents []Cert, r ActorID) bool {
 }
 
 // Attenuate computes the effective authority of a child link under its
-// parent: field-wise intersection over target, facet, groups and verbs;
-// effective expiry min(parent, child); an unknown caveat on either taints
-// the result. A parent with delegable:false admits no following link.
+// parent (the model's `attenuate`, field for field): the child keeps
+// its own iss/aud/can; Target, Facet, Groups, Verbs and Endpoints are
+// the intersections; Exp is the min; an unknown caveat on either side
+// taints the result. Postage is MONOTONE: whichever side set it carries
+// forward; if both set it they must agree, else the result is tainted
+// (Unknown) and the chain rejects. A parent with delegable:false admits
+// no following link (ErrNotDelegable); a child with another verb than
+// its parent is not a link of the same chain (ErrVerbMismatch).
 func Attenuate(parent, child Cert) (Cert, error) {
 	if !parent.Cav.Delegable {
 		return Cert{}, ErrNotDelegable
+	}
+	if child.Can != parent.Can {
+		return Cert{}, ErrVerbMismatch
 	}
 	eff := child
 	eff.Cav.Target = intersectID(parent.Cav.Target, child.Cav.Target)
 	eff.Cav.Facet = intersectStr(parent.Cav.Facet, child.Cav.Facet)
 	eff.Cav.Groups = intersectStr(parent.Cav.Groups, child.Cav.Groups)
 	eff.Cav.Verbs = intersectStr(parent.Cav.Verbs, child.Cav.Verbs)
+	eff.Cav.Endpoints = intersectStr(parent.Cav.Endpoints, child.Cav.Endpoints)
 	eff.Cav.Delegable = child.Cav.Delegable // parent is delegable by the guard
-	eff.Cav.Unknown = parent.Cav.Unknown || child.Cav.Unknown
+	conflict := parent.Cav.Postage != "" && child.Cav.Postage != "" && parent.Cav.Postage != child.Cav.Postage
+	if parent.Cav.Postage != "" {
+		eff.Cav.Postage = parent.Cav.Postage
+	}
+	eff.Cav.Unknown = parent.Cav.Unknown || child.Cav.Unknown || conflict
 	eff.Exp = min(parent.Exp, child.Exp)
 	return eff, nil
 }
