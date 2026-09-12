@@ -1,0 +1,69 @@
+# iroh-transport/ (task talos-config-0bc.2.6): the sovereign-actor
+# Transport over iroh, on x86_64-linux. Two jobs:
+#
+#   test    nix build .#iroh-transport — library module; the checkPhase is
+#           the two-actor handshake (protocol/actor) over two iroh
+#           endpoints, direct and via .#iroh-relay, with -race. Gate.
+#   static  nix build .#iroh-transport-static — the same suite under
+#           pkgsStatic (musl, -extldflags -static): the Talos-extension
+#           feasibility probe (iroh-go/README.md "CGO / linking story"
+#           row (b)). Rebuilds iroh-ffi for x86_64-unknown-linux-musl, so
+#           it is slow cold and may fail on musl-hostile crates; it is
+#           continue-on-error and NOT a gate — read its log, record the
+#           result in iroh-transport/README.md. Not runnable from a
+#           darwin dev box (pkgsStatic there still links libSystem
+#           dynamically), which is why it lives here.
+#
+# Same cache pair as iroh-go.yml; iroh-ffi / iroh-relay are shared with
+# it through the Actions cache when the pins match.
+name: iroh-transport
+on:
+  push:
+    branches: [main]
+    paths:
+      - iroh-transport/**
+      - protocol/**
+      - iroh-go/**
+      - flake.nix
+      - flake.lock
+      - .github/workflows/iroh-transport.yml
+  pull_request:
+    paths:
+      - iroh-transport/**
+      - protocol/**
+      - iroh-go/**
+      - flake.nix
+      - flake.lock
+      - .github/workflows/iroh-transport.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-flakehub: false # no FlakeHub account; silences the per-job auth ##[error]
+      - name: nix build .#iroh-transport (checkPhase = handshake direct + relay, -race)
+        run: nix build .#iroh-transport -L
+      - name: what was linked
+        run: cat ./result/TESTED
+  static:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    continue-on-error: true # feasibility probe, not a gate
+    steps:
+      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-flakehub: false # no FlakeHub account; silences the per-job auth ##[error]
+      - name: nix build .#iroh-transport-static (pkgsStatic / musl probe)
+        run: nix build .#iroh-transport-static -L
+      - name: what was linked
+        run: cat ./result/TESTED
