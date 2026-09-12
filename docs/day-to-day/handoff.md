@@ -25,27 +25,21 @@
 
 ## Loose threads
 
-- **Beads still `in_progress`, awaiting your close:** `0bc.2.1 .2 .3 .5
-  .6`, `49x`. The `iroh-transport` herdr workspace (`w1E`, branch
-  merged) is still open — retire with `herdr worktree remove`.
-- **pkgsStatic/musl probe not yet executed** — no Linux builder here.
-  The first `iroh-transport.yml` `static` job run (push of `ac91a93`)
-  is the result; read it and record in `iroh-transport/README.md`.
-- **Worker threads not yet filed as beads** (see protocol handoff for
-  the list): `validateAud` rejects `"*"`; `envelope.Verify` drops
-  `verified` on reject; `clock.Mark` needs its own mutex; per-edge
-  serialised `Send` vs windowed HWM; strict `#renew` aud; absent
-  `endpoints` = ∅ vs unconstrained; chain-length cap; `quint verify`
-  authorize tier now ~94 s (check.sh comment stale).
-- `protocol/doc.go` layout comment still lists only `cert/` + `clock/`.
+- `0bc.2.1–.6` and `49x` closed 2026-09-13; `0bc.2` (M2 epic-level
+  task) left open for the owner to close. Worker workspace `w1E` and
+  branch `swarm/iroh-transport` removed.
+- **pkgsStatic/musl probe not yet executed** — `cs3`: read the first
+  `iroh-transport.yml` `static` job, record in `iroh-transport/README.md`.
+- Worker threads filed 2026-09-13 as 14 beads (`ax7 kp4 02j 0lo xwu
+  5yj 3k5 7w5 7ei 7n8 6tf s8n djs cs3`) — list in the protocol handoff.
 - Carried: `359.8.5` / `6z9` questions; `54n` boot-token HMAC;
   ADR-0017/0019 still Proposed; GH cache 7-day eviction; `4te`
   parents' TV.
 
 ## Suggested next steps
 
-- Close the six beads; retire `w1E`; check the CI static-probe log.
-- Triage the worker threads into `debt`/`thread` beads (one `bd create`
-  each) or rule them.
+- `cs3` (CI static-probe log), then `ax7`/`kp4` (small, unblock
+  `reach-me-at` on the wire).
+- Close `0bc.2` if M2's acceptance is judged met.
 - Pick the next milestone: `0bc.3` M3 lighthouse, or Phase 0 probes
   `359.1.1–.3` (they gate `0bc.2.7` on real Talos nodes).

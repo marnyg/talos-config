@@ -99,10 +99,16 @@ classDiagram
 The unit of communication is **invoking a capability**, not "sending to
 an address". An envelope carries `{to: P#facet, payload, proof:
 [cert-chain], seq, sig}`. The receiver P verifies **offline and in cost
-order**: (1) envelope signature; (2) the proof chain's first link is
-signed by P itself; (3) the last link's `aud` equals the envelope's
-signer; (4) nothing expired, caveats satisfied. The **proof chain is
-the registry**, carried by the caller. Attenuated re-delegation is free
+order**: (1) envelope signature; (2) `to.target` is P and `seq` is
+fresh; (3) the proof chain, rooted by a consent P itself signed and
+folded by attenuation, ends in a link whose `aud` **binds to the
+envelope's signer** — the signer key itself, a principal the signer
+holds a `speak-as` from (`cav.verbs ∋ invoke`), or `"*"` only when the
+effective caveats carry `postage` (`group:` audiences are resolved by
+the deployment layer, never here); (4) nothing expired, no unknown
+caveat, `facet` admitted. _(ADR-0001, built 2026-09-12 as
+`cert.VerifyChain`.)_ The **proof chain is the registry**, carried by
+the caller. Attenuated re-delegation is free
 and offline — P verifies a chain to an actor it has never heard of.
 
 **Public reachability** is a default, revocable **frontdoor** facet
@@ -359,7 +365,15 @@ whose deployment-free form differs from the talos wording. Source:
 - **Postage** — the per-message cost a stranger attaches so unsolicited
   delivery costs the sender more than the receiver. Pluggable: PoW
   placeholder, micropayments the goal. A single-use token bound to the
-  envelope hash.
+  envelope hash. As a **caveat** (`cav.postage`, opaque requirement
+  string) its presence is monotone along a chain — a link may add it,
+  none may remove it; two links naming different requirements taint
+  the chain (reject). It is the one caveat whose *addition* can widen
+  acceptance: `aud: "*"` without `postage` is **malformed** (rejected),
+  with it the chain admits any payer. Invariant 5 ("attenuation only")
+  is about authority over named audiences; postage is the
+  well-formedness condition of the open audience, not an attenuation.
+  _(Ruled 2026-09-12 errata §1; q-nlink OQ1.)_
 - **Intro nonce** — the one-time bearer token a parent injects when
   spawning; the child exchanges it immediately for real certs. The
   only bearer token in the system.
@@ -409,3 +423,24 @@ whose deployment-free form differs from the talos wording. Source:
   fixed ALPN class and is named by `to.facet` in the envelope, checked
   per Invocation. The chain verifier takes `facet` and is
   derivation-blind.
+- **Transport** — the protocol's only contract with the wire
+  (`actor.Transport`): bind an **Endpoint** for an identity; `Dial(ctx,
+  id, hints)` where `hints` are the transport-tagged strings of a
+  Location record (a transport ignores tags it does not own and fails
+  `ErrUnreachable` with none of its own); `Accept` yields **Streams**
+  with the peer's transport identity as a *hint*; `Endpoints()` reports
+  the tags it can be reached at. A Stream is one Invocation: the
+  request is the whole send side until FIN, the Reply the whole return
+  side until FIN — no length prefixes, no multiplexing inside a stream.
+  Two implementations, one contract test: in-memory (`mem:<name>`
+  tags, tests and in-process hub actors) and iroh (`iroh-transport/`,
+  own module; `ed:` actor id **is** the iroh EndpointId, one ALPN
+  `sovereign-actor/v1`). `protocol/` never imports a concrete
+  transport. _(Built 2026-09-12, `0bc.2.5`/`.6`.)_
+- **Mailbox** — the actor's serial, bounded inbound queue. Transport
+  goroutines do only the pure cheap rejections (decode, `sig`,
+  `to.target == me`) and enqueue; **one** actor goroutine does `seq`,
+  chain verification, `Mark.ObserveAll`, the handler and the Reply, so
+  handler authors never lock. A full mailbox **drops** (invariant 12:
+  at-most-once, sender retries). Depth is an unchosen number
+  (`DefaultMailbox = 64` placeholder). _(Built 2026-09-12, `0bc.2.5`.)_

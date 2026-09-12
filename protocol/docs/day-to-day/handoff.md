@@ -33,36 +33,24 @@ summarised in each bead's notes.
 
 ## Loose threads
 
-Workers' open questions, not yet ruled or filed:
+Workers' open questions are now beads (2026-09-13), all
+`discovered-from` their source bead:
 
-- **Postage vs invariant 5**: adding `postage` to a `*` chain *widens*
-  acceptance (∅ → anyone who pays). Model treats `*` without postage as
-  malformed; the glossary/invariant should say so (q-nlink OQ1).
-- **Absent `endpoints`** = ∅ today (plain intersection). Harmless for
-  `invoke`, decisive once a `reach-me-at` chain is verified (OQ2).
-- **Uniform verb**: fold requires every link `can == invoke`;
-  `Attenuate` now rejects `child.Can != parent.Can`. Relax to "equals
-  the root's" before `reach-me-at`/`relay` chains reuse `VerifyChain`.
-- `cert.validateAud` (`decode.go:114`) rejects the literal `"*"` — a
-  `reach-me-at` loc cannot cross the wire via `Decode` yet.
-- `envelope.Verify` drops `verified` on chain reject (clock contract
-  says the mark advances on reject); `actor` works around it.
-- `clock.Mark` has no internal mutex — every consumer guards it.
-- `actor.Send` is serialised per edge (order over window); a windowed
-  HWM is the alternative. Double sig verify (transport goroutine +
-  loop). Cheap rejects are *signed* replies — silent close for bad-sig?
-- `#renew` aud is strict `old.Aud == inv.From` (hot-key holders with a
-  speak-as in the proof are refused).
-- Chain-length cap unenforced; `Postage` conflict surfaces as
-  `ErrUnknownCaveat` (taint) — a distinct error would diagnose better.
-- Rooting extension along the chain requires `Delegable`; a
-  non-delegable last link's aud never enters `verified`.
-- `protocol/doc.go` layout comment still omits `envelope/`, `actor/`.
-- **Static musl link unverified** — read the first CI `static` job.
+- bugs/debt: `ax7` `validateAud` rejects `"*"`; `kp4` `envelope.Verify`
+  drops `verified` on reject; `02j` `clock.Mark` mutex; `3k5` double sig
+  verify; `6tf` `ErrPostageConflict`; `djs` stale comments
+  (`protocol/doc.go`, `check.sh` timing, `iroh-transport/doc.go`).
+- rulings wanted (`thread`): `0lo` absent `endpoints` = ∅?; `xwu` verb
+  uniformity before `reach-me-at`/`relay` chains; `5yj` per-edge serial
+  `Send` vs windowed HWM; `7w5` signed cheap rejects; `7ei` strict
+  `#renew` aud; `7n8` chain-length cap; `s8n` non-delegable last-link
+  aud not observed by the mark.
+- `cs3` — read the first CI `static` job, record the musl result.
+- Postage-vs-invariant-5 ruled in the glossary (**Postage** entry):
+  `*` without postage is malformed, not empty authority.
 
 ## Suggested next steps
 
-- Rule or file the threads above (`bd create … -l pi,thread|debt`).
-- Prune `exploration-log.md` §M2 (ADR-0001 landed) — asked, pending.
-- Domain-model: §Messaging rule (3) predates ADR-0001's aud rules; add
-  Transport/Mailbox to the glossary (proposed, pending).
+- `cs3` first (cheap, gates the Talos-extension story), then `ax7`
+  (blocks any `reach-me-at` on the wire) and `kp4`.
+- Owner picks M3 (`0bc.3`) vs Phase 0 probes (`359.1.1–.3`).
