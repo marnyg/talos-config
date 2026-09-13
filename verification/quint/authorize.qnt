@@ -243,6 +243,10 @@ module authorize {
   // The consent grants receiver `r` has issued to `issuer`: R-signed,
   // `invoke`, delegable (a non-delegable consent could not be followed
   // by a grant — ADR-0017 "delegable: false means no link may follow").
+  // This is the authorization-path filter only: it does NOT root the
+  // mark. The Go side keeps a second, signature-only rooting rule
+  // (cert.rootedPrincipals / rootCerts, decision 7ry) with no expiry
+  // and no `now`, because the mark is provenance, not live authority.
   pure def consentsFor(consents: Set[Cert], r: int, issuer: int, now: int): Set[Cert] =
     consents.filter(c =>
       c.iss == r and isKey(c.aud, issuer) and c.can == Invoke

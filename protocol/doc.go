@@ -11,8 +11,22 @@
 //	           ADR-0017/0018/0019; oracle: verification/quint/authorize.qnt
 //	clock/     the verifier's low-water mark over cert iat (ADR-0019) —
 //	           oracle: verification/quint/clock.qnt
+//	envelope/  the messaging record: a self-authenticating Envelope (one
+//	           capability invocation) and the Reply bound to it — spec:
+//	           protocol/docs ADR-0001 § Envelope +
+//	           docs/desired-state/domain-model.md § Messaging; no quint
+//	           oracle
+//	actor/     the runtime binding envelope messaging to the chain
+//	           verifier: serial mailbox, facets, the #renew beat — spec:
+//	           protocol/docs ADR-0001 § Decision Outcome; no quint
+//	           oracle. Reference transport: actor.MemoryNetwork
+//	           (in-process), for tests and examples
 //	docs/      this scope's desired-state (goals, invariants, domain
 //	           model) and the protocol sketch
+//
+// iroh-transport/ is the out-of-module QUIC adapter for actor.Endpoint:
+// a separate Go module, so protocol/ never imports it (or iroh-go) and
+// stays transport-independent.
 //
 // Separate Go module from config-server on purpose: the protocol must
 // have no dependency on the hub, Talos or nebula. config-server imports
