@@ -51,19 +51,26 @@ against an `iroh-ffi` built by the same `pkgsStatic` toolchain. It is
 exposed on Linux only — on darwin `pkgsStatic` still links libSystem
 dynamically, so a "static" darwin build proves nothing.
 
-Status, 2026-09-12:
+Status, 2026-09-13:
 
 - **aarch64-darwin**: `nix build .#iroh-transport` green (6/6, relay
   handshake ~13 s). The static attribute is not exposed.
-- **x86_64-linux**: the derivation instantiates
-  (`nix eval .#packages.x86_64-linux.iroh-transport-static.drvPath`
-  from a darwin box), but the dev machine has no Linux builder, so the
-  musl build has **not been executed** yet. The
-  `.github/workflows/iroh-transport.yml` `static` job
-  (`continue-on-error`) is the place it runs; read its first log and
-  record the outcome here. Expected friction, per iroh-go/README.md row
-  (b): `aws-lc-rs` (cmake + C compiler under musl), `getrandom`/`libc`
-  musl features, and whether `pkgsStatic.rustPlatform` picks the
+- **x86_64-linux**: first `static` job (run 34724490214, job
+  103636292084, main @ ac91a93, 2026-09-12) **failed on nix plumbing,
+  not on musl**: `iroh-ffi-1.1.0-vendor.drv` died with
+  `ModuleNotFoundError: No module named 'requests'` from
+  `fetch-cargo-vendor-util` — the crates.io UA override in
+  `iroh-go/nix/default.nix` built the helper with `pkgsStatic.writers`,
+  whose static python env lacks `requests`. No rust/cargo/cc ran, so
+  the musl question is **still open**. Fix (this commit): the vendor
+  fetcher, its writers, and the `iroh-ffi-src` prep now come from
+  `pkgs.buildPackages`; the fixed-output vendor drv is one and the same
+  for the glibc and musl builds
+  (`nix eval .#packages.x86_64-linux.iroh-transport{,-static}.iroh-ffi.cargoDeps.drvPath`
+  agree). **Read the next `static` job after this lands** and record
+  it here. Expected friction, per iroh-go/README.md row (b):
+  `aws-lc-rs` (cmake + C compiler under musl), `getrandom`/`libc` musl
+  features, and whether `pkgsStatic.rustPlatform` picks the
   `x86_64-unknown-linux-musl` target for the FFI crate without extra
   `CARGO_BUILD_TARGET` plumbing.
 
