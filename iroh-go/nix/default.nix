@@ -211,6 +211,7 @@ let
 
   # Smoke binary + `go test` gate (the test runs the same code in-process
   # and also the relay path with the iroh-relay binary from this flake).
+  # Also ships cmd/p0relay, the two-machine probe for Mesh v3 P0.1.
   smoke = pkgs.buildGo126Module {
     pname = "iroh-go-smoke";
     version = "0.1.0";
@@ -219,7 +220,7 @@ let
       fileset = lib.fileset.unions [ ../go.mod ../iroh ../cmd ];
     };
     vendorHash = null; # stdlib only
-    subPackages = [ "cmd/smoke" ];
+    subPackages = [ "cmd/smoke" "cmd/p0relay" ];
     env.CGO_ENABLED = 1;
     env.CGO_LDFLAGS = cgoLdflags;
     nativeBuildInputs = [ iroh-relay ];
