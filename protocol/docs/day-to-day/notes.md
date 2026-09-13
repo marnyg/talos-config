@@ -18,7 +18,13 @@
   `Result{Verified}` beside `ErrChain`; the closure is gone._
 - 2026-09-13 — `iroh-transport/` tests need `CGO_LDFLAGS` +
   `IROH_RELAY_BIN` by hand (README); under nix, `nix build
-  .#iroh-transport`. The `-static` attr is Linux-only and unverified.
+  .#iroh-transport`. The `-static` attr is Linux-only; green in CI
+  since 2026-09-13 (musl, fully static, 6/6).
+- 2026-09-13 — **`iroh-transport` `vendorHash` covers `../protocol` and
+  `../iroh-go/iroh`** (local `replace`s are vendored). Any change to
+  those trees changes the hash, and a cached FOD output hides it until
+  a cold builder rebuilds — after touching them run
+  `nix build .#iroh-transport.goModules --rebuild`.
 - 2026-09-13 — **Importing `iroh-go/nix` with `pkgs = pkgsStatic` makes
   every `pkgs.*` helper static too** — the cargo vendor fetcher's python
   helper lost `requests` that way (CI 34724490214). Anything

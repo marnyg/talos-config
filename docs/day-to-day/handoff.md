@@ -16,8 +16,9 @@
 - `cs3`: the first CI musl probe **never reached musl** — the pkgsStatic
   import of `iroh-go/nix` made the cargo-vendor python helper static
   (no `requests`). Fixed: vendor + source prep via `pkgs.buildPackages`;
-  README §Static link records it. The next `static` job on `main` is
-  the real probe.
+  Two runs later (`c453054`, run 34755622342) the **fully static
+  x86_64-linux build passes 6/6** — the Talos-extension link story is
+  feasible; `cs3` closed.
 - Swarm mechanics that worked: `swarm-prep` wrote acceptance/design
   onto the beads + `/tmp/swarm/<name>.{task,context}.md`; opus-5 for
   mechanical workers, fable for the nix hypothesis; orchestrator re-ran
@@ -26,7 +27,6 @@
 ## Loose threads
 
 - Merged-but-open beads awaiting owner close: `kp4 6tf 02j djs ax7`.
-  `cs3` stays open until the post-`bdf5488` CI `static` job is read.
 - Rulings wanted (`thread`): `0lo xwu 5yj 7w5 7ei 7n8 s8n` — `xwu`
   gates M3's relay/`reach-me-at` chains.
 - Carried: `359.8.5` / `6z9` questions; `54n` boot-token HMAC;
@@ -35,7 +35,7 @@
 
 ## Suggested next steps
 
-- Read the CI `static` job for `bdf5488` (`gh run list --workflow
-  iroh-transport.yml`) → settle `cs3` and the Talos-extension link story.
+- `359.1.3` (Talos extension proof) now has its link question answered
+  — a good Phase 0 opener if that path is chosen.
 - Rule `xwu`/`0lo`, then pick the next milestone: `0bc.3` M3 lighthouse, or Phase 0 probes
   `359.1.1–.3` (they gate `0bc.2.7` on real Talos nodes).

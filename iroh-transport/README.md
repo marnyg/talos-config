@@ -81,11 +81,17 @@ Status, 2026-09-13:
   `replace`d `../protocol` tree into `vendor/`, and the post-M2 swarm
   had changed `protocol/*.go`; the glibc `test` job (and darwin
   `flake check`) stayed green only because the old FOD output was
-  cached. Hash refreshed in `nix/default.nix`. **Still unproven:** the
-  Go side — cgo linking `libiroh_ffi.a` with `-extldflags -static`
-  against musl and the 6-test suite running on it. Read the third
-  `static` job and record it here.
+  cached. Hash refreshed in `nix/default.nix`.
+- **x86_64-linux, third `static` job** (run 34755622342, main @
+  c453054, 2026-09-13): **green.** `result/TESTED` reads
+  `static=true system=x86_64-linux`; the fully static Go binary (cgo,
+  `-linkmode external -extldflags -static`, musl `libiroh_ffi.a`) ran
+  all 6 tests including the relay handshake (0.95 s) and
+  `TestIrohTransportContract` (8 s). **The Talos-extension link story
+  is proven feasible** (iroh-go/README.md row (b)); no glibc fallback
+  is needed. With the Rust artifacts in the Actions cache the job
+  takes ~4 min.
 
-If the probe fails for a musl-specific reason, the fallback for the
-Talos extension is unchanged: a glibc-dynamic binary inside an extension
-image that carries the nix closure (row (a)/(b) in iroh-go/README.md).
+The glibc-dynamic-binary-in-extension-image fallback (row (a) in
+iroh-go/README.md) is therefore not needed; it stays documented there
+only as history.

@@ -28,12 +28,11 @@ n-static-probe,p-mark-mutex,d-stale-comments}.md`).
 
 ## Loose threads
 
-- **The musl probe has still not run.** CI run 34724490214 `static` job
-  died in the vendor step (pkgsStatic `writers` python lacks
-  `requests`); `cs3` fixed `iroh-go/nix/default.nix` to vendor via
-  `buildPackages`. The first `static` job on `main` after `bdf5488` is
-  the real link test — read it, then close `cs3` or record the musl
-  failure and the glibc-extension fallback.
+- **Musl probe green** (2026-09-13, run 34755622342): fully static
+  x86_64-linux iroh-transport passes 6/6 incl. relay. It took three CI
+  runs — pkgsStatic writers (fixed via `buildPackages`), then a stale
+  Go `vendorHash` (vendored `../protocol` had changed; cached FOD hid
+  it). `cs3` closed; `iroh-transport/README.md §Static link` has the log.
 - Rulings still wanted (`thread` beads): `0lo` absent `endpoints` = ∅?;
   `xwu` verb uniformity (gates M3 relay/`reach-me-at` chains); `5yj`
   per-edge serial `Send`; `7w5` signed cheap rejects; `7ei` strict
@@ -46,7 +45,6 @@ n-static-probe,p-mark-mutex,d-stale-comments}.md`).
 
 ## Suggested next steps
 
-- Read the post-`bdf5488` CI `static` job → settle `cs3`.
 - Rule `xwu` (and `0lo`) before starting M3 `0bc.3`; both bite the
   first `reach-me-at`/`relay` chain.
 - Owner picks M3 (`0bc.3`) vs Mesh v3 Phase 0 probes (`359.1.1–.3`).
