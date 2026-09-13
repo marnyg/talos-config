@@ -4,6 +4,27 @@
      Granularity: strategy-level pivots only. Not "used ripgrep instead of sed".
      Yes: "tried library X, ruled out for reason Y." -->
 
+## Mesh v3 P0.1 — self-hosted iroh relay (2026-09-13)
+
+- 2026-09-13 — Considered running the relay with its own TLS (LetsEncrypt
+  or manual cert) so QUIC address discovery (UDP 7842) works. Ruled
+  out for the spike: fly's TLS handler cannot proxy QUIC, the relay
+  would need a DNS-01 cert shipped as a secret, and QAD only serves
+  remote hole-punching, which ADR-0006 already gives up. Landed on:
+  plain-HTTP relay behind fly's terminator, QAD off (ADR-0022). Revisit
+  only if remote-direct becomes a goal (`0pq`).
+- 2026-09-13 — Tried the owner laptop as the LAN-direct peer. Ruled
+  out: corporate socket-filter extension EPIPEs LAN UDP from unsigned
+  binaries (`nc`/python/C succeed, iroh fails). Landed on: two Linux
+  hosts (NixOS box + Docker-on-mac musl binary); fly machine for the
+  far-NAT peer.
+- 2026-09-13 — Considered a fly process-group "sidecar" for the relay
+  in Phase 1. Ruled out: a process group is a separate machine and
+  cannot share `[http_service]` 443 with config-server — it would be a
+  second entrypoint. Landed on (not built): config-server spawns
+  `iroh-relay` as a child and reverse-proxies `/relay`, `/ping`,
+  `/generate_204` (`5gz`).
+
 ## Unattended Windows guest on KubeVirt (2026-08-11→14)
 
 - 2026-08-12 — Tried scripting the "Press any key to boot from CD" EFI

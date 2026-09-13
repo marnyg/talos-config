@@ -48,6 +48,35 @@
   certs existed in-repo, but any cert signed before `40c1755` will not
   verify.
 
+## Mesh v3 spike infra (scratch)
+
+- 2026-09-13 — **A second public surface exists on purpose:**
+  `marnyg-iroh-relay-spike.fly.dev` (fly app of the same name, region
+  `arn`, `fly/relay-spike/fly.toml`) runs `n0computer/iroh-relay:v1.1.0`
+  as an **open relay** (`access = "everyone"`) for the Phase 0 probes.
+  Owner accepted this as spike scope against invariant 5 (2026-09-13);
+  `kql` tears it down after the gate `359.1.5`. Deploy with
+  `fly deploy -c fly/relay-spike/fly.toml`; `curl …/ping` → 200 is the
+  liveness check (`/generate_204` is 404 in plain-HTTP mode).
+  Registry tag `registry.fly.io/marnyg-iroh-relay-spike:p0peer` is a
+  throwaway alpine + static `p0relay` for far-NAT peers
+  (`fly machine run … --rm -- dial …`; `--file-local` hangs on 18 MB).
+- 2026-09-13 — **The owner laptop is a relay-only peer.** Cisco Secure
+  Client's socket-filter extension (+ Defender netext) returns `EPIPE`
+  from `sendmsg` for unsigned binaries to any `en0` destination, so no
+  LAN-direct measurement is valid from here; use two Linux hosts. The
+  home LAN test bed is `mar@nixos` (x86_64 NixOS, 10.0.0.11, nix + docker,
+  no sudo for the agent; firewall blocks inbound UDP on `wlp12s0` unless
+  opened — the rule added 2026-09-13 lasts until reboot) plus Docker
+  Desktop on the mac running the musl `p0relay` under `--platform
+  linux/amd64`. In-process tests (`smoke`) punch to loopback even on
+  the filtered laptop and prove nothing about the host path.
+- 2026-09-13 — `iroh-ffi` tracing (`P0_LOG=debug` in `p0relay`, or
+  `iroh.SetLogLevel`) writes to **stdout**, the Go `logf` to stderr —
+  capture with `>file 2>&1`. Every startup probes UDP 7842 (QAD) on the
+  relay for 3 s and times out (relay has no QUIC); harmless, silenced
+  by `p5g`.
+
 ## Hub / mesh (nebula, as running)
 
 - Every fly deploy **re-seals the hub**: derived roles (mesh CA, KMS,

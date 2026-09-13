@@ -5,37 +5,47 @@
 
 ## Last session
 
-2026-09-13 — **M2 closed (`0bc.2`), post-M2 hardening swarm landed**
-(`main 4b5a9d0 → bdf5488`; five workers, two waves, all merged with
-`--no-ff`; protocol detail in `protocol/docs/day-to-day/handoff.md`).
+2026-09-13 (second session) — **protocol threads ruled, Phase 0 chosen
+over M3, P0.1 passed** (`main bdf5488 → 05f8684`, spike branch
+`spike/mesh-v3-p0` merged `--no-ff`).
 
-- Protocol: `kp4` `Verified` on reject, `6tf` `ErrPostageConflict`,
-  `02j` self-guarded `clock.Mark`, `djs` stale comments. `3k5` ruled
-  (decision `0i6`), `xom` closed (contradicts invariant 1), `ax7` found
-  already fixed.
-- `cs3`: the first CI musl probe **never reached musl** — the pkgsStatic
-  import of `iroh-go/nix` made the cargo-vendor python helper static
-  (no `requests`). Fixed: vendor + source prep via `pkgs.buildPackages`;
-  Two runs later (`c453054`, run 34755622342) the **fully static
-  x86_64-linux build passes 6/6** — the Talos-extension link story is
-  feasible; `cs3` closed.
-- Swarm mechanics that worked: `swarm-prep` wrote acceptance/design
-  onto the beads + `/tmp/swarm/<name>.{task,context}.md`; opus-5 for
-  mechanical workers, fable for the nix hypothesis; orchestrator re-ran
-  every acceptance before `--no-ff` merge; `git pull --ff-only` only.
+- Rulings, all as recommended: `0lo` absent `endpoints` = ∅ (decision
+  `eak`), `5yj` strict per-edge `Send` for v0 (`zey`), `eig` no cache
+  refresh on reject (`5qt`), `7n8` chain cap is a deployment number
+  (`seb`, bead deferred). `xwu` (verb = root consent's verb, now blocks
+  `0bc.3`), `7w5` (silent close on bad-sig), `7ei` (`#renew` via
+  `speaksFor`), `s8n` (mark learns from aud-side speak-as) became tasks
+  with acceptance. Protocol ADR-0002 records the two semantic ones.
+- Milestone pick: **Phase 0 before M3**, order `359.1.1 → .1.3 → .1.2`.
+- `359.1.1` **PASS** (closed): scratch fly app `marnyg-iroh-relay-spike`
+  runs the upstream `iroh-relay:v1.1.0` in plain-HTTP mode behind fly's
+  TLS proxy (`fly/relay-spike/fly.toml`); different-NAT peers connect
+  via relay, LAN-direct punch < 1 s without QAD, pcap shows no n0
+  hosts. Full data in `docs/mesh-v3-iroh.md §P0.1`; ADR-0022 drafted.
+  Tooling: `iroh-go/cmd/p0relay` (two-peer probe), `.#p0relay-static`
+  (musl binary for containers/nodes), `P0_LOG=debug` for iroh tracing.
+- Merged-but-open beads from the M2 swarm closed (`kp4 6tf 02j djs ax7`).
 
 ## Loose threads
 
-- Merged-but-open beads awaiting owner close: `kp4 6tf 02j djs ax7`.
-- Rulings wanted (`thread`): `0lo xwu 5yj 7w5 7ei 7n8 s8n` — `xwu`
-  gates M3's relay/`reach-me-at` chains.
-- Carried: `359.8.5` / `6z9` questions; `54n` boot-token HMAC;
-  ADR-0017/0019 still Proposed; GH cache 7-day eviction; `4te`
-  parents' TV.
+- **Scratch relay app is up and open** (`access = everyone`), a second
+  public surface accepted as spike scope until `kql` tears it down
+  after the gate `359.1.5`. The `p0peer` registry tag goes with it.
+- `nixos` (`mar@nixos`, 10.0.0.11) has a temporary `iptables -I
+  nixos-fw -i wlp12s0 -p udp -j ACCEPT` (until reboot) and a clone at
+  `~/p0`; `~/p0/result` is the last `p0relay-static` build.
+- The owner laptop's Cisco socket filter blocks LAN UDP from unsigned
+  binaries (`dj5`); it is a relay-only peer for any probe.
+- Follow-ups filed: `p5g` (no-QAD relay option in `iroh-transport`),
+  `5gz` (Phase 1 relay embedding in config-server), `0pq` (QAD
+  trade-off), `4un` / `359.8.5` / `6z9` carried; ADR-0017/0019/0022
+  and protocol ADR-0002 are Proposed.
 
 ## Suggested next steps
 
-- `359.1.3` (Talos extension proof) now has its link question answered
-  — a good Phase 0 opener if that path is chosen.
-- Rule `xwu`/`0lo`, then pick the next milestone: `0bc.3` M3 lighthouse, or Phase 0 probes
-  `359.1.1–.3` (they gate `0bc.2.7` on real Talos nodes).
+- `359.1.3` Talos extension proof: static agent (`.#p0relay-static`
+  pattern) as a system extension via the image factory, dialing the
+  scratch relay; needs the cluster reachable (start `nebup`;
+  `talosctl` hung without it) and the ADR-0019 NTP-gate question.
+- Then `359.1.2` (Android feasibility), then the gate `359.1.5`.
+- `xwu` before M3 — model first (`authorize.qnt`), then Go.

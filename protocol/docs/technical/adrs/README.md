@@ -8,6 +8,9 @@ this scope.
   one N-link chain verifier (connection-level `Authorize` is its
   special case); self-authenticating envelopes; stream vs actor facets.
   _Accepted 2026-09-12._
+- [0002](0002-chain-verb-from-root-consent-absent-set-caveats-are-empty.md) —
+  a chain's verb is its root consent's verb (one fold for every verb);
+  an absent set caveat is ∅. _Proposed 2026-09-13 (rulings `xwu`, `0lo`)._
 
 The protocol's **founding** decisions are root ADRs, referenced here,
 not copied:
