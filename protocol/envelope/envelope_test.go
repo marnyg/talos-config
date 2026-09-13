@@ -508,7 +508,9 @@ func TestLocationCaching(t *testing.T) {
 func TestWireRoundTrip(t *testing.T) {
 	w := newWorld(t, ethSigner(t), edSigner(t), ethSigner(t))
 	e := w.envelope(t, 3, "payload bytes \x00\xff")
-	// A loc whose aud is an actor id (DecodeCert rejects "*"; see report).
+	// A loc whose aud is an actor id: checkLoc ignores loc.Aud, so this
+	// exercises the non-wildcard path; the "*" (cert.AudAny) round trip
+	// is covered in cert_test.go.
 	loc := mustSign(t, cert.Cert{
 		Aud: string(w.b.ActorID()), Can: cert.VerbReachMeAt,
 		Cav: cert.Caveats{Verbs: []string{"mem:a"}}, Iat: now, Exp: now + 60,

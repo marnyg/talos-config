@@ -9,6 +9,10 @@
 //	ep, _ := irohtransport.Bind(priv, irohtransport.Options{})
 //	a := actor.New(cert.NewEdSigner(priv), ep)
 //
+// ep is passed where actor.New takes an actor.Transport, but it also
+// satisfies the wider actor.Endpoint, so actor.PublishLocation can type-
+// assert it and mint the reach-me-at record from ep.Endpoints().
+//
 // # Identity
 //
 // An iroh EndpointId IS a 32-byte Ed25519 public key, and an "ed:<hex>"
