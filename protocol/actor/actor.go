@@ -386,22 +386,16 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 
 	a.mu.Lock()
 	now := a.nowLocked()
-	// Capture verified on BOTH paths: envelope.Verify discards it on
-	// rejection, but the mark must advance from rooted certs regardless
-	// of the verdict (clock contract, ADR-0019).
-	var verified []cert.Cert
-	chain := func(receiver cert.ActorID, consents, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
-		eff, v, err := cert.VerifyChain(receiver, consents, chain, speakAs, signer, facet, now)
-		verified = v
-		return eff, v, err
-	}
 	res, err := envelope.Verify(env, envelope.Receiver{
 		ID:       a.ID(),
 		Consents: a.Consents,
-		Chain:    chain,
+		Chain:    cert.VerifyChain,
 		HWM:      a.hwm,
 	}, now)
-	a.mark.ObserveAll(verified)
+	// Observe on BOTH paths: res.Verified is populated alongside
+	// ErrChain too, and the mark must advance from rooted certs
+	// regardless of the verdict (clock contract, ADR-0019).
+	a.mark.ObserveAll(res.Verified)
 	if err == nil && res.Loc != nil {
 		a.updateLocationLocked(env.From, *res.Loc, now)
 	}

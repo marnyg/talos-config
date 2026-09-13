@@ -301,8 +301,33 @@ func TestVerifyCostOrder(t *testing.T) {
 	recv := w.recv
 	recv.Chain = nil
 	recv.HWM = NewHWM()
-	if _, err := Verify(w.envelope(t, 1, "x"), recv, now); !errors.Is(err, ErrNoChainVerifier) {
+	if res, err := Verify(w.envelope(t, 1, "x"), recv, now); !errors.Is(err, ErrNoChainVerifier) {
 		t.Fatalf("want ErrNoChainVerifier, got %v", err)
+	} else if len(res.Verified) != 0 {
+		t.Fatalf("cheap reject must verify nothing rooted at r: %+v", res)
+	}
+}
+
+// A chain rejection still hands back the certs the rule verified on a
+// chain rooted at the receiver: the low-water mark advances on accept
+// and reject alike (invariant 9, ADR-0019).
+func TestVerifyReturnsVerifiedOnChainReject(t *testing.T) {
+	w := newWorld(t, edSigner(t), edSigner(t), edSigner(t))
+	root := w.recv.Consents[0]
+
+	recv := w.recv
+	recv.Chain = func(receiver cert.ActorID, consents, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, _ int64) (cert.Cert, []cert.Cert, error) {
+		// Rooted, signature-checked — then rejected on a later rule
+		// (expiry, caveat, aud binding). cert.VerifyChain does the same.
+		return cert.Cert{}, []cert.Cert{root}, errors.New("forced reject after root")
+	}
+
+	res, err := Verify(w.envelope(t, 1, "x"), recv, now)
+	if !errors.Is(err, ErrChain) {
+		t.Fatalf("want ErrChain, got %v", err)
+	}
+	if len(res.Verified) != 1 || res.Verified[0].Iat != root.Iat {
+		t.Fatalf("verified dropped on chain reject: %+v", res.Verified)
 	}
 }
 
