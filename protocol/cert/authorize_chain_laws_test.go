@@ -893,6 +893,8 @@ func TestVerifyChainHappyPath(t *testing.T) {
 	tainted[1].Cav.Unknown = true
 	if _, _, err := VerifyChain(id["R"], []Cert{consent}, tainted, speakAs, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrUnknownCaveat) {
 		t.Fatalf("tainted last link: err = %v, want ErrUnknownCaveat", err)
+	} else if errors.Is(err, ErrPostageConflict) {
+		t.Fatalf("plain unknown-caveat taint: err = %v, want NOT ErrPostageConflict", err)
 	}
 	// the same chain presented by a key nobody vouches for is unbound.
 	if _, _, err := VerifyChain(id["R"], []Cert{consent}, chain, speakAs, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrAudUnbound) {
@@ -944,8 +946,10 @@ func TestVerifyChainStarPostage(t *testing.T) {
 	if _, _, err := VerifyChain(id["R"], []Cert{consent("")}, []Cert{star("")}, nil, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrAudUnbound) {
 		t.Fatalf("* without postage: err = %v, want ErrAudUnbound", err)
 	}
-	if _, _, err := VerifyChain(id["R"], []Cert{consent(postagePay)}, []Cert{star(postagePoW)}, nil, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrUnknownCaveat) {
-		t.Fatalf("conflicting postage: err = %v, want ErrUnknownCaveat (taint)", err)
+	if _, _, err := VerifyChain(id["R"], []Cert{consent(postagePay)}, []Cert{star(postagePoW)}, nil, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrPostageConflict) {
+		t.Fatalf("conflicting postage: err = %v, want ErrPostageConflict", err)
+	} else if !errors.Is(err, ErrUnknownCaveat) {
+		t.Fatalf("conflicting postage: err = %v, ErrPostageConflict must remain an ErrUnknownCaveat (taint)", err)
 	}
 	if _, _, err := VerifyChain(id["R"], []Cert{consent(postagePoW)}, []Cert{star(postagePoW)}, nil, id["ROGUE"], "apid", testNOW); err != nil {
 		t.Fatalf("agreeing postage: %v", err)

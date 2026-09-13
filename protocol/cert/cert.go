@@ -116,6 +116,12 @@ func ValidVerb(v Verb) bool { return knownVerbs[v] }
 // DecodeCert's strict decoding. Attenuate also sets it when two links
 // carry conflicting Postage (the chain is tainted).
 //
+// PostageConflict is likewise not a wire field: it narrows that second
+// case so VerifyChain can report ErrPostageConflict (which errors.Is
+// ErrUnknownCaveat) instead of the bare taint. It is never set without
+// Unknown, so it changes no accept/reject decision — taint stays one
+// concept, 1:1 with the model's cav.unknown.
+//
 // Caveat vocabulary v2 (ADR-0001): Endpoints are transport-tagged opaque
 // strings attenuated by plain intersection, exactly like Target/Facet —
 // an absent set is EMPTY, not "unconstrained". Postage is an opaque
@@ -132,6 +138,9 @@ type Caveats struct {
 	Endpoints []string  // v2: transport-tagged opaque strings; intersection
 	Postage   string    // v2: opaque requirement; "" = absent; monotone
 	Unknown   bool      // verifier-side: carries an unrecognised caveat
+	// PostageConflict is verifier-side and implies Unknown: the taint came
+	// from two links setting disagreeing Postage. Diagnostics only.
+	PostageConflict bool
 }
 
 // Cert is the primitive: {iss, aud, can, cav, iat, exp, sig}.
@@ -156,8 +165,9 @@ type Cert struct {
 
 // canonCav / canonCert fix the JSON shape fed to JCS. All caveat fields
 // are always present (empty arrays as []), so the canonical form of a
-// cert is a pure function of its authority-bearing fields. Unknown is
-// deliberately absent: it is a verifier judgment, not signed data.
+// cert is a pure function of its authority-bearing fields. Unknown and
+// PostageConflict are deliberately absent: they are verifier judgments,
+// not signed data.
 type canonCav struct {
 	Delegable bool     `json:"delegable"`
 	Endpoints []string `json:"endpoints"`
