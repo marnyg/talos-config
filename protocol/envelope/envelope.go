@@ -117,9 +117,12 @@ type Receiver struct {
 	HWM      *HWM
 }
 
-// Result is what a successful Verify hands the actor: the effective
-// authority the envelope invoked under, the rooted certs for the
-// low-water mark, and the sender's location record if it carried one.
+// Result is what Verify hands the actor: the effective authority the
+// envelope invoked under, the rooted certs for the low-water mark, and
+// the sender's location record if it carried one. Eff and Loc are
+// meaningful only on a nil error; Verified is also populated alongside
+// ErrChain, because the mark advances from rooted certs on accept and
+// reject alike (invariant 9, ADR-0019).
 type Result struct {
 	Eff      cert.Cert
 	Verified []cert.Cert
@@ -508,6 +511,13 @@ func splitProof(proof []cert.Cert) (chain, speakAs []cert.Cert) {
 // nothing a third party can do burns a sender's numbers, and a sender
 // never reuses one. On success the returned Result carries the rooted
 // certs for the caller's clock.Mark and the validated loc for its cache.
+//
+// Result.Verified is meaningful on a nil error and on ErrChain: the
+// chain rule verifies signatures rooted at the receiver before it can
+// reject, and those iat values must reach the caller's clock.Mark
+// either way (invariant 9, ADR-0019). The cheaper rejects (1-4, and a
+// missing chain rule) verify nothing rooted at r, so they return an
+// empty Result.
 func Verify(e Envelope, r Receiver, now int64) (Result, error) {
 	if err := VerifySig(e); err != nil {
 		return Result{}, err
@@ -527,7 +537,9 @@ func Verify(e Envelope, r Receiver, now int64) (Result, error) {
 	chain, speakAs := splitProof(e.Proof)
 	eff, verified, err := r.Chain(r.ID, r.Consents, chain, speakAs, e.From, e.To.Facet, now)
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: %w", ErrChain, err)
+		// Verified, not Result{}: the rooted certs the chain rule did
+		// verify still advance the caller's low-water mark.
+		return Result{Verified: verified}, fmt.Errorf("%w: %w", ErrChain, err)
 	}
 	return Result{Eff: eff, Verified: verified, Loc: e.Loc}, nil
 }
