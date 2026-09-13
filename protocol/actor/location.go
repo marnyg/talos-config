@@ -54,7 +54,7 @@ func (a *Actor) UpdateLocation(id cert.ActorID, loc *cert.Cert) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	now := a.nowLocked()
+	now := a.now()
 	if err := checkLocation(id, *loc, now); err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func (a *Actor) GetLocation(id cert.ActorID) *cert.Cert {
 	if !ok {
 		return nil
 	}
-	if loc.Exp <= a.nowLocked() {
+	if loc.Exp <= a.now() {
 		delete(a.locs, id)
 		return nil
 	}
@@ -84,7 +84,7 @@ func (a *Actor) GetLocation(id cert.ActorID) *cert.Cert {
 // Caller holds mu.
 func (a *Actor) hintsLocked(id cert.ActorID) []string {
 	loc, ok := a.locs[id]
-	if !ok || loc.Exp <= a.nowLocked() {
+	if !ok || loc.Exp <= a.now() {
 		return nil
 	}
 	return append([]string(nil), loc.Cav.Endpoints...)
@@ -108,7 +108,7 @@ func (a *Actor) CurrentLocation() *cert.Cert {
 func (a *Actor) SetLocation(loc cert.Cert) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := checkLocation(a.ID(), loc, a.nowLocked()); err != nil {
+	if err := checkLocation(a.ID(), loc, a.now()); err != nil {
 		return err
 	}
 	a.loc = &loc
