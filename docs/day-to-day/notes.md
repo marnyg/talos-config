@@ -263,3 +263,12 @@
   (relay test skips without the latter). `.#iroh-transport-static`
   exists only on Linux; no Linux builder is configured on the Mac —
   the CI `static` job is the only place the musl link runs.
+- 2026-09-13 — **`herdr worktree create` + `--base main` cuts from the
+  local `main`**, so wave-2 workers see wave-1 merges only after the
+  orchestrator merged them locally — merge before launching the next
+  wave, never push-and-pull mid-swarm. Retire a worker right after its
+  merge (`herdr worktree remove --workspace <id> --force; git worktree
+  prune; git branch -d`); `create.json` holds the workspace id.
+- 2026-09-13 — CI `static` job (iroh-transport.yml) is `continue-on-error`:
+  a red `static` never fails the workflow. Check it explicitly with
+  `gh run view <id>`; the job id is needed for `--log`.

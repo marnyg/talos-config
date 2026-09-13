@@ -8,9 +8,10 @@ ADR-0001 is built 1:1: `authorize.qnt` ⇄ `protocol/cert.VerifyChain`,
 `protocol/envelope`, `protocol/actor` (serial mailbox, `#renew`,
 location cache), and `iroh-transport/` as its own module; acceptance
 (two actors over in-memory + iroh) passes in `protocol/actor` and
-`iroh-transport` tests. Immediate work is wrap-up: close the `0bc.2.x`
-beads, read the first x86_64-linux `static` CI run (the Talos-extension
-link probe), triage the workers' open questions into beads or rulings.
+`iroh-transport` tests. Wrap-up is done (`0bc.2` closed, mechanical
+threads merged 2026-09-13); what is left before the choice is reading
+the first *real* x86_64-linux `static` CI run (the Talos-extension link
+probe, `cs3`) and ruling the protocol threads (`xwu`, `0lo`).
 The next milestone is an owner call: `0bc.3` (M3 lighthouse on the fly
 hub, postage for strangers) or the Mesh v3 Phase 0 probes `359.1.1–.3`
 that gate `0bc.2.7` (two actors on real Talos nodes).

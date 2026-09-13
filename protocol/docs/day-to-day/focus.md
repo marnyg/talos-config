@@ -6,11 +6,12 @@
 `envelope`, `actor` are pinned to `authorize.qnt`/`clock.qnt` (the
 model leads; Go follows 1:1). Two actors invoke capabilities over the
 in-memory transport (`protocol/actor`) and over iroh
-(`iroh-transport/`) in ordinary `go test`. The near-term work is the
-list of worker threads in `handoff.md` — mostly cert/envelope edge
-rules (`"*"` aud on the wire, absent `endpoints`, verb uniformity,
-`verified` on reject) that M3's `reach-me-at` and frontdoor paths will
-hit first. M3 (`0bc.3`: lighthouse as a plain actor, PoW postage for
+(`iroh-transport/`) in ordinary `go test`. The mechanical hardening
+(`verified` on reject, `ErrPostageConflict`, self-guarded `clock.Mark`,
+stale comments) landed 2026-09-13; what remains are **rulings**
+(`xwu` verb uniformity, `0lo` absent `endpoints`, `7ei`/`7w5`/`5yj`)
+that M3's `reach-me-at` and frontdoor paths will hit first, and the
+still-unread musl link probe (`cs3`). M3 (`0bc.3`: lighthouse as a plain actor, PoW postage for
 strangers) starts when the owner picks it over the Mesh v3 Phase 0
 probes.
 

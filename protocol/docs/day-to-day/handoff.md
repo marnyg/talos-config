@@ -5,52 +5,48 @@
 
 ## Last session
 
-2026-09-12/13 — **M2 (`0bc.2`) built by a six-worker swarm; all merged.**
-Worker reports (rulings, deviations, open questions) are in
-`/tmp/swarm/{q-nlink,env-core,cert-verifychain,actor-runtime}.md` and
-summarised in each bead's notes.
+2026-09-13 — **M2 closed (`0bc.2`); five-worker hardening swarm
+landed** (`main 4b5a9d0 → bdf5488`, two waves, herdr worktrees, briefs
+and reports under `/tmp/swarm/{p-verify-result,p-postage-err,
+n-static-probe,p-mark-mutex,d-stale-comments}.md`).
 
-- `verification/quint/authorize.qnt` — `verifyChain` fold over
-  `attenuate`, aud binding (signer | `*`+postage | principal via
-  speak-as `verbs ∋ invoke` | `group:` sentinel), caveats v2; 18 laws,
-  20 seeded mutants all killed. `quint verify` depth-2 now ~94 s.
-- `protocol/cert` — `VerifyChain(receiver, consents, chain, speakAs,
-  signer, facet, now) (eff, verified, err)`, `ErrGroupAud`; `Caveats`
-  gains `Endpoints`, `Postage` (presence monotone, equal-or-taint);
-  `Authorize` = `VerifyChain([g])` per grant + group rule; the 18 laws
-  ported 1:1 (`authorize_chain_laws_test.go`); `VerifyBytes`.
-- `protocol/envelope` — `Envelope`/`Reply`, JCS canonical, cost-ordered
-  `Verify` (sig → target/seq → chain), per-edge `HWM` (atomic advance),
-  strict `loc.iss == from`.
-- `protocol/actor` — `Transport`/`Endpoint`/`Stream` ifaces, in-memory
-  `MemoryNetwork`, serial bounded mailbox (`DefaultMailbox = 64`),
-  `#renew` (same aud, same-or-narrower cav), location cache +
-  piggyback; handshake test uses the real `VerifyChain`, 2- and 3-link.
-- `iroh-transport/` (own module) — `actor.Endpoint` over iroh
-  `PresetMinimal`, one ALPN `sovereign-actor/v1`, `ed:` ⇄ EndpointId
-  byte identity, FIN framing, `iroh:udp=`/`iroh:relay=` tags; handshake
-  over direct + local relay; nix package + Linux-only pkgsStatic probe.
+- `kp4` — `envelope.Verify` returns `Result{Verified}` **beside**
+  `ErrChain`; the actor's capture closure is gone
+  (`Chain: cert.VerifyChain`, `ObserveAll(res.Verified)` on both paths).
+- `6tf` — `cert.ErrPostageConflict` wraps `ErrUnknownCaveat`
+  (`errors.Is` both); `Caveats.PostageConflict` is a verifier-side flag
+  beside `Unknown`, never on the wire. `authorize.qnt` untouched: the
+  model has no error identities, taint stays one flag.
+- `02j` — `clock.Mark` guards itself (`sync.Mutex`, zero value usable,
+  don't copy); `actor.process` takes `a.mu` only around the location
+  update; `nowLocked` → `now`.
+- `djs` — `protocol/doc.go` layout lists `envelope/ actor/` + the
+  out-of-module `iroh-transport/`; `consentsFor` doc says it is not the
+  rooting rule; `envelope_test.go` no longer claims Decode rejects `"*"`.
+- Rulings: `3k5` closed by decision `0i6` (keep the double signature
+  verification in v0); `ax7` found **already fixed** on main (40c1755).
 
 ## Loose threads
 
-Workers' open questions are now beads (2026-09-13), all
-`discovered-from` their source bead:
-
-- bugs/debt: `ax7` `validateAud` rejects `"*"`; `kp4` `envelope.Verify`
-  drops `verified` on reject; `02j` `clock.Mark` mutex; `3k5` double sig
-  verify; `6tf` `ErrPostageConflict`; `djs` stale comments
-  (`protocol/doc.go`, `check.sh` timing, `iroh-transport/doc.go`).
-- rulings wanted (`thread`): `0lo` absent `endpoints` = ∅?; `xwu` verb
-  uniformity before `reach-me-at`/`relay` chains; `5yj` per-edge serial
-  `Send` vs windowed HWM; `7w5` signed cheap rejects; `7ei` strict
-  `#renew` aud; `7n8` chain-length cap; `s8n` non-delegable last-link
-  aud not observed by the mark.
-- `cs3` — read the first CI `static` job, record the musl result.
-- Postage-vs-invariant-5 ruled in the glossary (**Postage** entry):
-  `*` without postage is malformed, not empty authority.
+- **The musl probe has still not run.** CI run 34724490214 `static` job
+  died in the vendor step (pkgsStatic `writers` python lacks
+  `requests`); `cs3` fixed `iroh-go/nix/default.nix` to vendor via
+  `buildPackages`. The first `static` job on `main` after `bdf5488` is
+  the real link test — read it, then close `cs3` or record the musl
+  failure and the glibc-extension fallback.
+- Rulings still wanted (`thread` beads): `0lo` absent `endpoints` = ∅?;
+  `xwu` verb uniformity (gates M3 relay/`reach-me-at` chains); `5yj`
+  per-edge serial `Send`; `7w5` signed cheap rejects; `7ei` strict
+  `#renew` aud; `7n8` chain cap; `s8n` aud-side speak-as and the mark.
+- From the reports: should a rejected-but-valid `loc` refresh the
+  location cache? (`Result.Loc` stays nil on `ErrChain`.) Filed as a
+  thread bead.
+- Beads `kp4 6tf 02j djs` are merged and noted, **open for the owner to
+  close**; `ax7` too.
 
 ## Suggested next steps
 
-- `cs3` first (cheap, gates the Talos-extension story), then `ax7`
-  (blocks any `reach-me-at` on the wire) and `kp4`.
-- Owner picks M3 (`0bc.3`) vs Phase 0 probes (`359.1.1–.3`).
+- Read the post-`bdf5488` CI `static` job → settle `cs3`.
+- Rule `xwu` (and `0lo`) before starting M3 `0bc.3`; both bite the
+  first `reach-me-at`/`relay` chain.
+- Owner picks M3 (`0bc.3`) vs Mesh v3 Phase 0 probes (`359.1.1–.3`).
