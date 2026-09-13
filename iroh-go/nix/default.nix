@@ -24,10 +24,17 @@ let
   # the flake's nixpkgs (brief: no unrelated input upgrades). Fixed-output,
   # so the hashes are unaffected. Drop this once nixpkgs is bumped past
   # the upstream fix.
-  fetchCargoVendor = pkgs.rustPlatform.fetchCargoVendor.override {
-    writers = pkgs.writers // {
+  #
+  # Both the vendor fetcher and the writers it uses come from
+  # `pkgs.buildPackages`: the vendor derivation is fixed-output and
+  # identical for every target, and when this file is imported with
+  # `pkgs = pkgsStatic` the host `writers` would build the helper script
+  # with a static python env that has no `requests` (CI run 34724490214,
+  # job `static`). Under plain `pkgs`, `buildPackages` is `pkgs` itself.
+  fetchCargoVendor = pkgs.buildPackages.rustPlatform.fetchCargoVendor.override {
+    writers = pkgs.buildPackages.writers // {
       writePython3Bin = name: attrs: content:
-        pkgs.writers.writePython3Bin name attrs
+        pkgs.buildPackages.writers.writePython3Bin name attrs
           (if name != "fetch-cargo-vendor-util" then content else
           builtins.replaceStrings
             [
@@ -48,6 +55,8 @@ let
   # ../regen/iroh-ffi.Cargo.lock and swapped in before vendoring so the
   # vendor dir (fixed-output, cargoHash) matches what cargo will resolve.
   # The assertion makes a lock/pin mismatch fail at eval, not at link time.
+  # Built with `buildPackages` (plain cp, target-independent) so the vendor
+  # derivation that consumes it is one and the same for every target.
   iroh-ffi-src =
     let
       lock = builtins.fromTOML (builtins.readFile ../regen/iroh-ffi.Cargo.lock);
@@ -55,7 +64,7 @@ let
     in
     assert lib.assertMsg (ver "iroh" == sources.iroh-ffi.core && ver "iroh-relay" == sources.iroh-ffi.core)
       "regen/iroh-ffi.Cargo.lock resolves iroh ${ver "iroh"} / iroh-relay ${ver "iroh-relay"}, sources.nix says core ${sources.iroh-ffi.core}";
-    pkgs.runCommand "iroh-ffi-src-core-${sources.iroh-ffi.core}" { } ''
+    pkgs.buildPackages.runCommand "iroh-ffi-src-core-${sources.iroh-ffi.core}" { } ''
       cp -r ${sources.iroh-ffi.src} $out
       chmod -R u+w $out
       cp ${../regen/iroh-ffi.Cargo.lock} $out/Cargo.lock
