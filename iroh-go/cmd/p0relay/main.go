@@ -9,9 +9,10 @@
 //
 // Both take -bind ip:0 to advertise only one interface as a direct
 // candidate (e.g. the LAN address on a host that also runs tailscale).
-//	    connects by id + relay URL only, sends n pings one second apart
-//	    and logs paths after each — watch the selected path move from
-//	    relay:… to ip:… when the peers can hole-punch
+//
+//	connects by id + relay URL only, sends n pings one second apart
+//	and logs paths after each — watch the selected path move from
+//	relay:… to ip:… when the peers can hole-punch
 //
 // Exit 0 when every ping was echoed.
 package main
