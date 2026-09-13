@@ -33,8 +33,10 @@
 // The reply's bytes are handed back to the stream goroutine, so the
 // loop never blocks on I/O. Send (outbound) may run on any goroutine —
 // including inside a handler — and shares only the Mark, the location
-// cache and the outbound seq counters with the loop; those are guarded
-// by one small mutex that is never held across I/O or a handler.
+// cache and the outbound seq counters with the loop. The Mark guards
+// itself (clock.Mark owns its mutex); the location cache and the seq
+// counters are guarded by one small actor mutex that is never held
+// across I/O or a handler.
 //
 // Sends to ONE receiver are serialised (one invocation in flight per
 // edge): the receiver's seq high-water mark is strictly monotone, so
@@ -127,10 +129,13 @@ type Actor struct {
 	// dropped counts mailbox-full drops (diagnostics).
 	dropped atomic.Int64
 
+	// mark is the clock low-water mark. It guards itself (clock.Mark
+	// owns its mutex), so it is deliberately NOT in mu's guarded set.
+	mark clock.Mark
+
 	// mu guards the fields below: shared between the mailbox loop and
 	// Send. Never held across I/O or a handler.
 	mu     sync.Mutex
-	mark   clock.Mark
 	loc    *cert.Cert                   // own current reach-me-at
 	locs   map[cert.ActorID]cert.Cert   // id → latest valid reach-me-at
 	seqOut map[cert.ActorID]int64       // per-receiver outbound counter
@@ -169,11 +174,7 @@ func (a *Actor) HWM() *envelope.HWM { return a.hwm }
 func (a *Actor) Dropped() int64 { return a.dropped.Load() }
 
 // LowWater reports the clock low-water mark.
-func (a *Actor) LowWater() int64 {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.mark.LowWater()
-}
+func (a *Actor) LowWater() int64 { return a.mark.LowWater() }
 
 func (a *Actor) local() int64 {
 	if a.Clock != nil {
@@ -182,15 +183,12 @@ func (a *Actor) local() int64 {
 	return time.Now().Unix()
 }
 
-// nowLocked returns the effective clock max(local, lw). Caller holds mu.
-func (a *Actor) nowLocked() int64 { return a.mark.Now(a.local()) }
+// now returns the effective clock max(local, lw). It needs no actor
+// lock: the Mark guards itself.
+func (a *Actor) now() int64 { return a.mark.Now(a.local()) }
 
 // Now returns the effective clock the actor judges with.
-func (a *Actor) Now() int64 {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.nowLocked()
-}
+func (a *Actor) Now() int64 { return a.now() }
 
 // ---- status wrapper on reply payloads ----------------------------------
 
@@ -384,8 +382,7 @@ func (a *Actor) loop(ctx context.Context) {
 func (a *Actor) process(ctx context.Context, in *inbound) Status {
 	env := in.env
 
-	a.mu.Lock()
-	now := a.nowLocked()
+	now := a.now()
 	res, err := envelope.Verify(env, envelope.Receiver{
 		ID:       a.ID(),
 		Consents: a.Consents,
@@ -397,9 +394,10 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 	// regardless of the verdict (clock contract, ADR-0019).
 	a.mark.ObserveAll(res.Verified)
 	if err == nil && res.Loc != nil {
+		a.mu.Lock()
 		a.updateLocationLocked(env.From, *res.Loc, now)
+		a.mu.Unlock()
 	}
-	a.mu.Unlock()
 
 	if err != nil {
 		return rejectStatus(err)
@@ -517,7 +515,7 @@ func (a *Actor) Send(ctx context.Context, to cert.ActorID, facet string, payload
 	}
 
 	a.mu.Lock()
-	now := a.nowLocked()
+	now := a.now()
 	rloc, err := envelope.VerifyReply(rep, env, now)
 	if err == nil && rloc != nil {
 		a.updateLocationLocked(rep.From, *rloc, now)

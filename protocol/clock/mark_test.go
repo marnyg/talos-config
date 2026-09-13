@@ -1,6 +1,8 @@
 package clock
 
 import (
+	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/marnyg/talos-config/protocol/cert"
@@ -182,3 +184,74 @@ func TestObserveAllMonotone(t *testing.T) {
 		t.Fatalf("Now(100) = %d, want 100", mark.Now(100))
 	}
 }
+
+// TestMarkConcurrent: a Mark guards itself. N goroutines interleave
+// Observe with Now/LowWater reads; the final mark must equal the max
+// iat observed, and no Now/LowWater read may ever exceed it or fall
+// below an iat that had already been observed by that goroutine.
+// Meaningful under -race.
+func TestMarkConcurrent(t *testing.T) {
+	const (
+		workers = 16
+		perW    = 200
+	)
+
+	var mark Mark
+	var want int64
+	iats := make([][]int64, workers)
+	for w := 0; w < workers; w++ {
+		iats[w] = make([]int64, perW)
+		for i := range iats[w] {
+			// deterministic, well-spread, no shared rand source
+			iat := int64((w*7919 + i*104729) % 100003)
+			iats[w][i] = iat
+			if iat > want {
+				want = iat
+			}
+		}
+	}
+
+	errs := make(chan string, workers)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(mine []int64) {
+			defer wg.Done()
+			var seen int64 // max iat this goroutine has observed
+			for _, iat := range mine {
+				mark.Observe(mkCert(iat, iat+life))
+				if iat > seen {
+					seen = iat
+				}
+				// Now(0) is the effective clock with a zero local:
+				// it must be at least every iat already folded in,
+				// and never above the global max.
+				if got := mark.Now(0); got < seen || got > want {
+					errs <- "Now(0) = " + itoa(got) + ", want in [" + itoa(seen) + ", " + itoa(want) + "]"
+					return
+				}
+				if got := mark.LowWater(); got < seen || got > want {
+					errs <- "LowWater() = " + itoa(got) + ", want in [" + itoa(seen) + ", " + itoa(want) + "]"
+					return
+				}
+			}
+		}(iats[w])
+	}
+	wg.Wait()
+	close(errs)
+	for msg := range errs {
+		t.Fatal(msg)
+	}
+
+	if got := mark.LowWater(); got != want {
+		t.Fatalf("final lw = %d, want %d", got, want)
+	}
+	if got := mark.Now(0); got != want {
+		t.Fatalf("final Now(0) = %d, want %d", got, want)
+	}
+	if got := mark.Now(want + 1); got != want+1 {
+		t.Fatalf("final Now(%d) = %d, want %d", want+1, got, want+1)
+	}
+}
+
+func itoa(v int64) string { return strconv.FormatInt(v, 10) }
