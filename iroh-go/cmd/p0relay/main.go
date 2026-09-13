@@ -6,6 +6,9 @@
 //	    prints its endpoint id, accepts connections, echoes every
 //	    bi-stream and logs the connection's paths as they change
 //	p0relay dial -relay https://relay.example -id <hex> [-n 20]
+//
+// Both take -bind ip:0 to advertise only one interface as a direct
+// candidate (e.g. the LAN address on a host that also runs tailscale).
 //	    connects by id + relay URL only, sends n pings one second apart
 //	    and logs paths after each — watch the selected path move from
 //	    relay:… to ip:… when the peers can hole-punch
@@ -44,7 +47,7 @@ func usage() {
 	os.Exit(2)
 }
 
-func bind(relay string) *iroh.Endpoint {
+func bind(relay, bindAddr string) *iroh.Endpoint {
 	if lvl := os.Getenv("P0_LOG"); lvl != "" { // trace|debug|info|warn
 		iroh.SetLogLevel(map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl])
 	}
@@ -57,7 +60,11 @@ func bind(relay string) *iroh.Endpoint {
 	}
 	preset := iroh.PresetMinimal()
 	alpns := [][]byte{[]byte(alpn)}
-	ep, err := iroh.EndpointBind(iroh.EndpointOptions{Preset: &preset, Alpns: &alpns, RelayMode: &mode})
+	opts := iroh.EndpointOptions{Preset: &preset, Alpns: &alpns, RelayMode: &mode}
+	if bindAddr != "" { // e.g. 10.0.0.11:0 — advertise only that interface as a candidate
+		opts.BindAddr = &bindAddr
+	}
+	ep, err := iroh.EndpointBind(opts)
 	if err != nil {
 		fatal("bind: %v", err)
 	}
@@ -70,8 +77,9 @@ func bind(relay string) *iroh.Endpoint {
 func listen(args []string) {
 	fs := flag.NewFlagSet("listen", flag.ExitOnError)
 	relay := fs.String("relay", "", "relay URL")
+	bindAddr := fs.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 	_ = fs.Parse(args)
-	ep := bind(*relay)
+	ep := bind(*relay, *bindAddr)
 	defer ep.Destroy()
 	for {
 		inc := ep.AcceptNext()
@@ -124,11 +132,12 @@ func dial(args []string) {
 	relay := fs.String("relay", "", "relay URL")
 	id := fs.String("id", "", "peer endpoint id (hex)")
 	n := fs.Int("n", 20, "pings to send, one per second")
+	bindAddr := fs.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 	_ = fs.Parse(args)
 	if *id == "" {
 		fatal("-id is required")
 	}
-	ep := bind(*relay)
+	ep := bind(*relay, *bindAddr)
 	defer ep.Destroy()
 	peer, err := iroh.EndpointIdFromString(*id)
 	if err != nil {
