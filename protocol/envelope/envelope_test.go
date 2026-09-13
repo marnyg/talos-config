@@ -79,7 +79,11 @@ func reachMeAt(t testing.TB, s cert.Signer, exp int64) *cert.Cert {
 // shape of the errata VerifyChain contract (consent lookup by the first
 // link's signer, Attenuate fold, target/facet/expiry, aud == signer on
 // the last link) without speak-as or group resolution. It records its
-// calls so tests can assert cost order and argument plumbing.
+// calls so tests can assert cost order and argument plumbing. Like
+// cert.VerifyChain it returns the rooted certs it verified so far even
+// when it rejects — the receiver-signed root and every link whose
+// signature checked — so Verify's "Verified alongside ErrChain" contract
+// is exercised by the fake, not just by cert.VerifyChain.
 type stubChain struct {
 	mu    sync.Mutex
 	calls []stubCall
@@ -116,23 +120,23 @@ func (s *stubChain) verify(receiver cert.ActorID, consents, chain, speakAs []cer
 	eff := *root
 	for _, link := range chain {
 		if cert.Verify(link) != nil {
-			return cert.Cert{}, nil, errors.New("link sig")
-		}
-		var err error
-		if eff, err = cert.Attenuate(eff, link); err != nil {
-			return cert.Cert{}, nil, err
+			return cert.Cert{}, verified, errors.New("link sig")
 		}
 		verified = append(verified, link)
+		var err error
+		if eff, err = cert.Attenuate(eff, link); err != nil {
+			return cert.Cert{}, verified, err
+		}
 	}
 	switch {
 	case eff.Exp <= now:
-		return cert.Cert{}, nil, errors.New("expired")
+		return cert.Cert{}, verified, errors.New("expired")
 	case !containsID(eff.Cav.Target, receiver):
-		return cert.Cert{}, nil, errors.New("target")
+		return cert.Cert{}, verified, errors.New("target")
 	case !containsStr(eff.Cav.Facet, facet):
-		return cert.Cert{}, nil, errors.New("facet")
+		return cert.Cert{}, verified, errors.New("facet")
 	case chain[len(chain)-1].Aud != string(signer):
-		return cert.Cert{}, nil, errors.New("aud != signer")
+		return cert.Cert{}, verified, errors.New("aud != signer")
 	}
 	return eff, verified, nil
 }

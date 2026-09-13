@@ -161,6 +161,13 @@ func (a *authCtx) root(c Cert) {
 
 // sigOK ports the Quint sigOk with resolution: signature verifies, the
 // EFFECTIVE expiry is in the future, and no unknown caveat is present.
+//
+// The Unknown check is kept for 1:1 fidelity with the model's `sigOk`,
+// not because the wire path can reach it: DecodeCert rejects unknown
+// caveat keys outright, so a decoded cert never arrives here tainted.
+// It bites only for certs built in-process (tests, the rapid fault
+// generator) and for Attenuate's fold results, which never pass through
+// sigOK. Do not read it as evidence that unknown caveats survive Decode.
 func (a *authCtx) sigOK(c Cert, effExp, now int64) bool {
 	return a.verify(c) && effExp > now && !c.Cav.Unknown
 }

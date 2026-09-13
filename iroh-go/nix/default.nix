@@ -31,21 +31,32 @@ let
   # `pkgs = pkgsStatic` the host `writers` would build the helper script
   # with a static python env that has no `requests` (CI run 34724490214,
   # job `static`). Under plain `pkgs`, `buildPackages` is `pkgs` itself.
+  #
+  # The backport is a textual patch of upstream's helper, so a nixpkgs
+  # bump that rewrites those lines would turn it into a silent no-op and
+  # the 403s would be back. The assertion makes that an eval error
+  # instead: if it fires, upstream has either changed the text (re-target
+  # the patch) or already carries the fix (drop this override).
   fetchCargoVendor = pkgs.buildPackages.rustPlatform.fetchCargoVendor.override {
     writers = pkgs.buildPackages.writers // {
       writePython3Bin = name: attrs: content:
         pkgs.buildPackages.writers.writePython3Bin name attrs
           (if name != "fetch-cargo-vendor-util" then content else
-          builtins.replaceStrings
-            [
-              "    session = requests.Session()\n"
-              "https://crates.io/api/v1/crates/{pkg[\"name\"]}/{pkg[\"version\"]}/download"
-            ]
-            [
-              "    session = requests.Session()\n    session.headers[\"User-Agent\"] = \"nixpkgs-fetchCargoVendor/2 (https://github.com/NixOS/nixpkgs)\"\n"
-              "https://static.crates.io/crates/{pkg[\"name\"]}/{pkg[\"version\"]}/download"
-            ]
-            content);
+          let
+            patched = builtins.replaceStrings
+              [
+                "    session = requests.Session()\n"
+                "https://crates.io/api/v1/crates/{pkg[\"name\"]}/{pkg[\"version\"]}/download"
+              ]
+              [
+                "    session = requests.Session()\n    session.headers[\"User-Agent\"] = \"nixpkgs-fetchCargoVendor/2 (https://github.com/NixOS/nixpkgs)\"\n"
+                "https://static.crates.io/crates/{pkg[\"name\"]}/{pkg[\"version\"]}/download"
+              ]
+              content;
+          in
+          assert lib.assertMsg (patched != content)
+            "iroh-go/nix: the fetchCargoVendor crates.io UA/CDN backport no longer matches upstream fetch-cargo-vendor-util — re-target it or drop it (nixpkgs may carry the fix now)";
+          patched);
     };
   };
   buildRustPackage = pkgs.rustPlatform.buildRustPackage.override { inherit fetchCargoVendor; };
