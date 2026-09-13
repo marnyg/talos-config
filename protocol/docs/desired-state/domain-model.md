@@ -323,7 +323,10 @@ whose deployment-free form differs from the talos wording. Source:
   type: `{iss: P, aud: "*", can: reach-me-at, cav: {endpoints:
   […]}, iat, exp ≈ 1 h}`. `cav.endpoints` is the verb's object in a
   structured caveat (the same move ADR-0017 made for `target`/`facet`);
-  attenuation is intersection. Entries are **transport-tagged opaque
+  attenuation is intersection, and an **absent set caveat is ∅** —
+  `endpoints` included; a constraint's absence is not a permission, so
+  a link that wants to permit endpoints enumerates them (protocol
+  ADR-0002, ruling `0lo`). Entries are **transport-tagged opaque
   strings** (`iroh:relay=https://…`, `iroh:udp=ip:port`, `mem:<name>`
   for tests); `Transport.Dial(ctx, id, hints)` takes the list and
   ignores tags it does not own — the protocol never parses an address.
