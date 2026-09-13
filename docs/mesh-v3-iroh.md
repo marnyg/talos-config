@@ -182,7 +182,8 @@ All on scratch infra; no repo changes beyond a spike branch.
    sidecar), 443 + UDP; two peers behind different NATs connect via
    relay and hole-punch LAN-direct when co-located. **All n0
    endpoints disabled and verified absent** (no DNS discovery, no
-   default relays — packet-capture check).
+   default relays — packet-capture check). **PASSED 2026-09-13** —
+   see §P0.1 below (plain-HTTP relay behind fly TLS, QAD off).
 2. **Android feasibility**: iroh (FFI/gomobile) inside a
    `VpnService` with gvisor netstack fake-IP; Jellyfin app streams a
    4K remux ≥ 80 Mbps sustained through it (kill-criterion parity
@@ -303,6 +304,59 @@ commits to the extension shape. Second risk: uniffi-bindgen-go is a
 single-vendor (NordSecurity) project that tracks uniffi with a lag;
 pin it, and treat an iroh-ffi uniffi minor bump as the moment to
 re-check the fixups.
+
+### P0.1 Self-hosted relay on fly — data (2026-09-13)
+
+Bead `talos-config-359.1.1`, branch `spike/mesh-v3-p0`. **PASS on all
+four sub-checks.** Scratch app `marnyg-iroh-relay-spike`
+(`fly/relay-spike/fly.toml`): upstream image
+`n0computer/iroh-relay:v1.1.0`, no build step, config via `[[files]]`.
+Probe tool `iroh-go/cmd/p0relay` (`listen` / `dial`, logs the
+connection's paths per ping; `nix build .#p0relay-static` = musl binary
+for containers/nodes).
+
+| check | result |
+|---|---|
+| relay behind fly's TLS terminator | **PASS.** The 1.x relay protocol is a WebSocket upgrade on `/relay` (+ `/ping`, `/generate_204` probes), so the relay runs in **plain-HTTP mode** (`tls` absent, `http_bind_addr [::]:3340`) behind `[http_service]`; clients dial `wss://…/relay` through the fly proxy. No cert handling on the relay. Deployed in ~1 min; peers from macOS, NixOS, a Docker container and a fly machine in `ams` all homed on it (rtt 45 ms from Oslo → `arn`). |
+| QUIC address discovery (QAD, UDP 7842) | **Deliberately off.** QAD needs the relay to *own* a TLS cert (QUIC can't be proxied by fly's TLS handler) and only serves *remote* hole-punching, which ADR-0006 rules out. Clients still probe 7842 once (3 s timeout at startup, harmless); `iroh-ffi` has `RelayConfig{quic_port: nil}` to silence it — small follow-up in `iroh-transport`. **Trade-off:** a peer behind *any* NAT (even Docker's) has no reachable candidate to advertise; direct paths need at least one side with a LAN-reachable address. That is the production case (nodes, TV, laptop on the LAN). Revisit only if remote-direct ever becomes a goal (DNS-01 cert shipped as a fly secret). |
+| two peers, different NATs, via relay | **PASS.** fly machine (`ams`, fly NAT) → NixOS box (home NAT): 10/10 echoes, `*relay:` only, 45 ms. Docker-on-mac (Docker NAT + home NAT) → NixOS: same. |
+| co-located LAN-direct hole-punch | **PASS.** Docker-on-mac (behind Docker NAT) → NixOS `10.0.0.11`: first ping over the relay (43 ms), **direct `*ip:10.0.0.11` within 1 s**, 6–17 ms after; NixOS sees `*ip:10.0.0.7:<nat port>`. Two Linux processes on one host: direct within 40 ms. DISCO exchanged LAN candidates over the relay with `udp_v4: false` in the net report — punching does not depend on QAD. |
+| n0 infrastructure absent | **PASS** (packet capture inside the Docker peer for a full dial): DNS = `A/AAAA marnyg-iroh-relay-spike.fly.dev` only; destinations = relay `:443` (relay + HTTPS probe), `:80` (captive-portal probe), `:7842` (QAD attempts), the LAN peer, self. Debug tracing (`P0_LOG=debug`) agrees: `PresetMinimal` adds nothing. |
+
+Test-bed findings that cost most of the day and matter beyond the spike:
+
+- **This laptop cannot send LAN UDP from unsigned binaries.** Cisco
+  Secure Client *socket filter* + Microsoft Defender network extension
+  return `EPIPE` from `sendmsg` for `p0relay` to any `en0` destination
+  (own LAN IP included), while `nc`/python/C from the same host to the
+  same address succeed and the Tailscale `utun` path works. Relay
+  paths are unaffected. Consequence: the Mesh v3 desktop daemon on
+  this machine will be **relay-only** unless signed/allow-listed —
+  check whether today's nebula gets LAN-direct here either
+  (bead filed).
+- **Host firewalls block the punch when the other side is NAT'd**: the
+  NixOS default firewall dropped the Docker peer's punch until inbound
+  UDP on `wlp12s0` was allowed (temporary `iptables -I nixos-fw`). Talos
+  nodes have no host firewall by default; the node agent must bind a
+  UDP port that stays reachable if a Talos ingress firewall is ever
+  enabled. Between two LAN-reachable Linux hosts the punch is symmetric
+  and conntrack lets it through either way.
+- Two in-process endpoints (`smoke`) hole-punch to `127.0.0.1` even on
+  the filtered laptop — an in-process test proves nothing about the
+  host's UDP path.
+
+**Embedding shape for Phase 1 (not built here):** the relay is a Rust
+binary; `iroh-ffi` binds only the client `Endpoint`, so "in the hub
+process" means **config-server spawns `iroh-relay` as a child and
+reverse-proxies three paths** (`/relay` WebSocket upgrade, `/ping`,
+`/generate_204`) on its existing `:8080` → 443 stays the single
+entrypoint (invariant 5). A fly process-group "sidecar" is a separate
+machine that cannot share `[http_service]`; a second TLS port (KMS-8443
+style) is the fallback. Relay `access` supports an HTTP-POST hook with
+`X-Iroh-Endpoint-Id` — the membership gate for later.
+
+The scratch app stays up (shared-cpu-1x, ~$2/mo) because P0.3
+(`359.1.3`) dials it.
 
 ### Phase 1 — identity plane beside nebula (dual plane)
 
