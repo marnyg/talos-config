@@ -320,6 +320,8 @@
           # that `nix flake check` trips over; mkMerge drops it cleanly.
           (lib.mkIf pkgs.stdenv.isLinux {
             packages.iroh-transport-static = irohTransport.static;
+            # nix build .#p0relay-static — static musl smoke + p0relay (P0.1 probe)
+            packages.p0relay-static = irohTransport.p0relayStatic;
           })
         ];
     };
