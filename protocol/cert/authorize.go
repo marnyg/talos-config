@@ -2,6 +2,7 @@ package cert
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -93,6 +94,14 @@ var (
 	// ErrUnknownCaveat: some link carries a caveat this verifier does not
 	// recognise, or two links set conflicting postage (taint).
 	ErrUnknownCaveat = errors.New("cert: effective chain carries an unknown caveat")
+	// ErrPostageConflict IS an ErrUnknownCaveat (errors.Is holds) with a
+	// sharper name: the taint came from two links setting disagreeing
+	// postage, not from an unrecognised caveat key. Taint stays ONE
+	// concept — the model (verification/quint/authorize.qnt, cav.unknown)
+	// has no error identities, so this split is diagnostics only and the
+	// 1:1 mapping is preserved. Never rejects anything ErrUnknownCaveat
+	// would have accepted.
+	ErrPostageConflict = fmt.Errorf("%w: two links set conflicting postage", ErrUnknownCaveat)
 	// ErrTargetMismatch: the effective target omits the receiver.
 	ErrTargetMismatch = errors.New("cert: effective target omits the receiver")
 	// ErrFacetMismatch: the effective facet omits the requested facet.
@@ -379,7 +388,9 @@ type chainVerdict struct {
 //     chain verified; the caller resolves the group (Authorize).
 //  4. On the effective cert: Target ∋ receiver, Facet ∋ facet, no
 //     Unknown caveat (taint is OR over the chain, including conflicting
-//     postage), Exp > now (min over the chain), every speak-as used live
+//     postage — that case reports the sharper ErrPostageConflict, which
+//     is still an ErrUnknownCaveat), Exp > now (min over the chain),
+//     every speak-as used live
 //     at now. Delegable:false admits no following link.
 //
 // An empty caller chain is legal: the consented sovereign presents the
@@ -462,6 +473,8 @@ func (a *authCtx) chainUnder(consent Cert, chain, speakAs []Cert, receiver, sign
 		return chainVerdict{}, rank, ErrTargetMismatch
 	case !containsStr(eff.Cav.Facet, facet):
 		return chainVerdict{}, rank, ErrFacetMismatch
+	case eff.Cav.PostageConflict:
+		return chainVerdict{}, rank, ErrPostageConflict
 	case eff.Cav.Unknown:
 		return chainVerdict{}, rank, ErrUnknownCaveat
 	case eff.Exp <= now:
@@ -641,7 +654,10 @@ func consentTargets(consents []Cert, r ActorID) bool {
 // the intersections; Exp is the min; an unknown caveat on either side
 // taints the result. Postage is MONOTONE: whichever side set it carries
 // forward; if both set it they must agree, else the result is tainted
-// (Unknown) and the chain rejects. A parent with delegable:false admits
+// (Unknown) and the chain rejects. A conflict also sets the verifier-side
+// PostageConflict flag — the same taint, OR-folded the same way, kept
+// apart only so chainUnder can report ErrPostageConflict instead of the
+// bare ErrUnknownCaveat. A parent with delegable:false admits
 // no following link (ErrNotDelegable); a child with another verb than
 // its parent is not a link of the same chain (ErrVerbMismatch).
 func Attenuate(parent, child Cert) (Cert, error) {
@@ -663,6 +679,7 @@ func Attenuate(parent, child Cert) (Cert, error) {
 		eff.Cav.Postage = parent.Cav.Postage
 	}
 	eff.Cav.Unknown = parent.Cav.Unknown || child.Cav.Unknown || conflict
+	eff.Cav.PostageConflict = parent.Cav.PostageConflict || child.Cav.PostageConflict || conflict
 	eff.Exp = min(parent.Exp, child.Exp)
 	return eff, nil
 }
