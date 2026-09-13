@@ -67,12 +67,24 @@ Status, 2026-09-13:
   `pkgs.buildPackages`; the fixed-output vendor drv is one and the same
   for the glibc and musl builds
   (`nix eval .#packages.x86_64-linux.iroh-transport{,-static}.iroh-ffi.cargoDeps.drvPath`
-  agree). **Read the next `static` job after this lands** and record
-  it here. Expected friction, per iroh-go/README.md row (b):
-  `aws-lc-rs` (cmake + C compiler under musl), `getrandom`/`libc` musl
-  features, and whether `pkgsStatic.rustPlatform` picks the
-  `x86_64-unknown-linux-musl` target for the FFI crate without extra
-  `CARGO_BUILD_TARGET` plumbing.
+  agree).
+- **x86_64-linux, second `static` job** (run 34754508013, job
+  103716670370, main @ ef61ed4, 2026-09-13): **the Rust side links
+  under musl.** `iroh-ffi-static-x86_64-unknown-linux-musl-1.1.0`
+  (staticlib; cargo drops the `cdylib` crate type for that target with
+  a warning) and `iroh-relay-static-…-musl` both built from a cold
+  cache in 17 m / 11 m — none of the feared friction (`aws-lc-rs`
+  cmake, `getrandom`/`libc` musl features, `CARGO_BUILD_TARGET`) bit;
+  `pkgsStatic.rustPlatform` selected the musl target on its own. The
+  job then failed at `iroh-transport-0.1.0-go-modules-…-musl`: a
+  **stale `vendorHash`**, not musl — `go mod vendor` copies the
+  `replace`d `../protocol` tree into `vendor/`, and the post-M2 swarm
+  had changed `protocol/*.go`; the glibc `test` job (and darwin
+  `flake check`) stayed green only because the old FOD output was
+  cached. Hash refreshed in `nix/default.nix`. **Still unproven:** the
+  Go side — cgo linking `libiroh_ffi.a` with `-extldflags -static`
+  against musl and the 6-test suite running on it. Read the third
+  `static` job and record it here.
 
 If the probe fails for a musl-specific reason, the fallback for the
 Talos extension is unchanged: a glibc-dynamic binary inside an extension

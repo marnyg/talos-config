@@ -40,9 +40,14 @@ let
       inherit src;
       modRoot = "iroh-transport";
       # protocol's third-party deps (secp256k1, jcs, x/crypto, rapid);
-      # the two local replaces are vendored from the source tree.
+      # the two local replaces are vendored from the source tree, so this
+      # hash changes whenever protocol/*.go or iroh-go/iroh/*.go change.
+      # A cached FOD output hides the drift (CI run 34754508013: glibc job
+      # green from cache, musl job rebuilt the FOD and mismatched) — after
+      # touching those trees, check with
+      #   nix build .#iroh-transport.goModules --rebuild
       # Same recompute caveat as config-server-bin in flake.nix: git add first.
-      vendorHash = "sha256-7ik9LfyaU6UUKi3Yg/vQveydTh9gIWVOYATbQ4z47us=";
+      vendorHash = "sha256-X5SJJIcookpDFvW/4vGo+gbt7jmDKrICsSjHauyLDDc=";
       env.CGO_ENABLED = 1;
       env.CGO_LDFLAGS = irohGo'.cgoLdflags;
       nativeBuildInputs = [ irohGo'.iroh-relay ];
