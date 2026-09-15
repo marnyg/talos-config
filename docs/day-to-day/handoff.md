@@ -47,12 +47,15 @@ bead `359.1.3` closed).
 
 ## Suggested next steps
 
-- **`359.1.2` Android feasibility — planned 2026-09-16, not started.**
-  The whole plan (path, four owner-confirmed decisions, seven
-  fail-fast steps, traps) is in
-  [`docs/mesh-v3-p0.2-android.md`](../mesh-v3-p0.2-android.md); start
-  at step 1 (cross-compile `libiroh_ffi.a` for
-  `aarch64-linux-android` on the NixOS box via `androidenv`) on branch
-  `spike/mesh-v3-p0.2`. Bead is claimed / in_progress.
+- **`359.1.2` Android feasibility — in progress** on branch
+  `spike/mesh-v3-p0.2`. Plan + progress log (what is built, what is
+  running on the NixOS box, the blocker) in
+  [`docs/mesh-v3-p0.2-android.md`](../mesh-v3-p0.2-android.md).
+  Steps 1–4 are code-complete and pushed; the android `libiroh_ffi.a`
+  cross-build is running unattended on the box.
+  **Blocked on an owner decision:** Jellyfin has no media — the
+  media Longhorn volumes' only replica is on w1 (down since
+  2026-08-10). Power w1 on, or stand-in Jellyfin on the box. Also
+  ask: cp1 rebooted 2026-09-15 10:31Z — was that the owner?
 - Then `359.1.5` gate decision; `5cz` and `kql` ride on it.
 - `xwu` (verb = root consent's verb) stays the M3 pre-work.

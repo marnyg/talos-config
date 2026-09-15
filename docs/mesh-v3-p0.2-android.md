@@ -2,7 +2,8 @@
 
 Bead `talos-config-359.1.2` (blocks gate `359.1.5` and `359.9.4`).
 Parent plan: [`mesh-v3-iroh.md`](mesh-v3-iroh.md) §Phase 0 check 2,
-kill-criterion 2. **Status: planned 2026-09-16, not started.** When
+kill-criterion 2. **Status: in progress since 2026-09-16 on branch
+`spike/mesh-v3-p0.2` — see "Progress log" at the end.** When
 this spike lands, fold the result into `mesh-v3-iroh.md §P0.2` (same
 shape as §P0.1/§P0.3) and delete this file.
 
@@ -178,6 +179,38 @@ Certs/`authorize()` on accept (ALPN gates the forward table only);
 git-derived name→NodeId map; HTTPS / ingress over the tunnel (HTTP to
 the NodePort is enough for a bitrate); enrollment / device flow;
 TV/phone re-enrollment (`359.9.4`); the desktop fake-IP TUN.
+
+## Progress log
+
+### 2026-09-16 — steps 1–5 built, blocked on media
+
+Branch `spike/mesh-v3-p0.2` (pushed). Bead `359.1.2` in_progress.
+
+| step | state | where |
+|---|---|---|
+| 1 cross-compile `libiroh_ffi.a` | **building** on the NixOS box (`/tmp/android-ffi.log`, output `/tmp/android-ffi-result`); eval clean, NDK 27 toolchain + bionic built, cross `rustc 1.93.0` for `aarch64-linux-android` compiling (~1 h). No Rust changes needed so far | `iroh-go/nix/android.nix` = `import ./. { pkgs = pkgsCross.aarch64-android-prebuilt }` — same pipeline, same patched lock. Impure/unfree (`NIXPKGS_ALLOW_UNFREE=1 nix build --impure -f iroh-go/nix/android.nix`) |
+| 2 gomobile package | **written, compiles** on linux/amd64 against the native lib (`go vet` + `go build` clean on the box); not yet bound for android | `iroh-go/mobile/` (own module `…/iroh-go/mobile`, `replace ../`): `tunnel.go` (Start/Stop/StatsJSON, one iroh connection with redial, per-flow `OpenBi` + p0agent's `pipe`), `netstack.go`, `dns.go`. `iroh-go/iroh/link_android.go` adds `-llog -ldl -lm` for GOOS=android |
+| 3 netstack + fake IP | **written** | gvisor `fdbased` on the fd, promiscuous + spoofing NIC, default route, `tcp.NewForwarder` → `handleTCP`, `udp.NewForwarder` on :53 only → `fakeDNS`. Fake plan: tun `198.18.0.1`, resolver `198.18.0.2`, names from `198.18.1.0` up; `*.mesh.internal` A → fake IP, AAAA → empty NOERROR, other names → underlay via `SocketProtector`-protected socket. TCP rcv/snd buffers 1 MiB default / 4 MiB max, SACK, moderate-rcvbuf on |
+| 4 spike APK | **written, not built** | `iroh-go/android-p0/` (`dev.marnyg.p0mesh`): `P0VpnService.kt` (`addAddress 198.18.0.1/32`, `addRoute 198.18.0.0/15`, `addDnsServer 198.18.0.2`, MTU 1280, `detachFd` → `P0mobile.start`), `MainActivity.kt` (relay + peer inputs in prefs, Start/Stop, 1 s stats poll with a Mbps readout), `build-aar.sh` (gomobile, android/arm64 only, `IROH_FFI_ANDROID_LIB` = dir with the android `.a`), `shell.nix` (androidenv SDK 34 + NDK 27.0.12077973 + gradle + jdk17; being realised on the box, `/tmp/android-shell.log`) |
+| 5 stand-in agent | **not started** | `~/p0/result/bin/p0agent` on the box is the P0.3 static build. cp1 LAN lease today: **`10.0.0.58`** (apid :50000 answers; `talosctl -e 10.0.0.58 -n 10.0.0.58` works). Kubeconfig fetched to the Mac at `/tmp/kc` (`kubectl --server https://10.0.0.58:6443 --insecure-skip-tls-verify`; kube SANs are mesh-only) |
+| 6 measure | **blocked** | see below |
+
+**Blocker found (outside the spike):** Jellyfin cannot stream anything.
+`media/{movies,tv,downloads}` Longhorn volumes are `faulted`: their only
+replica is on **w1**, down since 2026-08-10 (`numberOfReplicas: 1`,
+bead `0q0`). Jellyfin pod is `ContainerCreating` / `FailedAttachVolume`.
+Also noticed: **cp1 rebooted at 2026-09-15 10:31Z** (dmesg), cause
+unknown at time of writing; longhorn CSI sidecars and media pods from
+before show `ContainerStatusUnknown`. Options put to the owner: (1)
+power w1 on, (2) stand-in Jellyfin on the NixOS box behind the stand-in
+agent with a caveat in the writeup, (3) both. **Owner decision
+pending.**
+
+Next when resumed: check `/tmp/android-ffi.log` finished →
+`IROH_FFI_ANDROID_LIB=/tmp/android-ffi-result/lib` → enter
+`android-p0/shell.nix` → `./build-aar.sh` (expect the cgo link to be
+the next fight) → `gradle assembleDebug` → sideload → step 5 → step 6
+once media is decided.
 
 ## Scratch infra this spike adds (tear down or adopt at the gate)
 
