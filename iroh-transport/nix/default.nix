@@ -81,9 +81,10 @@ in
   # iroh-go/README.md "CGO / linking story" row (b)). Only meaningful on
   # linux (musl); pkgsStatic on darwin still links libSystem dynamically.
   static = mkTests { pkgs' = pkgs.pkgsStatic; irohGo' = irohGoStatic; static = true; };
-  # Fully static iroh-go/cmd/{smoke,p0relay} (musl): the Mesh v3 P0.1 probe
-  # binary that runs in any Linux container / on a Talos node. Tests off —
-  # `static` above is the gate; this is a tool build.
+  # Fully static iroh-go/cmd/{smoke,p0relay,p0agent} (musl): the Mesh v3
+  # P0.1 probe and the P0.3 Talos-extension agent, binaries that run in any
+  # Linux container / on a Talos node. Tests off — `static` above is the
+  # gate; this is a tool build.
   p0relayStatic = irohGoStatic.smoke.overrideAttrs (old: {
     pname = "p0relay-static";
     ldflags = old.ldflags ++ [ "-linkmode" "external" "-extldflags" "-static" ];
