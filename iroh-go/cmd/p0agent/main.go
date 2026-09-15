@@ -35,6 +35,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -173,17 +174,24 @@ func serve(args []string) {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
+	var stopping atomic.Bool
 	go func() {
 		s := <-sig
+		stopping.Store(true)
+		// Close() sends CONNECTION_CLOSE to peers (the bridge redials at
+		// once instead of waiting out the QUIC idle timeout); exit after.
 		logf("%v: closing endpoint", s)
 		_ = ep.Close()
-		ep.Destroy()
+		logf("closed")
 		os.Exit(0)
 	}()
 
 	for {
 		inc := ep.AcceptNext()
 		if inc == nil || *inc == nil {
+			if stopping.Load() {
+				select {} // shutdown in flight; the handler above exits
+			}
 			fatal("accept_next returned none (endpoint closed?)")
 		}
 		accepting, err := (*inc).Accept()
