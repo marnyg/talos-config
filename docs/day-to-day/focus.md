@@ -8,9 +8,10 @@ picked Phase 0 over protocol M3 on 2026-09-13 (riskiest-first; the
 probes gate `0bc.2.7`, actors on real Talos nodes, which is the stated
 end goal). P0.4 (API churn), P0.1 (self-hosted relay on fly) and
 P0.3 (Talos extension: `ext-p0agent` live on cp1 since 2026-09-15)
-have passed. Next is **P0.2 Android feasibility** (`359.1.2`: iroh in a
-`VpnService` with gvisor fake-IP, 4K remux ≥ 80 Mbps, 2 h battery),
-then the gate decision `359.1.5`. Any failed check re-defers Mesh v3
+have passed. **In progress: P0.2 Android feasibility** (`359.1.2`: iroh in a
+`VpnService` with gvisor fake-IP, 4K remux ≥ 80 Mbps, 2 h battery) —
+working plan in `docs/mesh-v3-p0.2-android.md`, branch
+`spike/mesh-v3-p0.2`; then the gate decision `359.1.5`. Any failed check re-defers Mesh v3
 (`359`) — that is a valid outcome, not a setback.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016,

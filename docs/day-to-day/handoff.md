@@ -47,8 +47,12 @@ bead `359.1.3` closed).
 
 ## Suggested next steps
 
-- `359.1.2` Android feasibility (last Phase 0 check): iroh via the
-  in-house binding inside `VpnService` + gvisor fake-IP; 4K remux
-  ≥ 80 Mbps sustained, battery over 2 h.
+- **`359.1.2` Android feasibility — planned 2026-09-16, not started.**
+  The whole plan (path, four owner-confirmed decisions, seven
+  fail-fast steps, traps) is in
+  [`docs/mesh-v3-p0.2-android.md`](../mesh-v3-p0.2-android.md); start
+  at step 1 (cross-compile `libiroh_ffi.a` for
+  `aarch64-linux-android` on the NixOS box via `androidenv`) on branch
+  `spike/mesh-v3-p0.2`. Bead is claimed / in_progress.
 - Then `359.1.5` gate decision; `5cz` and `kql` ride on it.
 - `xwu` (verb = root consent's verb) stays the M3 pre-work.

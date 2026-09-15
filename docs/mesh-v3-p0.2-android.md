@@ -1,0 +1,187 @@
+# Mesh v3 — P0.2 Android feasibility: working plan
+
+Bead `talos-config-359.1.2` (blocks gate `359.1.5` and `359.9.4`).
+Parent plan: [`mesh-v3-iroh.md`](mesh-v3-iroh.md) §Phase 0 check 2,
+kill-criterion 2. **Status: planned 2026-09-16, not started.** When
+this spike lands, fold the result into `mesh-v3-iroh.md §P0.2` (same
+shape as §P0.1/§P0.3) and delete this file.
+
+This file exists so a fresh session can pick the spike up without
+re-deriving it. Read it together with `docs/day-to-day/handoff.md`.
+
+## Pass / fail
+
+**Pass:** the Jellyfin Android app streams a 4K remux **≥ 80 Mbps
+sustained** through the tunnel (parity with mesh-v2 kill-criterion 3),
+and battery over a 2 h stream on a phone is acceptable to the owner.
+**Fail ⇒ kill-criterion 2 fires:** record why in `mesh-v3-iroh.md`,
+re-defer `359`, keep nebula. A fail is a valid outcome.
+
+## Path under test (the end-state Android/TV design in miniature)
+
+```
+Jellyfin app ──TCP to fake IP──▶ VpnService tun fd
+                                    │  (Kotlin owns fd, routes, DNS server)
+                                    ▼
+                         gvisor netstack (Go, fdbased link endpoint)
+                          ├─ UDP/53 on the fake resolver:
+                          │    *.mesh.internal → fake IP from 198.18.0.0/15
+                          │    everything else → underlay via protected socket
+                          │    (dnsshim pattern, config-server/mobile/dnsshim.go)
+                          └─ TCP forwarder: per flow to a fake IP →
+                                iroh stream, ALPN mesh/http/v1, to the mapped NodeId
+                                    │
+                                    ▼ (relay first, LAN-direct hole-punch expected)
+                          p0agent serve  -forward mesh/http/v1=<jellyfin>:30096
+```
+
+Split routing: only `198.18.0.0/15` + the fake resolver IP are added
+as VPN routes; the rest of the phone's traffic never enters the tunnel.
+One name in the spike: `jellyfin.mesh.internal → cp1's NodeId`
+(hard-coded name→NodeId map; the real one is git-derived, Phase 1).
+
+Everything on the device is **Go in one gomobile AAR**: `iroh-go`
+(in-house uniffi binding, ADR-0021) + `gvisor.dev/gvisor/pkg/tcpip`
+(already a config-server dep via `nebstack`). This is the
+Tailscale-Android shape and the one the plan commits to
+(`mesh-v3-iroh.md` §Architecture "Android/TV app").
+
+**Ruled out for the spike:** Kotlin `computer.iroh:iroh:1.1.0` from
+Maven + a separate netstack — two runtimes with per-flow streams
+bridged across JNI, and it would not exercise the binding we own.
+Reconsider only if the Go cross-compile (step 1) fails.
+
+## Decisions taken 2026-09-16 (owner confirmed)
+
+1. **Node side:** iterate against `p0agent serve` on the NixOS box
+   (`mar@nixos`, LAN `10.0.0.11`) forwarding to cp1's LAN IP:30096;
+   then rebuild the cp1 extension **once** (`0.0.4`, add
+   `-forward mesh/http/v1=127.0.0.1:30096` in
+   `talos/extensions/p0agent/rootfs/usr/local/etc/containers/p0agent.yaml`,
+   `build.sh`, `talosctl upgrade`, ~10 min drain) for the final
+   measurement. The NodeId changes between the two (stand-in vs cp1
+   key) — the APK takes it as input, not a constant.
+2. **Build host:** nix `androidenv` (SDK + NDK, unfree) on the NixOS
+   box — the existing x86_64 builder for `.#p0relay-static`. Neither
+   this Mac nor the box has an Android SDK/NDK/adb/cargo today; CI
+   (`.github/workflows/android-apk.yml`) has an SDK+NDK and is the
+   fallback if androidenv fights back for more than ~2 h.
+3. **APK:** a **separate minimal spike APK**, not the shipped app:
+   `iroh-go/android-p0/` (one screen: relay URL, peer NodeId, Start /
+   Stop, live counters). The shipped `android/` app's CI publishes to
+   the rolling `android-latest` release on every push touching it —
+   do not touch it in the spike.
+4. **Devices / owner's part:** owner streams on the Shield (throughput)
+   and a phone (2 h battery). Owner sideloads the APK, enters relay +
+   NodeId, starts the tunnel, opens the Jellyfin app against
+   `http://jellyfin.mesh.internal:30096` (HTTP, NodePort — no ingress
+   / TLS in the spike), plays the remux, reads battery % at start and
+   end. *Open:* which library file is ≥ 80 Mbps — the mesh-v2
+   measurement used one; find it or pick the largest remux
+   (Jellyfin shows bitrate in the item's media info).
+
+## Steps, in fail-fast order
+
+1. **Cross-compile `libiroh_ffi.a` for `aarch64-linux-android`** — the
+   real feasibility question; nothing else matters if this fails.
+   `cargo build --release --target aarch64-linux-android` on the
+   iroh-ffi 1.1.0 source with the NDK clang as linker (`cargo-ndk` or
+   `CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER`), Rust toolchain with
+   the android target added. Prefer a nix derivation under
+   `iroh-go/nix/` (`iroh-ffi-android`) that reuses the vendored
+   crates (`fetchCargoVendor`, same `regen/iroh-ffi.Cargo.lock`);
+   fall back to an ad-hoc `rustup`+`cargo-ndk` shell on the box if nix
+   cross fights back. Expect ring/aws-lc-rs or similar C deps to need
+   the NDK sysroot — that is the known trap. Deliverable: the `.a` plus
+   a note on what it took. Time-box: **half a day**.
+2. **gomobile bind with cgo static link.** New Go package
+   `iroh-go/mobile/` (`package p0mobile`): `Start(tunFd int, relay,
+   peerHex, upstreamDNS string) (*Tunnel, error)`, `Tunnel.Stop()`,
+   `Tunnel.StatsJSON()`. Link flags per arch in a `link_android.go`
+   (`#cgo android,arm64 LDFLAGS: -L${SRCDIR}/../lib/android-arm64
+   -liroh_ffi`); the generated binding in `iroh-go/iroh/` is
+   platform-neutral so nothing regenerates. `gomobile bind
+   -target=android/arm64 -androidapi 26`. Deliverable: an AAR whose
+   `iroh.Endpoint` binds and dials the scratch relay from an
+   `adb shell` smoke (`am start` + logcat) before any netstack exists.
+3. **Netstack + fake IP.** In `p0mobile`: `fdbased.New` on the tun fd,
+   `stack.New` with ipv4 + tcp + udp; `tcp.NewForwarder` → for each
+   flow to a fake IP look up the NodeId, `ep.Connect(addr, alpn)`,
+   `OpenBi`, splice both ways; `udp.NewForwarder` on `<resolver>:53`
+   → answer `A` for `*.mesh.internal` from the fake pool, forward the
+   rest to `upstreamDNS` on a socket Kotlin has `protect()`ed (Go
+   needs the fd protected: either Kotlin creates and protects a
+   DatagramSocket and passes its fd, or Go dials and asks Kotlin back
+   via a callback interface — pick the fd-passing route, it is what
+   the shipped app does). Lift the pool/mapping and the query
+   classification from `config-server/mobile/dnsshim.go`; do not
+   import `config-server` (module boundary — copy the ~100 lines).
+   Stream side of `p0agent` is the reference for splice/close
+   semantics (`iroh-go/cmd/p0agent/main.go` `serveConn`).
+4. **Spike APK** `iroh-go/android-p0/`: `VpnService` that
+   `Builder.addAddress(198.18.0.1/32).addRoute(198.18.0.0/15)
+   .addDnsServer(198.18.0.2).setMtu(1280).establish()`, hands the fd
+   to `p0mobile.Start`, foreground notification, Start/Stop activity
+   with counters (bytes in/out, flows, direct vs relay path from
+   `conn.Paths()`). Model on `android/app/src/main/java/dev/marnyg/mesh/MeshVpnService.kt`
+   and `MainActivity.kt` — copy, don't share code. MTU 1280 keeps QUIC
+   payload clear of fragmentation over the underlay.
+5. **Node side stand-in:** on the NixOS box, `p0agent serve -relay
+   https://marnyg-iroh-relay-spike.fly.dev -key /tmp/p0key -forward
+   mesh/http/v1=<cp1 LAN IP>:30096` (binary from
+   `nix build .#p0relay-static` — it ships p0agent too; check
+   `iroh-transport/nix`). Log its NodeId; that is the APK input.
+6. **Measure** (owner + agent):
+   - Throughput: `p0agent` logs bytes/s per stream (add a 5 s ticker
+     if it does not yet); Jellyfin dashboard shows the play method
+     (must be *Direct Play*, not transcode — otherwise the bitrate
+     floor is meaningless) and bitrate. Also `logcat` counters from
+     the APK. Target ≥ 80 Mbps sustained for ≥ 10 min, on the Shield,
+     on Wi-Fi and/or wired as the owner's TV is connected.
+   - Path: expect `*ip:10.0.0.x` (LAN-direct) after the first
+     seconds; if it stays `*relay:` the fly relay's bandwidth is what
+     is being measured, not the design — note and fix before judging.
+   - Battery: phone, 2 h stream, `dumpsys batterystats` or %-delta;
+     compare against the same stream over the shipped nebula app if
+     the owner has time (parity is the bar, not perfection).
+7. **cp1 extension 0.0.4 + final run** (decision 1). Then write
+   `mesh-v3-iroh.md §P0.2` with a table like §P0.3, close the bead,
+   move to the gate `359.1.5`.
+
+## Known traps (from P0.1 / P0.3 / the shipped app)
+
+- The Mac cannot send LAN UDP from unsigned binaries (Cisco filter on
+  `en0`, P0.1) — measure LAN-direct from the device, not the laptop.
+- The NixOS firewall dropped hole-punches from NAT'd peers until
+  inbound UDP was allowed on `wlp12s0` (P0.1). The stand-in agent's
+  UDP port must be reachable from the TV's Wi-Fi.
+- QAD is off on the scratch relay; LAN-direct still works via DISCO
+  (P0.1) as long as one side has a LAN-reachable address — both do here.
+- Android: `addDnsServer` captures *all* DNS on most versions, hence
+  the underlay-forward in step 3 (this is exactly the shipped app's
+  `dnsshim` reason). `protect()` must be called on the forwarding
+  socket or the query loops back into the tun.
+- iroh-ffi's uniffi Go binding does its contract-version check in
+  `init()` and panics on mismatch — the Android `.a` must come from
+  the **same** iroh-ffi commit/lock as `iroh-go/iroh/*.go`
+  (`5e45109`, `regen/iroh-ffi.Cargo.lock`).
+- `gomobile bind` needs `ANDROID_HOME` + `ANDROID_NDK_HOME`; the
+  shipped `android/build-aar.sh` shows the pinned-tool pattern
+  (`GOBIN=$tmp go install golang.org/x/mobile/cmd/{gomobile,gobind}`)
+  — `iroh-go/go.mod` will need `golang.org/x/mobile` for that.
+- Android 14+ requires `foregroundServiceType="specialUse"` or the
+  VPN type declared; the shipped manifest has the working incantation.
+
+## Not in the spike (record, don't build)
+
+Certs/`authorize()` on accept (ALPN gates the forward table only);
+git-derived name→NodeId map; HTTPS / ingress over the tunnel (HTTP to
+the NodePort is enough for a bitrate); enrollment / device flow;
+TV/phone re-enrollment (`359.9.4`); the desktop fake-IP TUN.
+
+## Scratch infra this spike adds (tear down or adopt at the gate)
+
+- NixOS box: `p0agent serve` process + `/tmp/p0key`, firewall hole.
+- cp1: extension `0.0.4` with the Jellyfin forward (joins bead `5cz`).
+- Possibly `ghcr.io/marnyg/{p0agent,talos-installer}` new tags.
+- No new fly apps; reuses the scratch relay (`kql`).
