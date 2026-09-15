@@ -1,7 +1,7 @@
 version: v1alpha1
 metadata:
   name: p0agent
-  version: 0.0.1
+  version: 0.0.3
   author: marnyg
   description: |
     Mesh v3 Phase 0 check P0.3 (talos-config-359.1.3): minimal iroh node

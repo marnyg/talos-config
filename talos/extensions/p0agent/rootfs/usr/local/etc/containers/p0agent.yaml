@@ -2,6 +2,15 @@
 # Registered as `ext-p0agent`; rootfs = /usr/local/lib/containers/p0agent.
 name: p0agent
 depends:
+  # REQUIRED for any extension that mounts a path under /var: the upgrade
+  # and reboot sequences stop `cri`/`trustd` plus their reverse
+  # dependencies (Talos v1.12 v1alpha1_sequencer_tasks.go
+  # StopServicesEphemeral), then close the LUKS EPHEMERAL volume. A
+  # service not in that closure keeps running, its mount namespace pins
+  # /var, and the sequence hangs on "mapped device is still in use"
+  # (learned 2026-09-15, first 0.0.2 upgrade). Cost: the agent starts
+  # after cri instead of right after network+time.
+  - service: cri
   - network:
       - addresses
       - connectivity
