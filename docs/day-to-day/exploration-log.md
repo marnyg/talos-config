@@ -4,6 +4,24 @@
      Granularity: strategy-level pivots only. Not "used ripgrep instead of sed".
      Yes: "tried library X, ruled out for reason Y." -->
 
+## Mesh v3 P0.3 — Talos extension (2026-09-15)
+
+- 2026-09-15 — Tried shipping the node agent through the Image
+  Factory (the bead said "factory schematic"). Ruled out: the factory
+  accepts official `siderolabs/*` extensions only. Landed on: `imager`
+  + our own installer image on ghcr (`talos/extensions/p0agent/
+  build.sh`); content-addressed schematic ids give way to a tag we own.
+- 2026-09-15 — Tried `imager --base-installer-image <factory
+  installer>` to inherit its three extensions and add ours. Ruled out:
+  the initramfs is rebuilt from the listed `--system-extension-image`s
+  only — cp1 came up with `p0agent` alone. Landed on: list all four.
+- 2026-09-15 — Tried an extension spec with `network` + `time`
+  dependencies only (start as early as possible). Ruled out: the
+  upgrade/reboot sequence stops `cri`/`trustd` and their reverse deps,
+  then closes LUKS; an unrelated extension holding a `/var` bind mount
+  hangs it. Landed on: `depends: - service: cri` (starts ~2 s after
+  cri; not a real cost).
+
 ## Mesh v3 P0.1 — self-hosted iroh relay (2026-09-13)
 
 - 2026-09-13 — Considered running the relay with its own TLS (LetsEncrypt

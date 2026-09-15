@@ -77,6 +77,30 @@
   relay for 3 s and times out (relay has no QUIC); harmless, silenced
   by `p5g`.
 
+- 2026-09-15 — **cp1 boots an imager-built installer, not the factory
+  schematic**: `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3`
+  = stock v1.12.6 + iscsi-tools + nebula + util-linux-tools +
+  `p0agent` 0.0.3 (`ext-p0agent`, NodeId `7dd90eb3…`, key at
+  `/var/lib/p0agent/key` on EPHEMERAL). `talos/hardware/minipc.yaml`
+  still declares `6a9acc…`; a `talosctl upgrade` to that image drops the
+  agent (bead `5cz`). Rebuild: `talos/extensions/p0agent/build.sh
+  <static-binary> <ver>` (needs docker + ghcr login; both ghcr packages
+  are public and must stay so — the node pulls unauthenticated).
+- 2026-09-15 — **Any Talos extension that mounts under `/var` needs
+  `depends: - service: cri`**, or `talosctl upgrade`/`reboot` hangs at
+  `teardownLifecycle` ("luks2-EPHEMERAL … still in use"). Symptom:
+  `talosctl services` shows `ext-nebula`/`ext-iscsid` Finished and the
+  offender still Running; `talosctl service ext-<x> stop` unblocks it.
+- 2026-09-15 — **Upgrades on cp1 take ~10 min of drain** while w1 is
+  down (evictions time out one by one); install + reboot is < 1 min.
+  Use `--wait --debug` into a file, not a foreground tool call.
+- 2026-09-15 — `talosctl` over the iroh bridge: `p0agent bridge -relay
+  … -id 7dd90eb3… -listen 127.0.0.1:50000`, then `-e talos-wu6-eib -n
+  talos-wu6-eib` with `127.0.0.1 talos-wu6-eib` in `/etc/hosts` (apid's
+  SANs: node IPs, `cp1.mesh.internal`, hostname — not `127.0.0.1`).
+  The laptop's wired `en7` gets LAN-direct paths; Wi-Fi `en0` is
+  relay-only (Cisco filter, 2026-09-13 note).
+
 ## Hub / mesh (nebula, as running)
 
 - Every fly deploy **re-seals the hub**: derived roles (mesh CA, KMS,

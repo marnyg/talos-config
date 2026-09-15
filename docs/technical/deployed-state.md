@@ -102,6 +102,15 @@ or change something, update the date.
 - _2026-07-31_: wiped and reprovisioned onto the capped layout above;
   the media library restarted empty (pre-migration contents were on
   EPHEMERAL and went with it, by design).
+- _2026-09-15_ (Mesh v3 P0.3): **cp1 now boots an imager-built
+  installer**, `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3`
+  — the same three official extensions plus `p0agent` 0.0.3
+  (`ext-p0agent`, iroh node agent, NodeId `7dd90eb3…`, key on
+  EPHEMERAL at `/var/lib/p0agent/key`, dials the scratch relay). git
+  (`talos/hardware/minipc.yaml`) still declares the factory `6a9acc…`
+  image — knowing deviation, bead `5cz`, resolved at the Phase 0 gate.
+  Three upgrades and one reboot that day; EPHEMERAL intact throughout.
+  LAN lease drifted `.42 → .58` across them.
 
 ## Mesh (nebula) — _last verified 2026-07-30_
 
@@ -114,6 +123,8 @@ wg0 is deleted — hub code, udp/51820, and the node interface.
   IPv4 `213.188.219.215`.
 - Both nodes run `siderolabs/nebula` 1.10.3 from factory schematic
   `6a9acceefb4231ee98d04df0a3172479299cf51a36cda05f7ff817ab6d0d4735`
+  (cp1: the same extension set rebuilt by imager since 2026-09-15, see
+  Cluster above)
   (nebula + `iscsi-tools` v0.2.0 + `util-linux-tools` 2.41.2; upgraded
   from the nebula-only `011ccc…` on 2026-07-31 for Longhorn),
   service `ext-nebula`, interface `nebula0`, overlay `10.42.218.125/16`.
