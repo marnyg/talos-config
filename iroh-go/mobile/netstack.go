@@ -92,18 +92,18 @@ func newNetstack(fd int, mtu uint32, onTCP func(tcpConn, netip.AddrPort), onUDP 
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpFwd.HandlePacket)
 
-	udpFwd := udp.NewForwarder(s, func(r *udp.ForwarderRequest) bool {
+	udpFwd := udp.NewForwarder(s, func(r *udp.ForwarderRequest) {
 		id := r.ID()
 		dst := netip.AddrPortFrom(netip.AddrFrom4(id.LocalAddress.As4()), id.LocalPort)
 		src := netip.AddrPortFrom(netip.AddrFrom4(id.RemoteAddress.As4()), id.RemotePort)
 		if dst.Port() != 53 {
-			return false // not DNS: drop (only the fake range is routed here)
+			return // not DNS: drop (only the fake range is routed here)
 		}
 		var wq waiter.Queue
 		ep, e := r.CreateEndpoint(&wq)
 		if e != nil {
 			log.Printf("udp %s: create endpoint: %s", dst, e)
-			return true
+			return
 		}
 		// One datagram per endpoint: DNS is request/response and the
 		// connected UDP endpoint gonet gives us already has both tuples.
@@ -119,7 +119,6 @@ func newNetstack(fd int, mtu uint32, onTCP func(tcpConn, netip.AddrPort), onUDP 
 				_, _ = c.Write(reply)
 			}
 		}()
-		return true
 	})
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpFwd.HandlePacket)
 
