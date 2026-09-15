@@ -190,7 +190,9 @@ All on scratch infra; no repo changes beyond a spike branch.
    with mesh-v2 #3), acceptable battery over a 2h stream.
 3. **Talos extension proof**: minimal agent as a system extension —
    boots, dials the hub relay outbound, forwards one inbound
-   ALPN-gated stream to apid; survives `talosctl reboot`.
+   ALPN-gated stream to apid; survives `talosctl reboot`. **PASSED
+   2026-09-15** — see §P0.3 below (imager, not the factory; `/var`
+   mounts need `depends: service: cri`).
 4. **API-churn probe**: pin iroh version; note breaking-change rate
    over the spike window and the upgrade cost of one version bump.
 
@@ -357,6 +359,61 @@ style) is the fallback. Relay `access` supports an HTTP-POST hook with
 
 The scratch app stays up (shared-cpu-1x, ~$2/mo) because P0.3
 (`359.1.3`) dials it.
+
+### P0.3 Talos extension proof — data (2026-09-15)
+
+Bead `talos-config-359.1.3`, branch `spike/mesh-v3-p0.3`. **PASS on all
+acceptance checks**, on cp1 (the live control plane, no scratch node).
+Agent `iroh-go/cmd/p0agent` (`serve` on the node, `bridge` on the
+desktop — `irohup`'s ancestor); extension in `talos/extensions/p0agent/`
+(`manifest.yaml`, service spec, `Dockerfile`, `build.sh` = the whole
+chain). Static musl binary from `.#p0relay-static` on the NixOS builder,
+18 MB; `FROM scratch` rootfs — iroh's relay client carries webpki roots,
+so no CA bundle, only a ro bind of `/etc/resolv.conf`.
+
+| check | result |
+|---|---|
+| boots as a system extension | `ext-p0agent` up at **uptime ≈ 11 s** every boot; with `depends: time: true` (a first-class Talos dependency — the ADR-0019 NTP gate is one line) and `service: cri` it starts ~2 s after cri. Key minted on first boot, `/var/lib/p0agent/key` (0600), loaded on every boot since. |
+| dials the relay outbound | online in **3.1 s** after bind, every boot; no inbound port, no config beyond relay URL. Survived a relay-side drop (`Stream closed by server`) and accepted a new connection afterwards without restart. |
+| forwards one ALPN-gated stream to apid | `mesh/apid/v1 → 127.0.0.1:50000` (apid; `:50001` in the bead is trustd). `talosctl version/get/logs/upgrade/reboot` all ran end to end through `bridge → iroh → agent → apid`, mTLS intact (dial the node hostname `talos-wu6-eib`, which is in the apid cert SANs, via a hosts entry — `127.0.0.1` is not a SAN). First bytes over the relay, **LAN-direct (`*ip:10.0.0.x`) within one stream** from the laptop's wired `en7` — the Cisco filter (P0.1) bites Wi-Fi `en0` only. |
+| survives `talosctl reboot`, reconnects unaided | reboot sequence 40 s, node back 33 s later, agent online at uptime 11 s, **same NodeId**; the bridge got the agent's `CONNECTION_CLOSE` (SIGTERM handler) and redialed in **40 ms**. The node's DHCP lease changed five times during the day (`.42 → .54 → .55 → .56 → .57 → .58`); nothing on the identity path noticed — the Mesh v3 thesis in miniature. |
+| installed with `talosctl upgrade`, no wipe | three upgrades (0.0.1 → 0.0.2 → 0.0.3), EPHEMERAL intact each time (key, etcd, Longhorn). |
+
+Findings that shape Phase 1:
+
+- **The Image Factory takes official extensions only.** A third-party
+  extension means `imager` (`--system-extension-image …`) and an
+  installer image in our own registry (`ghcr.io/marnyg/talos-installer`,
+  public; the node pulls unauthenticated). Content-addressed schematic
+  ids give way to a tag + digest we own. **`--base-installer-image
+  <factory installer>` does NOT inherit the factory's extensions** — the
+  first build shipped p0agent alone and cp1 ran ~25 min without
+  nebula/iscsi/util-linux (Longhorn CSI crash-looped, recovered on its
+  own once iscsi was back). List every extension explicitly
+  (`build.sh` does; refs from
+  `factory.talos.dev/version/<talos>/extensions/official`).
+- **An extension that mounts anything under `/var` must declare
+  `depends: - service: cri`.** Upgrade and reboot stop `cri`/`trustd`
+  plus their *reverse dependencies* only
+  (`v1alpha1_sequencer_tasks.go` `StopServicesEphemeral`), then close
+  the LUKS EPHEMERAL volume; a still-running extension pins `/var`
+  through its mount namespace and the sequence hangs at
+  `teardownLifecycle` ("mapped device is still in use") until the
+  service is stopped by hand (`talosctl service ext-p0agent stop`
+  unblocked it twice) or the box is power-cycled. The official
+  extensions (nebula, iscsid) declare it; the docs do not say why.
+- **Drain dominates upgrade time** on the single-node cluster with w1
+  down: ~10 min of eviction timeouts per upgrade, install + reboot
+  < 1 min. Irrelevant to the design, relevant to how often we iterate
+  on the extension.
+- `imager`'s installer tarball is tagged with the *base* image's name
+  (`ghcr.io/siderolabs/installer-base:<ver>`); retag before pushing and
+  drop the local tag or the next build inherits a stale name.
+
+Not exercised (Phase 1): certs and `authorize()` on accept (ALPN gates
+the forward table only), `ExtensionServiceConfig` for relay URL/policy
+(hard-coded in the spec for the spike), a Talos ingress firewall
+(none enabled; the agent's UDP port is ephemeral), staged upgrades.
 
 ### Phase 1 — identity plane beside nebula (dual plane)
 
