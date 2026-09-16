@@ -53,7 +53,7 @@ func detFixture(seed byte) fixture {
 
 // Model constants: the speak-as caveat universe (ADR-0018: literal).
 var (
-	modelVerbs  = []string{"member", "invoke"}
+	modelVerbs  = []string{"member", "invoke", "publish"} // the model's VERBS
 	modelGroups = []string{"admins", "media"}
 )
 

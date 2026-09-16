@@ -301,10 +301,13 @@ module authorize {
   // under its parent is the field-wise intersection over target, facet,
   // groups, verbs and endpoints; `exp` is the min; an unknown caveat on
   // either taints the result; a parent with `delegable: false` admits no
-  // following link (ErrNotDelegable). `postage` is monotone: whichever
-  // link set it carries forward; both set and different ⇒ taint.
+  // following link (ErrNotDelegable); a child with another verb is not a
+  // link of the same chain (ErrVerbMismatch — linkStep rejects it first
+  // with the chain's own diagnostic, so this is the fold's belt to that
+  // brace). `postage` is monotone: whichever link set it carries
+  // forward; both set and different ⇒ taint.
   pure def attenuate(parent: Cert, child: Cert): Fold =
-    if (not(parent.cav.delegable)) { ok: false, eff: child }
+    if (not(parent.cav.delegable) or parent.can != child.can) { ok: false, eff: child }
     else {
       val conflict = parent.cav.postage != NO_POSTAGE and child.cav.postage != NO_POSTAGE
                      and parent.cav.postage != child.cav.postage
