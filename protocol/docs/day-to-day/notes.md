@@ -9,9 +9,14 @@
   Go** — `authorize_chain_laws_test.go` pins the 18 chain laws 1:1.
   Canonical cert form changed (`"postage":""` always present): certs
   signed before `40c1755` no longer verify (none existed in-repo).
+- 2026-09-17 — **`cert.VerifyChain` takes a `verb` parameter** (xwu,
+  ADR-0002). Callers name the verb the operation expects; `actor` binds
+  `invoke` via `invokeChain`. A new facet that expects another verb
+  (M3 `#publish`) must bind its own — there is no facet→verb table yet.
 - 2026-09-13 — `quint verify` on `authorize.qnt` at depth 2 is now
   ~94 s (was ~20 s). Nightly tier only. _(`check.sh` comment verified
-  current 2026-09-13, `djs`.)_
+  current 2026-09-13, `djs`.)_ _Update 2026-09-17: ~135 s since the
+  chain verb became a scenario variable; `check.sh` note refreshed._
 - 2026-09-13 — `envelope.Verify` returns `Result{}` on chain reject,
   so `actor` captures `verified` in its `ChainVerifier` closure to feed
   `clock.Mark`. _Resolved 2026-09-13 (`kp4`): `Verify` returns
