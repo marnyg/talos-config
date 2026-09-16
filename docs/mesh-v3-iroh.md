@@ -177,6 +177,19 @@ nebula is not touched until phase 4.
 
 ### Phase 0 — spike gate (~2–4 days). Fail ⇒ whole plan shelved again.
 
+**GATE PASSED 2026-09-16** (planned 2–4 days, took 2026-09-06 → 09-16
+wall-clock, ~6 working days). All four probes passed, no kill criterion
+fired. Rulings at the gate: (a) cp1 keeps the imager-built installer and
+git now declares it (`5cz`, digest-pinned in `minipc.yaml`) — the
+factory cannot carry a third-party extension, so upgrading back would be
+a round trip Phase 1.3 undoes; (b) the scratch fly relay stays up until
+Phase 1.2 embeds the relay in the hub (`kql`); (c) the NixOS-box stand-in
+(agent, Jellyfin library, test file) was torn down the same day; (d) the
+spike APK and its phone install are Phase 2.4's starting point.
+Conditions carried into Phase 1 are the "findings that shape Phase 1"
+under each §P0.x below, plus ADR-0021 (own binding) and ADR-0022 (relay
+behind hub TLS, QAD off).
+
 All on scratch infra; no repo changes beyond a spike branch.
 1. **Self-hosted relay on fly**: iroh relay in the hub process (or
    sidecar), 443 + UDP; two peers behind different NATs connect via

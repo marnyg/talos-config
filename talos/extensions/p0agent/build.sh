@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# P0.3 build chain (spike; run by hand, each step idempotent):
+# Build chain for cp1's declared install image (talos/hardware/minipc.yaml).
+# Born as the Mesh v3 P0.3 spike; adopted at the Phase 0 gate 2026-09-16
+# (bead 5cz). Run by hand, each step idempotent; after a push, update the
+# tag AND the digest in minipc.yaml (`crane digest` or the registry's
+# Docker-Content-Digest header):
 #
 #   1. static agent  — x86_64-linux musl build of iroh-go/cmd/p0agent
 #                      (nix build .#p0relay-static on a linux builder)

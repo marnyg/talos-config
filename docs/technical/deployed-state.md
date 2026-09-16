@@ -106,11 +106,15 @@ or change something, update the date.
   installer**, `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3`
   — the same three official extensions plus `p0agent` 0.0.3
   (`ext-p0agent`, iroh node agent, NodeId `7dd90eb3…`, key on
-  EPHEMERAL at `/var/lib/p0agent/key`, dials the scratch relay). git
-  (`talos/hardware/minipc.yaml`) still declares the factory `6a9acc…`
-  image — knowing deviation, bead `5cz`, resolved at the Phase 0 gate.
+  EPHEMERAL at `/var/lib/p0agent/key`, dials the scratch relay).
   Three upgrades and one reboot that day; EPHEMERAL intact throughout.
   LAN lease drifted `.42 → .58` across them.
+- _2026-09-16_ (Phase 0 gate, ruling on bead `5cz`): **the imager image
+  is now the declared one** — `talos/hardware/minipc.yaml` pins
+  `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3@sha256:6b4337…`;
+  git and the node agree again. w1 (`alienware-x15.yaml`) stays on the
+  factory `6a9acc…`. The agent still dials the scratch fly relay
+  (`kql`) until Phase 1.2 embeds the relay in the hub.
 
 ## Mesh (nebula) — _last verified 2026-07-30_
 

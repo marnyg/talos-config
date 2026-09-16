@@ -81,11 +81,14 @@
   schematic**: `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3`
   = stock v1.12.6 + iscsi-tools + nebula + util-linux-tools +
   `p0agent` 0.0.3 (`ext-p0agent`, NodeId `7dd90eb3…`, key at
-  `/var/lib/p0agent/key` on EPHEMERAL). `talos/hardware/minipc.yaml`
-  still declares `6a9acc…`; a `talosctl upgrade` to that image drops the
-  agent (bead `5cz`). Rebuild: `talos/extensions/p0agent/build.sh
-  <static-binary> <ver>` (needs docker + ghcr login; both ghcr packages
-  are public and must stay so — the node pulls unauthenticated).
+  `/var/lib/p0agent/key` on EPHEMERAL). Since the gate ruling
+  2026-09-16 (`5cz`) this is **the declared image** in
+  `talos/hardware/minipc.yaml`, pinned by digest; a `talosctl upgrade`
+  back to `6a9acc…` would drop the agent. Rebuild:
+  `talos/extensions/p0agent/build.sh <static-binary> <ver>` (needs
+  docker + ghcr login; both ghcr packages are public and must stay so —
+  the node pulls unauthenticated), then update tag + digest in
+  minipc.yaml.
 - 2026-09-15 — **Any Talos extension that mounts under `/var` needs
   `depends: - service: cri`**, or `talosctl upgrade`/`reboot` hangs at
   `teardownLifecycle` ("luks2-EPHEMERAL … still in use"). Symptom:

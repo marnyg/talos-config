@@ -1,9 +1,11 @@
 # ADR-0016: Identity-native mesh (iroh) replaces the nebula IP overlay
 
-- Status: Accepted _(2026-09-03: direction committed; **implementation
-  is gated** on the Phase 0 spike in `docs/mesh-v3-iroh.md` — a failed
-  gate re-defers this ADR to Superseded-by-nothing/Deferred and reopens
-  the nebula backlog. Nebula remains the deployed mesh until Phase 4.)_
+- Status: Accepted _(2026-09-03: direction committed, implementation
+  gated on the Phase 0 spike in `docs/mesh-v3-iroh.md`. **Gate passed
+  2026-09-16** — all four probes (self-hosted relay, Android
+  feasibility/battery/throughput, Talos extension, API churn) passed,
+  no kill criterion fired; decision bead `talos-config-359.1.5`. Phase 1
+  may begin. Nebula remains the deployed mesh until Phase 4.)_
 - Date: 2026-09-03
 - Supersedes (on Phase 4 completion): ADR-0002, ADR-0005
 - Revises (on Phase 4 completion): ADR-0006 (relay-by-default carries
