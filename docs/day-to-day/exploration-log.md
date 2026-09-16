@@ -76,37 +76,9 @@
   image we build is now cp1's install image) is why the digest, not
   the tag, is the pin.
 
-## Mesh v3 P0.3 — Talos extension (2026-09-15)
-
-- 2026-09-15 — Tried shipping the node agent through the Image
-  Factory (the bead said "factory schematic"). Ruled out: the factory
-  accepts official `siderolabs/*` extensions only. Landed on: `imager`
-  + our own installer image on ghcr (`talos/extensions/p0agent/
-  build.sh`); content-addressed schematic ids give way to a tag we own.
-- 2026-09-15 — Tried `imager --base-installer-image <factory
-  installer>` to inherit its three extensions and add ours. Ruled out:
-  the initramfs is rebuilt from the listed `--system-extension-image`s
-  only — cp1 came up with `p0agent` alone. Landed on: list all four.
-- 2026-09-15 — Tried an extension spec with `network` + `time`
-  dependencies only (start as early as possible). Ruled out: the
-  upgrade/reboot sequence stops `cri`/`trustd` and their reverse deps,
-  then closes LUKS; an unrelated extension holding a `/var` bind mount
-  hangs it. Landed on: `depends: - service: cri` (starts ~2 s after
-  cri; not a real cost).
-
-## Mesh v3 P0.1 — self-hosted iroh relay (2026-09-13)
-
-- 2026-09-13 — Tried the owner laptop as the LAN-direct peer. Ruled
-  out: corporate socket-filter extension EPIPEs LAN UDP from unsigned
-  binaries (`nc`/python/C succeed, iroh fails). Landed on: two Linux
-  hosts (NixOS box + Docker-on-mac musl binary); fly machine for the
-  far-NAT peer.
-- 2026-09-13 — Considered a fly process-group "sidecar" for the relay
-  in Phase 1. Ruled out: a process group is a separate machine and
-  cannot share `[http_service]` 443 with config-server — it would be a
-  second entrypoint. Landed on (not built): config-server spawns
-  `iroh-relay` as a child and reverse-proxies `/relay`, `/ping`,
-  `/generate_204` (`5gz`).
+<!-- 2026-09-16: §P0.1 (relay) and §P0.3 (Talos extension) pruned —
+     resolved by ADR-0022 and ADR-0023. Rulings live there and in
+     mesh-v3-iroh.md §P0.1/§P0.3; recover from git history if needed. -->
 
 ## Unattended Windows guest on KubeVirt (2026-08-11→14)
 

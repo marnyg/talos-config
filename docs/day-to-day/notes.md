@@ -8,6 +8,8 @@
 
      Pruned 2026-09-03: wg0-era and nebula-phase-1/2 history removed
      (struck-through entries live in git history before this date).
+     Pruned 2026-09-16: Phase-0-gate-era cautions, stock Mobile Nebula,
+     zitadel-era kubeconfig reason, duplicated gotchas.
      Reference beads issues by id (`talos-config-xxx`). -->
 
 ## Read first
@@ -18,12 +20,12 @@
   "presence" concept; both are defined/retired there. ADR-0017 is
   *Proposed*: the running system is still nebula's receiver-side
   firewall, and `mesh-policy.yaml`'s nebula render is what executes
-  until Mesh v3 Phase 1. Don't "fix" nebula code toward ADR-0017.
-- 2026-09-03 — **Mesh v3 is live in the tracker, not in code.** Nothing
-  about the running system changed; nebula is the mesh until Phase 4.
-  Deferred nebula-era issues (`cjo en6 4ns 41b 6gq ap2 90a`) are parked
-  on the Phase 0 gate — "deferred" ≠ "abandoned"; do not close them
-  before `talos-config-359.1.5`.
+  until Mesh v3 Phase 1.
+- 2026-09-03 — **Mesh v3 is in the tracker and on cp1's extension, not
+  in the running mesh.** Nebula is the mesh until Phase 4. Deferred
+  nebula-era issues (`cjo en6 4ns 41b 6gq ap2 90a`) were parked on the
+  Phase 0 gate; the gate passed 2026-09-16 — re-triage them under
+  `359.8`/`359.9` rather than closing.
 - 2026-09-05 — **The Quint models are the sharper spec for
   ADR-0015/0017.** Five doc sentences were refuted and ruled the same
   day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
@@ -165,9 +167,6 @@
   should survive.
 - A mesh derivation error (address collision, bad `meshIP`) refuses
   the whole `/config` serve, provisioning included.
-- nebula cert-version skew: anything minting/consuming mesh certs must
-  be ≥ 1.10 (V2 certs); the hub embeds 1.11.0. Also in
-  `technical/guides/gotchas.md`.
 - **Any overlay carrying the route to the hub/peer poisons a punch
   measurement** (Tailscale exit node, another VPN) — nebula hairpins
   through it. Pre-flight: `route get <peer-ip>` (macOS) / `ip route
@@ -180,9 +179,6 @@
 - **ADR-0012 is live**: enrollment mints only device-born keys.
   Pre-ADR master-derived device certs stay valid until their 90-day
   expiry. Re-enrolling under the same name keeps the same address.
-- Stock Mobile Nebula accepts the hub-issued yaml (move yaml + key
-  onto the phone; renewal = re-import every 90 days —
-  `talos-config-0qq`, resolved in design by ADR-0017).
 
 ## Cluster / Talos
 
@@ -217,8 +213,8 @@
   changes.
 - `talosctl` flags are not global: `-n`/`-e` follow the subcommand;
   maintenance-mode reads are `get -i`, not `--insecure`.
-- `~/.kube/config` is dead (routes through removed zitadel +
-  kube-oidc-proxy); use `--kubeconfig ./kubeconfig` from the repo root.
+- Use `--kubeconfig ./kubeconfig` from the repo root; `~/.kube/config`
+  is not maintained.
 
 ## Workloads / storage
 
