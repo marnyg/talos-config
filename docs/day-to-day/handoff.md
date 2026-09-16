@@ -28,8 +28,6 @@ only; no talos/hub/k8s change.**
 - Carried into implementation, not blocking: the exact `#mint-device`
   payload (which ADR-0012 approval message Enroll forwards; Issuer's
   own replay check vs Enroll's single-use nonce).
-- Exploration-log §P0.1 and §P0.3 look resolved by ADR-0022/0023 —
-  deletion offered earlier, still awaiting the owner.
 - Domain-model §2 "Policy: payload, not identity" render diagram is
   superseded twice (ADR-0017, `mdv`); redraw when `359.8.2.3` lands.
 - Two unchosen protocol numbers with no bead: `DefaultMailbox = 64`,

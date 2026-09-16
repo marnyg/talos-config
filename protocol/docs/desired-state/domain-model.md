@@ -295,8 +295,10 @@ protocol scope must never contradict these entries.
   persisted; loss degrades to the local clock. `iat` never
   participates in authority or attenuation. _(root glossary: Time /
   low-water mark; pinned 2026-09-06, ADR-0019.)_
-- **Authorize (the per-connect check)** — inputs: receiver key `R`,
-  its accept table, its consent grant(s), the ALPN, the caller's
+- **Authorize (the per-connect check)** — the `invoke` instance of
+  `VerifyChain` (ADR-0002: a connection is an invocation) plus the
+  deployment layer's member/group/blocklist rules. Inputs: receiver key
+  `R`, its accept table, its consent grant(s), the ALPN, the caller's
   bundle {`member`, `invoke[]`, `speak-as`}. Resolve the issuer
   through `speak-as`; the resolved `iss` must be one R holds a live
   consent grant for; for each grant build the chain [consent(R→iss),

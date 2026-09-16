@@ -39,8 +39,6 @@ verb (ADR-0002 → Accepted). Two commits, `9bf48ac` + `e158fbc`.**
   caller's bundle) — decide the parameter shape before editing the
   model. ADR-0003 → Accepted when it lands; then amend the glossary
   *Authorize* ("require target ∋ R").
-- Glossary *Authorize* could say "the `invoke` instance of
-  `VerifyChain`" — proposed at wrap-up, not written.
 - M3 (`0bc.3`) facets will bind their own verb: which facet expects
   which verb is a per-actor table the runtime does not have yet
   (`actor.invokeChain` is the only binding).
