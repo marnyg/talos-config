@@ -5,43 +5,41 @@
 
 ## Last session
 
-2026-09-13 (second session) — **the M2 threads are ruled; no protocol
-code changed.** Owner accepted every recommendation:
+2026-09-16 — **Protocol ADR-0003 drafted (Proposed) from the talos hub
+actor-cut design; no protocol code changed.**
 
-- Decisions (closed at creation): `eak` absent `endpoints` = ∅ (uniform
-  with every set caveat; `Decode` already normalises nil → `[]`);
-  `zey` `actor.Send` stays strictly serial per edge in v0; `5qt` a
-  rejected-but-valid `loc` never refreshes the location cache
-  (sovereignty at admission); `seb` chain-length cap is a deployment
-  parameter (`7n8` deferred until a test forces the number).
-- Tasks with acceptance: `xwu` verb = root consent's verb in
-  `VerifyChain` (model first; **blocks `0bc.3`**); `7w5` close silently
-  on bad-sig, signed rejects only after the envelope's own signature
-  verifies; `7ei` `#renew` resolves `old.Aud` to `inv.From` via
-  `speaksFor`; `s8n` (P3) the clock mark learns from the aud-side
-  speak-as when `rootCerts` is next touched.
-- **Protocol ADR-0002** (Proposed) records the two semantic rulings
-  (`xwu` + `0lo`) and why mixed-verb chains and "absent =
-  unconstrained" were ruled out.
-- Milestone: owner chose **Mesh v3 Phase 0 before M3**; P0.1 (relay on
-  fly) passed the same day — root handoff has the detail. `kp4 6tf 02j
-  djs ax7` closed.
+- **ADR-0003**: a receiver answers for a principal it holds a live
+  `speak-as` from — `VerifyChain` rule 4 becomes `eff.Target ∋ R` **or**
+  `∋ P` for a receiver-held `speak-as` P→R, never one taken from the
+  caller's bundle. Motivation: a rotating hot key (root ADR-0018) kills
+  every grant that names it; grants should name the root. Task `kau`,
+  model first (`authorize.qnt`: one law + the caller-bundle mutant),
+  then Go. Dialing/addressing the root was ruled out — `ed:` id is the
+  iroh `EndpointId`, the TLS pin and Reply check hang on it.
+- Root ADR-0024 is the consumer: the talos hub's `#renew`/`#bundle`
+  facets are the wallet's, served by whichever process holds the
+  unseal. Lighthouse `#publish`/`#lookup`/`#frontdoor` stay M3
+  (`0bc.3`); in the talos deployment Phase 1 the lighthouse is a view
+  over the Issuer's location cache filled by piggybacked `loc`.
+- Mesh v3 Phase 0 gate passed 2026-09-16 (root `b2t`): M3 is unblocked
+  by the gate, still blocked by `xwu`.
 
 ## Loose threads
 
-- `xwu` is the only protocol pre-work M3 needs; `7w5`/`7ei` are small
-  and independent of M3.
-- The relay used by `iroh-transport` will have **no QUIC endpoint**
-  (root ADR-0022): `Options.Relay` should build a `RelayMap` with
-  `quic_port: nil` instead of `RelayModeCustomFromUrls` (`p5g`), else
-  every actor start waits 3 s on a dead QAD probe.
-- Carried: `4un` (policy-compiler round-trip), `359.8.5`, `6z9`;
-  ADR-0002 Proposed → owner flips to Accepted with the `xwu` landing.
+- Pre-work order for the talos consumer: `xwu` → `kau` → `7ei` (all
+  small, all `authorize.qnt`/actor runtime). `7w5`, `s8n`, `p5g` stay
+  independent.
+- ADR-0002 and ADR-0003 both Proposed → Accepted when `xwu` / `kau`
+  land.
+- Glossary *Authorize* still says "require target ∋ R"; amend with the
+  rule-4 extension when `kau` lands (proposed, not yet written).
+- Two unchosen numbers, no bead: `DefaultMailbox = 64`, renewal-beat
+  fraction.
 
 ## Suggested next steps
 
-- `xwu`: edit `authorize.qnt` (`verifyChain` takes the consent's verb;
-  `linksTo`/`speaksFor` check `cav.verbs ∋ verb`; one non-`invoke` law),
-  then Go 1:1; run `TestFaultPairSweep`.
-- `7ei` + `7w5` together — both are actor-runtime, one test each.
-- M3 `0bc.3` after the Phase 0 gate (`359.1.5`).
+- `xwu` then `kau`: edit `authorize.qnt` first, add the law + mutant to
+  `TestFaultPairSweep`, then Go 1:1 in `cert/authorize.go`
+  (`chainUnder` rule 4 takes the receiver's aud-side `SpeakAs`).
+- `7ei` in the actor runtime (`renew.go`: resolve `old.Aud` via
+  `speaksFor`).

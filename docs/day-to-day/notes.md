@@ -47,6 +47,12 @@
   **Canonical cert form changed** (`postage` always emitted): no signed
   certs existed in-repo, but any cert signed before `40c1755` will not
   verify.
+- 2026-09-16 — **ADR-0024 (hub actors cut by key) and protocol ADR-0003
+  (receiver answers for `speak-as` principals) are Proposed, not
+  built.** Decision `itb` (hub HTTP over a stream facet) is revised by
+  `mdv`: `/hosts` and `/policy` will not exist over the mesh — don't
+  build them; the beat is `#renew` + `#bundle`. `VerifyChain` rule 4 is
+  still literal (`Target ∋ receiver`) until `kau` lands.
 
 ## Mesh v3 spike infra (scratch)
 

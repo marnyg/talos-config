@@ -7,14 +7,13 @@
 unblocked by the Phase 0 gate 2026-09-16, decision `b2t`). Dual plane:
 nebula untouched, the iroh plane grows next to it until Phase 2 moves
 consumers one at a time. **Groomed 2026-09-16** into a DAG
-(`mesh-v3-iroh.md §Phase 1`). Next up: **`359.8.2.1` hub actor cut** —
-a grill-design session defining each hub actor's inbox message set and
-owned state (Issuer, Enroll, Relay, Provisioner, hub-http; lighthouse
-`0bc.3` as one more actor) before any handler is written (decision
-`vl4`). Output: domain-model section + ADR. In parallel, protocol
-`xwu` + `7ei` are hard prerequisites of membership issuance `359.8.1`;
-`359.8.2.2` (relay in hub) is independent and ready. Exit checks are
-event-based (`359.8.6`): node reboot, hub re-seal, laptop roam.
+(`mesh-v3-iroh.md §Phase 1`); the **hub actor cut is designed**
+(ADR-0024 + protocol ADR-0003, domain-model §2 "Hub actors"). Next:
+the protocol pre-work that `359.8.1` now waits on — `xwu` → `kau` →
+`7ei`, each model-first in `authorize.qnt` then Go 1:1 — and, in
+parallel, `359.8.2.2` (relay embedded in the hub). Then membership
+issuance `359.8.1` against ADR-0018/0024. Exit checks are event-based
+(`359.8.6`): node reboot, hub re-seal, laptop roam.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016,
 gate passed) and **Sovereign-actor protocol at the center** — Phase 1's
