@@ -456,7 +456,10 @@ provisioning or recovery path may depend on it.
   (found by `authorize.qnt`, ruled 2026-09-05, `3cx`); (3) for each
   grant, build the chain
   [consent(R→iss), grant], verify every sig/exp/caveat, intersect,
-  require target ∋ R and facet ∋ facet, resolve `aud` (key = member
+  require target ∋ R — or ∋ a principal R *answers for*, one whose
+  live `speak-as` to R's key R holds in its own configuration (protocol
+  ADR-0003, built 2026-09-18; so grants to hub facets name the wallet
+  and survive `hubkey` rotation) — and facet ∋ facet, resolve `aud` (key = member
   key, or group rule), reject if member key blocklisted, else accept
   with identity {key, name, groups} from the *member cert only*; (4)
   no grant matched ⇒ reject. Properties: deterministic and offline;

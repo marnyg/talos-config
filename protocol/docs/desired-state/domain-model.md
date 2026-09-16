@@ -108,8 +108,12 @@ ADR-0002) and folded by attenuation, ends in a link whose `aud`
 the signer holds a `speak-as` from (`cav.verbs ∋` that verb), or `"*"`
 only when the effective caveats carry `postage` (`group:` audiences are
 resolved by the deployment layer, never here); (4) nothing expired, no
-unknown caveat, `facet` admitted. _(ADR-0001, built 2026-09-12 as
-`cert.VerifyChain`; verb-parameterised 2026-09-17, `xwu`.)_ The
+unknown caveat, `facet` admitted, and the effective `target` names P —
+or a principal P *answers for*: one whose live `speak-as` to P's key P
+holds in its own configuration, so a grant may name a cold root and
+survive its hot key rotating (ADR-0003). _(ADR-0001, built 2026-09-12
+as `cert.VerifyChain`; verb-parameterised 2026-09-17, `xwu`;
+receiver-held `speak-as` 2026-09-18, `kau`.)_ The
 **proof chain is the registry**, carried by
 the caller. Attenuated re-delegation is free
 and offline — P verifies a chain to an actor it has never heard of.
@@ -297,18 +301,22 @@ protocol scope must never contradict these entries.
   low-water mark; pinned 2026-09-06, ADR-0019.)_
 - **Authorize (the per-connect check)** — the `invoke` instance of
   `VerifyChain` (ADR-0002: a connection is an invocation) plus the
-  deployment layer's member/group/blocklist rules. Inputs: receiver key
-  `R`, its accept table, its consent grant(s), the ALPN, the caller's
-  bundle {`member`, `invoke[]`, `speak-as`}. Resolve the issuer
-  through `speak-as`; the resolved `iss` must be one R holds a live
-  consent grant for; for each grant build the chain [consent(R→iss),
-  grant], verify every sig/exp/caveat, intersect, require target ∋ R
-  and facet ∋ facet, resolve `aud`, accept with identity from the
-  *member cert only*. Properties: deterministic, offline,
-  receiver-rooted, monotone under attenuation, fail-closed on any
-  unknown; `now` is the effective clock `max(local, lw)`. _(root
-  glossary: Authorize; pinned 2026-09-03, spike `359.2`; ADR-0017/18/19.
-  Model: `verification/quint/authorize.qnt`.)_
+  deployment layer's member/group/blocklist rules. Inputs: the
+  receiver's own configuration (key `R`, its consent grant(s), the
+  `speak-as` certs it *holds* naming `R` as `aud` — Go `cert.Receiver`),
+  its accept table, the ALPN, the caller's bundle {`member`,
+  `invoke[]`, `speak-as`}. Resolve the issuer through `speak-as`; the
+  resolved `iss` must be one R holds a live consent grant for; for each
+  grant build the chain [consent(R→iss), grant], verify every
+  sig/exp/caveat, intersect, require target ∋ R **or** target ∋ P for a
+  principal P whose live `speak-as P→R` R holds (ADR-0003; never one
+  from the caller's bundle) and facet ∋ facet, resolve `aud`, accept
+  with identity from the *member cert only*. Properties: deterministic,
+  offline, receiver-rooted, monotone under attenuation, fail-closed on
+  any unknown; `now` is the effective clock `max(local, lw)`. _(root
+  glossary: Authorize; pinned 2026-09-03, spike `359.2`; ADR-0017/18/19;
+  target rule widened 2026-09-18, ADR-0003. Model:
+  `verification/quint/authorize.qnt`.)_
 - **Projection** — any centralized "who has access" or "what is
   reachable" view. Built from the issuance log or from receivers'
   observations; strictly a reflection, never a data source. A valid

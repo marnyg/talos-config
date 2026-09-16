@@ -14,7 +14,8 @@ this scope.
 - [0003](0003-receiver-answers-for-speak-as-principals.md) —
   a receiver answers for a principal it holds a live `speak-as` from
   (rule 4: `Target ∋ R or ∋ P`); grants to hot-key-served facets name
-  the root. _Proposed 2026-09-16 (ruling `kau`)._
+  the root; the receiver-held set is a type (`cert.Receiver`).
+  _Accepted 2026-09-18 (`kau`)._
 
 The protocol's **founding** decisions are root ADRs, referenced here,
 not copied:
