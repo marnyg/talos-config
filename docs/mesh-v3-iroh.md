@@ -492,17 +492,52 @@ routes wider than `198.18/15`.
 
 ### Phase 1 — identity plane beside nebula (dual plane)
 
-- `irohderive`-equivalent: issuer key from `masterderive`; membership
-  cert mint/verify (reuse the enrollment flow in `nebenroll.go` /
-  `deviceflow` — the wallet-signature UX is unchanged).
-- Hub: embed relay + membership issuance + name→NodeId map endpoint.
-- Node extension on one node (cp1) via factory schematic +
+**Groomed 2026-09-16** (beads under `talos-config-359.8`). Not a line —
+a DAG with one design task at the root; the original bullets below are
+restated to match ADR-0018 (no issuer key from `masterderive`; hubkey
+is random per process under an unseal-signed speak-as) and ADR-0023
+(imager chain, not a factory schematic).
+
+```
+359.8.2.1  Hub actor cut: per-actor inbox message set + owned state   (design; grill-design session; vl4)
+   ├── 359.8.1    Membership issuance: hubkey speak-as; member cert mint/verify/renew
+   │              ← protocol xwu (verb = root consent's verb — `can: member` is non-invoke)
+   │              ← protocol 7ei (#renew resolves old.Aud via speaksFor)
+   ├── 359.8.5    Policy compiler → invoke grants, accept tables, name map   (then 4un verifies it)
+   ├── 359.8.2.2  Embed the iroh relay in the hub (P0.1 shape, ADR-0022; unblocks kql)
+   └── 359.8.2.3  Enroll actor + hub-http facet (itb) + blocklist on the beat (j0b) + signed name map
+                  ← 359.8.1, 359.8.5
+359.8.3  Node extension on cp1 via build.sh + talosctl upgrade   ← 359.8.1, 359.8.5, 359.8.2.2
+359.8.4  Desktop irohup: enrollment, bundle fetch, talosctl/kubectl bridges   ← 359.8.1, 359.8.5, 359.8.2.3
+359.8.6  Exit checks   ← 359.8.3, 359.8.4
+```
+
+- **Hub as actors first** (`359.8.2.1`): Issuer, Enroll, Relay,
+  Provisioner and the hub-http facet get their inbox message set and
+  owned state defined before any handler is written (decision `vl4`,
+  invariant 2 actor-owned state). Protocol M3's lighthouse (`0bc.3`) is
+  designed here as one more hub actor — dynamic `#publish/#lookup`
+  beside the compiled-from-git name map, not a parallel design.
+- Membership issuance per ADR-0018: `/unseal` signs a speak-as for the
+  per-process hubkey; member certs `{iss: hubkey, aud: NodeId, can:
+  member, cav: {name, groups}, exp 90 d}`; renewal resolves the old
+  cert through its speak-as (reuse the enrollment flow in
+  `nebenroll.go` / `deviceflow` — the wallet-signature UX is unchanged).
+- Hub: embed relay + issuance + `/hosts`→name map + `/policy`→grants
+  over the `mesh/hub/v1` facet (`itb`); WAN HTTPS stays for
+  provisioning/KMS only.
+- Node extension on one node (cp1) via `talos/extensions/p0agent/build.sh`
+  (imager, ADR-0023; `depends: service: cri` already in the manifest) +
   `talosctl upgrade` (no wipe).
-- Desktop `irohup`: enrollment + talosctl/kubectl bridges.
+- Desktop `irohup`: enrollment + talosctl/kubectl TCP bridges. Fake-IP
+  presentation is Phase 2.
 - **Exit checks** (event-based, not calendar): node reboot →
   agent reconnects unaided; hub re-seal → identity plane reconverges
   after unseal; laptop roams LAN→cellular → relay path holds, LAN
   path re-punches direct.
+- P0.2's Android findings (one `VpnService` per device, `ndk_context`
+  init, resolver `:53` only) are filed under Phase 2.4 (`359.9.4.1–3`),
+  not here.
 
 ### Phase 2 — consumers migrate, one at a time (each step reversible)
 
@@ -587,14 +622,15 @@ mesh-v2 lesson.
   Decided 2026-09-03: the delegation shape (decision `5w1` — the
   protocol is this repo's center). What remains is the `can`/verb
   vocabulary — spike `talos-config-359.2`.
-- Renewal beat for membership certs (revocation story): 90 days to
-  match device re-enrollment cadence, or shorter now that renewal is
-  a background dial instead of a human act?
+- ~~Renewal beat for membership certs: 90 days or shorter?~~ Settled
+  in `359.8.1` / `runway.qnt`: member cert `exp` 90 d, speak-as 120 d,
+  invoke grants 7 d; revocation latency ≥ runway is a stated trade-off
+  (invariants.md).
 - Desktop presentation: SOCKS/PAC (less code) vs same fake-IP TUN as
   mobile (UX symmetry). Leaning: start SOCKS/PAC, upgrade if friction.
-- Gateway placement: one per cluster vs per-node agents also serving
-  ingress. Leaning: single gateway pod + node agents only for
-  apid/system targets.
-- Does the hub's mesh HTTP surface (`/config`, `/hosts`, `/policy`)
-  move to an ALPN class or stay HTTPS-only? Leaning: ALPN class
-  `mesh/hub/v1`, same handlers.
+  **Deferred to Phase 2** — Phase 1's `irohup` ships TCP bridges only.
+- ~~Gateway placement~~: single gateway pod (`359.9.3`), node agents
+  only for apid/kube-api.
+- ~~Hub's mesh HTTP surface: ALPN class or HTTPS-only?~~ Ruled `itb`
+  (2026-09-05): ALPN class `mesh/hub/v1`, same handlers; WAN HTTPS for
+  provisioning/KMS only.

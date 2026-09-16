@@ -6,13 +6,15 @@
 **Now:** **Mesh v3 Phase 1 — identity plane beside nebula** (`359.8`,
 unblocked by the Phase 0 gate 2026-09-16, decision `b2t`). Dual plane:
 nebula untouched, the iroh plane grows next to it until Phase 2 moves
-consumers one at a time. First act is grooming, not code: order the six
-P1 beads (`359.8.2` says hub inbox message set + owned state **first**,
-decision `vl4`; `359.8.1` membership issuance is the ready leaf), fold
-the P0.2/P0.3 "findings that shape Phase 1" into beads, and decide how
-Phase 1 and protocol M3 (`0bc.3`, `xwu`) share the hub-as-actors work.
-Exit checks are event-based (`359.8.6`): node reboot, hub re-seal,
-laptop roam.
+consumers one at a time. **Groomed 2026-09-16** into a DAG
+(`mesh-v3-iroh.md §Phase 1`). Next up: **`359.8.2.1` hub actor cut** —
+a grill-design session defining each hub actor's inbox message set and
+owned state (Issuer, Enroll, Relay, Provisioner, hub-http; lighthouse
+`0bc.3` as one more actor) before any handler is written (decision
+`vl4`). Output: domain-model section + ADR. In parallel, protocol
+`xwu` + `7ei` are hard prerequisites of membership issuance `359.8.1`;
+`359.8.2.2` (relay in hub) is independent and ready. Exit checks are
+event-based (`359.8.6`): node reboot, hub re-seal, laptop roam.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016,
 gate passed) and **Sovereign-actor protocol at the center** — Phase 1's
