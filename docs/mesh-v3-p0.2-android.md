@@ -192,8 +192,28 @@ Branch `spike/mesh-v3-p0.2` (pushed). Bead `359.1.2` in_progress.
 | 2 gomobile package | **written, compiles** on linux/amd64 against the native lib (`go vet` + `go build` clean on the box); not yet bound for android | `iroh-go/mobile/` (own module `…/iroh-go/mobile`, `replace ../`): `tunnel.go` (Start/Stop/StatsJSON, one iroh connection with redial, per-flow `OpenBi` + p0agent's `pipe`), `netstack.go`, `dns.go`. `iroh-go/iroh/link_android.go` adds `-llog -ldl -lm` for GOOS=android |
 | 3 netstack + fake IP | **written** | gvisor `fdbased` on the fd, promiscuous + spoofing NIC, default route, `tcp.NewForwarder` → `handleTCP`, `udp.NewForwarder` on :53 only → `fakeDNS`. Fake plan: tun `198.18.0.1`, resolver `198.18.0.2`, names from `198.18.1.0` up; `*.mesh.internal` A → fake IP, AAAA → empty NOERROR, other names → underlay via `SocketProtector`-protected socket. TCP rcv/snd buffers 1 MiB default / 4 MiB max, SACK, moderate-rcvbuf on |
 | 4 spike APK | **written, not built** | `iroh-go/android-p0/` (`dev.marnyg.p0mesh`): `P0VpnService.kt` (`addAddress 198.18.0.1/32`, `addRoute 198.18.0.0/15`, `addDnsServer 198.18.0.2`, MTU 1280, `detachFd` → `P0mobile.start`), `MainActivity.kt` (relay + peer inputs in prefs, Start/Stop, 1 s stats poll with a Mbps readout), `build-aar.sh` (gomobile, android/arm64 only, `IROH_FFI_ANDROID_LIB` = dir with the android `.a`), `shell.nix` (androidenv SDK 34 + NDK 27.0.12077973 + gradle + jdk17; being realised on the box, `/tmp/android-shell.log`) |
-| 5 stand-in agent | **not started** | `~/p0/result/bin/p0agent` on the box is the P0.3 static build. cp1 LAN lease today: **`10.0.0.58`** (apid :50000 answers; `talosctl -e 10.0.0.58 -n 10.0.0.58` works). Kubeconfig fetched to the Mac at `/tmp/kc` (`kubectl --server https://10.0.0.58:6443 --insecure-skip-tls-verify`; kube SANs are mesh-only) |
-| 6 measure | **blocked** | see below |
+| 5 stand-in agent | **running** on the box as user unit `p0agent-standin` (`systemctl --user`, `Restart=on-failure`, linger on): `p0agent serve -relay …spike.fly.dev -key ~/p0-jf/p0key -bind 0.0.0.0:7842 -forward mesh/http/v1=127.0.0.1:8096`. **NodeId `5852d8b0e1e1c836b628f3ad1986d22042101eb9f672704ef89c1d8858db513c`** — the APK's peer input. Homed in 3.1 s. (`:41641` is Tailscale's, hence 7842.) Smoke on the box: `p0agent bridge … -listen 127.0.0.1:18096` → `curl /health` = Healthy; the Direct Play stream moved 5.7 GB in 14.8 s ≈ 3.1 Gbps over iroh, path went `*relay` → `*ip` inside the first stream. Forwards to the **stand-in Jellyfin** below, not cp1:30096 | `~/p0/result/bin/p0agent` is the P0.3 static build. cp1 LAN lease today: **`10.0.0.58`** (apid :50000 answers; `talosctl -e 10.0.0.58 -n 10.0.0.58` works). Kubeconfig fetched to the Mac at `/tmp/kc` (`kubectl --server https://10.0.0.58:6443 --insecure-skip-tls-verify`; kube SANs are mesh-only) |
+| 6 measure | **ready for the owner's device** once the APK builds | see below |
+
+**Stand-in media (owner decision 2026-09-16: reuse the box's existing
+Jellyfin).** The cluster's Jellyfin has no media (below), so the owner's
+compose-managed `jellyfin` container on the box (`~/disks/1TB-old/server/
+docker-compose.yml`, lscr.io/linuxserver 10.10.7, `:8096`, user `abc`)
+is the target. Synthetic test file — the library had nothing ≥ 80 Mbps
+and the 1TB disk is 100 % full, so it lives on the NVMe:
+`~/p0-jf/media/P0 Remux Test (2026).mkv`, ffmpeg libx264 3840×2160
+level 5.1 **CBR 95.1 Mbps** (`nal-hrd=cbr`, padding — synthetic content
+would otherwise compress to nothing), AAC, 8 min, 5.7 GB. Bind-mounted
+`:ro` at `/data/p0test` (one line in the compose file, backup
+`~/p0-jf/docker-compose.yml.bak-p0`), library **"P0 Test"** (movies, no
+internet metadata) added as `config/plex/data/root/default/P0 Test/`.
+`PlaybackInfo` with an h264/aac mkv profile → `SupportsDirectPlay: true`,
+no `TranscodingUrl`. Item id `b49edd95044f91b75df41887342bf657`; token
+for curl in `~/p0-jf/token`. Owner-side URL from the phone/Shield once
+the tunnel is up: **`http://jellyfin.mesh.internal:8096`** (any port on
+the fake IP lands on the forward target; 8096 keeps the Jellyfin app's
+default). Caveat for the writeup: this measures the phone ↔ NixOS box
+path, not phone ↔ cp1 — step 7 still does the cp1 run.
 
 **Blocker found (outside the spike):** Jellyfin cannot stream anything.
 `media/{movies,tv,downloads}` Longhorn volumes are `faulted`: their only
@@ -214,7 +234,12 @@ once media is decided.
 
 ## Scratch infra this spike adds (tear down or adopt at the gate)
 
-- NixOS box: `p0agent serve` process + `/tmp/p0key`, firewall hole.
+- NixOS box: user unit `p0agent-standin` + `~/p0-jf/` (key, token, 5.7 GB
+  test file); the `/data/p0test` line in `~/disks/1TB-old/server/
+  docker-compose.yml` and the `P0 Test` library in Jellyfin. No firewall
+  hole yet (LAN peers should punch via conntrack; add
+  `iptables -I nixos-fw -i wlp12s0 -p udp --dport 7842 -j ACCEPT` if the
+  APK stays on `*relay`).
 - cp1: extension `0.0.4` with the Jellyfin forward (joins bead `5cz`).
 - Possibly `ghcr.io/marnyg/{p0agent,talos-installer}` new tags.
 - No new fly apps; reuses the scratch relay (`kql`).
