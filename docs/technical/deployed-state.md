@@ -109,7 +109,7 @@ or change something, update the date.
   EPHEMERAL at `/var/lib/p0agent/key`, dials the scratch relay).
   Three upgrades and one reboot that day; EPHEMERAL intact throughout.
   LAN lease drifted `.42 → .58` across them.
-- _2026-09-16_ (Phase 0 gate, ruling on bead `5cz`): **the imager image
+- _2026-09-16_ (Phase 0 gate, ruling on bead `5cz`, ADR-0023): **the imager image
   is now the declared one** — `talos/hardware/minipc.yaml` pins
   `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3@sha256:6b4337…`;
   git and the node agree again. w1 (`alienware-x15.yaml`) stays on the

@@ -8,7 +8,7 @@ machine:
     # with `talos/extensions/p0agent/build.sh <static-p0agent> <ver>` (lists
     # every extension explicitly — `--base-installer-image` does NOT
     # inherit the factory's). Gate ruling 2026-09-16 (Mesh v3 Phase 0,
-    # bead 5cz): declare what cp1 runs rather than upgrade back to the
+    # bead 5cz, ADR-0023): declare what cp1 runs rather than upgrade back to the
     # factory image Phase 1 would immediately replace.
     #
     # - nebula        (1.10.3) runs the mesh overlay on the node. Without
