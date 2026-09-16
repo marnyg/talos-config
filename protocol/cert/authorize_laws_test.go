@@ -230,7 +230,7 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 		memberSigner, grantSigner = "HUB_A", "HUB_B"
 	}
 
-	consents := buildConsents(f, flt, "")
+	consents := buildConsents(f, flt, "", VerbInvoke)
 
 	// member cert with its faults.
 	memberIss := memberSigner
@@ -435,7 +435,11 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 // consent1 (R → OWNER1) with its faults — and, since ADR-0001, the
 // model's ENDPOINTS and an optional postage on the consent itself — plus
 // the fault-free CONSENT2 (R → OWNER2) unless fNoConsentOwner2.
-func buildConsents(f fixture, flt map[fault]bool, postage string) []Cert {
+// chainVerb is the verb the chain half carries / R expects there (the
+// model's genNear `cv`); for a non-invoke verb a twin of consent1 in
+// that verb joins the set (the model's rootConsents), and the
+// connection-level half must never root an invoke grant in it.
+func buildConsents(f fixture, flt map[fault]bool, postage string, chainVerb Verb) []Cert {
 	id := f.id
 	facets := []string{"apid", "kube-api"}
 	consent1Iss := "R"
@@ -454,21 +458,27 @@ func buildConsents(f fixture, flt map[fault]bool, postage string) []Cert {
 	if has(flt, fConsentExpired) {
 		consent1Exp = testNOW
 	}
-	consent1 := f.build(certSpec{
+	consent1Spec := certSpec{
 		iss: consent1Iss, aud: string(id["OWNER1"]), can: VerbInvoke,
 		cav: Caveats{Target: consent1Target, Facet: consent1Facet, Delegable: !has(flt, fConsentNotDelegable),
 			Endpoints: modelEndpoints, Postage: postage},
 		exp: consent1Exp, forged: has(flt, fConsentForged),
-	})
+	}
+	roots := []Cert{f.build(consent1Spec)}
+	if chainVerb != VerbInvoke {
+		twin := consent1Spec
+		twin.can = chainVerb
+		roots = append(roots, f.build(twin))
+	}
 	consent2 := f.build(certSpec{
 		iss: "R", aud: string(id["OWNER2"]), can: VerbInvoke,
 		cav: Caveats{Target: []ActorID{id["R"]}, Facet: facets, Delegable: true, Endpoints: modelEndpoints},
 		exp: 10,
 	})
 	if has(flt, fNoConsentOwner2) {
-		return []Cert{consent1}
+		return roots
 	}
-	return []Cert{consent1, consent2}
+	return append(roots, consent2)
 }
 
 // scenarioGen wraps genNear as a rapid generator so coverage tests can

@@ -11,13 +11,15 @@ import (
 // This file ports the N-link chain half of verification/quint/authorize.qnt
 // (protocol ADR-0001, talos-config-0bc.2.1) 1:1 — every invChain* /
 // invPostage* / invEndpointsIntersect / invStarFailsClosedWithoutPostage /
-// invAudSpeakAsNeedsInvoke / invEffectiveIsIntersection law in its invAll,
-// plus the three witness runs — over REAL Ed25519 signatures. The
+// invAudSpeakAsCoversVerb / invEffectiveIsIntersection law in its invAll,
+// plus the four witness runs — over REAL Ed25519 signatures. The
 // generator mirrors the model's nearChain: a correct 2-link caller chain
 // [OWNER1→OWNER2, OWNER2→aud] under consent(R→OWNER1), hub-signed or not,
-// in five kinds, with up to two of the 31 chain faults injected; the
-// consents come from the connection-level genNear (buildConsents) so
-// consent faults reach the chain through the shared root.
+// carrying `invoke` or `publish` throughout (xwu: the chain's verb is the
+// root consent's), in five kinds, with up to two of the 32 chain faults
+// injected; the consents come from the connection-level genNear
+// (buildConsents) so consent faults reach the chain through the shared
+// root.
 //
 // Laws are stated over RAW fields (never via VerifyChain's helpers) and
 // over the SET of verdicts (the package-internal verifyChain — the
@@ -48,6 +50,7 @@ const (
 	cfLink1FacetKubeOnly
 	cfLink1EndpointsA
 	cfLink1Postage
+	cfLink1VerbOtherChain // link 1 carries the OTHER chain verb (well-formed, wrong root)
 	cfLink2Forged
 	cfLink2Expired
 	cfLink2Unknown
@@ -64,13 +67,25 @@ const (
 	cfAudSpeakAsMissing
 	cfAudSpeakAsExpired
 	cfAudSpeakAsForged
-	cfAudSpeakAsNoInvoke
+	cfAudSpeakAsNoVerb // speak-as covers member only, not the chain's verb
 	cfAudSpeakAsFromRogue
 	cfHubANoSpeakAs
 	cfHubBSpeakAsExpired
-	cfHubBSpeakAsInvokeless
+	cfHubBSpeakAsVerbless // likewise, on the HUB_B link
 	numCFaults
 )
+
+// chainVerbs is the model's CHAIN_VERBS: what a receiver may expect a
+// chain to carry. Publish stands for every non-invoke verb (M3).
+var chainVerbs = []Verb{VerbInvoke, VerbPublish}
+
+// otherChainVerb is the model's otherChainVerb (for cfLink1VerbOtherChain).
+func otherChainVerb(v Verb) Verb {
+	if v == VerbInvoke {
+		return VerbPublish
+	}
+	return VerbInvoke
+}
 
 // chainKind is the model's ChainKind: how the last link binds its presenter.
 type chainKind int
@@ -88,6 +103,7 @@ const (
 type chainParams struct {
 	cf1, cf2   cfault
 	kind       chainKind
+	verb       Verb   // the verb the chain carries and R expects (model: cv / cverb)
 	hubSigned  bool   // link1 by HUB_A, link2 by HUB_B under speak-as from OWNER1/OWNER2
 	f1, f2     fault  // connection-level faults; only the consent ones bite here
 	cPostage   string // postage on consent1 itself
@@ -107,6 +123,7 @@ type chainScenario struct {
 	speakAsAtt []Cert
 	signer     ActorID
 	facet      string
+	verb       Verb
 	f          map[cfault]bool
 }
 
@@ -117,6 +134,7 @@ func genChain(t *rapid.T, f fixture) chainScenario {
 		cf1:       cfault(rapid.IntRange(0, int(numCFaults)-1).Draw(t, "cf1")),
 		cf2:       cfault(rapid.IntRange(0, int(numCFaults)-1).Draw(t, "cf2")),
 		kind:      chainKind(rapid.IntRange(0, int(numKinds)-1).Draw(t, "kind")),
+		verb:      rapid.SampledFrom(chainVerbs).Draw(t, "cv"),
 		hubSigned: rapid.Bool().Draw(t, "cHub"),
 		f1:        fault(rapid.IntRange(0, int(numFaults)-1).Draw(t, "f1")),
 		f2:        fault(rapid.IntRange(0, int(numFaults)-1).Draw(t, "f2")),
@@ -136,7 +154,11 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 	id := f.id
 	flt := map[cfault]bool{p.cf1: true, p.cf2: true}
 	facets := []string{"apid", "kube-api"}
-	consents := buildConsents(f, map[fault]bool{p.f1: true, p.f2: true}, p.cPostage)
+	verb := p.verb
+	if verb == "" {
+		verb = VerbInvoke
+	}
+	consents := buildConsents(f, map[fault]bool{p.f1: true, p.f2: true}, p.cPostage, verb)
 
 	// postage placement: on link1 by fault; on link2 by fault or for the
 	// `*` kind (unless FStarNoPostage); conflicting value by fault.
@@ -185,7 +207,11 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 	if hasC(flt, cfLink1Expired) {
 		l1Exp = testNOW
 	}
-	l1 := certSpec{iss: l1Iss, aud: string(l1Aud), can: VerbInvoke,
+	l1Can := verb
+	if hasC(flt, cfLink1VerbOtherChain) {
+		l1Can = otherChainVerb(verb)
+	}
+	l1 := certSpec{iss: l1Iss, aud: string(l1Aud), can: l1Can,
 		cav: Caveats{Target: l1Target, Facet: l1Facet, Delegable: !hasC(flt, cfLink1NotDelegable),
 			Endpoints: l1Ep, Postage: p1},
 		exp: l1Exp, forged: hasC(flt, cfLink1Forged), unknown: hasC(flt, cfLink1Unknown)}
@@ -210,9 +236,9 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 			l2Aud = string(id["ROGUE"])
 		}
 	}
-	l2Can := VerbInvoke
+	l2Can := verb
 	if hasC(flt, cfLink2VerbOther) {
-		l2Can = VerbRelay
+		l2Can = VerbRelay // OtherVerb: outside CHAIN_VERBS
 	}
 	l2Facet := []string{"apid"}
 	if hasC(flt, cfLink2FacetKubeOnly) {
@@ -244,10 +270,10 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 	if p.hubSigned {
 		if !hasC(flt, cfHubANoSpeakAs) {
 			saSpecs = append(saSpecs, certSpec{iss: "OWNER1", aud: string(id["HUB_A"]), can: VerbSpeakAs,
-				cav: Caveats{Verbs: []string{"invoke"}}, exp: 10})
+				cav: Caveats{Verbs: []string{string(verb)}}, exp: 10})
 		}
-		hubBVerbs := []string{"invoke"}
-		if hasC(flt, cfHubBSpeakAsInvokeless) {
+		hubBVerbs := []string{string(verb)}
+		if hasC(flt, cfHubBSpeakAsVerbless) {
 			hubBVerbs = []string{"member"}
 		}
 		hubBExp := int64(10)
@@ -262,8 +288,8 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 		if hasC(flt, cfAudSpeakAsFromRogue) {
 			audIss = "ROGUE"
 		}
-		audVerbs := []string{"invoke"}
-		if hasC(flt, cfAudSpeakAsNoInvoke) {
+		audVerbs := []string{string(verb)}
+		if hasC(flt, cfAudSpeakAsNoVerb) {
 			audVerbs = []string{"member"}
 		}
 		audExp := int64(10)
@@ -344,7 +370,7 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 	}
 
 	return chainScenario{p: p, consents: consents, chain: chain, chainAtt: chainAtt,
-		speakAs: speakAs, speakAsAtt: speakAsAtt, signer: signer, facet: "apid", f: flt}
+		speakAs: speakAs, speakAsAtt: speakAsAtt, signer: signer, facet: "apid", verb: verb, f: flt}
 }
 
 // chainResult is the model's chainRes: the verdict SET, plus the public
@@ -381,11 +407,12 @@ func isHotKey(id map[string]ActorID, k ActorID) bool {
 // chainAttributable ports the model's chainAttributable (loosest reading).
 func chainAttributable(speakAs []Cert, k ActorID) []ActorID { return attributable(speakAs, k) }
 
-// liveInvokeSpeakAs ports the model's liveInvokeSpeakAs (raw fields).
-func liveInvokeSpeakAs(speakAs []Cert, s, k ActorID) bool {
+// liveChainSpeakAs ports the model's liveChainSpeakAs (raw fields): a
+// live speak-as S→k covering the chain's verb.
+func liveChainSpeakAs(speakAs []Cert, s, k ActorID, verb Verb) bool {
 	for _, sp := range speakAs {
 		if sp.Iss == s && sp.Aud == string(k) && sp.Can == VerbSpeakAs && sigOKlaw(sp) &&
-			containsStr(sp.Cav.Verbs, "invoke") {
+			containsStr(sp.Cav.Verbs, string(verb)) {
 			return true
 		}
 	}
@@ -405,7 +432,8 @@ func anyPostage(certs []Cert) bool {
 
 var chainLaws = []chainLaw{
 	// Rule 1 — every verdict is rooted in one of R's OWN consents that
-	// verifies and carries invoke; with none such, nothing verifies.
+	// verifies and carries the verb R expects; with none such, nothing
+	// verifies.
 	{"invChainRootIsReceiverConsent", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
 		for _, v := range res.verdicts {
 			found := false
@@ -414,7 +442,7 @@ var chainLaws = []chainLaw{
 					found = true
 				}
 			}
-			if !found || v.consent.Iss != id["R"] || !sigValid(v.consent) || v.consent.Can != VerbInvoke {
+			if !found || v.consent.Iss != id["R"] || !sigValid(v.consent) || v.consent.Can != s.verb {
 				return true, false
 			}
 		}
@@ -451,7 +479,8 @@ var chainLaws = []chainLaw{
 		return hit, true
 	}},
 	// Receiver-rooted survives every link: a chain link signed by a hot
-	// key with no live, invoke-covering speak-as to it admits nothing.
+	// key with no live speak-as to it covering the chain's verb admits
+	// nothing.
 	{"invChainHotKeyNeedsSpeakAs", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
 		for _, l := range s.chain {
 			if !isHotKey(id, l.Iss) {
@@ -460,7 +489,7 @@ var chainLaws = []chainLaw{
 			vouched := false
 			for _, sp := range s.speakAs {
 				if sp.Aud == string(l.Iss) && sigValid(sp) && sp.Exp > testNOW && sp.Can == VerbSpeakAs &&
-					!sp.Cav.Unknown && containsStr(sp.Cav.Verbs, "invoke") {
+					!sp.Cav.Unknown && containsStr(sp.Cav.Verbs, string(s.verb)) {
 					vouched = true
 				}
 			}
@@ -471,9 +500,9 @@ var chainLaws = []chainLaw{
 		return false, true
 	}},
 	// Rule 3 — the last link's aud binds the signer: the signer's key, a
-	// principal S with a live speak-as S→signer covering invoke, or "*"
-	// with postage somewhere on the chain. A group audience is only ever
-	// the sentinel, never bound.
+	// principal S with a live speak-as S→signer covering the chain's verb,
+	// or "*" with postage somewhere on the chain. A group audience is only
+	// ever the sentinel, never bound.
 	{"invChainAudBindsSigner", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
 		for _, v := range res.verdicts {
 			last := lastOf(links(v, s.chain))
@@ -492,7 +521,7 @@ var chainLaws = []chainLaw{
 					return true, false
 				}
 			default:
-				if last.Aud != string(s.signer) && !liveInvokeSpeakAs(s.speakAs, ActorID(last.Aud), s.signer) {
+				if last.Aud != string(s.signer) && !liveChainSpeakAs(s.speakAs, ActorID(last.Aud), s.signer, s.verb) {
 					return true, false
 				}
 			}
@@ -507,8 +536,8 @@ var chainLaws = []chainLaw{
 		return false, true
 	}},
 	// Aud-side speak-as is verb-scoped: aud: S presented by another key
-	// needs a speak-as S→signer that is live and covers invoke.
-	{"invAudSpeakAsNeedsInvoke", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
+	// needs a speak-as S→signer that is live and covers the chain's verb.
+	{"invAudSpeakAsCoversVerb", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
 		if len(s.chain) == 0 {
 			return false, true
 		}
@@ -516,7 +545,7 @@ var chainLaws = []chainLaw{
 		if _, isGroup := trimGroup(aud); isGroup || aud == AudAny {
 			return false, true
 		}
-		if aud != string(s.signer) && !liveInvokeSpeakAs(s.speakAs, ActorID(aud), s.signer) {
+		if aud != string(s.signer) && !liveChainSpeakAs(s.speakAs, ActorID(aud), s.signer, s.verb) {
 			return true, !res.accepted()
 		}
 		return false, true
@@ -626,13 +655,28 @@ var chainLaws = []chainLaw{
 		}
 		return hit, true
 	}},
-	{"invChainVerbIsInvoke", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
+	// Verb = the root consent's (xwu): a caller link carrying any verb
+	// other than the one R expects rejects — an invoke link under a publish
+	// root as much as an unknown verb …
+	{"invChainVerbIsRoot", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
 		for _, l := range s.chain {
-			if l.Can != VerbInvoke {
+			if l.Can != s.verb {
 				return true, !res.accepted()
 			}
 		}
 		return false, true
+	}},
+	// … and on every verdict the whole chain, root included, carries that
+	// one verb.
+	{"invChainVerbUniform", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
+		for _, v := range res.verdicts {
+			for _, l := range links(v, s.chain) {
+				if l.Can != s.verb {
+					return true, false
+				}
+			}
+		}
+		return res.accepted(), true
 	}},
 	// delegable:false admits no following link — on a caller link or on
 	// the consent itself.
@@ -742,8 +786,8 @@ func subsetID(need, have []ActorID) bool {
 
 func evalChain(id map[string]ActorID, s chainScenario, chain, speakAs []Cert) chainResult {
 	ctx := newAuthCtx()
-	vs, err := ctx.verifyChain(id["R"], s.consents, chain, speakAs, s.signer, s.facet, testNOW)
-	eff, _, pubErr := VerifyChain(id["R"], s.consents, chain, speakAs, s.signer, s.facet, testNOW)
+	vs, err := ctx.verifyChain(id["R"], s.verb, s.consents, chain, speakAs, s.signer, s.facet, testNOW)
+	eff, _, pubErr := VerifyChain(id["R"], s.verb, s.consents, chain, speakAs, s.signer, s.facet, testNOW)
 	return chainResult{verdicts: vs, err: err, pubEff: eff, pubErr: pubErr}
 }
 
@@ -791,11 +835,13 @@ func TestChainFaultPairSweep(t *testing.T) {
 		for c2 := c1; c2 < numCFaults; c2++ {
 			for kind := chainKind(0); kind < numKinds; kind++ {
 				for _, hub := range []bool{false, true} {
-					p := chainParams{cf1: c1, cf2: c2, kind: kind, hubSigned: hub,
-						attI: n % 2, attKind: n % numAtts, attT: "R", attF: "apid",
-						attG: modelGroups[n%len(modelGroups)], attE: modelEndpoints[n%len(modelEndpoints)]}
-					checkChainLaws(sweepCT{t, p}, f.id, buildChainScenario(f, p), nil)
-					n++
+					for _, verb := range chainVerbs {
+						p := chainParams{cf1: c1, cf2: c2, kind: kind, verb: verb, hubSigned: hub,
+							attI: n % 2, attKind: n % numAtts, attT: "R", attF: "apid",
+							attG: modelGroups[n%len(modelGroups)], attE: modelEndpoints[n%len(modelEndpoints)]}
+						checkChainLaws(sweepCT{t, p}, f.id, buildChainScenario(f, p), nil)
+						n++
+					}
 				}
 			}
 		}
@@ -870,7 +916,7 @@ func TestVerifyChainHappyPath(t *testing.T) {
 	f := detFixture(80)
 	id := f.id
 	consent, chain, speakAs := chainHappyPath(f)
-	eff, verified, err := VerifyChain(id["R"], []Cert{consent}, chain, speakAs, id["CALLER_HOT"], "apid", testNOW)
+	eff, verified, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, chain, speakAs, id["CALLER_HOT"], "apid", testNOW)
 	if err != nil {
 		t.Fatalf("3-link hub-signed chain rejected: %v", err)
 	}
@@ -891,26 +937,26 @@ func TestVerifyChainHappyPath(t *testing.T) {
 	// tainting the last link rejects.
 	tainted := append([]Cert(nil), chain...)
 	tainted[1].Cav.Unknown = true
-	if _, _, err := VerifyChain(id["R"], []Cert{consent}, tainted, speakAs, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrUnknownCaveat) {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, tainted, speakAs, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrUnknownCaveat) {
 		t.Fatalf("tainted last link: err = %v, want ErrUnknownCaveat", err)
 	} else if errors.Is(err, ErrPostageConflict) {
 		t.Fatalf("plain unknown-caveat taint: err = %v, want NOT ErrPostageConflict", err)
 	}
 	// the same chain presented by a key nobody vouches for is unbound.
-	if _, _, err := VerifyChain(id["R"], []Cert{consent}, chain, speakAs, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrAudUnbound) {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, chain, speakAs, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrAudUnbound) {
 		t.Fatalf("ROGUE presenting: err = %v, want ErrAudUnbound", err)
 	}
 	// and with the aud-side speak-as lacking invoke, too.
 	noInvoke := append([]Cert(nil), speakAs[:2]...)
 	noInvoke = append(noInvoke, f.build(certSpec{iss: "CALLER", aud: string(id["CALLER_HOT"]), can: VerbSpeakAs,
 		cav: Caveats{Verbs: []string{"member"}}, exp: 10}))
-	if _, _, err := VerifyChain(id["R"], []Cert{consent}, chain, noInvoke, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrAudUnbound) {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, chain, noInvoke, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrAudUnbound) {
 		t.Fatalf("speak-as without invoke: err = %v, want ErrAudUnbound", err)
 	}
 	// a fourth link after the non-delegable LINK2 cannot follow.
 	link3 := f.build(certSpec{iss: "CALLER", aud: string(id["ROGUE"]), can: VerbInvoke,
 		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}, Endpoints: modelEndpoints}, exp: 10})
-	if _, _, err := VerifyChain(id["R"], []Cert{consent}, append(append([]Cert(nil), chain...), link3), speakAs, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrNotDelegable) {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, append(append([]Cert(nil), chain...), link3), speakAs, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrNotDelegable) {
 		t.Fatalf("link after delegable:false: err = %v, want ErrNotDelegable", err)
 	}
 }
@@ -939,23 +985,23 @@ func TestVerifyChainStarPostage(t *testing.T) {
 		return f.build(certSpec{iss: "OWNER1", aud: AudAny, can: VerbInvoke,
 			cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}, Endpoints: modelEndpoints, Postage: postage}, exp: 10})
 	}
-	eff, _, err := VerifyChain(id["R"], []Cert{consent("")}, []Cert{star(postagePoW)}, nil, id["ROGUE"], "apid", testNOW)
+	eff, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent("")}, []Cert{star(postagePoW)}, nil, id["ROGUE"], "apid", testNOW)
 	if err != nil || eff.Cav.Postage != postagePoW {
 		t.Fatalf("* with postage presented by ROGUE: err=%v eff.postage=%q", err, eff.Cav.Postage)
 	}
-	if _, _, err := VerifyChain(id["R"], []Cert{consent("")}, []Cert{star("")}, nil, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrAudUnbound) {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent("")}, []Cert{star("")}, nil, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrAudUnbound) {
 		t.Fatalf("* without postage: err = %v, want ErrAudUnbound", err)
 	}
-	if _, _, err := VerifyChain(id["R"], []Cert{consent(postagePay)}, []Cert{star(postagePoW)}, nil, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrPostageConflict) {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent(postagePay)}, []Cert{star(postagePoW)}, nil, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrPostageConflict) {
 		t.Fatalf("conflicting postage: err = %v, want ErrPostageConflict", err)
 	} else if !errors.Is(err, ErrUnknownCaveat) {
 		t.Fatalf("conflicting postage: err = %v, ErrPostageConflict must remain an ErrUnknownCaveat (taint)", err)
 	}
-	if _, _, err := VerifyChain(id["R"], []Cert{consent(postagePoW)}, []Cert{star(postagePoW)}, nil, id["ROGUE"], "apid", testNOW); err != nil {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent(postagePoW)}, []Cert{star(postagePoW)}, nil, id["ROGUE"], "apid", testNOW); err != nil {
 		t.Fatalf("agreeing postage: %v", err)
 	}
 	// postage on the consent alone unlocks a "*" link without its own.
-	if _, _, err := VerifyChain(id["R"], []Cert{consent(postagePoW)}, []Cert{star("")}, nil, id["ROGUE"], "apid", testNOW); err != nil {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent(postagePoW)}, []Cert{star("")}, nil, id["ROGUE"], "apid", testNOW); err != nil {
 		t.Fatalf("postage carried from the consent: %v", err)
 	}
 	// connection level: the same rule on a "*" grant.
@@ -982,7 +1028,7 @@ func TestVerifyChainConsentOnly(t *testing.T) {
 	id := f.id
 	consent := f.build(certSpec{iss: "R", aud: string(id["OWNER1"]), can: VerbInvoke,
 		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid", "kube-api"}, Delegable: true, Endpoints: modelEndpoints}, exp: 10})
-	eff, verified, err := VerifyChain(id["R"], []Cert{consent}, nil, nil, id["OWNER1"], "kube-api", testNOW)
+	eff, verified, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, nil, nil, id["OWNER1"], "kube-api", testNOW)
 	if err != nil {
 		t.Fatalf("consent-only chain rejected: %v", err)
 	}
@@ -993,14 +1039,80 @@ func TestVerifyChainConsentOnly(t *testing.T) {
 		t.Fatalf("verified = %d, want 1 (the consent)", len(verified))
 	}
 	hub := f.build(certSpec{iss: "OWNER1", aud: string(id["HUB_A"]), can: VerbSpeakAs, cav: Caveats{Verbs: []string{"invoke"}}, exp: 10})
-	if _, _, err := VerifyChain(id["R"], []Cert{consent}, nil, []Cert{hub}, id["HUB_A"], "kube-api", testNOW); err != nil {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, nil, []Cert{hub}, id["HUB_A"], "kube-api", testNOW); err != nil {
 		t.Fatalf("consent presented by OWNER1's hot key: %v", err)
 	}
-	if _, _, err := VerifyChain(id["R"], []Cert{consent}, nil, nil, id["OWNER2"], "kube-api", testNOW); !errors.Is(err, ErrAudUnbound) {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, nil, nil, id["OWNER2"], "kube-api", testNOW); !errors.Is(err, ErrAudUnbound) {
 		t.Fatalf("consent presented by a stranger: err = %v, want ErrAudUnbound", err)
 	}
-	if _, _, err := VerifyChain(id["R"], nil, nil, nil, id["OWNER1"], "kube-api", testNOW); !errors.Is(err, ErrChainUnrooted) {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, nil, nil, nil, id["OWNER1"], "kube-api", testNOW); !errors.Is(err, ErrChainUnrooted) {
 		t.Fatalf("no consents: err = %v, want ErrChainUnrooted", err)
+	}
+}
+
+// TestVerifyChainPublish is the model's publishChainTest (xwu): the
+// happy-path shape with every link and speak-as carrying `publish`
+// under a `publish` consent verifies for a receiver expecting `publish`,
+// rooted in that consent only; the same links do not verify as `invoke`
+// (no root); an `invoke` link under the `publish` root is ErrChainVerb;
+// speak-as covering only `invoke` vouch for nothing; and Authorize stays
+// invoke-only — a `publish` grant admits no connection even beside a
+// `publish` consent.
+func TestVerifyChainPublish(t *testing.T) {
+	f := detFixture(120)
+	id := f.id
+	consentInv, chainInv, speakAsInv := chainHappyPath(f)
+	// asVerb re-signs c (issued by the named principal) under another verb.
+	asVerb := func(iss string, c Cert, v Verb) Cert {
+		return f.build(certSpec{iss: iss, aud: c.Aud, can: v, cav: c.Cav, exp: c.Exp})
+	}
+	consentPub := asVerb("R", consentInv, VerbPublish)
+	chainPub := []Cert{asVerb("HUB_A", chainInv[0], VerbPublish), asVerb("HUB_B", chainInv[1], VerbPublish)}
+	sa := func(iss, aud string, verbs ...string) Cert {
+		return f.build(certSpec{iss: iss, aud: string(id[aud]), can: VerbSpeakAs, cav: Caveats{Verbs: verbs}, exp: 10})
+	}
+	speakAsPub := []Cert{sa("OWNER1", "HUB_A", "publish"), sa("OWNER2", "HUB_B", "publish"), sa("CALLER", "CALLER_HOT", "publish")}
+	consents := []Cert{consentInv, consentPub}
+
+	eff, _, err := VerifyChain(id["R"], VerbPublish, consents, chainPub, speakAsPub, id["CALLER_HOT"], "apid", testNOW)
+	if err != nil || eff.Can != VerbPublish {
+		t.Fatalf("publish chain as publish: err=%v eff.can=%q", err, eff.Can)
+	}
+	ctx := newAuthCtx()
+	vs, _ := ctx.verifyChain(id["R"], VerbPublish, consents, chainPub, speakAsPub, id["CALLER_HOT"], "apid", testNOW)
+	for _, v := range vs {
+		if certKey(v.consent) != certKey(consentPub) {
+			t.Fatalf("publish chain rooted in a %s consent", v.consent.Can)
+		}
+	}
+	// the same links as an invoke chain: no root has the chain's verb.
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, consents, chainPub, speakAsPub, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrChainVerb) {
+		t.Fatalf("publish links under the invoke root: err = %v, want ErrChainVerb", err)
+	}
+	// an invoke link under the publish root: verb differs from the root's.
+	mixed := []Cert{chainPub[0], chainInv[1]}
+	if _, _, err := VerifyChain(id["R"], VerbPublish, consents, mixed, speakAsPub, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrChainVerb) {
+		t.Fatalf("invoke link under the publish root: err = %v, want ErrChainVerb", err)
+	}
+	// speak-as covering invoke only: the hub links do not resolve (rule 2).
+	if _, _, err := VerifyChain(id["R"], VerbPublish, consents, chainPub, speakAsInv, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrChainLinkage) {
+		t.Fatalf("invoke-only speak-as on a publish chain: err = %v, want ErrChainLinkage", err)
+	}
+	// …and, with only the aud-side speak-as lacking publish, unbound (rule 3).
+	audInv := []Cert{speakAsPub[0], speakAsPub[1], speakAsInv[2]}
+	if _, _, err := VerifyChain(id["R"], VerbPublish, consents, chainPub, audInv, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrAudUnbound) {
+		t.Fatalf("aud-side speak-as without publish: err = %v, want ErrAudUnbound", err)
+	}
+	// connection level is invoke-only: a publish grant never admits.
+	member := f.build(certSpec{iss: "OWNER1", aud: string(id["CALLER"]), can: VerbMember,
+		cav: Caveats{Groups: []string{"admins"}, Name: "laptop"}, exp: 10})
+	grantPub := f.build(certSpec{iss: "OWNER1", aud: string(id["CALLER"]), can: VerbPublish,
+		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}}, exp: 10})
+	in := Input{Receiver: id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+		Consents: consents, Blocklist: map[ActorID]bool{}, Now: testNOW,
+		ALPN: "mesh/apid/v1", Peer: id["CALLER"], Bundle: Bundle{Member: member, Grants: []Cert{grantPub}}}
+	if Authorize(in).OK {
+		t.Fatal("Authorize accepted a publish grant beside a publish consent")
 	}
 }
 
@@ -1012,7 +1124,7 @@ func TestVerifyChainGroupSentinel(t *testing.T) {
 	consent, _, _ := chainHappyPath(f)
 	grant := f.build(certSpec{iss: "OWNER1", aud: "group:admins", can: VerbInvoke,
 		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}}, exp: 10})
-	eff, verified, err := VerifyChain(id["R"], []Cert{consent}, []Cert{grant}, nil, id["CALLER"], "apid", testNOW)
+	eff, verified, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, []Cert{grant}, nil, id["CALLER"], "apid", testNOW)
 	if !errors.Is(err, ErrGroupAud) {
 		t.Fatalf("err = %v, want ErrGroupAud", err)
 	}
@@ -1024,7 +1136,7 @@ func TestVerifyChainGroupSentinel(t *testing.T) {
 		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}}, exp: 10})
 	grantD := f.build(certSpec{iss: "OWNER1", aud: "group:admins", can: VerbInvoke,
 		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}, Delegable: true}, exp: 10})
-	if _, _, err := VerifyChain(id["R"], []Cert{consent}, []Cert{grantD, next}, nil, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrChainLinkage) {
+	if _, _, err := VerifyChain(id["R"], VerbInvoke, []Cert{consent}, []Cert{grantD, next}, nil, id["ROGUE"], "apid", testNOW); !errors.Is(err, ErrChainLinkage) {
 		t.Fatalf("link after a group audience: err = %v, want ErrChainLinkage", err)
 	}
 }

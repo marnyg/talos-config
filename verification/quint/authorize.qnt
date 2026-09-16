@@ -90,20 +90,25 @@
 // contain g" — never "resolved issuers are equal".
 //
 // N-LINK CHAIN VERIFIER (protocol ADR-0001, talos-config-0bc.2.1). One
-// pure def `verifyChain(receiver, consents, chain, speakAs, signer,
-// facet, now)` is the spec both the Go `cert.VerifyChain` and its rapid
-// laws follow 1:1. The caller presents `chain` — only the links it
-// holds; the verifier PREPENDS a receiver-signed consent itself and
-// folds `attenuate` (the Go `cert.Attenuate`, ported field for field)
-// over `[consent, chain...]`. Rules:
+// pure def `verifyChain(receiver, verb, consents, chain, speakAs,
+// signer, facet, now)` is the spec both the Go `cert.VerifyChain` and
+// its rapid laws follow 1:1. The caller presents `chain` — only the
+// links it holds; the verifier PREPENDS a receiver-signed consent itself
+// and folds `attenuate` (the Go `cert.Attenuate`, ported field for
+// field) over `[consent, chain...]`. `verb` is what the receiver expects
+// for this operation (an envelope invocation: `invoke`; a lighthouse
+// `#publish`: `publish` — talos-config-xwu). Rules:
 //   1. first link signed by the receiver — every admitting root is one
-//      of R's own consents (`iss == R`, verifies, `can: invoke`);
+//      of R's own consents (`iss == R`, verifies, `can == verb`). From
+//      here on the chain's verb IS the root consent's `can`: every link
+//      carries it, and every speak-as used must cover it;
 //   2. linkage — link i's signer resolves (through speak-as, one hop,
-//      as in step 2a) to the principal link i-1 names in `aud`; a
-//      group or `*` audience can therefore never be followed;
+//      as in step 2a, covering the chain's verb) to the principal link
+//      i-1 names in `aud`; a group or `*` audience can therefore never
+//      be followed;
 //   3. last link's `aud` binds the presenting signer: `aud == signer`,
 //      or `aud == S` with a live `speak-as S→signer` whose `cav.verbs ∋
-//      invoke` in the proof, or `aud == "*"` — fail closed unless the
+//      verb` in the proof, or `aud == "*"` — fail closed unless the
 //      effective cert carries `postage`. A `group:` audience is the
 //      `AudGroup` sentinel (Go: `ErrGroupAud` beside `eff`): the chain
 //      verified, the talos layer resolves the group (same-w rule below);
@@ -135,16 +140,17 @@
 //   first link R-signed       invChainRootIsReceiverConsent
 //   linkage                   invChainLinked, invChainHotKeyNeedsSpeakAs
 //   aud binding               invChainAudBindsSigner, invStarFailsClosedWithoutPostage,
-//                             invAudSpeakAsNeedsInvoke
+//                             invAudSpeakAsCoversVerb
+//   verb = root consent's     invChainVerbIsRoot, invChainVerbUniform (xwu)
 //   attenuation only          invEffectiveIsIntersection, invEndpointsIntersect,
 //                             invChainMonotone
 //   postage                   invPostageMonotone, invPostageConflictRejects
 //   fail closed per link      invChainForgedLinkRejects, invChainExpiredLinkRejects,
-//                             invChainUnknownCaveatRejects, invChainVerbIsInvoke,
-//                             invChainNotDelegableStops
+//                             invChainUnknownCaveatRejects, invChainNotDelegableStops
 //   target/facet              invChainTargetsReceiver, invChainFacetMatches
 //   witness                   chainHappyPathTest (3 links, hub-signed, aud-side
-//                             speak-as), starPostageTest, consentOnlyTest
+//                             speak-as), starPostageTest, consentOnlyTest,
+//                             publishChainTest (a non-invoke chain)
 //
 // Time (ADR-0019, talos-config-439): `NOW` here is the verifier's
 // EFFECTIVE clock, max(local clock, low-water mark over verified `iat`s).
@@ -192,8 +198,11 @@ module authorize {
   pure val ALPNS = ACCEPT_TABLE.keys().union(Set("mesh/bogus/v1"))
 
   // ---- the one primitive -------------------------------------------
-  type Verb = Member | Invoke | SpeakAs | OtherVerb   // OtherVerb: any verb outside this verifier's closed set
-  pure val VERBS = Set(Member, Invoke)                // what a speak-as may caveat over (ADR-0018: literal)
+  // Publish stands for every non-invoke verb a chain may carry (relay,
+  // publish — M3); OtherVerb: any verb outside this verifier's closed set.
+  type Verb = Member | Invoke | Publish | SpeakAs | OtherVerb
+  pure val VERBS = Set(Member, Invoke, Publish)       // what a speak-as may caveat over (ADR-0018: literal)
+  pure val CHAIN_VERBS = Set(Invoke, Publish)         // what a receiver may expect a chain to carry
   type Aud = AKey(int) | AGroup(str) | AAny   // AAny is the wire `"*"`
   // `unknown` stands for "carries a caveat this verifier does not
   // recognise" (ADR-0017: an unknown caveat rejects). `verbs` is the
@@ -314,15 +323,15 @@ module authorize {
 
   // One link of the fold. Rule 2 (linkage): the link's signer must
   // resolve — itself, or a principal with a live speak-as to it covering
-  // `invoke` and the groups the link names (step 2a) — to the principal
-  // the previous link's `aud` names. A forged link, a link with another
-  // verb, or a previous link addressed to a group or to `*` ends the
-  // chain. Expiry and taint travel in `eff` (min / OR) and are judged on
-  // the effective cert.
-  pure def linkStep(acc: Fold, c: Cert, speakAs: Set[Cert], now: int): Fold =
+  // the chain's `verb` and the groups the link names (step 2a) — to the
+  // principal the previous link's `aud` names. A forged link, a link
+  // whose `can` differs from the root consent's, or a previous link
+  // addressed to a group or to `*` ends the chain. Expiry and taint
+  // travel in `eff` (min / OR) and are judged on the effective cert.
+  pure def linkStep(acc: Fold, c: Cert, speakAs: Set[Cert], verb: Verb, now: int): Fold =
     if (not(acc.ok)) acc
-    else if (c.forged or c.can != Invoke
-             or not(resolve(speakAs, c.iss, Invoke, grantGroups(c), now).exists(p => isKey(acc.eff.aud, p))))
+    else if (c.forged or c.can != verb
+             or not(resolve(speakAs, c.iss, verb, grantGroups(c), now).exists(p => isKey(acc.eff.aud, p))))
       { ok: false, eff: c }
     else attenuate(acc.eff, c)
 
@@ -334,12 +343,13 @@ module authorize {
   // Rule 3 — the last link's `aud` (which `attenuate` keeps, so it is
   // `eff.aud`) against the presenting signer. AudGroup is the sentinel
   // the Go port returns as ErrGroupAud beside `eff`.
+  // The aud-side speak-as must cover the chain's `verb`.
   type AudVerdict = AudBound | AudGroup(str) | AudUnbound
-  pure def audBinding(eff: Cert, signer: int, speakAs: Set[Cert], now: int): AudVerdict = match eff.aud {
+  pure def audBinding(eff: Cert, signer: int, speakAs: Set[Cert], verb: Verb, now: int): AudVerdict = match eff.aud {
     | AKey(s) =>
       if (s == signer
           or speakAs.exists(sp => sp.iss == s and isKey(sp.aud, signer) and sp.can == SpeakAs
-                                  and sigOk(sp, now) and sp.cav.verbs.contains(Invoke)))
+                                  and sigOk(sp, now) and sp.cav.verbs.contains(verb)))
         AudBound
       else AudUnbound
     | AAny => if (eff.cav.postage != NO_POSTAGE) AudBound else AudUnbound
@@ -350,24 +360,28 @@ module authorize {
   // effective cert, the consent (its `aud` is the sovereign w the talos
   // group rule binds to — Go reads it off `verified`), and the audience
   // verdict.
+  // The chain's verb is the ROOT CONSENT's `can` (xwu): the fold and the
+  // aud binding read it off `c`, never a literal.
   type Verdict = { eff: Cert, consent: Cert, aud: AudVerdict }
   pure def chainUnder(c: Cert, chain: List[Cert], speakAs: Set[Cert], r: int,
                       signer: int, facet: str, now: int): { ok: bool, v: Verdict } = {
-    val f = chain.foldl({ ok: true, eff: c }, (acc, l) => linkStep(acc, l, speakAs, now))
+    val verb = c.can
+    val f = chain.foldl({ ok: true, eff: c }, (acc, l) => linkStep(acc, l, speakAs, verb, now))
     { ok: f.ok and effAdmits(f.eff, r, facet, now),
-      v: { consent: c, eff: f.eff, aud: audBinding(f.eff, signer, speakAs, now) } }
+      v: { consent: c, eff: f.eff, aud: audBinding(f.eff, signer, speakAs, verb, now) } }
   }
 
-  // verifyChain — the Go `cert.VerifyChain(receiver, consents, chain,
-  // speakAs, signer, facet, now)`. Rule 1: the roots are R's own consents
-  // that verify and carry `invoke`; everything else about the consent
+  // verifyChain — the Go `cert.VerifyChain(receiver, verb, consents,
+  // chain, speakAs, signer, facet, now)`. Rule 1: the roots are R's own
+  // consents that verify and carry `verb` — the verb the receiver
+  // expects for this operation; everything else about the consent
   // (target ∋ R, delegable, expiry, taint) is judged by the fold like
   // any other link. An empty caller chain is legal: the consented
   // sovereign presents R's consent alone and binds as its `aud`.
-  pure def verifyChain(r: int, consents: Set[Cert], chain: List[Cert], speakAs: Set[Cert],
+  pure def verifyChain(r: int, verb: Verb, consents: Set[Cert], chain: List[Cert], speakAs: Set[Cert],
                        signer: int, facet: str, now: int): Set[Verdict] =
     consents
-      .filter(c => c.iss == r and c.can == Invoke and not(c.forged))
+      .filter(c => c.iss == r and c.can == verb and not(c.forged))
       .map(c => chainUnder(c, chain, speakAs, r, signer, facet, now))
       .filter(o => o.ok and match o.v.aud { | AudUnbound => false | _ => true })
       .map(o => o.v)
@@ -382,7 +396,7 @@ module authorize {
   // global (FINDING 2026-09-06).
   pure def grantAdmits(r: int, facet: str, consents: Set[Cert], speakAs: Set[Cert],
                        g: Cert, member: Cert, peer: int, now: int): bool =
-    verifyChain(r, consents, [g], speakAs, peer, facet, now).exists(v => match v.aud {
+    verifyChain(r, Invoke, consents, [g], speakAs, peer, facet, now).exists(v => match v.aud {
       | AudBound => true
       | AudUnbound => false
       | AudGroup(grp) =>
@@ -473,11 +487,12 @@ module authorize {
   var chainSpeakAsAtt: Set[Cert]  // the same with one link attenuated (or unchanged)
   var signer: int                 // the presenting key (envelope `from` / QUIC peer)
   var cfacet: str                 // the facet the caller derived (`to.facet` / AcceptTable[ALPN])
+  var cverb: Verb                 // the verb the receiver expects the chain to carry (xwu)
 
   val res = authorize(R, ACCEPT_TABLE, consents, blocklist, NOW, alpn, peer, member, speakAs, grants)
   val resAtt = authorize(R, ACCEPT_TABLE, consents, blocklist, NOW, alpn, peer, member, speakAsAtt, grantsAtt)
-  val chainRes = verifyChain(R, consents, chain, chainSpeakAs, signer, cfacet, NOW)
-  val chainResAtt = verifyChain(R, consents, chainAtt, chainSpeakAsAtt, signer, cfacet, NOW)
+  val chainRes = verifyChain(R, cverb, consents, chain, chainSpeakAs, signer, cfacet, NOW)
+  val chainResAtt = verifyChain(R, cverb, consents, chainAtt, chainSpeakAsAtt, signer, cfacet, NOW)
 
   pure val CONSENT1 = mkCert(R, AKey(OWNER1), Invoke, Set(R), FACETS, Set(), "", true, false, 10, false)
                         .withEndpoints(ENDPOINTS)
@@ -513,6 +528,36 @@ module authorize {
     chainSpeakAsAtt' = CHAIN_SPEAKAS,
     signer' = CALLER_HOT,
     cfacet' = "apid",
+    cverb' = Invoke,
+  }
+
+  // A non-invoke chain (xwu): the same 3-link shape with every link and
+  // every speak-as carrying `publish` under a `publish` consent, verified
+  // by a receiver that expects `publish`. The attenuated twin's LINK2
+  // carries `invoke` — a verb change is not an attenuation, but the twin
+  // slot is the cheapest place to pin "differs from the root ⇒ reject".
+  pure def asVerb(c: Cert, v: Verb): Cert = c.with("can", v)
+  pure val CONSENT1_PUB = asVerb(CONSENT1, Publish)
+  pure val PUB_SPEAKAS = Set(mkSpeakAs(OWNER1, HUB_A, Set(Publish), Set(), false, 10, false),
+                             mkSpeakAs(OWNER2, HUB_B, Set(Publish), Set(), false, 10, false),
+                             mkSpeakAs(CALLER, CALLER_HOT, Set(Publish), Set(), false, 10, false))
+  action initPublish = all {
+    alpn' = "mesh/apid/v1",
+    peer' = CALLER,
+    blocklist' = Set(),
+    member' = mkCert(OWNER1, AKey(CALLER), Member, Set(), Set(), Set("admins"), "laptop", false, false, 10, false),
+    speakAs' = Set(),
+    consents' = Set(CONSENT1, CONSENT1_PUB),
+    grants' = Set(asVerb(mkCert(OWNER1, AKey(CALLER), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false), Publish)),
+    grantsAtt' = Set(),
+    speakAsAtt' = Set(),
+    chain' = [asVerb(LINK1, Publish), asVerb(LINK2, Publish)],
+    chainAtt' = [asVerb(LINK1, Publish), LINK2],
+    chainSpeakAs' = PUB_SPEAKAS,
+    chainSpeakAsAtt' = PUB_SPEAKAS,
+    signer' = CALLER_HOT,
+    cfacet' = "apid",
+    cverb' = Publish,
   }
 
   // `aud: "*"` + postage: a location-record-shaped last link anyone may
@@ -537,6 +582,7 @@ module authorize {
     chainSpeakAsAtt' = Set(),
     signer' = ROGUE,
     cfacet' = "apid",
+    cverb' = Invoke,
   }
 
   // ADR-0018 law 1 — mixed epochs: member cert by HUB_A, group grant by
@@ -562,6 +608,7 @@ module authorize {
     chainSpeakAsAtt' = Set(),
     signer' = OWNER1,
     cfacet' = "kube-api",
+    cverb' = Invoke,
   }
 
   action gen = {
@@ -580,7 +627,7 @@ module authorize {
     // two consents held by the receiver
     nondet c1Iss = RECEIVERS.oneOf()
     nondet c1Aud = WALLETS.oneOf()
-    nondet c1Can = Set(Invoke, Member).oneOf()
+    nondet c1Can = Set(Invoke, Member, Publish).oneOf()
     nondet c1Target = RECEIVERS.powerset().oneOf()
     nondet c1Facet = FACETS.powerset().oneOf()
     nondet c1Deleg = Bool.oneOf()
@@ -611,7 +658,7 @@ module authorize {
     // two grants presented by the caller
     nondet g1Iss = SIGNERS.oneOf()
     nondet g1Aud = Set(AKey(CALLER), AKey(ROGUE), AGroup("admins"), AGroup("media"), AAny).oneOf()
-    nondet g1Can = Set(Invoke, Member, OtherVerb).oneOf()
+    nondet g1Can = Set(Invoke, Member, Publish, OtherVerb).oneOf()
     nondet g1Target = RECEIVERS.powerset().oneOf()
     nondet g1Facet = FACETS.powerset().oneOf()
     nondet g1Unknown = Bool.oneOf()
@@ -627,8 +674,10 @@ module authorize {
     nondet g2Forged = Bool.oneOf()
     // the N-link scenario: up to two caller links, the proof's speak-as
     // (one wallet→hot-key, one caller→CALLER_HOT), a signer and a facet
+    nondet cverb_ = CHAIN_VERBS.oneOf()
     nondet l1Iss = SIGNERS.oneOf()
     nondet l1Aud = CHAIN_AUDS.oneOf()
+    nondet l1Can = CHAIN_VERBS.oneOf()
     nondet l1Target = RECEIVERS.powerset().oneOf()
     nondet l1Facet = FACETS.powerset().oneOf()
     nondet l1Deleg = Bool.oneOf()
@@ -639,7 +688,7 @@ module authorize {
     nondet l1Postage = POSTAGES.oneOf()
     nondet l2Iss = SIGNERS.union(PEERS).oneOf()
     nondet l2Aud = CHAIN_AUDS.oneOf()
-    nondet l2Can = Set(Invoke, OtherVerb).oneOf()
+    nondet l2Can = Set(Invoke, Publish, OtherVerb).oneOf()
     nondet l2Target = RECEIVERS.powerset().oneOf()
     nondet l2Facet = FACETS.powerset().oneOf()
     nondet l2Deleg = Bool.oneOf()
@@ -672,7 +721,7 @@ module authorize {
     val s1 = mkSpeakAs(s1Iss, s1Aud, s1Verbs, s1Groups, s1Unknown, s1Exp, s1Forged).with("can", s1Can)
     val s2 = mkSpeakAs(s2Iss, s2Aud, s2Verbs, s2Groups, false, s2Exp, s2Forged)
     val sa = if (sCount == 0) Set() else if (sCount == 1) Set(s1) else Set(s1, s2)
-    val l1 = mkCert(l1Iss, l1Aud, Invoke, l1Target, l1Facet, Set(), "", l1Deleg, l1Unknown, l1Exp, l1Forged)
+    val l1 = mkCert(l1Iss, l1Aud, l1Can, l1Target, l1Facet, Set(), "", l1Deleg, l1Unknown, l1Exp, l1Forged)
                .withEndpoints(l1Ep).withPostage(l1Postage)
     val l2 = mkCert(l2Iss, l2Aud, l2Can, l2Target, l2Facet, Set(), "", l2Deleg, false, l2Exp, l2Forged)
                .withEndpoints(l2Ep).withPostage(l2Postage)
@@ -698,6 +747,7 @@ module authorize {
       chainSpeakAsAtt' = csa.map(s => addSpeakAsCaveat(s, att, attG)),
       signer' = signer_,
       cfacet' = cfacet_,
+      cverb' = cverb_,
     }
   }
 
@@ -731,25 +781,32 @@ module authorize {
     // N-link chain faults (genNear's chain half; drawn from CFAULTS)
     | FLink1Forged | FLink1Expired | FLink1Unknown | FLink1NotDelegable
     | FLink1IssRogue | FLink1AudRogue | FLink1TargetOtherR | FLink1FacetKubeOnly
-    | FLink1EndpointsA | FLink1Postage
+    | FLink1EndpointsA | FLink1Postage | FLink1VerbOtherChain
     | FLink2Forged | FLink2Expired | FLink2Unknown | FLink2IssRogue | FLink2VerbOther
     | FLink2AudRogue | FLink2FacetKubeOnly | FLink2EndpointsB | FLink2Postage
     | FPostageConflict | FStarNoPostage | FSignerRogue | FDropLink1
     | FAudSpeakAsMissing | FAudSpeakAsExpired | FAudSpeakAsForged
-    | FAudSpeakAsNoInvoke | FAudSpeakAsFromRogue
-    | FHubANoSpeakAs | FHubBSpeakAsExpired | FHubBSpeakAsInvokeless
+    | FAudSpeakAsNoVerb | FAudSpeakAsFromRogue
+    | FHubANoSpeakAs | FHubBSpeakAsExpired | FHubBSpeakAsVerbless
 
+  // FLink1VerbOtherChain: link 1 carries the OTHER chain verb (a `publish`
+  // link under an `invoke` root, or vice versa) — well-formed on its own,
+  // wrong for this root (xwu). FAudSpeakAsNoVerb / FHubBSpeakAsVerbless:
+  // the speak-as covers `member` only, not the chain's verb.
   pure val CFAULTS = Set(
     FNone,
     FLink1Forged, FLink1Expired, FLink1Unknown, FLink1NotDelegable,
     FLink1IssRogue, FLink1AudRogue, FLink1TargetOtherR, FLink1FacetKubeOnly,
-    FLink1EndpointsA, FLink1Postage,
+    FLink1EndpointsA, FLink1Postage, FLink1VerbOtherChain,
     FLink2Forged, FLink2Expired, FLink2Unknown, FLink2IssRogue, FLink2VerbOther,
     FLink2AudRogue, FLink2FacetKubeOnly, FLink2EndpointsB, FLink2Postage,
     FPostageConflict, FStarNoPostage, FSignerRogue, FDropLink1,
     FAudSpeakAsMissing, FAudSpeakAsExpired, FAudSpeakAsForged,
-    FAudSpeakAsNoInvoke, FAudSpeakAsFromRogue,
-    FHubANoSpeakAs, FHubBSpeakAsExpired, FHubBSpeakAsInvokeless)
+    FAudSpeakAsNoVerb, FAudSpeakAsFromRogue,
+    FHubANoSpeakAs, FHubBSpeakAsExpired, FHubBSpeakAsVerbless)
+
+  // The other chain verb (for FLink1VerbOtherChain).
+  pure def otherChainVerb(v: Verb): Verb = if (v == Invoke) Publish else Invoke
 
   // How the last link binds its presenter: to CALLER's key directly; to
   // CALLER with CALLER_HOT presenting under a speak-as; to `*` with
@@ -760,10 +817,11 @@ module authorize {
   pure val CHAIN_KINDS = Set(KindKey, KindSpeakAs, KindStar, KindGroup, KindConsentOnly)
 
   // A correct 2-link caller chain [OWNER1→OWNER2, OWNER2→aud] under
-  // consent(R→OWNER1), hub-signed or not, with the chain faults in `f`
-  // injected. Endpoints narrow along the chain; postage appears where a
-  // fault or the `*` kind puts it.
-  pure def nearChain(f: Set[Fault], kind: ChainKind, hubSigned: bool):
+  // consent(R→OWNER1), hub-signed or not, carrying `verb` throughout
+  // (links and every speak-as), with the chain faults in `f` injected.
+  // Endpoints narrow along the chain; postage appears where a fault or
+  // the `*` kind puts it.
+  pure def nearChain(f: Set[Fault], kind: ChainKind, hubSigned: bool, verb: Verb):
       { chain: List[Cert], speakAs: Set[Cert], signer: int } = {
     val p1 = if (f.contains(FLink1Postage)) "pow:20" else NO_POSTAGE
     val p2base = if (f.contains(FLink2Postage) or (kind == KindStar and not(f.contains(FStarNoPostage))))
@@ -772,7 +830,7 @@ module authorize {
     val l1 = mkCert(
       if (f.contains(FLink1IssRogue)) ROGUE else if (hubSigned) HUB_A else OWNER1,
       AKey(if (f.contains(FLink1AudRogue)) ROGUE else OWNER2),
-      Invoke,
+      if (f.contains(FLink1VerbOtherChain)) otherChainVerb(verb) else verb,
       if (f.contains(FLink1TargetOtherR)) Set(OTHER_R) else Set(R),
       if (f.contains(FLink1FacetKubeOnly)) Set("kube-api") else FACETS,
       Set(), "",
@@ -789,7 +847,7 @@ module authorize {
         | KindGroup => AGroup("admins")
         | _ => AKey(if (f.contains(FLink2AudRogue)) ROGUE else CALLER)
       },
-      if (f.contains(FLink2VerbOther)) OtherVerb else Invoke,
+      if (f.contains(FLink2VerbOther)) OtherVerb else verb,
       Set(R),
       if (f.contains(FLink2FacetKubeOnly)) Set("kube-api") else Set("apid"),
       Set(), "", false,
@@ -802,14 +860,14 @@ module authorize {
     val audSa = mkSpeakAs(
       if (f.contains(FAudSpeakAsFromRogue)) ROGUE else CALLER,
       CALLER_HOT,
-      if (f.contains(FAudSpeakAsNoInvoke)) Set(Member) else Set(Invoke),
+      if (f.contains(FAudSpeakAsNoVerb)) Set(Member) else Set(verb),
       Set(), false,
       if (f.contains(FAudSpeakAsExpired)) NOW else 10,
       f.contains(FAudSpeakAsForged))
     val hubSa =
-      (if (f.contains(FHubANoSpeakAs)) Set() else Set(mkSpeakAs(OWNER1, HUB_A, Set(Invoke), Set(), false, 10, false)))
+      (if (f.contains(FHubANoSpeakAs)) Set() else Set(mkSpeakAs(OWNER1, HUB_A, Set(verb), Set(), false, 10, false)))
       .union(Set(mkSpeakAs(OWNER2, HUB_B,
-        if (f.contains(FHubBSpeakAsInvokeless)) Set(Member) else Set(Invoke),
+        if (f.contains(FHubBSpeakAsVerbless)) Set(Member) else Set(verb),
         Set(), false,
         if (f.contains(FHubBSpeakAsExpired)) NOW else 10, false)))
     val ch = match kind {
@@ -856,6 +914,7 @@ module authorize {
     nondet cf2 = CFAULTS.oneOf()
     nondet ckind = CHAIN_KINDS.oneOf()
     nondet cHub = Bool.oneOf()
+    nondet cv = CHAIN_VERBS.oneOf()                        // the verb the chain half carries / R expects
     nondet cPostage = Set(NO_POSTAGE, "pow:20").oneOf()   // postage on the consent itself
     nondet attI = Set(0, 1).oneOf()
     nondet att = ATTS.oneOf()
@@ -865,7 +924,7 @@ module authorize {
     nondet attE = ENDPOINTS.oneOf()
     nondet audKind = Set(0, 1).oneOf()   // 0: grant to the key, 1: grant to group:admins
     nondet hubSigned = Bool.oneOf()      // false: wallets sign directly (pre-ADR-0018 shape)
-    val nc = nearChain(Set(cf1, cf2), ckind, cHub)
+    val nc = nearChain(Set(cf1, cf2), ckind, cHub, cv)
     val memberSigner = if (hubSigned) HUB_A else OWNER1
     val grantSigner = if (hubSigned) HUB_B else OWNER1
     val consent1 = mkCert(
@@ -910,6 +969,10 @@ module authorize {
       false)
     val rogue = Set(mkSpeakAs(ROGUE, HUB_A, VERBS, GROUPS, false, 10, false),
                     mkSpeakAs(ROGUE, HUB_B, VERBS, GROUPS, false, 10, false))
+    // The chain half roots under consent1 in ITS verb: for a non-invoke
+    // chain a `cv` twin of consent1 joins the shared consents — and the
+    // connection-level half must never root an invoke grant in it.
+    val rootConsents = if (cv == Invoke) Set(consent1) else Set(consent1, consent1.with("can", cv))
     val sa =
       if (not(hubSigned)) Set()
       else (if (f.contains(FSpeakAsAMissing)) Set() else Set(sA))
@@ -930,7 +993,7 @@ module authorize {
         if (f.contains(FMemberExpired)) NOW else 10,
         f.contains(FMemberForged)),
       speakAs' = sa,
-      consents' = if (f.contains(FNoConsentOwner2)) Set(consent1) else Set(consent1, CONSENT2),
+      consents' = if (f.contains(FNoConsentOwner2)) rootConsents else rootConsents.union(Set(CONSENT2)),
       grants' = Set(g),
       grantsAtt' = Set(addCaveat(g, att, attT, attF, attE)),
       speakAsAtt' = sa.map(s => addSpeakAsCaveat(s, att, attG)),
@@ -940,6 +1003,7 @@ module authorize {
       chainSpeakAsAtt' = nc.speakAs.map(s => addSpeakAsCaveat(s, att, attG)),
       signer' = nc.signer,
       cfacet' = "apid",
+      cverb' = cv,
     }
   }
 
@@ -1122,17 +1186,18 @@ module authorize {
   // What a chain link's signer could POSSIBLY be attributed to (loosest reading).
   def chainAttributable(k: int): Set[int] =
     Set(k).union(chainSpeakAs.filter(s => isKey(s.aud, k)).map(s => s.iss))
-  // A live speak-as S→k covering `invoke` (raw fields).
-  def liveInvokeSpeakAs(s: int, k: int): bool =
+  // A live speak-as S→k covering the chain's verb (raw fields).
+  def liveChainSpeakAs(s: int, k: int): bool =
     chainSpeakAs.exists(sp => sp.iss == s and isKey(sp.aud, k) and sp.can == SpeakAs
                               and not(sp.forged) and sp.exp > NOW and not(sp.cav.unknown)
-                              and sp.cav.verbs.contains(Invoke))
+                              and sp.cav.verbs.contains(cverb))
 
   // Rule 1 — every verdict is rooted in one of R's OWN consents that
-  // verifies and carries `invoke`; with none such, nothing verifies.
+  // verifies and carries the verb R expects; with none such, nothing
+  // verifies.
   val invChainRootIsReceiverConsent = and {
     chainRes.forall(v => consents.contains(v.consent) and v.consent.iss == R
-                         and not(v.consent.forged) and v.consent.can == Invoke),
+                         and not(v.consent.forged) and v.consent.can == cverb),
     not(consents.exists(c => c.iss == R and not(c.forged))) implies not(chainAccepted),
   }
 
@@ -1144,22 +1209,23 @@ module authorize {
       i == 0 or chainAttributable(links(v).nth(i).iss).exists(p => isKey(links(v).nth(i - 1).aud, p))))
 
   // Receiver-rooted survives every link: a chain link signed by a hot
-  // key with no live, `invoke`-covering speak-as to it admits nothing.
+  // key with no live speak-as to it covering the chain's verb admits
+  // nothing.
   val invChainHotKeyNeedsSpeakAs =
     chain.indices().exists(i => HOT_KEYS.contains(chain.nth(i).iss)
       and chainSpeakAs.forall(s => not(isKey(s.aud, chain.nth(i).iss))
                                    or s.forged or s.exp <= NOW or s.can != SpeakAs or s.cav.unknown
-                                   or not(s.cav.verbs.contains(Invoke))))
+                                   or not(s.cav.verbs.contains(cverb))))
     implies not(chainAccepted)
 
   // Rule 3 — the last link's `aud` binds the signer: the signer's key, a
-  // principal S with a live `speak-as S→signer` covering `invoke`, or `*`
-  // with postage somewhere on the chain. A group audience is only ever
-  // reported as the AudGroup sentinel, never as bound.
+  // principal S with a live `speak-as S→signer` covering the chain's
+  // verb, or `*` with postage somewhere on the chain. A group audience is
+  // only ever reported as the AudGroup sentinel, never as bound.
   val invChainAudBindsSigner =
     chainRes.forall(v => match v.aud {
       | AudBound => match lastOf(links(v)).aud {
-        | AKey(s) => s == signer or liveInvokeSpeakAs(s, signer)
+        | AKey(s) => s == signer or liveChainSpeakAs(s, signer)
         | AAny => links(v).indices().exists(i => links(v).nth(i).cav.postage != NO_POSTAGE)
         | AGroup(_) => false
       }
@@ -1175,10 +1241,10 @@ module authorize {
     implies not(chainAccepted)
 
   // Aud-side speak-as is verb-scoped: `aud: S` presented by another key
-  // needs a speak-as S→signer that is live and covers `invoke`.
-  val invAudSpeakAsNeedsInvoke =
+  // needs a speak-as S→signer that is live and covers the chain's verb.
+  val invAudSpeakAsCoversVerb =
     (chain.length() > 0 and match lastOf(chain).aud {
-      | AKey(s) => s != signer and not(liveInvokeSpeakAs(s, signer))
+      | AKey(s) => s != signer and not(liveChainSpeakAs(s, signer))
       | _ => false
     }) implies not(chainAccepted)
 
@@ -1229,8 +1295,15 @@ module authorize {
     chain.indices().exists(i => chain.nth(i).cav.unknown) implies not(chainAccepted),
     consents.forall(c => c.cav.unknown) implies not(chainAccepted),
   }
-  val invChainVerbIsInvoke =
-    chain.indices().exists(i => chain.nth(i).can != Invoke) implies not(chainAccepted)
+  // Verb = the root consent's (xwu): a caller link carrying any verb
+  // other than the one R expects rejects — an `invoke` link under a
+  // `publish` root as much as an unknown verb …
+  val invChainVerbIsRoot =
+    chain.indices().exists(i => chain.nth(i).can != cverb) implies not(chainAccepted)
+  // … and on every verdict the whole chain, root included, carries that
+  // one verb (necessary shape; the mutant "root filter dropped" dies here).
+  val invChainVerbUniform =
+    chainRes.forall(v => links(v).indices().forall(i => links(v).nth(i).can == cverb))
 
   // `delegable: false` admits no following link — on a caller link or on
   // the consent itself.
@@ -1281,7 +1354,7 @@ module authorize {
     invChainHotKeyNeedsSpeakAs,
     invChainAudBindsSigner,
     invStarFailsClosedWithoutPostage,
-    invAudSpeakAsNeedsInvoke,
+    invAudSpeakAsCoversVerb,
     invEffectiveIsIntersection,
     invEndpointsIntersect,
     invPostageMonotone,
@@ -1289,7 +1362,8 @@ module authorize {
     invChainForgedLinkRejects,
     invChainExpiredLinkRejects,
     invChainUnknownCaveatRejects,
-    invChainVerbIsInvoke,
+    invChainVerbIsRoot,
+    invChainVerbUniform,
     invChainNotDelegableStops,
     invChainTargetsReceiver,
     invChainFacetMatches,
@@ -1323,9 +1397,9 @@ module authorize {
                                 and v.aud == AudBound and v.consent == CONSENT1)),
     assert(chainResAtt == Set()),
     // the same chain presented by a key nobody vouches for is unbound
-    assert(verifyChain(R, consents, chain, chainSpeakAs, ROGUE, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Invoke, consents, chain, chainSpeakAs, ROGUE, cfacet, NOW) == Set()),
     // and, with the aud-side speak-as lacking `invoke`, too
-    assert(verifyChain(R, consents, chain,
+    assert(verifyChain(R, Invoke, consents, chain,
       Set(mkSpeakAs(OWNER1, HUB_A, Set(Invoke), Set(), false, 10, false),
           mkSpeakAs(OWNER2, HUB_B, Set(Invoke), Set(), false, 10, false),
           mkSpeakAs(CALLER, CALLER_HOT, Set(Member), Set(), false, 10, false)),
@@ -1339,8 +1413,8 @@ module authorize {
     assert(chainAccepted),
     assert(chainRes.forall(v => v.eff.cav.postage == "pow:20")),
     assert(chainResAtt == Set()),
-    assert(verifyChain(R, Set(CONSENT1.withPostage("pay:1")), chain, Set(), ROGUE, cfacet, NOW) == Set()),
-    assert(verifyChain(R, Set(CONSENT1.withPostage("pow:20")), chain, Set(), ROGUE, cfacet, NOW) != Set()),
+    assert(verifyChain(R, Invoke, Set(CONSENT1.withPostage("pay:1")), chain, Set(), ROGUE, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Invoke, Set(CONSENT1.withPostage("pow:20")), chain, Set(), ROGUE, cfacet, NOW) != Set()),
     // the connection-level check binds `*` the same way (postage on the grant)
     assert(accepted(authorize(R, ACCEPT_TABLE, Set(CONSENT1), Set(), NOW, "mesh/apid/v1", CALLER, member, Set(),
                               Set(STAR_LINK)))),
@@ -1355,9 +1429,26 @@ module authorize {
   run consentOnlyTest = initMixedEpoch.then(all {
     assert(chainAccepted),
     assert(chainRes.forall(v => v.eff == CONSENT1)),
-    assert(verifyChain(R, consents, [], Set(mkSpeakAs(OWNER1, HUB_A, Set(Invoke), Set(), false, 10, false)),
+    assert(verifyChain(R, Invoke, consents, [], Set(mkSpeakAs(OWNER1, HUB_A, Set(Invoke), Set(), false, 10, false)),
                        HUB_A, cfacet, NOW) != Set()),
-    assert(verifyChain(R, consents, [], Set(), OWNER2, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Invoke, consents, [], Set(), OWNER2, cfacet, NOW) == Set()),
+    step,
+  })
+
+  // xwu witness: a `publish` chain verifies for a receiver expecting
+  // `publish`, rooted in the `publish` consent only; the same links do
+  // not verify as `invoke` (no root — the invoke consent's verb differs
+  // from every link's), an `invoke` link under the `publish` root
+  // rejects, and speak-as covering only `invoke` vouch for nothing. The
+  // connection-level check stays invoke-only: a `publish` grant admits
+  // no connection even beside a `publish` consent.
+  run publishChainTest = initPublish.then(all {
+    assert(chainAccepted),
+    assert(chainRes.forall(v => v.consent == CONSENT1_PUB and v.eff.can == Publish and v.aud == AudBound)),
+    assert(chainResAtt == Set()),
+    assert(verifyChain(R, Invoke, consents, chain, chainSpeakAs, signer, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Publish, consents, chain, CHAIN_SPEAKAS, signer, cfacet, NOW) == Set()),
+    assert(not(accepted(res))),
     step,
   })
 }

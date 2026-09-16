@@ -377,6 +377,15 @@ func (a *Actor) loop(ctx context.Context) {
 	}
 }
 
+// invokeChain is cert.VerifyChain bound to the `invoke` verb: an
+// inbound envelope IS an invocation of to.facet, so every proof chain
+// an actor's inbox verifies is rooted in one of its `invoke` consents.
+// Facets that expect another verb (M3 lighthouse #publish, relay
+// #relay) bind their own (talos-config-xwu).
+func invokeChain(receiver cert.ActorID, consents, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
+	return cert.VerifyChain(receiver, cert.VerbInvoke, consents, chain, speakAs, signer, facet, now)
+}
+
 // process runs the stateful steps for one invocation and returns the
 // Status to reply with.
 func (a *Actor) process(ctx context.Context, in *inbound) Status {
@@ -386,7 +395,7 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 	res, err := envelope.Verify(env, envelope.Receiver{
 		ID:       a.ID(),
 		Consents: a.Consents,
-		Chain:    cert.VerifyChain,
+		Chain:    invokeChain,
 		HWM:      a.hwm,
 	}, now)
 	// Observe on BOTH paths: res.Verified is populated alongside

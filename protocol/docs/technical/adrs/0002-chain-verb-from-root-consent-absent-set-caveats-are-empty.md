@@ -1,8 +1,11 @@
 # ADR-0002: A chain's verb is its root consent's verb; an absent set caveat is the empty set
 
-- Status: Proposed _(owner rulings 2026-09-13 on threads `xwu` and
+- Status: Accepted _(owner rulings 2026-09-13 on threads `xwu` and
   `0lo` from the M2 build; recorded as decision bead `eak` (∅) and task
-  `xwu` (verb), the latter model-first before M3 `0bc.3`)_
+  `xwu` (verb). Verb half built 2026-09-17 model-first: `authorize.qnt`
+  `verifyChain(r, verb, …)` + laws `invChainVerbIsRoot` /
+  `invChainVerbUniform` + witness `publishChainTest`; Go
+  `cert.VerifyChain(receiver, verb, …)` 1:1)_
 - Date: 2026-09-13
 - Amends: ADR-0001 (the fold `VerifyChain` was specified and built with
   `can == invoke` hard-coded at three points; the caveat vocabulary v2
@@ -93,7 +96,20 @@ Ruled out.
 ## Decision Outcome
 
 Chosen: **A + D.** One fold, parameterised by the root consent's verb;
-every set caveat, `endpoints` included, is ∅ when absent. Note for
+every set caveat, `endpoints` included, is ∅ when absent.
+
+Refinement at build time (`xwu`, 2026-09-17): the **receiver names the
+verb it expects** for the operation — `VerifyChain(receiver, verb, …)`;
+an actor's inbox binds `invoke` (an envelope IS an invocation of
+`to.facet`), a lighthouse `#publish` will bind `publish`. Only consents
+with `can == verb` root the chain; inside the fold the verb is then
+read off the root consent (`chainUnder`), never a literal. Deriving the
+verb from whichever consent happens to match would let a `publish`
+consent root an `invoke` operation — verb confusion, fail-open — so
+the parameter is the fail-closed reading of "the root consent's verb".
+The connection-level `Authorize` is the `invoke` instance.
+
+Note for
 implementers: a `reach-me-at` *location record* is the issuer's
 self-signed claim about itself (`aud: "*"`) and is verified as a single
 certificate at envelope step 4 — it never enters `VerifyChain`; this
@@ -117,6 +133,11 @@ verifier's semantics.
 Right when M3's first `relay`/`publish` chain verifies through the
 unchanged fold with only a verb parameter, and the mutation sweep
 (`TestFaultPairSweep`) kills a "wrong-verb link accepted" mutant.
+Partially confirmed 2026-09-17: the model's `publish` chain verifies
+through the same fold; mutants "root filter forgets the verb" and
+"link verb check dropped" both die under `invAll` (nearChain faults
+`FLink1VerbOtherChain`, `FLink2VerbOther`); the Go sweep
+(`TestChainFaultPairSweep`, now × `{invoke, publish}`) mirrors it.
 Invalidated if a legitimate delegation needs "any endpoint" semantics
 that enumeration cannot express — then a sentinel must be designed as
 a vocabulary bump, not read into absence.

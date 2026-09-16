@@ -100,14 +100,17 @@ The unit of communication is **invoking a capability**, not "sending to
 an address". An envelope carries `{to: P#facet, payload, proof:
 [cert-chain], seq, sig}`. The receiver P verifies **offline and in cost
 order**: (1) envelope signature; (2) `to.target` is P and `seq` is
-fresh; (3) the proof chain, rooted by a consent P itself signed and
-folded by attenuation, ends in a link whose `aud` **binds to the
-envelope's signer** — the signer key itself, a principal the signer
-holds a `speak-as` from (`cav.verbs ∋ invoke`), or `"*"` only when the
-effective caveats carry `postage` (`group:` audiences are resolved by
-the deployment layer, never here); (4) nothing expired, no unknown
-caveat, `facet` admitted. _(ADR-0001, built 2026-09-12 as
-`cert.VerifyChain`.)_ The **proof chain is the registry**, carried by
+fresh; (3) the proof chain, rooted by a consent P itself signed **in
+the verb P expects for the operation** (`invoke` for an envelope; the
+chain's verb is then the root consent's, uniform along the chain —
+ADR-0002) and folded by attenuation, ends in a link whose `aud`
+**binds to the envelope's signer** — the signer key itself, a principal
+the signer holds a `speak-as` from (`cav.verbs ∋` that verb), or `"*"`
+only when the effective caveats carry `postage` (`group:` audiences are
+resolved by the deployment layer, never here); (4) nothing expired, no
+unknown caveat, `facet` admitted. _(ADR-0001, built 2026-09-12 as
+`cert.VerifyChain`; verb-parameterised 2026-09-17, `xwu`.)_ The
+**proof chain is the registry**, carried by
 the caller. Attenuated re-delegation is free
 and offline — P verifies a chain to an actor it has never heard of.
 
