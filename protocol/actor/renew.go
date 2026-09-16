@@ -104,9 +104,14 @@ func DecodeRenewResponse(body []byte) ([]cert.Cert, []error, error) {
 // renewHandler serves FacetRenew. Per item, in order:
 //
 //  1. decode the held cert; refuse malformed
-//  2. own-signature: cert.Verify ok AND its iss is this actor OR a hot
+//  2. own-signature: cert.Verify ok AND its iss is this actor, OR a hot
 //     key this actor vouches for through a live speak-as in a.SpeakAs
-//     (iss == me, aud == cert.iss, cav.verbs ∋ cert.can)
+//     (iss == me, aud == cert.iss, cav.verbs ∋ cert.can), OR a sibling
+//     hot key of a principal this actor answers for: a live speak-as
+//     P→cert.iss in the PROOF and a live speak-as P→me in a.SpeakAs,
+//     both with cav.verbs ∋ cert.can (rule 4's predicate applied to
+//     own-signature — a cert signed by a dead hub key renews at the
+//     live one, ADR-0018 xfx; talos-config-359.8.1)
 //  3. unexpired at the effective clock
 //  4. aud binds the invocation's From the way VerifyChain rule 3 binds
 //     a chain's last link: aud == From, or aud == P with a live speak-as
@@ -141,7 +146,7 @@ func (a *Actor) renewOne(it RenewItem, caller cert.ActorID, proofSpeakAs []cert.
 	if err != nil {
 		return refuse(RefuseMalformed + ": " + err.Error())
 	}
-	if !a.issuedByMe(old, now) {
+	if !a.issuedByMe(old, proofSpeakAs, now) {
 		return refuse(RefuseNotMine)
 	}
 	if old.Exp <= now {
@@ -184,10 +189,22 @@ func (a *Actor) renewOne(it RenewItem, caller cert.ActorID, proofSpeakAs []cert.
 }
 
 // issuedByMe is the own-signature check with hot-key resolution: the
-// cert verifies under its iss, and iss is this actor or a key one of
-// this actor's own speak-as certs (iss == me, live at now, covering the
-// cert's verb) names as aud.
-func (a *Actor) issuedByMe(c cert.Cert, now int64) bool {
+// cert verifies under its iss, and iss is
+//
+//   - this actor, or
+//   - a key one of this actor's own speak-as certs (iss == me, live at
+//     now, covering the cert's verb) names as aud, or
+//   - a key some principal P vouches for through a live speak-as in the
+//     caller's proof, where P is a principal THIS actor answers for — a
+//     live speak-as P→me in a.SpeakAs — both covering the cert's verb.
+//
+// The third case is the hot-key-rotation case: hubkey_B re-issues what
+// hubkey_A signed under the same wallet. It mirrors VerifyChain rule 4
+// (a receiver answers for a principal whose speak-as it holds) but on
+// the signing side, so the held speak-as MUST cover the verb — being
+// addressed as P is free, signing as P is not. The proof's speak-as
+// never widens what this actor answers for: it only resolves c.Iss.
+func (a *Actor) issuedByMe(c cert.Cert, proofSpeakAs []cert.Cert, now int64) bool {
 	if cert.Verify(c) != nil {
 		return false
 	}
@@ -195,18 +212,32 @@ func (a *Actor) issuedByMe(c cert.Cert, now int64) bool {
 	if c.Iss == me {
 		return true
 	}
+	verb := string(c.Can)
 	for _, s := range a.SpeakAs {
-		if s.Can != cert.VerbSpeakAs || s.Iss != me || s.Aud != string(c.Iss) {
+		if !liveSpeakAs(s, verb, now) {
 			continue
 		}
-		if s.Exp <= now || !containsStr(s.Cav.Verbs, string(c.Can)) {
+		if s.Iss == me && s.Aud == string(c.Iss) {
+			return true // my own hot key
+		}
+		if s.Aud != string(me) {
 			continue
 		}
-		if cert.Verify(s) == nil {
-			return true
+		// s: P→me. Does the proof carry P→c.Iss?
+		for _, p := range proofSpeakAs {
+			if p.Iss == s.Iss && p.Aud == string(c.Iss) && liveSpeakAs(p, verb, now) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// liveSpeakAs reports whether s is a verified speak-as cert, unexpired
+// at now, whose cav.verbs covers verb.
+func liveSpeakAs(s cert.Cert, verb string, now int64) bool {
+	return s.Can == cert.VerbSpeakAs && s.Exp > now &&
+		containsStr(s.Cav.Verbs, verb) && cert.Verify(s) == nil
 }
 
 // narrower reports whether want's caveats are the same as or narrower

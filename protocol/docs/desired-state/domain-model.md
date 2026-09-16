@@ -359,8 +359,12 @@ whose deployment-free form differs from the talos wording. Source:
   membership bundle, renewing itself through the same loop) — never a
   verifier special case where "any cert I signed" authorizes asking.
   Payload = the certs to renew (batch, one grantor); the grantor checks
-  own-signature (resolving through its own speak-as for hot-key
-  issuers), unexpired, that the cert's `aud` **binds the invoking
+  own-signature — `iss` is me, a hot key of mine (my own speak-as), or
+  a hot key of a principal *I answer for*: the proof carries a live
+  `speak-as P→iss` and I hold a live `speak-as P→me`, both covering the
+  cert's verb (rule 4 on the signing side; a cert signed by a dead hub
+  key renews at the live one, ADR-0018 `xfx`, built 2026-09-19) —
+  unexpired, that the cert's `aud` **binds the invoking
   signer the way rule 3 binds a chain's last link** — `aud == from`, or
   a live `speak-as aud→from` in the proof with `cav.verbs ∋ invoke`
   (`cert.SpeaksFor`; so a cert naming the holder's cold principal

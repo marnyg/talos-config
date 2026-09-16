@@ -108,6 +108,10 @@ type Actor struct {
 	// Grants are the chain links this actor holds for calling others,
 	// root-first, EXCLUDING the target's own consent (the receiver
 	// prepends that). Empty is legal: the consented principal itself.
+	// A held chain may also carry the speak-as certs that resolve its
+	// links' hot-key issuers (a member cert signed by a hub key rides
+	// with the wallet's speak-as to that key, ADR-0018); the receiver's
+	// envelope.SplitProof sorts them into the proof's speak-as set.
 	Grants map[GrantKey][]cert.Cert
 	// SpeakAs holds both roles of speak-as cert: those naming this
 	// actor's signer as aud (attached to outbound proofs so receivers
@@ -446,7 +450,8 @@ func rejectStatus(err error) Status {
 // ---- outbound ------------------------------------------------------------
 
 // proofFor assembles the caller-carried proof for (to, facet): the held
-// chain links plus every speak-as that names this actor's signer.
+// chain links (with any issuer-resolving speak-as they were stored
+// with) plus every speak-as that names this actor's signer.
 func (a *Actor) proofFor(to cert.ActorID, facet string) []cert.Cert {
 	proof := append([]cert.Cert(nil), a.Grants[GrantKey{Target: to, Facet: facet}]...)
 	for _, s := range a.SpeakAs {

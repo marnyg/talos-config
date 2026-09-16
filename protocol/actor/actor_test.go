@@ -361,7 +361,7 @@ func TestRenewHandler(t *testing.T) {
 
 	// Speak-as expired ⇒ hot-key issuance no longer recognised.
 	w.clk.Advance(3601)
-	if b.issuedByMe(viaHot, w.clk.Now()) {
+	if b.issuedByMe(viaHot, nil, w.clk.Now()) {
 		t.Fatal("hot-key cert recognised after its speak-as expired")
 	}
 }
@@ -434,6 +434,123 @@ func TestRenewViaHolderHotKey(t *testing.T) {
 	w.clk.Advance(61)
 	if _, rerr := renew(); rerr == nil || rerr.Error() != RefuseAud {
 		t.Fatalf("expired speak-as: want %q, got %v", RefuseAud, rerr)
+	}
+}
+
+// TestRenewAcrossHotKeyRotation is the talos hub shape (ADR-0018 xfx,
+// talos-config-359.8.1): wallet W empowers hub key A by speak-as; A
+// mints node N a member cert and a #renew grant naming target W. The
+// hub redeploys: key B, a fresh speak-as W→B, no memory of A. N's next
+// beat at B must renew both certs with what it already holds — the
+// chain links, A's speak-as, and B's id — and get certs signed by B.
+// Negative cases: no speak-as W→A in the proof (B cannot resolve A);
+// A's speak-as expired; A empowered by a different wallet; B's own
+// speak-as not covering the cert's verb.
+func TestRenewAcrossHotKeyRotation(t *testing.T) {
+	w := newWorld(t)
+	now := w.clk.Now()
+
+	wallet := newSigner(t) // the sovereign; never on the wire
+	W := wallet.ActorID()
+	hubA := newSigner(t) // dead process; only its signatures survive
+	hubB, hubBs, _ := w.actor("hubB")
+	n, _, _ := w.actor("n")
+	A, B, N := hubA.ActorID(), hubB.ID(), n.ID()
+
+	saA := speakAs(t, wallet, A, []string{"member", "invoke"}, now-1000, now+3600)
+	saB := speakAs(t, wallet, B, []string{"member", "invoke"}, now-1, now+3600)
+
+	// what A minted for N before dying
+	member, err := cert.Sign(cert.Cert{
+		Aud: string(N), Can: cert.VerbMember,
+		Cav: cert.Caveats{Name: "n", Groups: []string{"machines"}},
+		Iat: now - 500, Exp: now + 1000,
+	}, hubA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := issue(t, hubA, string(N), []cert.ActorID{W}, []string{FacetRenew}, false, now-500, now+1000)
+
+	// B: answers for W (rule 4), consents to W for #renew as Owner#renew
+	hubB.SpeakAs = []cert.Cert{saB}
+	hubB.Consents = []cert.Cert{
+		issue(t, hubBs, string(W), []cert.ActorID{W}, []string{FacetRenew}, true, now-1, now+3600),
+	}
+	w.start(hubB)
+	w.start(n)
+
+	payload, err := EncodeRenewRequest([]cert.Cert{member, grant}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renew := func() ([]cert.Cert, []error, *RemoteError) {
+		t.Helper()
+		rep, err := n.Send(w.ctx, B, FacetRenew, payload)
+		if err != nil {
+			var re *RemoteError
+			if errors.As(err, &re) {
+				return nil, nil, re
+			}
+			t.Fatalf("send: %v", err)
+		}
+		fresh, errs, err := DecodeRenewResponse(rep.Payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fresh, errs, nil
+	}
+
+	// N holds the chain WITH A's speak-as: B resolves A→W and W→B.
+	n.Grant(B, FacetRenew, grant, saA)
+	fresh, errs, rerr := renew()
+	if rerr != nil {
+		t.Fatalf("rotation renew rejected at the chain: %v", rerr)
+	}
+	for i, e := range errs {
+		if e != nil {
+			t.Fatalf("item %d refused: %v", i, e)
+		}
+	}
+	if fresh[0].Iss != B || fresh[0].Can != cert.VerbMember || fresh[0].Aud != string(N) || fresh[0].Cav.Name != "n" || fresh[0].Iat != now {
+		t.Fatalf("member not re-issued by B: %+v", fresh[0])
+	}
+	if fresh[1].Iss != B || fresh[1].Can != cert.VerbInvoke || fresh[1].Exp != now+1500 {
+		t.Fatalf("grant not re-issued by B with its own lifetime: %+v", fresh[1])
+	}
+
+	// Without A's speak-as the chain itself does not link W→A.
+	n.Grant(B, FacetRenew, grant)
+	if _, _, rerr := renew(); rerr == nil {
+		t.Fatal("chain without W→A speak-as accepted")
+	}
+
+	// A stranger wallet's speak-as to A links nothing: B answers for W only.
+	stranger := newSigner(t)
+	n.Grant(B, FacetRenew, grant, speakAs(t, stranger, A, []string{"member", "invoke"}, now-1, now+3600))
+	if _, _, rerr := renew(); rerr == nil {
+		t.Fatal("stranger's speak-as bridged A to B")
+	}
+
+	// B's speak-as covering invoke only: the chain still verifies (being
+	// addressed as W is free) but B may not SIGN a member cert as W.
+	n.Grant(B, FacetRenew, grant, saA)
+	hubB.SpeakAs = []cert.Cert{speakAs(t, wallet, B, []string{"invoke"}, now-1, now+3600)}
+	_, errs, rerr = renew()
+	if rerr != nil {
+		t.Fatalf("invoke-only speak-as: chain rejected: %v", rerr)
+	}
+	if errs[0] == nil || errs[0].Error() != RefuseNotMine {
+		t.Fatalf("member under invoke-only speak-as: want %q, got %v", RefuseNotMine, errs[0])
+	}
+	if errs[1] != nil {
+		t.Fatalf("invoke grant under invoke-only speak-as refused: %v", errs[1])
+	}
+	hubB.SpeakAs = []cert.Cert{saB}
+
+	// A's speak-as expired: the chain no longer links W→A.
+	w.clk.Advance(3601)
+	if _, _, rerr := renew(); rerr == nil {
+		t.Fatal("expired W→A speak-as accepted")
 	}
 }
 
