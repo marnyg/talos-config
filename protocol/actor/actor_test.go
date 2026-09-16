@@ -366,6 +366,77 @@ func TestRenewHandler(t *testing.T) {
 	}
 }
 
+// TestRenewViaHolderHotKey is talos-config-7ei: a holder whose cert
+// names its cold principal A renews it from its hot key A_HOT. The
+// renew handler binds old.aud to the invocation's signer exactly as
+// VerifyChain rule 3 does — a live speak-as A→A_HOT in the proof with
+// cav.verbs ∋ invoke — and re-issues with aud A unchanged. Without such
+// a speak-as (none, or expired) the same cert is refused with RefuseAud,
+// even though the hot key reaches #renew on its own consent.
+func TestRenewViaHolderHotKey(t *testing.T) {
+	w := newWorld(t)
+	now := w.clk.Now()
+
+	b, bs, _ := w.actor("b")      // grantor
+	aCold := newSigner(t)         // the holder's cold principal A; never on the wire
+	ahot, _, _ := w.actor("ahot") // A's hot key, the actor that actually calls
+	A, AHOT, B := aCold.ActorID(), ahot.ID(), b.ID()
+
+	// B consents to A (the principal) for #renew; A_HOT also holds a
+	// direct consent, so it reaches #renew even with no speak-as in the
+	// proof — that is what makes the RefuseAud cases reach the handler.
+	b.Consents = []cert.Cert{
+		issue(t, bs, string(A), []cert.ActorID{B}, []string{FacetRenew}, false, now-1, now+3600),
+		issue(t, bs, string(AHOT), []cert.ActorID{B}, []string{FacetRenew}, false, now-1, now+3600),
+	}
+	w.start(b)
+	w.start(ahot)
+
+	held := issue(t, bs, string(A), []cert.ActorID{B}, []string{"f1"}, false, now-100, now+100)
+	payload, err := EncodeRenewRequest([]cert.Cert{held}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renew := func() (cert.Cert, error) {
+		t.Helper()
+		rep, err := ahot.Send(w.ctx, B, FacetRenew, payload)
+		if err != nil {
+			t.Fatalf("send: %v", err)
+		}
+		fresh, errs, err := DecodeRenewResponse(rep.Payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fresh[0], errs[0]
+	}
+
+	// no speak-as in the proof: A_HOT is authorized (own consent) but the
+	// cert's aud A is not the caller and nobody says A_HOT speaks for A
+	if _, rerr := renew(); rerr == nil || rerr.Error() != RefuseAud {
+		t.Fatalf("no speak-as: want %q, got %v", RefuseAud, rerr)
+	}
+	// live speak-as A→A_HOT covering invoke ⇒ renewed, aud stays A
+	ahot.SpeakAs = []cert.Cert{speakAs(t, aCold, AHOT, []string{"invoke"}, now-1, now+60)}
+	fresh, rerr := renew()
+	if rerr != nil {
+		t.Fatalf("with speak-as: refused %v", rerr)
+	}
+	if fresh.Aud != string(A) || fresh.Iss != B || fresh.Iat != now || cert.Verify(fresh) != nil {
+		t.Fatalf("renewed cert wrong: %+v", fresh)
+	}
+	// speak-as covering member only does not bind an invoke
+	ahot.SpeakAs = []cert.Cert{speakAs(t, aCold, AHOT, []string{"member"}, now-1, now+60)}
+	if _, rerr := renew(); rerr == nil || rerr.Error() != RefuseAud {
+		t.Fatalf("member-only speak-as: want %q, got %v", RefuseAud, rerr)
+	}
+	// expired speak-as ⇒ refused again
+	ahot.SpeakAs = []cert.Cert{speakAs(t, aCold, AHOT, []string{"invoke"}, now-1, now+60)}
+	w.clk.Advance(61)
+	if _, rerr := renew(); rerr == nil || rerr.Error() != RefuseAud {
+		t.Fatalf("expired speak-as: want %q, got %v", RefuseAud, rerr)
+	}
+}
+
 // ---- 3. seq high-water mark -----------------------------------------------
 
 func TestSequenceValidation(t *testing.T) {

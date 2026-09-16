@@ -50,7 +50,7 @@ type RenewResult struct {
 const (
 	RefuseNotMine   = "not issued by this actor"
 	RefuseExpired   = "expired"
-	RefuseAud       = "aud is not the caller"
+	RefuseAud       = "aud is neither the caller nor a principal it speaks for"
 	RefuseWider     = "requested caveats are not same-or-narrower"
 	RefuseMalformed = "malformed"
 )
@@ -107,8 +107,12 @@ func DecodeRenewResponse(body []byte) ([]cert.Cert, []error, error) {
 //     key this actor vouches for through a live speak-as in a.SpeakAs
 //     (iss == me, aud == cert.iss, cav.verbs ∋ cert.can)
 //  3. unexpired at the effective clock
-//  4. aud == the invocation's From (the caller renews its own certs;
-//     renewing on behalf of a third party is a new negotiation)
+//  4. aud binds the invocation's From the way VerifyChain rule 3 binds
+//     a chain's last link: aud == From, or aud == P with a live speak-as
+//     P→From in the proof whose cav.verbs ∋ invoke (cert.SpeaksFor) —
+//     so a holder whose cert names its cold principal renews it from
+//     its hot key (talos-config-7ei). The caller renews its own certs;
+//     renewing on behalf of a third party is a new negotiation
 //  5. build the replacement: same aud/can, caveats = held (or Want if
 //     cert.Attenuate(held, want) == want, i.e. same-or-narrower —
 //     never wider), iat = now, exp = now + lifetime, signed by a.Signer
@@ -121,14 +125,21 @@ func (a *Actor) renewHandler(_ context.Context, inv *Invocation) ([]byte, error)
 		return nil, fmt.Errorf("renew: payload: %w", err)
 	}
 	now := a.Now()
+	// the proof's speak-as certs — the same set the chain bound aud with
+	var proofSpeakAs []cert.Cert
+	for _, c := range inv.Envelope.Proof {
+		if c.Can == cert.VerbSpeakAs {
+			proofSpeakAs = append(proofSpeakAs, c)
+		}
+	}
 	resp := RenewResponse{Results: make([]RenewResult, len(req.Items))}
 	for i, it := range req.Items {
-		resp.Results[i] = a.renewOne(it, inv.From, now)
+		resp.Results[i] = a.renewOne(it, inv.From, proofSpeakAs, now)
 	}
 	return json.Marshal(resp)
 }
 
-func (a *Actor) renewOne(it RenewItem, caller cert.ActorID, now int64) RenewResult {
+func (a *Actor) renewOne(it RenewItem, caller cert.ActorID, proofSpeakAs []cert.Cert, now int64) RenewResult {
 	refuse := func(why string) RenewResult { return RenewResult{Error: why} }
 	old, err := cert.DecodeCert(it.Cert)
 	if err != nil {
@@ -140,7 +151,8 @@ func (a *Actor) renewOne(it RenewItem, caller cert.ActorID, now int64) RenewResu
 	if old.Exp <= now {
 		return refuse(RefuseExpired)
 	}
-	if old.Aud != string(caller) {
+	if old.Aud != string(caller) &&
+		!cert.SpeaksFor(cert.ActorID(old.Aud), caller, cert.VerbInvoke, proofSpeakAs, now) {
 		return refuse(RefuseAud)
 	}
 	fresh := old

@@ -360,11 +360,16 @@ whose deployment-free form differs from the talos wording. Source:
   verifier special case where "any cert I signed" authorizes asking.
   Payload = the certs to renew (batch, one grantor); the grantor checks
   own-signature (resolving through its own speak-as for hot-key
-  issuers), unexpired, and re-issues **same `aud`, same or narrower
-  `cav`, fresh `iat`/`exp`** — never wider; wider is a new
-  negotiation. Reply = per-cert result (new cert or refusal). The
-  holder's beat runs at a fraction of the shortest lifetime it holds
-  (fraction unchosen). _(Ruled 2026-09-12, `0bc.2`.)_
+  issuers), unexpired, that the cert's `aud` **binds the invoking
+  signer the way rule 3 binds a chain's last link** — `aud == from`, or
+  a live `speak-as aud→from` in the proof with `cav.verbs ∋ invoke`
+  (`cert.SpeaksFor`; so a cert naming the holder's cold principal
+  renews from its hot key — `7ei`, built 2026-09-18) — and re-issues
+  **same `aud`, same or narrower `cav`, fresh `iat`/`exp`** — never
+  wider; wider is a new negotiation. Reply = per-cert result (new cert
+  or refusal). The holder's beat runs at a fraction of the shortest
+  lifetime it holds (fraction unchosen). _(Ruled 2026-09-12, `0bc.2`;
+  aud binding ruled 2026-09-14, `7ei`.)_
 - **Network** — a bundle a founder roots: `{lighthouse endpoints,
   lighthouse identity, your publish-cap}`. Holding a publish-cap is
   what "being in a network" means. One identity, many networks.

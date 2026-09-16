@@ -580,6 +580,17 @@ func (a *authCtx) linksTo(prevAud string, l Cert, speakAs []Cert, now int64) boo
 	return false
 }
 
+// SpeaksFor is rule 3's aud-side binding as a standalone predicate:
+// signer may act as s for verb because some live speak-as S→signer in
+// speakAs has cav.verbs ∋ verb (signature, expiry and taint checked at
+// now). Exported for handlers that must bind a cert's aud to the
+// envelope's signer the same way the chain did — #renew resolving a
+// held cert's aud to the invoking hot key (talos-config-7ei) — so there
+// is one such rule, never a second mechanism.
+func SpeaksFor(s, signer ActorID, verb Verb, speakAs []Cert, now int64) bool {
+	return newAuthCtx().speaksFor(s, signer, verb, speakAs, now)
+}
+
 // speaksFor is the aud-side speak-as of rule 3: some live speak-as
 // S→signer in the proof whose cav.verbs ∋ verb (the chain's verb). Only
 // the verb is consulted (cav.groups gate issuer-side resolution, not
