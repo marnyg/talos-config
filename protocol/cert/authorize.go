@@ -6,9 +6,12 @@ import (
 	"strings"
 )
 
-// Bundle is what a caller presents on connect: its member cert, the
+// Bundle is what a CALLER presents on connect: its member cert, the
 // invoke grants it holds, and the speak-as certs that map the hot keys
-// that signed them to their principals (ADR-0018).
+// that signed them to their principals (ADR-0018). It is the untrusted
+// counterpart of Receiver (what the receiver brings itself); in
+// particular Bundle.SpeakAs never widens the receiver's target set —
+// only Receiver.SpeakAs does (protocol ADR-0003).
 type Bundle struct {
 	Member  Cert
 	Grants  []Cert

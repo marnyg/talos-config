@@ -195,6 +195,7 @@ type scenario struct {
 	grant     Cert
 	speakAs   []Cert // the bundle's speak-as links (ADR-0018)
 	held      []Cert // the speak-as certs R HOLDS naming it as aud (ADR-0003)
+	heldAtt   []Cert // the same, one caveat added (the model's heldAtt)
 	consents  []Cert
 	alpn      string
 	facet     string
@@ -240,7 +241,7 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 	}
 
 	consents := buildConsents(f, flt, "", VerbInvoke, has(flt, fGrantTargetOwner1))
-	held, leaked := buildHeld(f, flt)
+	held, heldAtt, leaked := buildHeld(f, flt, attKind, attG)
 
 	// member cert with its faults.
 	memberIss := memberSigner
@@ -405,22 +406,7 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 	speakAsAtt := make([]Cert, 0, len(saSpecs))
 	for _, sp := range saSpecs {
 		speakAs = append(speakAs, f.build(sp))
-		// attenuateSpeakAs: the issuer re-signs with one caveat added;
-		// grant-side attenuations leave the link unchanged.
-		ap := sp
-		ap.cav = Caveats{
-			Verbs:  append([]string(nil), sp.cav.Verbs...),
-			Groups: append([]string(nil), sp.cav.Groups...),
-		}
-		switch attKind {
-		case attShrinkSpeakAsGroups:
-			ap.cav.Groups = removeStr(ap.cav.Groups, attG)
-		case attShrinkSpeakAsVerbs:
-			ap.cav.Verbs = removeStr(ap.cav.Verbs, "member")
-		case attShortenSpeakAsExpiry:
-			ap.exp = 0
-		}
-		speakAsAtt = append(speakAsAtt, f.build(ap))
+		speakAsAtt = append(speakAsAtt, f.build(attenuateSpeakAs(sp, attKind, attG)))
 	}
 
 	alpn := "mesh/apid/v1"
@@ -439,18 +425,20 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 		Bundle: Bundle{Member: member, Grants: []Cert{grant}, SpeakAs: speakAs},
 	}
 	att := base
+	att.Receiver.SpeakAs = heldAtt
 	att.Bundle = Bundle{Member: member, Grants: []Cert{grantAtt}, SpeakAs: speakAsAtt}
 
-	return scenario{in: base, att: att, member: member, grant: grant, speakAs: speakAs, held: held,
+	return scenario{in: base, att: att, member: member, grant: grant, speakAs: speakAs, held: held, heldAtt: heldAtt,
 		consents: consents, alpn: alpn, facet: "apid", hubSigned: hubSigned, f: flt}
 }
 
-// buildHeld is the model's genNear `heldCert` / `h` / `leaked` (ADR-0003):
-// what R HOLDS naming itself as aud — OWNER1→R by default (R is
-// OWNER1's hot key), perturbed by the fHeld* faults. leaked is the spec
-// to append to the CALLER's bundle under fHeldInBundleOnly, where the
-// very same cert must widen nothing.
-func buildHeld(f fixture, flt map[fault]bool) (held []Cert, leaked []certSpec) {
+// buildHeld is the model's genNear `heldCert` / `h` / `heldAtt` / `leaked`
+// (ADR-0003): what R HOLDS naming itself as aud — OWNER1→R by default (R
+// is OWNER1's hot key), perturbed by the fHeld* faults — plus the same
+// with one speak-as attenuation applied (attenuateSpeakAs; the monotone
+// laws check it). leaked is the spec to append to the CALLER's bundle
+// under fHeldInBundleOnly, where the very same cert must widen nothing.
+func buildHeld(f fixture, flt map[fault]bool, attKind int, attG string) (held, heldAtt []Cert, leaked []certSpec) {
 	id := f.id
 	iss := "OWNER1"
 	if has(flt, fHeldFromOwner2) {
@@ -468,11 +456,30 @@ func buildHeld(f fixture, flt map[fault]bool) (held []Cert, leaked []certSpec) {
 		cav: Caveats{Verbs: modelVerbs, Groups: modelGroups}, exp: exp, forged: has(flt, fHeldForged)}
 	switch {
 	case has(flt, fHeldInBundleOnly):
-		return nil, []certSpec{spec}
+		return nil, nil, []certSpec{spec}
 	case has(flt, fHeldMissing):
-		return nil, nil
+		return nil, nil, nil
 	}
-	return []Cert{f.build(spec)}, nil
+	return []Cert{f.build(spec)}, []Cert{f.build(attenuateSpeakAs(spec, attKind, attG))}, nil
+}
+
+// attenuateSpeakAs is the model's addSpeakAsCaveat: the issuer re-signs
+// with one caveat added; grant-side attenuations leave the link unchanged.
+func attenuateSpeakAs(sp certSpec, attKind int, attG string) certSpec {
+	ap := sp
+	ap.cav = Caveats{
+		Verbs:  append([]string(nil), sp.cav.Verbs...),
+		Groups: append([]string(nil), sp.cav.Groups...),
+	}
+	switch attKind {
+	case attShrinkSpeakAsGroups:
+		ap.cav.Groups = removeStr(ap.cav.Groups, attG)
+	case attShrinkSpeakAsVerbs:
+		ap.cav.Verbs = removeStr(ap.cav.Verbs, "member")
+	case attShortenSpeakAsExpiry:
+		ap.exp = 0
+	}
+	return ap
 }
 
 // answerable ports the model's `answerable` (raw fields): R itself plus

@@ -123,6 +123,7 @@ type chainScenario struct {
 	speakAs    []Cert
 	speakAsAtt []Cert
 	held       []Cert // what R HOLDS naming itself as aud (ADR-0003)
+	heldAtt    []Cert // the same, one caveat added
 	signer     ActorID
 	facet      string
 	verb       Verb
@@ -162,7 +163,7 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 	}
 	cflt := map[fault]bool{p.f1: true, p.f2: true}
 	consents := buildConsents(f, cflt, p.cPostage, verb, has(cflt, fGrantTargetOwner1) || hasC(flt, cfChainTargetOwner1))
-	held, leaked := buildHeld(f, cflt)
+	held, heldAtt, leaked := buildHeld(f, cflt, p.attKind, p.attG)
 
 	// postage placement: on link1 by fault; on link2 by fault or for the
 	// `*` kind (unless FStarNoPostage); conflicting value by fault.
@@ -365,24 +366,11 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 	speakAsAtt := make([]Cert, 0, len(saSpecs))
 	for _, sp := range saSpecs {
 		speakAs = append(speakAs, f.build(sp))
-		ap := sp
-		ap.cav = Caveats{
-			Verbs:  append([]string(nil), sp.cav.Verbs...),
-			Groups: append([]string(nil), sp.cav.Groups...),
-		}
-		switch p.attKind {
-		case attShrinkSpeakAsGroups:
-			ap.cav.Groups = removeStr(ap.cav.Groups, p.attG)
-		case attShrinkSpeakAsVerbs:
-			ap.cav.Verbs = removeStr(ap.cav.Verbs, "member")
-		case attShortenSpeakAsExpiry:
-			ap.exp = 0
-		}
-		speakAsAtt = append(speakAsAtt, f.build(ap))
+		speakAsAtt = append(speakAsAtt, f.build(attenuateSpeakAs(sp, p.attKind, p.attG)))
 	}
 
 	return chainScenario{p: p, consents: consents, chain: chain, chainAtt: chainAtt,
-		speakAs: speakAs, speakAsAtt: speakAsAtt, held: held, signer: signer, facet: "apid", verb: verb, f: flt}
+		speakAs: speakAs, speakAsAtt: speakAsAtt, held: held, heldAtt: heldAtt, signer: signer, facet: "apid", verb: verb, f: flt}
 }
 
 // chainResult is the model's chainRes: the verdict SET, plus the public
@@ -811,17 +799,17 @@ func subsetID(need, have []ActorID) bool {
 	return true
 }
 
-func evalChain(id map[string]ActorID, s chainScenario, chain, speakAs []Cert) chainResult {
+func evalChain(id map[string]ActorID, s chainScenario, chain, speakAs, held []Cert) chainResult {
 	ctx := newAuthCtx()
-	r := Receiver{ID: id["R"], Consents: s.consents, SpeakAs: s.held}
+	r := Receiver{ID: id["R"], Consents: s.consents, SpeakAs: held}
 	vs, err := ctx.verifyChain(r, s.verb, chain, speakAs, s.signer, s.facet, testNOW)
 	eff, _, pubErr := VerifyChain(r, s.verb, chain, speakAs, s.signer, s.facet, testNOW)
 	return chainResult{verdicts: vs, err: err, pubEff: eff, pubErr: pubErr}
 }
 
 func checkChainLaws(t failer, id map[string]ActorID, s chainScenario, hits map[string]int) {
-	res := evalChain(id, s, s.chain, s.speakAs)
-	resAtt := evalChain(id, s, s.chainAtt, s.speakAsAtt)
+	res := evalChain(id, s, s.chain, s.speakAs, s.held)
+	resAtt := evalChain(id, s, s.chainAtt, s.speakAsAtt, s.heldAtt)
 	for _, l := range chainLaws {
 		hit, ok := l.check(id, s, res, resAtt)
 		if !ok {
@@ -842,8 +830,8 @@ func TestChainLaws(t *testing.T) {
 			rapid.Check(t, func(t *rapid.T) {
 				f := newFixture(t)
 				s := genChain(t, f)
-				res := evalChain(f.id, s, s.chain, s.speakAs)
-				resAtt := evalChain(f.id, s, s.chainAtt, s.speakAsAtt)
+				res := evalChain(f.id, s, s.chain, s.speakAs, s.held)
+				resAtt := evalChain(f.id, s, s.chainAtt, s.speakAsAtt, s.heldAtt)
 				if _, ok := l.check(f.id, s, res, resAtt); !ok {
 					t.Fatalf("%s violated (%+v; err=%v)", l.name, s.p, res.err)
 				}
@@ -910,7 +898,7 @@ func TestGenChainReachesAccept(t *testing.T) {
 	hits := map[string]int{}
 	for i := 0; i < samples; i++ {
 		s := gen.Example(i)
-		res := evalChain(f.id, s, s.chain, s.speakAs)
+		res := evalChain(f.id, s, s.chain, s.speakAs, s.held)
 		if res.accepted() {
 			accepts[s.p.kind]++
 		}

@@ -467,7 +467,7 @@ module authorize {
 
   // ---- adding a caveat to a link (for the monotonicity laws) ---------
   // The first five perturb a grant / chain link; the last three a
-  // speak-as link. NOT among them: adding `postage`. Postage is the one
+  // speak-as link — the caller's AND the receiver-held ones (`heldAtt`). NOT among them: adding `postage`. Postage is the one
   // caveat that is not an attenuation in the monotone sense — it UNLOCKS
   // `aud: "*"` (fail-closed without it), so adding it can turn a
   // rejected chain into an accepted one. See the report / open questions.
@@ -507,6 +507,7 @@ module authorize {
   var speakAs: Set[Cert]     // the bundle's speak-as links (ADR-0018)
   var consents: Set[Cert]
   var held: Set[Cert]        // the speak-as certs R HOLDS naming it as aud (ADR-0003); shared by both halves
+  var heldAtt: Set[Cert]     // the same with one caveat added to every held speak-as (or unchanged)
   var grants: Set[Cert]
   var grantsAtt: Set[Cert]   // grants with one link attenuated
   var speakAsAtt: Set[Cert]  // speak-as with one link attenuated (or unchanged)
@@ -520,9 +521,9 @@ module authorize {
   var cverb: Verb                 // the verb the receiver expects the chain to carry (xwu)
 
   val res = authorize(R, ACCEPT_TABLE, consents, held, blocklist, NOW, alpn, peer, member, speakAs, grants)
-  val resAtt = authorize(R, ACCEPT_TABLE, consents, held, blocklist, NOW, alpn, peer, member, speakAsAtt, grantsAtt)
+  val resAtt = authorize(R, ACCEPT_TABLE, consents, heldAtt, blocklist, NOW, alpn, peer, member, speakAsAtt, grantsAtt)
   val chainRes = verifyChain(R, cverb, consents, held, chain, chainSpeakAs, signer, cfacet, NOW)
-  val chainResAtt = verifyChain(R, cverb, consents, held, chainAtt, chainSpeakAsAtt, signer, cfacet, NOW)
+  val chainResAtt = verifyChain(R, cverb, consents, heldAtt, chainAtt, chainSpeakAsAtt, signer, cfacet, NOW)
 
   // The speak-as a sovereign issues to R's key when R is its hot key
   // (ADR-0018 shape: {iss: wallet, aud: hubkey, verbs, groups}); held by R.
@@ -554,6 +555,7 @@ module authorize {
     speakAs' = Set(),
     consents' = Set(CONSENT1),
     held' = Set(),
+    heldAtt' = Set(),
     grants' = Set(mkCert(OWNER1, AGroup("admins"), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false)),
     grantsAtt' = Set(mkCert(OWNER1, AGroup("admins"), Invoke, Set(R), Set("apid"), Set(), "", false, true, 10, false)),
     speakAsAtt' = Set(),
@@ -584,6 +586,7 @@ module authorize {
     speakAs' = Set(),
     consents' = Set(CONSENT1, CONSENT1_PUB),
     held' = Set(),
+    heldAtt' = Set(),
     grants' = Set(asVerb(mkCert(OWNER1, AKey(CALLER), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false), Publish)),
     grantsAtt' = Set(),
     speakAsAtt' = Set(),
@@ -610,6 +613,7 @@ module authorize {
     speakAs' = Set(),
     consents' = Set(CONSENT1),
     held' = Set(),
+    heldAtt' = Set(),
     grants' = Set(mkCert(OWNER1, AKey(CALLER), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false)),
     grantsAtt' = Set(mkCert(OWNER1, AKey(CALLER), Invoke, Set(R), Set("apid"), Set(), "", false, true, 10, false)),
     speakAsAtt' = Set(),
@@ -634,6 +638,7 @@ module authorize {
                    mkSpeakAs(OWNER1, HUB_B, VERBS, GROUPS, false, 10, false)),
     consents' = Set(CONSENT1),
     held' = Set(),
+    heldAtt' = Set(),
     grants' = Set(mkCert(HUB_B, AGroup("admins"), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false)),
     grantsAtt' = Set(mkCert(HUB_B, AGroup("admins"), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false)),
     // attenuated: the member's speak-as expired — ADR-0018 axiom 2
@@ -654,7 +659,7 @@ module authorize {
   // (the shape every grant to a hub facet has — `target: wallet`), so
   // it survives R's key rotating. Chain half: the same grant as a
   // one-link chain presented by CALLER; the attenuated twin shrinks the
-  // link's target to ∅ by excluding OWNER1.
+  // link's target to ∅ by excluding OWNER1, and expires the held speak-as.
   pure val CONSENT1_HUB = CONSENT1.with("cav", CONSENT1.cav.with("target", Set(R, OWNER1)))
   pure val GRANT_TO_OWNER1 = mkCert(OWNER1, AKey(CALLER), Invoke, Set(OWNER1), Set("apid"), Set(), "", false, false, 10, false)
   action initAnswersFor = all {
@@ -665,6 +670,7 @@ module authorize {
     speakAs' = Set(),
     consents' = Set(CONSENT1_HUB),
     held' = Set(HELD_OWNER1),
+    heldAtt' = Set(HELD_OWNER1.with("exp", NOW)),   // the held speak-as expired: R no longer answers for OWNER1
     grants' = Set(GRANT_TO_OWNER1),
     grantsAtt' = Set(addCaveat(GRANT_TO_OWNER1, ShrinkTarget, OWNER1, "", "")),
     speakAsAtt' = Set(),
@@ -812,6 +818,7 @@ module authorize {
         mkCert(c1Iss, AKey(c1Aud), c1Can, c1Target, c1Facet, Set(), "", c1Deleg, c1Unknown, c1Exp, c1Forged),
         mkCert(c2Iss, AKey(c2Aud), Invoke, Set(R), FACETS, Set(), "", c2Deleg, false, c2Exp, c2Forged)),
       held' = h,
+      heldAtt' = h.map(s => addSpeakAsCaveat(s, att, attG)),
       grants' = Set(g1, g2),
       grantsAtt' = Set(addCaveat(g1, att, attT, attF, attE), g2),
       speakAsAtt' = sa.map(s => addSpeakAsCaveat(s, att, attG)),
@@ -1092,6 +1099,7 @@ module authorize {
       speakAs' = sa,
       consents' = if (f.contains(FNoConsentOwner2)) rootConsents else rootConsents.union(Set(CONSENT2)),
       held' = h,
+      heldAtt' = h.map(s => addSpeakAsCaveat(s, att, attG)),
       grants' = Set(g),
       grantsAtt' = Set(addCaveat(g, att, attT, attF, attE)),
       speakAsAtt' = sa.map(s => addSpeakAsCaveat(s, att, attG)),
@@ -1277,8 +1285,9 @@ module authorize {
     | Accept(id) => id == { key: peer, name: member.cav.name, groups: member.cav.groups }
   }
 
-  // Monotone under attenuation: adding a caveat to a link — a grant's
-  // or a speak-as's — can only shrink what is accepted.
+  // Monotone under attenuation: adding a caveat to a link — a grant's,
+  // a bundle speak-as's, or a held speak-as's — can only shrink what is
+  // accepted.
   val invMonotone = accepted(resAtt) implies accepted(res)
 
   // ---- laws on the N-link chain verifier (protocol ADR-0001) ---------
@@ -1439,7 +1448,8 @@ module authorize {
                            and consents.exists(c => c.cav.facet.contains(cfacet)))
 
   // Monotone under attenuation: adding a caveat (other than postage —
-  // see Att) to any chain link or speak-as can only shrink acceptance.
+  // see Att) to any chain link, bundle speak-as or held speak-as can
+  // only shrink acceptance.
   val invChainMonotone = (chainResAtt != Set()) implies chainAccepted
 
   val invAll = and {

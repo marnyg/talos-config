@@ -10,7 +10,8 @@ this scope.
   _Accepted 2026-09-12._
 - [0002](0002-chain-verb-from-root-consent-absent-set-caveats-are-empty.md) —
   a chain's verb is its root consent's verb (one fold for every verb);
-  an absent set caveat is ∅. _Proposed 2026-09-13 (rulings `xwu`, `0lo`)._
+  an absent set caveat is ∅. _Accepted 2026-09-17 (rulings `xwu`, `0lo`;
+  built `xwu`)._
 - [0003](0003-receiver-answers-for-speak-as-principals.md) —
   a receiver answers for a principal it holds a live `speak-as` from
   (rule 4: `Target ∋ R or ∋ P`); grants to hot-key-served facets name
