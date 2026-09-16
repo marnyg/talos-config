@@ -188,8 +188,8 @@ All on scratch infra; no repo changes beyond a spike branch.
    `VpnService` with gvisor netstack fake-IP; Jellyfin app streams a
    4K remux ≥ 80 Mbps sustained through it (kill-criterion parity
    with mesh-v2 #3), acceptable battery over a 2h stream.
-   **Feasibility + battery PASSED 2026-09-16; throughput pending the
-   at-home LAN-direct run** — see §P0.2 below.
+   **PASSED 2026-09-16** (feasibility, battery, and LAN-direct
+   throughput 97 Mbps avg / 154 peak over 10.6 min) — see §P0.2 below.
 3. **Talos extension proof**: minimal agent as a system extension —
    boots, dials the hub relay outbound, forwards one inbound
    ALPN-gated stream to apid; survives `talosctl reboot`. **PASSED
@@ -417,7 +417,7 @@ the forward table only), `ExtensionServiceConfig` for relay URL/policy
 (hard-coded in the spec for the spike), a Talos ingress firewall
 (none enabled; the agent's UDP port is ephemeral), staged upgrades.
 
-### P0.2 Android feasibility — data (2026-09-16, throughput pending)
+### P0.2 Android feasibility — data (2026-09-16, PASSED)
 
 Bead `talos-config-359.1.2`, branch `spike/mesh-v3-p0.2`; working plan
 and step-by-step log in `docs/mesh-v3-p0.2-android.md`. Owner's phone
@@ -436,7 +436,7 @@ had nothing ≥ 80 Mbps and w1, which holds the cluster's media, is down).
 | gomobile bind, iroh statically linked | **PASS.** `libgojni.so` 31.5 MB arm64, `NEEDED` = bionic only, 0 undefined `uniffi_iroh_*`. Three one-line fights: prose in a cgo preamble; `#cgo linux` also matches `GOOS=android` (no libpthread on bionic → `linux,!android`); lld prefers the `.so` the nix output ships next to the `.a` (stage the `.a` alone). `tools.go` keeps `x/mobile` in go.mod. |
 | netstack + fake IP + DNS in a `VpnService` | **PASS.** Tunnel up in 3.5 s (relay online) + 211 ms (peer connect). `jellyfin.mesh.internal` → fake IP, non-mesh names forwarded to the underlay through a `protect()`ed socket, TCP flows spliced into per-flow iroh `OpenBi` streams. |
 | Jellyfin app plays the file through it | **PASS, Direct Play** confirmed server-side (`/Sessions`: `PlayMethod: DirectPlay`, no transcoder). Firefox as a player buffers forever (no MKV demuxer) — use the app. |
-| ≥ 80 Mbps sustained, 4K remux | **PENDING — not measurable today.** Nobody was on the home LAN (Mac `10.144.x`, phone `10.150.9.x` + Tailscale, box `10.0.0.11`), and with QAD off (P0.1) neither side learns a public `ip:port`, so no WAN punch is attempted: every session stayed `*relay:`. **Relay path: 48.8 Mbps avg, 74.6 peak over 32 min**, one session, zero redials — that is the fly relay's ceiling to a phone across the internet, not a design property. The LAN-direct Shield run is the remaining step. |
+| ≥ 80 Mbps sustained, 4K remux | **PASS — LAN-direct, 97.0 Mbps avg over 10.6 min, 154 peak.** Phone on the home Wi-Fi (`10.0.0.6`), box `10.0.0.11`: path went `*ip:` within the first 5 s and stayed there for **127/127** ticker samples, one iroh session, zero redials, zero relay fallbacks; 121/127 samples ≥ 80 (the rest are the ramp-up and buffer-full pauses). Steady-state minutes read 95.0–95.2 Mbps — pinned to the file's 95.1 CBR, so the *player* is the limiter; the 154 Mbps buffer-refill bursts show the tunnel's headroom. Punched through the box's nixos-fw via conntrack, **no inbound firewall rule**. Earlier the same day, from outside the home, every session was `*relay:` at **48.8 avg / 74.6 peak over 32 min** — with QAD off (P0.1) neither side learns a public `ip:port`, so no WAN punch is even attempted; that number is the fly relay's ceiling, not a design property. Measured on the phone, not the Shield (see below). |
 | battery over a long stream | **PASS.** 32 min Direct Play 4K, screen on, unplugged: **99 → 91 %**. `dumpsys batterystats` (computed drain 312 mAh of 3644): Jellyfin app 205 (screen 131, video decode 36, Wi-Fi 28.5); **the tunnel process 8.5 mAh — ≈ 3 % of drain, ≈ 0.4 %/h**. Stopped early: the per-app split, not more minutes, is the number that matters, and it is an order of magnitude below anything a parity comparison could resolve. |
 
 Findings that shape Phase 1:
@@ -470,7 +470,9 @@ Findings that shape Phase 1:
   Packaging is pinned to compressed jniLibs + 16 KB LOAD alignment so
   the same APK also loads on 16 KB-page devices.
 
-Not exercised: the Shield (throughput device), cp1 as the node side
+Not exercised: the Shield as the client (the throughput bar was met on
+the phone; the Shield adds only a wired NIC and a different SoC — the
+parents'-TV deployment `4te` is where it gets exercised), cp1 as the node side
 (step 7: extension `0.0.4` with the Jellyfin forward), UDP flows other
 than DNS, IPv6 inside the tunnel, the `SocketProtector` path under
 routes wider than `198.18/15`.
