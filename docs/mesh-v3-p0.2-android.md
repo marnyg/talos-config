@@ -243,6 +243,59 @@ files to `mar@nixos:~/p0/…` (single-branch clone, detached), then
 --run 'IROH_FFI_ANDROID_LIB=/tmp/android-ffi-result/lib ./build-aar.sh
 && gradle --no-daemon assembleDebug'`.
 
+### 2026-09-16 (afternoon) — phone end to end; LAN-direct deferred to at-home
+
+**APK runs on the owner's phone** (Sony XQ-BQ52, Android 13, 4 KB pages):
+VpnService → gvisor netstack → fake DNS → iroh → stand-in agent →
+Jellyfin. `jellyfin.mesh.internal` resolves, the Jellyfin app browses and
+plays the 95 Mbps file **Direct Play**. Sideloading needed `adb install`
+(`nix shell nixpkgs#android-tools` on the Mac; the Files-app installer
+failed silently after the Play Protect prompt, no useful reason).
+
+**Throughput measured: 56–70 Mbps, relay path, from outside the home**
+(box-side 5 s ticker; the phone agreed). Every session stayed on
+`*relay:` — and legitimately so: **nobody was on the home LAN today**.
+Mac `10.144.x`, phone `10.150.9.x` (+ Tailscale), box at home
+`10.0.0.11`. No LAN candidate on either side can reach the other, and
+with **QAD off** on the scratch relay (P0.1 decision: needs the relay to
+own a TLS cert; remote-direct is out of scope per ADR-0006) neither side
+learns a public `ip:port`, so WAN hole-punching is never attempted.
+The number is therefore the **fly relay's ceiling to a phone across the
+internet**, not a property of the design. **Step 6 throughput (≥ 80 Mbps
+LAN-direct, Shield) is deferred to the next at-home session**; everything
+is in place for it (unit running, APK installed, inputs above).
+
+Findings along the way, all recorded for the writeup:
+
+- iroh **does** enumerate interfaces inside an Android 13 app (logcat:
+  `iroh-discovered direct addrs [10.150.9.121:43090 …]`). The
+  `AddExternalAddr` plumbing (Kotlin `LinkProperties` → Go) added on the
+  netlink theory stays as belt-and-braces; it was not the cause.
+- Box-side `peer-direct=[]` means *no candidate validated*, not *none
+  advertised* (iroh's `remote_addr` holds pinged addresses). Comment fixed.
+- **Starting p0mesh kicks Tailscale off the phone** — Android runs one
+  VpnService at a time. Both sides advertised Tailscale addresses that
+  were dead on arrival. Same constraint applies to the shipped app.
+- logcat: `thread panicked at ndk-context-0.1.1: android context was not
+  initialized` from inside iroh-ffi, non-fatal (tunnel comes up). iroh's
+  Android network monitor wants a JNI context we never hand it (gomobile,
+  no `JNI_OnLoad` hook of ours) — network-change detection on the phone
+  is probably dead. Phase 1 item: initialise `ndk_context` from Kotlin,
+  or accept and redial on `ConnectivityManager` callbacks ourselves.
+- Android's Private DNS tried DoT (`198.18.0.2:853`) against the fake
+  resolver; the flow went into iroh and died at the box. Harmless (falls
+  back to :53) but the netstack should refuse non-:53 flows to the
+  resolver IP rather than forwarding them.
+- Debug-APK packaging: AGP stored `libgojni.so` uncompressed on an
+  incremental build (64 MB APK) and compressed on the clean one (33 MB).
+  Now pinned: `useLegacyPackaging = true` + `-Wl,-z,max-page-size=16384`
+  (LOAD align `0x4000`) so it also loads on 16 KB-page devices. APK 13.5 MB.
+- `p0agent serve` now logs its advertised direct addrs at start and, per
+  connection, a 5 s `Mbps to peer, paths=…` ticker while bytes move.
+
+**Battery test started 2026-09-16 ~13:50 CEST** at 87 % (unplugged),
+relay path; result to be appended.
+
 ## Scratch infra this spike adds (tear down or adopt at the gate)
 
 - NixOS box: user unit `p0agent-standin` + `~/p0-jf/` (key, token, 5.7 GB

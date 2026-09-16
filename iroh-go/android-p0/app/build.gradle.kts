@@ -28,6 +28,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+
+    // Compress libgojni.so and extract it at install time. AGP's default for
+    // minSdk >= 23 stores it uncompressed for direct mmap, which on 16 KB
+    // page devices (Android 15+) requires 16 KB ELF/zip alignment; gomobile
+    // emits 4 KB and the installer silently refuses ("The app wasn't
+    // installed", 2026-09-16). build-aar.sh also asks the linker for 16 KB
+    // max-page-size; this is the belt to that brace.
+    packaging { jniLibs { useLegacyPackaging = true } }
 }
 
 dependencies {

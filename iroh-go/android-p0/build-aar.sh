@@ -26,9 +26,12 @@ mkdir -p "$here/app/libs"
 staticdir="$tools/iroh-static"
 mkdir -p "$staticdir"
 ln -s "$IROH_FFI_ANDROID_LIB/libiroh_ffi.a" "$staticdir/libiroh_ffi.a"
+# max-page-size=16384: 16 KB-aligned LOAD segments so the .so is loadable
+# on 16 KB page devices (Android 15+) however the APK packages it.
 CGO_LDFLAGS="-L$staticdir" gomobile bind \
   -target=android/arm64 \
   -androidapi 26 \
+  -ldflags='-extldflags=-Wl,-z,max-page-size=16384' \
   -o "$here/app/libs/p0mobile.aar" \
   .
 echo "built $here/app/libs/p0mobile.aar"

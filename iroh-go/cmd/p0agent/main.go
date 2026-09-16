@@ -117,6 +117,7 @@ func bind(relay, bindAddr string, alpns []string, key *[]byte) *iroh.Endpoint {
 	t0 := time.Now()
 	ep.Online()
 	logf("online (home relay %s reachable) after %s", relay, time.Since(t0).Round(time.Millisecond))
+	logf("advertising direct addrs %v", ep.Addr().DirectAddresses())
 	return ep
 }
 
@@ -206,11 +207,27 @@ func serve(args []string) {
 			logf("handshake: %v", err)
 			continue
 		}
-		go serveConn(conn, fwd)
+		go serveConn(ep, conn, fwd)
 	}
 }
 
-func serveConn(conn *iroh.Connection, fwd forwards) {
+// remoteDirect is the peer's direct (IP) addresses that iroh currently
+// holds as usable — in practice the ones a ping/pong validated, not
+// everything the peer advertised. Empty while a connection is stuck on
+// the relay means "no candidate reached us" (different network, firewall),
+// not "peer advertised nothing" (P0.2, 2026-09-16).
+func remoteDirect(ep *iroh.Endpoint, id *iroh.EndpointId) []string {
+	if id == nil {
+		return nil
+	}
+	pp := ep.RemoteAddr(id)
+	if pp == nil || *pp == nil {
+		return nil
+	}
+	return (*pp).DirectAddresses()
+}
+
+func serveConn(ep *iroh.Endpoint, conn *iroh.Connection, fwd forwards) {
 	defer conn.Destroy()
 	alpn := string(conn.Alpn())
 	target, ok := fwd[alpn]
@@ -219,7 +236,32 @@ func serveConn(conn *iroh.Connection, fwd forwards) {
 		_ = conn.Close(1, []byte("alpn not served"))
 		return
 	}
-	logf("accepted %s alpn=%s -> %s paths=%s", short(conn.RemoteId()), alpn, target, paths(conn))
+	logf("accepted %s alpn=%s -> %s paths=%s peer-direct=%v", short(conn.RemoteId()), alpn, target, paths(conn), remoteDirect(ep, conn.RemoteId()))
+	// Live readout (P0.2 step 6): every 5 s while streams are open, the
+	// selected path and the rate toward the peer, so a long Direct Play
+	// stream is observable before it ends (stream done logs only at close).
+	var toPeer atomic.Int64
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		last, lastT := int64(0), time.Now()
+		for {
+			select {
+			case <-stop:
+				return
+			case now := <-t.C:
+				cur := toPeer.Load()
+				if cur == last {
+					continue // idle: no streams moving bytes
+				}
+				mbps := float64(cur-last) * 8 / now.Sub(lastT).Seconds() / 1e6
+				logf("peer %s: %.1f Mbps to peer, paths=%s peer-direct=%v", short(conn.RemoteId()), mbps, paths(conn), remoteDirect(ep, conn.RemoteId()))
+				last, lastT = cur, now
+			}
+		}
+	}()
 	for {
 		bi, err := conn.AcceptBi()
 		if err != nil {
@@ -235,7 +277,7 @@ func serveConn(conn *iroh.Connection, fwd forwards) {
 				return
 			}
 			t0 := time.Now()
-			in, out := pipe(bi, tcp.(*net.TCPConn))
+			in, out := pipe(bi, tcp.(*net.TCPConn), &toPeer)
 			logf("stream done %s: %dB in, %dB out, %s, paths=%s", target, in, out, time.Since(t0).Round(time.Millisecond), paths(conn))
 		}()
 	}
@@ -326,7 +368,7 @@ func bridge(args []string) {
 			}
 			defer bi.Destroy()
 			t0 := time.Now()
-			in, out := pipe(bi, tcp.(*net.TCPConn))
+			in, out := pipe(bi, tcp.(*net.TCPConn), nil)
 			logf("stream done: %dB from peer, %dB to peer, %s, paths=%s", in, out, time.Since(t0).Round(time.Millisecond), paths(c))
 		}()
 	}
@@ -335,7 +377,9 @@ func bridge(args []string) {
 // pipe copies tcp→send and recv→tcp until both directions are done.
 // Half-closes propagate: TCP FIN → QUIC FIN, QUIC FIN → TCP CloseWrite.
 // Returns bytes received from the stream and bytes sent into it.
-func pipe(bi *iroh.BiStream, tcp *net.TCPConn) (fromStream, toStream int64) {
+// pipe splices both ways until both close; toPeer (optional) is bumped
+// live with bytes written into the stream, for the serve-side rate log.
+func pipe(bi *iroh.BiStream, tcp *net.TCPConn, toPeer *atomic.Int64) (fromStream, toStream int64) {
 	send, recv := bi.Send(), bi.Recv()
 	defer send.Destroy()
 	defer recv.Destroy()
@@ -372,6 +416,9 @@ func pipe(bi *iroh.BiStream, tcp *net.TCPConn) (fromStream, toStream int64) {
 					return
 				}
 				toStream += int64(n)
+				if toPeer != nil {
+					toPeer.Add(int64(n))
+				}
 			}
 			if err != nil {
 				if errors.Is(err, io.EOF) {

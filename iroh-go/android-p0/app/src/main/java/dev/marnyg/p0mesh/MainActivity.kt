@@ -107,6 +107,7 @@ class MainActivity : Activity() {
         sb.append("peer     ${j.getString("peer")}\n")
         sb.append("up       ${j.getLong("uptimeS")} s   connected=${j.getBoolean("connected")} redials=${j.getLong("redials")}\n")
         sb.append("paths    ${j.optJSONArray("paths")?.join(" ") ?: "-"}\n")
+        sb.append("self     ${j.optJSONArray("selfDirect")?.join(" ") ?: "-"}\n")
         sb.append(rate)
         sb.append("bytes    in %.1f MB  out %.1f MB\n".format(inB / 1e6, outB / 1e6))
         sb.append("flows    total ${j.getLong("flows")}  open ${j.getLong("flowsOpen")}  errors ${j.getLong("flowErrors")}\n")

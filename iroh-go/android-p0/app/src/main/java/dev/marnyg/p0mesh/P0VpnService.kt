@@ -34,6 +34,7 @@ class P0VpnService : VpnService() {
         startForeground(NOTIFICATION_ID, notification())
         try {
             val upstreamDns = underlayDnsServers() // before establish(): "active" must be the underlay
+            val localAddrs = underlayAddresses()   // idem; iroh cannot enumerate interfaces itself on Android
             val pfd = Builder()
                 .setSession("p0mesh")
                 .setMtu(MTU)
@@ -43,9 +44,9 @@ class P0VpnService : VpnService() {
                 .establish() ?: throw IllegalStateException("establish() returned null (VPN permission?)")
             // detachFd: Go owns the fd from here; the netstack reads it until Stop.
             val fd = pfd.detachFd()
-            tunnel = P0mobile.start(fd.toLong(), MTU.toLong(), relay, peer, upstreamDns, protector)
+            tunnel = P0mobile.start(fd.toLong(), MTU.toLong(), relay, peer, upstreamDns, localAddrs, protector)
             current = this
-            Log.i(TAG, "tunnel up id=${tunnel?.id()} upstreamDns=$upstreamDns")
+            Log.i(TAG, "tunnel up id=${tunnel?.id()} upstreamDns=$upstreamDns localAddrs=$localAddrs")
         } catch (e: Exception) {
             Log.e(TAG, "start failed", e)
             lastError = e.toString()
@@ -73,6 +74,14 @@ class P0VpnService : VpnService() {
         val cm = getSystemService(ConnectivityManager::class.java)
         val lp = cm.activeNetwork?.let { cm.getLinkProperties(it) } ?: return ""
         return lp.dnsServers.filterIsInstance<Inet4Address>().joinToString(",") { it.hostAddress + ":53" }
+    }
+
+    /** The underlay's IPv4 addresses (Wi-Fi/cellular), for iroh to advertise as direct addrs. */
+    private fun underlayAddresses(): String {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val lp = cm.activeNetwork?.let { cm.getLinkProperties(it) } ?: return ""
+        return lp.linkAddresses.map { it.address }.filterIsInstance<Inet4Address>()
+            .mapNotNull { it.hostAddress }.joinToString(",")
     }
 
     private fun notification(): Notification {

@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -77,8 +78,14 @@ type stats struct {
 // have established the tun with: address ResolverIP/32's network (any
 // 198.18.x host), route FakeRange, dnsServer ResolverIP, MTU = mtu.
 // upstreamDNS is "ip:port[,ip:port]" for non-mesh queries (the underlying
-// network's resolvers). protector may be nil.
-func Start(tunFd int, mtu int, relay, peerHex, upstreamDNS string, protector SocketProtector) (*Tunnel, error) {
+// network's resolvers). localAddrs is "ip[,ip]": the underlying network's
+// IPv4 addresses from LinkProperties. iroh's own interface enumeration
+// yields nothing inside an Android app (netlink RTM_GETLINK is restricted
+// from API 30), so without these the endpoint advertises no direct
+// addresses and every connection stays on the relay (P0.2 finding
+// 2026-09-16: peer-direct=[] on the node side). Same fix Tailscale-Android
+// uses: Java hands the interface addresses down. protector may be nil.
+func Start(tunFd int, mtu int, relay, peerHex, upstreamDNS, localAddrs string, protector SocketProtector) (*Tunnel, error) {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	if lvl := os.Getenv("P0_LOG"); lvl != "" {
 		iroh.SetLogLevel(map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl])
@@ -96,9 +103,10 @@ func Start(tunFd int, mtu int, relay, peerHex, upstreamDNS string, protector Soc
 	if err != nil {
 		return nil, fmt.Errorf("bind: %w", err)
 	}
+	advertiseLocal(ep, localAddrs)
 	t0 := time.Now()
 	ep.Online()
-	log.Printf("id=%s online after %s (relay %s)", ep.Id().String(), time.Since(t0).Round(time.Millisecond), relay)
+	log.Printf("id=%s online after %s (relay %s) direct=%v", ep.Id().String(), time.Since(t0).Round(time.Millisecond), relay, ep.Addr().DirectAddresses())
 
 	t := &Tunnel{ep: ep, peer: peer, relay: relay, started: time.Now()}
 	if _, err := t.getConn(); err != nil {
@@ -117,6 +125,35 @@ func Start(tunFd int, mtu int, relay, peerHex, upstreamDNS string, protector Soc
 	}
 	log.Printf("tunnel up: fd=%d mtu=%d peer=%s", tunFd, mtu, short(peer))
 	return t, nil
+}
+
+// advertiseLocal adds ip:<bound UDP port> for each IPv4 in localAddrs as
+// an external address of ep, so the peer learns where to punch on the LAN.
+func advertiseLocal(ep *iroh.Endpoint, localAddrs string) {
+	port := ""
+	for _, s := range ep.BoundSockets() {
+		if host, p, err := net.SplitHostPort(s); err == nil && net.ParseIP(host).To4() != nil {
+			port = p
+			break
+		}
+	}
+	log.Printf("bound sockets %v, iroh-discovered direct addrs %v", ep.BoundSockets(), ep.Addr().DirectAddresses())
+	if port == "" {
+		log.Printf("no IPv4 socket bound; not advertising local addrs")
+		return
+	}
+	for _, ip := range strings.Split(localAddrs, ",") {
+		ip = strings.TrimSpace(ip)
+		if ip == "" || net.ParseIP(ip) == nil || net.ParseIP(ip).To4() == nil {
+			continue
+		}
+		addr := net.JoinHostPort(ip, port)
+		if err := ep.AddExternalAddr(addr); err != nil {
+			log.Printf("add external addr %s: %v", addr, err)
+			continue
+		}
+		log.Printf("advertising %s", addr)
+	}
 }
 
 // Stop tears the tunnel down. Idempotent. Kotlin calls it from
@@ -150,6 +187,7 @@ func (t *Tunnel) StatsJSON() string {
 		Peer        string   `json:"peer"`
 		UptimeS     int64    `json:"uptimeS"`
 		Paths       []string `json:"paths"`
+		SelfDirect  []string `json:"selfDirect"` // what we advertise; empty ⇒ relay forever
 		Connected   bool     `json:"connected"`
 		Flows       int64    `json:"flows"`
 		FlowsOpen   int64    `json:"flowsOpen"`
@@ -167,7 +205,7 @@ func (t *Tunnel) StatsJSON() string {
 		Flows: t.stats.Flows.Load(), FlowsOpen: t.stats.FlowsOpen.Load(), FlowErrors: t.stats.FlowErrors.Load(),
 		BytesIn: t.stats.BytesIn.Load(), BytesOut: t.stats.BytesOut.Load(), Redials: t.stats.Redials.Load(),
 		DNSMesh: t.stats.DNSMesh.Load(), DNSUnderlay: t.stats.DNSUnderlay.Load(), DNSFail: t.stats.DNSFail.Load(),
-		Names: t.dns.names(),
+		Names: t.dns.names(), SelfDirect: t.ep.Addr().DirectAddresses(),
 	}
 	t.mu.Lock()
 	if t.conn != nil && t.conn.CloseReason() == nil {
