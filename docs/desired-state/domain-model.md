@@ -254,7 +254,9 @@ flowchart LR
   through fly), relay through the hub for remote members, because
   ordinary remote networks are symmetric NATs nothing can punch
   (ADR-0006). The relay forwards envelopes; it is fallback, not
-  middleman.
+  middleman — and a fallback with a measured cost: **~50–75 Mbps to
+  one phone from fly's edge** (P0.2, 2026-09-16), fine for admin and
+  audio, not a 4K path.
 
 Rendezvous is post-bootstrap by invariant 4: nothing on the
 provisioning or recovery path may depend on it.
@@ -465,7 +467,9 @@ provisioning or recovery path may depend on it.
 - **Key** — concrete identity: X25519 keypair born on the member,
   never travels. The only thing that acts.
 - **Runner** — the platform embodiment of a key: ext-nebula, Android
-  app, nebup.
+  app, nebup. The Android runner holds the device's single
+  `VpnService` slot — starting it evicts any other VPN (Tailscale,
+  work VPN); a user-visible property, not an implementation detail.
 - **Signature distance** — where/when the admission signature is
   produced relative to the enrollment act: zero (nebup), spatial
   (approver flow), temporal (machine boot token).
