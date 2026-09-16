@@ -157,6 +157,65 @@ exercised through the hot key:
   is evaluated by the gateway/node agent against the NodeId's cert
   chain instead of nebula's firewall (ADR-0016).
 
+### Hub actors: cut by key, not by module
+
+_Pinned 2026-09-16, `359.8.2.1` grill-design (Mesh v3 Phase 1.2a).
+Desired state; the nebula-era hub is one process with one master._
+
+The hub is several protocol actors in one process. An actor **is** a
+keypair, so the cut follows keys: exactly one key carries the wallet's
+`speak-as`, and only that actor signs certs. The others hold keys the
+wallet never hears of; the Issuer consents to them at boot, and what
+they ask for carries its own proof.
+
+```mermaid
+classDiagram
+    class Wallet["Wallet (cold root)"]
+    class Issuer["Issuer — hubkey = speak-as.aud = iroh EndpointId\n#renew #bundle #mint-device #mint-machine · hub-http:/config"]
+    class Enroll["Enroll — own key, no wallet delegation\nWAN: device flow, wallet approval"]
+    class Provisioner["Provisioner — own key, holds the secrets seed\nWAN: /config (+boot token), /enroll/machine, KMS"]
+    class Shell["Shell (not an actor): mux, /unseal, /sealed, /status,\n/.well-known speak-as, relay child"]
+    class Member["Member (node agent, irohup, app)"]
+    Wallet --> Issuer : speak-as (unseal)
+    Wallet ..> Provisioner : seed (same EIP-712 act)
+    Issuer --> Enroll : consent {facet: mint-device}
+    Issuer --> Provisioner : consent {facet: mint-machine}
+    Enroll --> Issuer : #mint-device {NodeId, name, groups, wallet sig}
+    Provisioner --> Issuer : #mint-machine {NodeId, mac}
+    Member --> Issuer : beat = #renew + #bundle (dials hubkey)
+```
+
+| Actor | Key / endpoint | Inbox | State (all volatile) |
+|---|---|---|---|
+| **Issuer** | `hubkey`; iroh + in-memory | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{}` → grants for the caller's groups, blocklist, name map, current `speak-as`), `#mint-device` (from Enroll; Issuer verifies the **wallet's** approval), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal; location cache, `seq` HWM, `lw` (safe-to-lose); git checkout = compiler input |
+| **Enroll** | own key; in-memory only | none (WAN HTTPS handlers: `/device/code`, `/token`, `/verify`, `/mesh/enroll/*`) | device-flow store (minutes TTL) |
+| **Provisioner** | own key; in-memory only | none (WAN HTTPS: `/config`, `/enroll/machine`, KMS) | seed (memory); boot-token seen-set |
+
+Rules that fall out of the cut:
+
+- **Grants to hub facets name the sovereign** (`target: wallet`), never
+  `hubkey`, or the first beat after every deploy deadlocks. The
+  receiver answers for a principal it holds a live `speak-as` from
+  (`VerifyChain` rule 4 extension, `kau`). Envelope `to.target` and the
+  dial id stay `hubkey` — an `ed:` id *is* the iroh `EndpointId`.
+- **The beat is two `Send`s** on one connection: `#renew` for the member
+  cert, `#bundle` for the talos layer (decision `mdv`, revises `itb`).
+  No HTTP-over-stream client, no second signed-document format — the
+  Reply signature covers the bundle.
+- **Lighthouse = view over the Issuer's location cache.** Every inbound
+  envelope piggybacks the sender's `reach-me-at`; `#bundle`'s
+  `NodeId → {port: facet}` half reads that cache. `#publish`/`#lookup`/
+  `#frontdoor` are M3 (`0bc.3`), for actors that are not already
+  talking to you.
+- **Boot token is Provisioner-local**: it mints at `/config` and
+  verifies at `/enroll/machine` (`54n` is its own choice), then asks
+  `Issuer#mint-machine`. A compromised Provisioner already hands blank
+  machines any config; requesting machine certs adds no new power.
+- **Cold cache after a deploy:** a member lacks only the new
+  `speak-as`; `GET /.well-known/…` over WAN HTTPS serves it —
+  wallet-signed, verified offline, web PKI as hint channel (invariant
+  4's permitted direction, invariant 5's single entrypoint).
+
 ### Policy: payload, not identity
 
 ```mermaid
@@ -479,14 +538,22 @@ provisioning or recovery path may depend on it.
   the network's services plus the `/status` and `/policy` admin
   pages. Trusted infrastructure, not a root of trust; killable and
   re-derivable (one unseal). Under ADR-0018 it is the wallet's **hot
-  key** and, conceptually, several actors cut by the state they must
-  keep: **Issuer** (mint/renew member + invoke certs), **Enroll**
-  (device flow, machine approval, boot token), **Relay** (iroh relay,
-  name map), **Gateway** — all ephemeral-key actors with no durable
-  secret — and **Provisioner** (config serve, KMS), the only one
-  holding a secrets seed. First step is a modular monolith: one
-  binary, one inbox per actor, messages are the protocol's signed
-  envelopes.
+  key** and, concretely, several actors cut by the state they must
+  keep — each with **its own per-process keypair** (an actor *is* a
+  keypair): **Issuer** (mint/renew member + invoke certs) is the one
+  whose key is the unseal `speak-as`'s `aud` (`hubkey`) and the only
+  one that signs certs; **Enroll** (device flow, machine approval) and
+  **Provisioner** (config serve, KMS — the only one holding the
+  secrets seed) have keys with **no wallet delegation** — the Issuer
+  consents to them at boot (`invoke {target: issuer, facet: …}`) and
+  verifies the *wallet's* signature inside their requests, never their
+  authority. The iroh **relay** runs in the hub process but is a
+  transport component, not an actor. First step is a modular
+  monolith: one binary, one inbox per actor, messages are the
+  protocol's signed envelopes; promotion to a process is a transport
+  change because each key is born in its own process. Facets, state
+  and the rules that follow: §2 "Hub actors". _(Pinned 2026-09-16,
+  `359.8.2.1` grill-design; Gateway moved to Phase 2.3.)_
 - **Speak-as** _(pinned 2026-09-06, ADR-0018)_ — the verb that maps a
   signer to a principal: *treat anything signed by `aud` as if signed
   by `iss`, within `cav`, until `exp`.* Not authority to reach
