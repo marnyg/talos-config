@@ -19,8 +19,14 @@ GOBIN="$tools" go install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/c
 export PATH="$tools:$PATH"
 
 mkdir -p "$here/app/libs"
-# -L for the .a: the iroh package's link_android.go adds -liroh_ffi -llog -ldl -lm.
-CGO_LDFLAGS="-L$IROH_FFI_ANDROID_LIB" gomobile bind \
+# Stage only the .a: the nix output ships libiroh_ffi.so next to it and lld
+# picks the shared one for -liroh_ffi, which would leave libgojni.so with a
+# NEEDED on a library the APK does not carry. iroh/link.go adds -liroh_ffi,
+# iroh/link_android.go adds -llog -ldl -lm.
+staticdir="$tools/iroh-static"
+mkdir -p "$staticdir"
+ln -s "$IROH_FFI_ANDROID_LIB/libiroh_ffi.a" "$staticdir/libiroh_ffi.a"
+CGO_LDFLAGS="-L$staticdir" gomobile bind \
   -target=android/arm64 \
   -androidapi 26 \
   -o "$here/app/libs/p0mobile.aar" \

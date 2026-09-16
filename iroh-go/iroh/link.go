@@ -7,10 +7,12 @@
 // the library name and the per-OS system libraries; the library search
 // path is left to the build (CGO_LDFLAGS="-L<dir with libiroh_ffi.a>"),
 // which is what nix/default.nix sets. See ../README.md for the static /
-// musl / cross-compile story.
+// musl / cross-compile story. GOOS=android also satisfies the `linux`
+// constraint, and bionic has no libpthread — hence `linux,!android`;
+// link_android.go carries the android line.
 package iroh
 
 // #cgo LDFLAGS: -liroh_ffi
 // #cgo darwin LDFLAGS: -framework Security -framework SecurityFoundation -framework SystemConfiguration -framework CoreWLAN -framework Foundation -framework CoreFoundation -lobjc -liconv
-// #cgo linux LDFLAGS: -lm -ldl -lpthread
+// #cgo linux,!android LDFLAGS: -lm -ldl -lpthread
 import "C"

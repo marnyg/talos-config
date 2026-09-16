@@ -188,10 +188,10 @@ Branch `spike/mesh-v3-p0.2` (pushed). Bead `359.1.2` in_progress.
 
 | step | state | where |
 |---|---|---|
-| 1 cross-compile `libiroh_ffi.a` | **building** on the NixOS box (`/tmp/android-ffi.log`, output `/tmp/android-ffi-result`); eval clean, NDK 27 toolchain + bionic built, cross `rustc 1.93.0` for `aarch64-linux-android` compiling (~1 h). No Rust changes needed so far | `iroh-go/nix/android.nix` = `import ./. { pkgs = pkgsCross.aarch64-android-prebuilt }` — same pipeline, same patched lock. Impure/unfree (`NIXPKGS_ALLOW_UNFREE=1 nix build --impure -f iroh-go/nix/android.nix`) |
-| 2 gomobile package | **written, compiles** on linux/amd64 against the native lib (`go vet` + `go build` clean on the box); not yet bound for android | `iroh-go/mobile/` (own module `…/iroh-go/mobile`, `replace ../`): `tunnel.go` (Start/Stop/StatsJSON, one iroh connection with redial, per-flow `OpenBi` + p0agent's `pipe`), `netstack.go`, `dns.go`. `iroh-go/iroh/link_android.go` adds `-llog -ldl -lm` for GOOS=android |
+| 1 cross-compile `libiroh_ffi.a` | **✓ built** on the NixOS box, `/tmp/android-ffi-result/lib/libiroh_ffi.a` (36 MB; a `.so` lands next to it). Eval clean, NDK 27 toolchain + bionic, cross `rustc 1.93.0` for `aarch64-linux-android`, ~1 h unattended. **No Rust or lock changes**; ring/aws-lc found the NDK sysroot via nixpkgs' cross stdenv | `iroh-go/nix/android.nix` = `import ./. { pkgs = pkgsCross.aarch64-android-prebuilt }` — same pipeline, same patched lock. Impure/unfree (`NIXPKGS_ALLOW_UNFREE=1 nix build --impure -f iroh-go/nix/android.nix`) |
+| 2 gomobile package | **✓ bound**: `app/libs/p0mobile.aar` (11.6 MB), `libgojni.so` 31.5 MB arm64, iroh linked **statically**, `NEEDED` = bionic only (`liblog libandroid libdl libm libc`), 0 undefined `uniffi_iroh_*`. Three fixes it took: (a) `mobile/tools.go` (tools tag) keeps `x/mobile` + its cmds in go.mod through `go mod tidy` — same pattern as `config-server/tools.go`; (b) `iroh/link_android.go` had prose in the cgo preamble (fed to clang as C) — blank line before `#cgo`; (c) `#cgo linux` also matches GOOS=android and bionic has no libpthread → `linux,!android` in `iroh/link.go`; plus `build-aar.sh` now stages a dir holding only the `.a` because lld preferred the `.so` | `iroh-go/mobile/` (own module `…/iroh-go/mobile`, `replace ../`): `tunnel.go` (Start/Stop/StatsJSON, one iroh connection with redial, per-flow `OpenBi` + p0agent's `pipe`), `netstack.go`, `dns.go`. `iroh-go/iroh/link_android.go` adds `-llog -ldl -lm` for GOOS=android |
 | 3 netstack + fake IP | **written** | gvisor `fdbased` on the fd, promiscuous + spoofing NIC, default route, `tcp.NewForwarder` → `handleTCP`, `udp.NewForwarder` on :53 only → `fakeDNS`. Fake plan: tun `198.18.0.1`, resolver `198.18.0.2`, names from `198.18.1.0` up; `*.mesh.internal` A → fake IP, AAAA → empty NOERROR, other names → underlay via `SocketProtector`-protected socket. TCP rcv/snd buffers 1 MiB default / 4 MiB max, SACK, moderate-rcvbuf on |
-| 4 spike APK | **written, not built** | `iroh-go/android-p0/` (`dev.marnyg.p0mesh`): `P0VpnService.kt` (`addAddress 198.18.0.1/32`, `addRoute 198.18.0.0/15`, `addDnsServer 198.18.0.2`, MTU 1280, `detachFd` → `P0mobile.start`), `MainActivity.kt` (relay + peer inputs in prefs, Start/Stop, 1 s stats poll with a Mbps readout), `build-aar.sh` (gomobile, android/arm64 only, `IROH_FFI_ANDROID_LIB` = dir with the android `.a`), `shell.nix` (androidenv SDK 34 + NDK 27.0.12077973 + gradle + jdk17; being realised on the box, `/tmp/android-shell.log`) |
+| 4 spike APK | **✓ built**, `gradle --no-daemon assembleDebug` in 54 s inside `shell.nix` (aapt2 override worked first time). Copied to the Mac: `~/Downloads/p0mesh-debug.apk` (33 MB). Not yet sideloaded | `iroh-go/android-p0/` (`dev.marnyg.p0mesh`): `P0VpnService.kt` (`addAddress 198.18.0.1/32`, `addRoute 198.18.0.0/15`, `addDnsServer 198.18.0.2`, MTU 1280, `detachFd` → `P0mobile.start`), `MainActivity.kt` (relay + peer inputs in prefs, Start/Stop, 1 s stats poll with a Mbps readout), `build-aar.sh` (gomobile, android/arm64 only, `IROH_FFI_ANDROID_LIB` = dir with the android `.a`), `shell.nix` (androidenv SDK 34 + NDK 27.0.12077973 + gradle + jdk17; being realised on the box, `/tmp/android-shell.log`) |
 | 5 stand-in agent | **running** on the box as user unit `p0agent-standin` (`systemctl --user`, `Restart=on-failure`, linger on): `p0agent serve -relay …spike.fly.dev -key ~/p0-jf/p0key -bind 0.0.0.0:7842 -forward mesh/http/v1=127.0.0.1:8096`. **NodeId `5852d8b0e1e1c836b628f3ad1986d22042101eb9f672704ef89c1d8858db513c`** — the APK's peer input. Homed in 3.1 s. (`:41641` is Tailscale's, hence 7842.) Smoke on the box: `p0agent bridge … -listen 127.0.0.1:18096` → `curl /health` = Healthy; the Direct Play stream moved 5.7 GB in 14.8 s ≈ 3.1 Gbps over iroh, path went `*relay` → `*ip` inside the first stream. Forwards to the **stand-in Jellyfin** below, not cp1:30096 | `~/p0/result/bin/p0agent` is the P0.3 static build. cp1 LAN lease today: **`10.0.0.58`** (apid :50000 answers; `talosctl -e 10.0.0.58 -n 10.0.0.58` works). Kubeconfig fetched to the Mac at `/tmp/kc` (`kubectl --server https://10.0.0.58:6443 --insecure-skip-tls-verify`; kube SANs are mesh-only) |
 | 6 measure | **ready for the owner's device** once the APK builds | see below |
 
@@ -226,11 +226,22 @@ power w1 on, (2) stand-in Jellyfin on the NixOS box behind the stand-in
 agent with a caveat in the writeup, (3) both. **Owner decision
 pending.**
 
-Next when resumed: check `/tmp/android-ffi.log` finished →
-`IROH_FFI_ANDROID_LIB=/tmp/android-ffi-result/lib` → enter
-`android-p0/shell.nix` → `./build-aar.sh` (expect the cgo link to be
-the next fight) → `gradle assembleDebug` → sideload → step 5 → step 6
-once media is decided.
+### 2026-09-16 (later) — steps 1–5 done, APK in hand
+
+Everything up to the device is built and running; the owner's part
+(decision 4) is next. **Inputs for the APK:** relay
+`https://marnyg-iroh-relay-spike.fly.dev`, peer NodeId
+`5852d8b0e1e1c836b628f3ad1986d22042101eb9f672704ef89c1d8858db513c`
+(the stand-in on the box). Jellyfin app server URL once the tunnel is up:
+`http://jellyfin.mesh.internal:8096`, user `abc`. Play *P0 Test → P0
+Remux Test (2026)*; Jellyfin's dashboard must say Direct Play, the APK
+readout should sit ≈ 95 Mbps; `journalctl --user -u p0agent-standin` on
+the box logs the paths (`*ip:` = LAN-direct, `*relay:` = the fly relay's
+bandwidth, not the design). Rebuild path for changes: `scp` the changed
+files to `mar@nixos:~/p0/…` (single-branch clone, detached), then
+`NIXPKGS_ALLOW_UNFREE=1 nix-shell --impure iroh-go/android-p0/shell.nix
+--run 'IROH_FFI_ANDROID_LIB=/tmp/android-ffi-result/lib ./build-aar.sh
+&& gradle --no-daemon assembleDebug'`.
 
 ## Scratch infra this spike adds (tear down or adopt at the gate)
 
