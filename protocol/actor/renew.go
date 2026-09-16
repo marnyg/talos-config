@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/talos-config/protocol/envelope"
 )
 
 // FacetRenew is the renewal facet every actor exposes. It is an
@@ -126,12 +127,7 @@ func (a *Actor) renewHandler(_ context.Context, inv *Invocation) ([]byte, error)
 	}
 	now := a.Now()
 	// the proof's speak-as certs — the same set the chain bound aud with
-	var proofSpeakAs []cert.Cert
-	for _, c := range inv.Envelope.Proof {
-		if c.Can == cert.VerbSpeakAs {
-			proofSpeakAs = append(proofSpeakAs, c)
-		}
-	}
+	_, proofSpeakAs := envelope.SplitProof(inv.Envelope.Proof)
 	resp := RenewResponse{Results: make([]RenewResult, len(req.Items))}
 	for i, it := range req.Items {
 		resp.Results[i] = a.renewOne(it, inv.From, proofSpeakAs, now)

@@ -217,7 +217,7 @@
 
 ## Workloads / storage
 
-- **w1 is down** (since 2026-08-04; no LAN ping, no apid). Media
+- **w1 is down** (since 2026-08-04; no LAN ping, no apid). <!-- stale? tracked by kso/0q0 --> Media
   library offline — all `longhorn-bulk` volumes `faulted` (single
   replica on w1). Needs physical attention; data presumed intact. Do
   not start storage work until it returns (`talos-config-kso`,

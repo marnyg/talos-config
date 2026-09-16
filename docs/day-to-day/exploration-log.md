@@ -6,6 +6,9 @@
 
 ## Mesh v3 P1.2a — hub actor cut (2026-09-16, `359.8.2.1` grill-design)
 
+<!-- 2026-09-18: the "grants name the current hubkey" bullet pruned —
+     protocol ADR-0003 (Accepted, `kau`) records the ruling. -->
+
 - 2026-09-16 — Considered all hub actors (Issuer, Enroll, Relay,
   Provisioner) sharing the one `hubkey` the unseal `speak-as` names.
   Ruled out: in the protocol an actor *is* a keypair, so shared
@@ -16,18 +19,6 @@
   **Issuer's** key alone; Enroll and Provisioner hold their own
   per-process keys with no wallet delegation, consented to by the
   Issuer at boot; Relay is a transport component, not an actor.
-- 2026-09-16 — Grants to hub facets (`#renew`, `hub-http`, `#publish`)
-  naming the current `hubkey` as `target`. Ruled out: `VerifyChain`
-  rule 4 is literal (`Target ∋ receiver`) and ADR-0018 rotates `hubkey`
-  every deploy, so the first beat after a redeploy deadlocks — the
-  `#renew` grant names a dead key and fetching a fresh one is itself a
-  hub facet. Also ruled out: a bootstrap facet admitting a member cert
-  alone (the "any cert I signed authorizes asking" special case the
-  glossary forbids for `#renew`) and a seed-derived stable `hubkey`
-  (ADR-0018). Landed on: the receiver answers for principals it holds
-  a live `speak-as` from — hub facets are the **sovereign's** facets
-  (`target: wallet`), served by whichever hot key holds the unseal
-  (`kau`, model first).
 - 2026-09-16 — Considered dialing the *wallet* (`Dial(eth:…, hints)` with
   a new `iroh:id=` hint, `to.target: wallet`, `reach-me-at` for the
   wallet signed under the `speak-as`). Ruled out: an `ed:` actor id

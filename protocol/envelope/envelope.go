@@ -488,9 +488,12 @@ func checkLoc(loc *cert.Cert, from cert.ActorID, now int64) error {
 	return nil
 }
 
-// splitProof partitions the caller-carried proof into speak-as certs and
-// chain links, preserving order within each.
-func splitProof(proof []cert.Cert) (chain, speakAs []cert.Cert) {
+// SplitProof partitions the caller-carried proof into chain links and
+// speak-as certs, preserving order within each. Verify uses it to feed
+// the ChainVerifier; handlers that must bind a cert's aud to the
+// envelope's signer the same way (actor #renew, cert.SpeaksFor) use it
+// so there is one definition of "the proof's speak-as set".
+func SplitProof(proof []cert.Cert) (chain, speakAs []cert.Cert) {
 	for _, c := range proof {
 		if c.Can == cert.VerbSpeakAs {
 			speakAs = append(speakAs, c)
@@ -538,7 +541,7 @@ func Verify(e Envelope, r Receiver, now int64) (Result, error) {
 	if r.Chain == nil {
 		return Result{}, ErrNoChainVerifier
 	}
-	chain, speakAs := splitProof(e.Proof)
+	chain, speakAs := SplitProof(e.Proof)
 	eff, verified, err := r.Chain(cert.Receiver{ID: r.ID, Consents: r.Consents, SpeakAs: r.SpeakAs}, chain, speakAs, e.From, e.To.Facet, now)
 	if err != nil {
 		// Verified, not Result{}: the rooted certs the chain rule did
