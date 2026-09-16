@@ -11,7 +11,9 @@
   (ADR-0022) neither side learns a public `ip:port`, so no WAN punch is
   attempted and every session is the fly relay (~50–75 Mbps to a
   phone). Landed on: relay figure recorded as a relay measurement;
-  LAN-direct on the Shield done at home.
+  LAN-direct measured at home the same evening on the phone (97 Mbps
+  avg, PASS) — the Shield was not needed for the bar and gets its turn
+  in the parents'-TV deployment (`4te`).
 - 2026-09-16 — Suspected iroh cannot enumerate interfaces inside an
   Android app (netlink restrictions ≥ API 30) and plumbed
   `LinkProperties → AddExternalAddr`. Ruled out as the cause: iroh
@@ -26,7 +28,17 @@
   volumes have their only replica there) vs. a stand-in. Landed on: the
   owner's existing Jellyfin on the NixOS box with a synthetic 95 Mbps
   CBR file — synthetic content otherwise compresses to nothing, hence
-  `nal-hrd=cbr`. The final measurement still goes through cp1 (step 7).
+  `nal-hrd=cbr`. Step 7 (the same run through cp1) was then **dropped
+  by owner ruling at the gate**: it re-proves P0.3's forwarding only,
+  and cluster Jellyfin has no media while w1 is down.
+- 2026-09-16 — Gate ruling on cp1's undeclared install image (`5cz`):
+  considered upgrading back to the factory `6a9acc…` for a clean
+  baseline. Ruled out: the Image Factory carries official extensions
+  only (P0.3), so Phase 1.3 would immediately rebuild the imager chain
+  — a round trip. Landed on: declare the imager image in
+  `minipc.yaml`, digest-pinned; the supply-chain cost (a public ghcr
+  image we build is now cp1's install image) is why the digest, not
+  the tag, is the pin.
 
 ## Mesh v3 P0.3 — Talos extension (2026-09-15)
 

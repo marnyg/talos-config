@@ -55,7 +55,8 @@
   `arn`, `fly/relay-spike/fly.toml`) runs `n0computer/iroh-relay:v1.1.0`
   as an **open relay** (`access = "everyone"`) for the Phase 0 probes.
   Owner accepted this as spike scope against invariant 5 (2026-09-13);
-  `kql` tears it down after the gate `359.1.5`. Deploy with
+  gate ruling 2026-09-16: **stays up until Phase 1.2** embeds the relay
+  in the hub — cp1's `ext-p0agent` dials it on every boot (`kql`). Deploy with
   `fly deploy -c fly/relay-spike/fly.toml`; `curl …/ping` → 200 is the
   liveness check (`/generate_204` is 404 in plain-HTTP mode).
   Registry tag `registry.fly.io/marnyg-iroh-relay-spike:p0peer` is a
@@ -104,18 +105,17 @@
   The laptop's wired `en7` gets LAN-direct paths; Wi-Fi `en0` is
   relay-only (Cisco filter, 2026-09-13 note).
 
-- 2026-09-16 — **P0.2 scratch on the NixOS box** (tear down at the gate
-  `359.1.5`): user unit `p0agent-standin` (`systemctl --user`, linger
-  on; NodeId `5852d8b0…db513c`, UDP **7842** — `41641` is Tailscale's;
-  binary `~/p0-jf/p0agent` is a dynamic build against the store's
-  `iroh-ffi-1.1.0`), `~/p0-jf/` (key, Jellyfin token, 5.7 GB test file,
-  compose backup). The owner's compose `jellyfin` (`~/disks/1TB-old/
-  server/docker-compose.yml`) carries one added `:ro` bind
-  `/data/p0test` and a library "P0 Test"; the 1TB disk is **100 %
-  full** — never copy onto it. Firewall hole `iptables -I nixos-fw -i
-  wlp12s0 -p udp --dport 7842 -j ACCEPT` is temporary (gone on reboot).
-  `mar@nixos:~/p0` is a single-branch clone at `fa003f8` + scp'd files
-  — not a checkout of the branch; sync by `scp`, rebuild with
+- 2026-09-16 — **P0.2 scratch on the NixOS box was torn down at the
+  gate** (same day): `p0agent-standin`, `~/p0-jf/`, the `/data/p0test`
+  compose bind, the "P0 Test" library are gone; `jellyfin` was
+  recreated from the restored compose. Still true about the box: the
+  1TB disk `~/disks/1TB-old` is **100 % full** — never copy onto it;
+  the login shell is **fish** (`ssh … bash -s <<EOF` for scripts); no
+  passwordless sudo; UDP `41641` is Tailscale's; **LAN peers punch in
+  through nixos-fw via conntrack with no inbound rule** (P0.2 step 6).
+  `mar@nixos:~/p0` is kept as the x86_64 builder: a single-branch clone
+  at `fa003f8` + scp'd files — not a checkout of the branch; sync by
+  `scp`, rebuild with
   `NIXPKGS_ALLOW_UNFREE=1 nix-shell --impure iroh-go/android-p0/shell.nix
   --run 'IROH_FFI_ANDROID_LIB=/tmp/android-ffi-result/lib ./build-aar.sh
   && gradle --no-daemon assembleDebug'` (`/tmp/android-ffi-result` is a
@@ -128,12 +128,13 @@
   p0mesh **evicts Tailscale** on the phone (one VpnService). The
   Jellyfin *app* is required for Direct Play (Firefox has no MKV
   demuxer and buffers forever while pulling the raw stream). Server
-  side: `curl /Sessions` with `~/p0-jf/token` shows `PlayMethod`.
+  side: `curl /Sessions` with an API token shows `PlayMethod`.
 - 2026-09-16 — **Outside the home LAN every iroh path is the fly relay**
   (QAD off ⇒ no WAN punch attempted): ~50–75 Mbps to a phone. Do not
   read a throughput number taken from outside as a design result;
-  `journalctl --user -u p0agent-standin -f` prints `paths=[*relay:…]`
-  vs `*ip:10.0.0.x` every 5 s while bytes move.
+  `p0agent serve`'s journal prints `paths=[*relay:…]` vs
+  `*ip:10.0.0.x` every 5 s while bytes move. At home the same setup
+  went `*ip` within 5 s and held 97 Mbps avg (2026-09-16).
 
 ## Hub / mesh (nebula, as running)
 

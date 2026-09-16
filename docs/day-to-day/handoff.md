@@ -5,80 +5,57 @@
 
 ## Last session
 
-2026-09-16 — **Mesh v3 P0.2 Android: phone end to end, battery pass,
-throughput deferred to at-home** (branch `spike/mesh-v3-p0.2`, bead
-`359.1.2` in_progress). Progress log with every state and number:
-`docs/mesh-v3-p0.2-android.md §Progress log`.
+2026-09-16 (evening, at home) — **Mesh v3 Phase 0 gate PASSED**
+(decision `talos-config-b2t`; `359.1`, `359.1.2`, `359.1.5`, `5cz`
+closed). Branch `spike/mesh-v3-p0.2` fast-forwarded into `main`.
 
-- Built: android `libiroh_ffi.a` via nixpkgs cross (no Rust changes),
-  `p0mobile.aar` with iroh **statically** linked (fixes: cgo preamble
-  prose, `#cgo linux,!android`, stage only the `.a`, `tools.go` for
-  x/mobile), spike APK (`useLegacyPackaging`, 16 KB LOAD align).
-  Sideload needs `adb install` (Files-app installer fails silently);
-  `nix shell nixpkgs#android-tools` on the Mac, phone = Sony XQ-BQ52.
-- Running: stand-in Jellyfin = the owner's compose `jellyfin` on the
-  NixOS box (`:8096`, user `abc`) with a synthetic **95 Mbps CBR 4K**
-  file bind-mounted at `/data/p0test`, library "P0 Test"; stand-in
-  agent = user unit `p0agent-standin` (NodeId `5852d8b0…db513c`, UDP
-  7842 → `127.0.0.1:8096`, serve now logs a 5 s path/Mbps ticker).
-- Measured: Jellyfin app **DirectPlay** through the tunnel, **49 Mbps
-  avg / 75 peak — relay path only**, because nobody was on the home
-  LAN (Mac 10.144.x, phone 10.150.x + Tailscale, box 10.0.0.11) and
-  QAD is off ⇒ no WAN punch is even attempted. **Battery 32 min:
-  99→91 %; tunnel uid = 8.5 mAh ≈ 3 % of drain** (screen 131, decoder
-  36). Battery pass; throughput verdict waits for the Shield at home.
-- Findings for the writeup: p0mesh kicks Tailscale off the phone (one
-  VpnService); iroh-ffi panics a thread on `ndk-context` (network
-  monitor without JNI context — non-fatal, but no net-change
-  detection); Android Private DNS tries DoT at the fake resolver
-  (netstack should refuse non-:53 to it); box-side `peer-direct=[]`
-  means *nothing validated*, not *nothing advertised*.
-- Owner confirmed: reuse the box's Jellyfin (not w1); the cp1 reboot
-  2026-09-15 10:31Z was the owner's. **§P0.2 written up** in
-  `mesh-v3-iroh.md` (table + Phase-1 findings), pending only the
-  throughput row.
+- **P0.2 step 6, LAN-direct throughput: PASS.** Phone on the home Wi-Fi
+  → box stand-in: **97.0 Mbps avg over 10.6 min, 154 peak, 127/127
+  ticker samples on `*ip:`**, one session, zero redials. Steady minutes
+  read 95.0–95.2 = the file's CBR — the player is the limiter. Punched
+  through nixos-fw via conntrack; the iptables hole was never needed.
+  Step 7 (cp1 extension 0.0.4) **skipped by owner ruling** — it only
+  re-proves P0.3's forwarding and cluster Jellyfin has no media.
+  Numbers in `docs/mesh-v3-p0.2-android.md §Progress log` and
+  `docs/mesh-v3-iroh.md §P0.2`.
+- **Gate rulings** (`mesh-v3-iroh.md §Phase 0` header, ADR-0016 status):
+  `5cz` = **A**: `talos/hardware/minipc.yaml` now declares cp1's
+  imager-built installer, digest-pinned
+  (`ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3@sha256:6b4337…`);
+  `talos/extensions/p0agent/build.sh` is the adopted chain (update tag
+  **and** digest after every push). w1 stays on factory `6a9acc…`.
+  Scratch relay stays until Phase 1.2 (`kql` retitled). `359.8.3`
+  retitled: imager chain, not factory schematic.
+- **Box scratch torn down**: `p0agent-standin` stopped (transient unit,
+  gone), "P0 Test" library deleted, compose restored from the backup
+  and `jellyfin` recreated with only its original mounts, `~/p0-jf`
+  (5.4 GB) removed, `:7842` free. Kept: `mar@nixos:~/p0` (x86_64
+  builder for `.#p0relay-static`; detached at `fa003f8`, working copy
+  = `main` minus one comment), `~/Downloads/p0mesh-debug.apk` + the
+  phone install (Phase 2.4's starting point).
 
 ## Loose threads
 
-- **Scratch on the NixOS box from P0.2** (tear down at the gate): user
-  unit `p0agent-standin` + `~/p0-jf/` (key, token, 5.7 GB file,
-  compose backup), the `/data/p0test` line in
-  `~/disks/1TB-old/server/docker-compose.yml`, library "P0 Test", the
-  temporary `iptables -I nixos-fw -i wlp12s0 -p udp --dport 7842`.
-  `mar@nixos:~/p0` is a single-branch clone at `fa003f8` + scp'd
-  files, not a real checkout of the branch.
-- **`~/disks/1TB-old` is 100 % full** (Jellyfin's config/DB live
-  there); jellyfin and plex share `./config/plex`; compose images
-  unpinned `:latest`. Surfaced as broken windows, owner ruling pending.
-
-- **cp1 runs an image git does not declare**: installer
-  `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3` (four
-  extensions) vs `talos/hardware/minipc.yaml`'s factory `6a9acc…`.
-  Knowing deviation from invariant 2, bead `5cz` (blocks the gate):
-  upgrade back or make the imager chain the declared image in Phase 1.
-- Scratch relay still up and open (`kql`); `ext-p0agent` dials it on
-  every boot. Both ghcr packages are public.
-- cp1's LAN lease moved `.42 → .58` in one day; `talos/talosconfig`
-  endpoints still say `10.99.0.54` (wg0 era) — every `talosctl` needs
-  `-e/-n`. The mesh route needs `nebup`; the LAN route needs the current
-  lease.
-- `mar@nixos:~/p0` is checked out at the spike branch (detached); it is
-  the x86_64 builder for `.#p0relay-static`.
-- Bridge trick for `talosctl` over iroh: dial a name that is in apid's
-  cert SANs (`talos-wu6-eib`) via a hosts entry — `127.0.0.1` is not a
-  SAN. The hosts line was removed at session end.
+- **cp1's `ext-p0agent` dials the scratch fly relay on every boot**
+  until Phase 1.2 embeds the relay in the hub (`kql`). Both ghcr
+  packages must stay public (node pulls unauthenticated).
+- `talos/talosconfig` endpoints still say `10.99.0.54` (wg0 era); cp1's
+  LAN lease was `10.0.0.58` today — every `talosctl` needs `-e/-n`.
+- **`~/disks/1TB-old` on the NixOS box is 100 % full** (Jellyfin's
+  config/DB live there); jellyfin and plex share `./config/plex`;
+  compose images unpinned `:latest`. Broken windows, ruling pending.
+- The box's Jellyfin has a `/data/movies` mount but no Movies library
+  (pre-existing, noticed during teardown; not ours).
+- w1 still down since 2026-08-10: media volumes faulted, `0q0`, `kso`.
 
 ## Suggested next steps
 
-- **`359.1.2` step 6 at home:** phone/Shield on the home Wi-Fi, APK
-  Start (inputs in the progress log), play *P0 Remux Test* in the
-  Jellyfin app; box: `journalctl --user -u p0agent-standin -f` must
-  show `*ip:10.0.0.x` and ≥ 80 Mbps sustained ≥ 10 min. If it stays
-  `*relay:`, the firewall rule above is the first suspect (it does not
-  survive a box reboot). Then step 7 (cp1 extension `0.0.4` forwarding
-  `mesh/http/v1=127.0.0.1:30096`, rides on `5cz`), the
-  `mesh-v3-iroh.md §P0.2` table, close `359.1.2`, gate `359.1.5`.
-- Phase-1 items surfaced today (record, don't build): `ndk_context`
-  init from Kotlin; refuse non-:53 flows to the fake resolver;
-  Android one-VPN constraint vs. Tailscale in the app's UX.
-- `xwu` (verb = root consent's verb) stays the M3 pre-work.
+- **Phase 1 (`359.8`) is unblocked.** `359.8.2`'s own text says define
+  the hub's inbox message set + owned state **first** (decision `vl4`);
+  `359.8.1` (membership issuance per ADR-0018) is the ready leaf. Groom
+  the order before building — the protocol module's M3 (`0bc.3`) and
+  `xwu` (verb = root consent's verb) are the same work seen from the
+  protocol side.
+- Phase-1 items carried from P0.2/P0.3 are in the "findings that shape
+  Phase 1" lists under `mesh-v3-iroh.md §P0.2/§P0.3` — record as beads
+  under `359.8` when grooming, don't lose them in prose.

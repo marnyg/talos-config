@@ -29,8 +29,10 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   fiction, k8s leaves the mesh onto declared LAN addresses, per-request
   device identity at the gateway. Direction committed 2026-09-03
   (ADR-0016; decision `talos-config-dlk`, trigger: sovereign-actor
-  build-out); **gated on the Phase 0 spike** — a failed gate re-defers
-  the goal, it does not weaken Mesh v2. Record in
+  build-out); **Phase 0 gate passed 2026-09-16** (decision
+  `talos-config-b2t`; relay, Android, Talos extension, API churn all
+  probed), Phase 1 dual-plane build-out is next. Nebula stays the
+  deployed mesh until Phase 4. Record in
   [`../mesh-v3-iroh.md`](../mesh-v3-iroh.md).
 - **Sovereign-actor protocol at the center** (decision `talos-config-5w1`,
   2026-09-03): this repo becomes a monorepo around a reusable protocol
