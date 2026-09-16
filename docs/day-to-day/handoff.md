@@ -5,26 +5,30 @@
 
 ## Last session
 
-2026-09-17 — **Protocol pre-work step 1 of 3 landed: `xwu` (chain verb
-= root consent's verb, protocol ADR-0002 → Accepted). Protocol code
-only; no talos/hub/k8s change.**
+2026-09-18 — **Protocol pre-work steps 2 and 3 of 3 landed: `kau`
+(VerifyChain rule 4, protocol ADR-0003 → Accepted) and `7ei` (`#renew`
+aud binding). `359.8.1` is no longer blocked on the protocol side.**
+Protocol code only; no talos/hub/k8s change.
 
-- `verification/quint/authorize.qnt` first, then `protocol/cert` 1:1:
-  `cert.VerifyChain(receiver, verb, …)` roots only in consents carrying
-  the verb the receiver expects; every link and every speak-as must
-  cover it. `Authorize` (the per-connect check) is the `invoke`
-  instance; `actor.invokeChain` binds `invoke` for envelopes. Model
-  gained a `Publish` verb + two laws + a witness; mutants die. Details
-  in `protocol/docs/day-to-day/handoff.md`.
-- Three debt items fixed in passing (model `attenuate` verb check,
-  `modelVerbs ∋ publish`, `check.sh` re-timed ~135 s).
-- Commits `9bf48ac`, `e158fbc` (+ this docs-update). `xwu` closed.
+- `kau`: a receiver answers for a principal P whose live `speak-as P→R`
+  it *holds* — `eff.Target ∋ R or ∋ P`. Go groups the receiver-held
+  inputs as `cert.Receiver{ID, Consents, SpeakAs}` so held vs.
+  caller-bundle speak-as is a type. Consequence for talos: the hub's
+  consents name `{hubkey, wallet}`, grants to hub facets name
+  `target: wallet`, the hub passes its unseal `speak-as` as
+  `Receiver.SpeakAs`; grants survive `hubkey` rotation.
+- `7ei`: `#renew` accepts a held cert whose `aud` is the caller's cold
+  principal when the proof carries a live `speak-as` to the calling hot
+  key (`cert.SpeaksFor`, rule 3's predicate).
+- Three debt items fixed in passing (ADR index for 0002, `Bundle` doc,
+  monotonicity laws over the held speak-as). Details in
+  `protocol/docs/day-to-day/handoff.md`. Commits `a2b0703`, `df7e1d5`,
+  `e469679`, `1f8865a` (+ this docs-update).
 
 ## Loose threads
 
-- `kau` (VerifyChain rule 4, protocol ADR-0003) is next and is the one
-  `359.8.1` still needs on the protocol side besides `7ei`; ADR-0003 →
-  Accepted when it lands. Root ADR-0024 stays Proposed until then.
+- Root ADR-0024 (hub actors cut by key) stays Proposed until `359.8.2`
+  builds it; its rule-4 prerequisite is now Accepted.
 - Carried into implementation, not blocking: the exact `#mint-device`
   payload (which ADR-0012 approval message Enroll forwards; Issuer's
   own replay check vs Enroll's single-use nonce).
@@ -38,9 +42,8 @@ only; no talos/hub/k8s change.**
 
 ## Suggested next steps
 
-- `kau` → `7ei`, both model-first in `authorize.qnt` / the actor
-  runtime; run `TestFaultPairSweep` + `TestChainFaultPairSweep` after
-  each.
+- `359.8.1` membership issuance against ADR-0018 + ADR-0024 — the hub
+  as the protocol's first real consumer (hubkey random per process,
+  `/unseal` signs the `speak-as`, member cert mint/verify/renew).
 - `359.8.2.2` (embed the relay in the hub, `5gz` shape) is independent
   and ready if you'd rather ship something.
-- Then `359.8.1` membership issuance against ADR-0018 + ADR-0024.

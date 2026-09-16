@@ -5,53 +5,50 @@
 
 ## Last session
 
-2026-09-17 — **`xwu` built: the chain's verb is the root consent's
-verb (ADR-0002 → Accepted). Two commits, `9bf48ac` + `e158fbc`.**
+2026-09-18 — **The last two verifier rulings landed: `kau` (rule 4,
+ADR-0003 → Accepted) and `7ei` (`#renew` aud binding). Commits
+`a2b0703`, `df7e1d5`, `e469679`, `1f8865a`.**
 
-- **Model first** (`verification/quint/authorize.qnt`):
-  `verifyChain(r, verb, …)` roots only in R's consents with
-  `can == verb`; `chainUnder` reads the verb off the root and threads it
-  through `linkStep`/`resolve`/`audBinding` — no `Invoke` literal left in
-  the fold. New `Publish` verb, `cverb` scenario var (both `gen` and
-  `genNear` draw `invoke | publish`), faults `FLink1VerbOtherChain`,
-  `FAudSpeakAsNoVerb`, `FHubBSpeakAsVerbless`; laws
-  `invChainVerbIsRoot` (was `…IsInvoke`), new `invChainVerbUniform`,
-  `invAudSpeakAsCoversVerb` (was `…NeedsInvoke`); witness
-  `publishChainTest`. Mutants "root filter forgets the verb" and "link
-  verb check dropped" both die under `invAll`. `attenuate` now also
-  rejects a verb change (1:1 with Go `ErrVerbMismatch`).
-- **Go 1:1**: `cert.VerifyChain(receiver, verb, …)`; `ErrChainVerb` =
-  "differs from the root consent verb"; `speaksFor(verb)`; `Authorize`
-  is the `invoke` instance; `actor.invokeChain` binds `VerbInvoke`
-  (`envelope.ChainVerifier` unchanged — an envelope IS an invocation).
-  Rapid laws renamed to match; `buildConsents(…, chainVerb)` adds a
-  `publish` twin of consent1; `TestChainFaultPairSweep` ×
-  `{invoke, publish}`; `TestVerifyChainPublish`. `go test ./...` green.
-- **Refinement recorded in ADR-0002**: the *receiver names the verb it
-  expects* (parameter) rather than inferring it from whichever consent
-  matches — otherwise a `publish` consent could root an `invoke`
-  operation (verb confusion, fail-open).
+- **`kau`, model first** (`verification/quint/authorize.qnt`):
+  `answersFor(r, held, target, now)` — `target ∋ R` or `∋ P` with a live
+  `speak-as P→R` in what R *holds*; used by `effAdmits` (rule 4) and
+  `memberSovereigns` (step 2b). New scenario vars `held`/`heldAtt`;
+  `cav.target` may name `OWNER1`; faults `FChainTargetOwner1`,
+  `FGrantTargetOwner1`, `FHeld{Missing,Expired,Forged,FromOwner2,
+  AudOtherR,InBundleOnly}`; laws `invChainTargetsAnswerable`,
+  `invBundleSpeakAsNeverWidensTarget`, `invTargetIsAnswerable`;
+  witness `answersForTest`. Mutants "held ∪ caller bundle", "liveness
+  dropped", "aud check dropped" die in Quint and in the Go sweeps.
+- **Go 1:1**: `cert.Receiver{ID, Consents, SpeakAs}` groups the
+  receiver-held inputs — held vs caller-presented speak-as is a *type*,
+  not two adjacent `[]Cert`. `VerifyChain(r Receiver, verb, chain,
+  speakAs, signer, facet, now)`; `Input.Receiver` is a `Receiver`;
+  `envelope.Receiver`/`ChainVerifier` carry `SpeakAs`; `actor` passes
+  `a.SpeakAs`. Rulings recorded in ADR-0003: no `cav.verbs` condition
+  on the held cert (being addressed ≠ signing), same predicate in
+  Authorize 2b, held cert does not feed the mark.
+- **`7ei`**: `cert.SpeaksFor` exported (rule 3 as a predicate);
+  `renewOne` accepts `old.aud == from` *or* a live `speak-as
+  aud→from` in the proof with `verbs ∋ invoke`. `RefuseAud` reworded.
+  `TestRenewViaHolderHotKey`. Glossary *Renewal beat* updated.
+- `quint verify authorize.qnt --max-steps=2` ≈ 165–170 s (was ~135 s).
 
 ## Loose threads
 
-- `kau` (rule 4, ADR-0003) next: same `chainUnder`/`speaksFor` seam;
-  the receiver-held speak-as is a NEW input to `VerifyChain` (never the
-  caller's bundle) — decide the parameter shape before editing the
-  model. ADR-0003 → Accepted when it lands; then amend the glossary
-  *Authorize* ("require target ∋ R").
-- M3 (`0bc.3`) facets will bind their own verb: which facet expects
-  which verb is a per-actor table the runtime does not have yet
-  (`actor.invokeChain` is the only binding).
-- `quint verify authorize.qnt --max-steps=2` is now ~135 s (was ~95 s;
-  `check.sh` note refreshed). Nightly tier only.
+- The held `speak-as` is receiver configuration but not R-signed, so
+  it stays out of `Result.Verified`/`clock.Mark` (ADR-0003). If a hub
+  ever needs its own `speak-as`'s `iat` to advance the mark, that is a
+  clock.qnt question, not an authorize one.
+- No facet→verb table yet: `actor.invokeChain` is the only verb
+  binding; M3 `#publish`/`#relay` facets must bind their own.
 - Two unchosen numbers, no bead: `DefaultMailbox = 64`, renewal-beat
   fraction.
 
 ## Suggested next steps
 
-- `kau`: `authorize.qnt` first — new law + the mutant "caller-bundle
-  speak-as never widens the receiver's target set" — then Go
-  (`chainUnder` rule 4 takes the receiver's aud-side `SpeakAs`); run
-  `TestFaultPairSweep` + `TestChainFaultPairSweep`.
-- Then `7ei` in the actor runtime (`renew.go`: resolve `old.Aud` via
-  `speaksFor`, verb `invoke`).
+- Protocol side is clear for talos `359.8.1` (membership issuance,
+  ADR-0018/0024): the hub's consents name `{hubkey, wallet}`, grants to
+  hub facets name `target: wallet`, the hub passes its unseal
+  `speak-as` as `Receiver.SpeakAs`.
+- M3 `0bc.3` (lighthouse as a plain actor) is unblocked on the protocol
+  side if you'd rather stay in `protocol/`.
