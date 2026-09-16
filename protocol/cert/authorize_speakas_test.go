@@ -183,8 +183,8 @@ func mixedEpochScenario(f fixture) (base, att Input) {
 	grant := f.build(certSpec{iss: "HUB_B", aud: "group:admins", can: VerbInvoke,
 		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}}, exp: 10})
 	base = Input{
-		Receiver: id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
-		Consents: []Cert{consent}, Blocklist: map[ActorID]bool{}, Now: testNOW,
+		Receiver: Receiver{ID: id["R"], Consents: []Cert{consent}}, AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+		Blocklist: map[ActorID]bool{}, Now: testNOW,
 		ALPN: "mesh/apid/v1", Peer: id["CALLER"],
 		Bundle: Bundle{Member: member, Grants: []Cert{grant}, SpeakAs: []Cert{sa("HUB_A", 10), sa("HUB_B", 10)}},
 	}
@@ -236,8 +236,8 @@ func TestRogueVouchesBothHubsRejects(t *testing.T) {
 	grant := f.build(certSpec{iss: "HUB_B", aud: "group:admins", can: VerbInvoke,
 		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}}, exp: 10})
 	in := Input{
-		Receiver: id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
-		Consents: []Cert{consent("OWNER1"), consent("OWNER2")}, Blocklist: map[ActorID]bool{}, Now: testNOW,
+		Receiver: Receiver{ID: id["R"], Consents: []Cert{consent("OWNER1"), consent("OWNER2")}}, AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+		Blocklist: map[ActorID]bool{}, Now: testNOW,
 		ALPN: "mesh/apid/v1", Peer: id["CALLER"],
 		Bundle: Bundle{Member: member, Grants: []Cert{grant},
 			SpeakAs: []Cert{sa("OWNER2", "HUB_A"), sa("OWNER1", "HUB_B"), sa("ROGUE", "HUB_A"), sa("ROGUE", "HUB_B")}},
@@ -298,8 +298,8 @@ func TestReUnsealExpiredSpeakAsBeforeValid(t *testing.T) {
 			speakAs = []Cert{saValid, saExpired}
 		}
 		in := Input{
-			Receiver: id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
-			Consents: []Cert{consent}, Blocklist: map[ActorID]bool{}, Now: testNOW,
+			Receiver: Receiver{ID: id["R"], Consents: []Cert{consent}}, AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+			Blocklist: map[ActorID]bool{}, Now: testNOW,
 			ALPN: "mesh/apid/v1", Peer: id["CALLER"],
 			Bundle: Bundle{Member: member, Grants: []Cert{grant}, SpeakAs: speakAs},
 		}

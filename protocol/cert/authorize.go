@@ -15,13 +15,32 @@ type Bundle struct {
 	SpeakAs []Cert
 }
 
+// Receiver is everything the receiver itself brings to a chain check —
+// its own configuration, never anything the caller presented. Keeping
+// it one value makes "receiver-held" a type: the two speak-as sets a
+// verifier sees (this one and the caller's bundle) have opposite trust
+// roles and must never be conflated (protocol ADR-0003; the model's
+// `held` vs `speakAs`).
+type Receiver struct {
+	// ID is R, the receiver under test.
+	ID ActorID
+	// Consents are the consent grants R has issued (iss == ID): the
+	// roots VerifyChain prepends to every caller chain.
+	Consents []Cert
+	// SpeakAs are the speak-as certs R HOLDS naming ID as aud — the
+	// principals R is a hot key for. Rule 4 lets R answer for each
+	// principal P with a live such cert: an effective target naming P
+	// admits at R (ADR-0003). Other certs in the slice are ignored, so
+	// an actor may pass its whole speak-as set.
+	SpeakAs []Cert
+}
+
 // Input is the complete, self-contained input to Authorize. The function
 // is pure: no I/O, no clock reads. Now is the verifier's EFFECTIVE clock
 // max(local, lw) (ADR-0019); the caller computes it from a clock.Mark.
 type Input struct {
-	Receiver    ActorID           // R: the receiver under test
+	Receiver    Receiver          // R's own configuration: id, consents, held speak-as
 	AcceptTable map[string]string // ALPN class → facet (producer-owned)
-	Consents    []Cert            // consent grants R has issued
 	Blocklist   map[ActorID]bool  // blocked peer keys
 	Now         int64             // effective clock
 	ALPN        string            // negotiated ALPN class
@@ -105,8 +124,11 @@ var (
 	// 1:1 mapping is preserved. Never rejects anything ErrUnknownCaveat
 	// would have accepted.
 	ErrPostageConflict = fmt.Errorf("%w: two links set conflicting postage", ErrUnknownCaveat)
-	// ErrTargetMismatch: the effective target omits the receiver.
-	ErrTargetMismatch = errors.New("cert: effective target omits the receiver")
+	// ErrTargetMismatch: the effective target omits the receiver and every
+	// principal it speaks for (rule 4, ADR-0003: a receiver answers for P
+	// only through a live speak-as P→receiver it HOLDS, never one the
+	// caller presents).
+	ErrTargetMismatch = errors.New("cert: effective target omits the receiver and every principal it speaks for")
 	// ErrFacetMismatch: the effective facet omits the requested facet.
 	ErrFacetMismatch = errors.New("cert: effective facet omits the requested facet")
 	// ErrAudUnbound: the last link's aud binds neither the signer, nor a
@@ -293,17 +315,36 @@ func (a *authCtx) rootedHotKeys(speakAs []Cert, principals map[ActorID]bool) map
 // memberSovereigns ports the model's memberSovereigns — step (2b) on the
 // RESOLVED issuer set: the consented sovereigns that vouch for the member
 // cert, i.e. those w ∈ resolve(member, member.cav.groups) for which R
-// holds a live delegable consent targeting R. Empty ⇒ the member's name
-// and groups are stranger-chosen (3cx) ⇒ reject.
+// holds a live delegable consent targeting R (or a principal R answers
+// for — rule 4's test, ADR-0003). Empty ⇒ the member's name and groups
+// are stranger-chosen (3cx) ⇒ reject.
 func (a *authCtx) memberSovereigns(in Input, m Cert) []sovereign {
 	var out []sovereign
 	for _, w := range a.resolve(m, in.Bundle.SpeakAs, in.Now, m.Cav.Groups) {
 		if w.EffExp > in.Now &&
-			consentTargets(a.consentsFor(in.Consents, in.Receiver, w.ID, in.Now), in.Receiver) {
+			a.consentTargets(in.Receiver, a.consentsFor(in.Receiver.Consents, in.Receiver.ID, w.ID, in.Now), in.Now) {
 			out = append(out, w)
 		}
 	}
 	return out
+}
+
+// answersFor is rule 4's target test (the model's `answersFor`, ADR-0003):
+// target names R itself, or a principal P for which R HOLDS a live
+// speak-as P→R (r.SpeakAs — R's own configuration; the caller's bundle
+// never enters here). Liveness only: the speak-as's cav.verbs says what R
+// may SIGN as P (ADR-0018), and being addressed is not signing.
+func (a *authCtx) answersFor(r Receiver, target []ActorID, now int64) bool {
+	if containsID(target, r.ID) {
+		return true
+	}
+	for _, s := range r.SpeakAs {
+		if s.Can == VerbSpeakAs && s.Aud == string(r.ID) && a.sigOK(s, s.Exp, now) &&
+			containsID(target, s.Iss) {
+			return true
+		}
+	}
+	return false
 }
 
 // rootCerts populates ctx.rooted with every validly-signed cert that is
@@ -379,13 +420,14 @@ type chainVerdict struct {
 }
 
 // VerifyChain is the one chain verifier (protocol ADR-0001; model
-// verification/quint/authorize.qnt `verifyChain`). chain holds only the
-// links the CALLER presented; the verifier prepends a receiver-signed
-// consent itself and folds Attenuate over [consent, chain...]. verb is
-// the verb the receiver expects for THIS operation — invoke for an
-// envelope invocation, publish/relay for the M3 lighthouse and relay
-// facets (talos-config-xwu); it is never inferred from the caller's
-// links. Rules:
+// verification/quint/authorize.qnt `verifyChain`). r is the receiver's
+// OWN configuration (id, consents, held speak-as); chain and speakAs are
+// what the CALLER presented — chain holds only the links it holds; the
+// verifier prepends a receiver-signed consent itself and folds Attenuate
+// over [consent, chain...]. verb is the verb the receiver expects for
+// THIS operation — invoke for an envelope invocation, publish/relay for
+// the M3 lighthouse and relay facets (talos-config-xwu); it is never
+// inferred from the caller's links. Rules:
 //
 //  1. First link signed by the receiver: every admitting root is one of
 //     receiver's own consents (iss == receiver, signature verifies,
@@ -404,12 +446,14 @@ type chainVerdict struct {
 //     or aud == "*" only if eff.Postage != "" (fail closed without). A
 //     group: audience returns ErrGroupAud BESIDE eff/verified — the
 //     chain verified; the caller resolves the group (Authorize).
-//  4. On the effective cert: Target ∋ receiver, Facet ∋ facet, no
-//     Unknown caveat (taint is OR over the chain, including conflicting
-//     postage — that case reports the sharper ErrPostageConflict, which
-//     is still an ErrUnknownCaveat), Exp > now (min over the chain),
-//     every speak-as used live
-//     at now. Delegable:false admits no following link.
+//  4. On the effective cert: Target ∋ receiver — or Target ∋ P for a
+//     principal P whose live speak-as P→receiver the receiver HOLDS
+//     (r.SpeakAs; ADR-0003 — a speak-as naming the receiver inside the
+//     caller's bundle widens nothing) — Facet ∋ facet, no Unknown caveat
+//     (taint is OR over the chain, including conflicting postage — that
+//     case reports the sharper ErrPostageConflict, which is still an
+//     ErrUnknownCaveat), Exp > now (min over the chain), every speak-as
+//     used live at now. Delegable:false admits no following link.
 //
 // An empty caller chain is legal: the consented sovereign presents the
 // receiver's consent alone and binds as its aud (or via its hot key).
@@ -422,10 +466,10 @@ type chainVerdict struct {
 // the first accepting one (in consents order) is returned; Authorize
 // uses the full set internally for its group rule. err on rejection is
 // the failure of the consent that got furthest through the fold.
-func VerifyChain(receiver ActorID, verb Verb, consents, chain, speakAs []Cert, signer ActorID, facet string, now int64) (eff Cert, verified []Cert, err error) {
+func VerifyChain(r Receiver, verb Verb, chain, speakAs []Cert, signer ActorID, facet string, now int64) (eff Cert, verified []Cert, err error) {
 	ctx := newAuthCtx()
-	verified = ctx.rootCerts(receiver, consents, speakAs, chain, true)
-	vs, err := ctx.verifyChain(receiver, verb, consents, chain, speakAs, signer, facet, now)
+	verified = ctx.rootCerts(r.ID, r.Consents, speakAs, chain, true)
+	vs, err := ctx.verifyChain(r, verb, chain, speakAs, signer, facet, now)
 	if err != nil {
 		return Cert{}, verified, err
 	}
@@ -440,15 +484,15 @@ func VerifyChain(receiver ActorID, verb Verb, consents, chain, speakAs []Cert, s
 // verifyChain ports the model's verifyChain: the SET of verdicts, one
 // per receiver-signed consent carrying verb that roots the chain (R may
 // hold consents for N>1 sovereigns). Empty ⇒ err (the furthest failure).
-func (a *authCtx) verifyChain(receiver ActorID, verb Verb, consents, chain, speakAs []Cert, signer ActorID, facet string, now int64) ([]chainVerdict, error) {
+func (a *authCtx) verifyChain(r Receiver, verb Verb, chain, speakAs []Cert, signer ActorID, facet string, now int64) ([]chainVerdict, error) {
 	var out []chainVerdict
 	var best error
 	bestRank := -1
-	for _, c := range consents {
-		if c.Iss != receiver || c.Can != verb || !a.verify(c) {
+	for _, c := range r.Consents {
+		if c.Iss != r.ID || c.Can != verb || !a.verify(c) {
 			continue
 		}
-		v, rank, err := a.chainUnder(c, chain, speakAs, receiver, signer, facet, now)
+		v, rank, err := a.chainUnder(c, chain, speakAs, r, signer, facet, now)
 		if err != nil {
 			if rank > bestRank {
 				best, bestRank = err, rank
@@ -469,8 +513,10 @@ func (a *authCtx) verifyChain(receiver ActorID, verb Verb, consents, chain, spea
 // chainUnder folds the caller's chain under one consent (the model's
 // chainUnder + linkStep + effAdmits + audBinding). The chain's verb is
 // read off the root consent, never a literal. rank says how far the
-// fold got, so verifyChain can report the most informative error.
-func (a *authCtx) chainUnder(consent Cert, chain, speakAs []Cert, receiver, signer ActorID, facet string, now int64) (chainVerdict, int, error) {
+// fold got, so verifyChain can report the most informative error. Rule
+// 4's target test consults r.SpeakAs (receiver-held) and never speakAs
+// (caller-presented).
+func (a *authCtx) chainUnder(consent Cert, chain, speakAs []Cert, r Receiver, signer ActorID, facet string, now int64) (chainVerdict, int, error) {
 	verb := consent.Can
 	eff := consent
 	for i, l := range chain {
@@ -489,7 +535,7 @@ func (a *authCtx) chainUnder(consent Cert, chain, speakAs []Cert, receiver, sign
 	}
 	rank := len(chain)
 	switch {
-	case !containsID(eff.Cav.Target, receiver):
+	case !a.answersFor(r, eff.Cav.Target, now):
 		return chainVerdict{}, rank, ErrTargetMismatch
 	case !containsStr(eff.Cav.Facet, facet):
 		return chainVerdict{}, rank, ErrFacetMismatch
@@ -568,7 +614,7 @@ func Authorize(in Input) Result {
 	ctx := newAuthCtx()
 	// Populate the rooted set first so the mark advances on every path.
 	certs := append([]Cert{in.Bundle.Member}, in.Bundle.Grants...)
-	ctx.rootCerts(in.Receiver, in.Consents, in.Bundle.SpeakAs, certs, false)
+	ctx.rootCerts(in.Receiver.ID, in.Receiver.Consents, in.Bundle.SpeakAs, certs, false)
 	reject := func() Result { return Result{OK: false, Verified: ctx.rooted} }
 
 	// (1) ALPN → facet; unknown ⇒ reject.
@@ -630,7 +676,7 @@ func Authorize(in Input) Result {
 // (authorize.qnt FINDING 2026-09-06, mutant m14, ruled 9l3). Groups are
 // sovereign-scoped names — never hot-key-scoped, never global.
 func (a *authCtx) grantAdmits(in Input, facet string, g Cert) bool {
-	vs, err := a.verifyChain(in.Receiver, VerbInvoke, in.Consents, []Cert{g}, in.Bundle.SpeakAs, in.Peer, facet, in.Now)
+	vs, err := a.verifyChain(in.Receiver, VerbInvoke, []Cert{g}, in.Bundle.SpeakAs, in.Peer, facet, in.Now)
 	if err != nil {
 		return false
 	}
@@ -659,11 +705,11 @@ func (a *authCtx) groupSatisfied(in Input, grp string, member Cert, w ActorID) b
 	return false
 }
 
-// consentTargets reports whether any of the given consents names r in
-// its target set (step 2b requires target ∋ R).
-func consentTargets(consents []Cert, r ActorID) bool {
+// consentTargets reports whether any of the given consents names R, or a
+// principal R answers for, in its target set (step 2b; rule 4's test).
+func (a *authCtx) consentTargets(r Receiver, consents []Cert, now int64) bool {
 	for _, c := range consents {
-		if containsID(c.Cav.Target, r) {
+		if a.answersFor(r, c.Cav.Target, now) {
 			return true
 		}
 	}

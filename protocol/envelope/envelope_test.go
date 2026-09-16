@@ -98,7 +98,8 @@ type stubCall struct {
 	now      int64
 }
 
-func (s *stubChain) verify(receiver cert.ActorID, consents, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
+func (s *stubChain) verify(r cert.Receiver, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
+	receiver, consents := r.ID, r.Consents
 	s.mu.Lock()
 	s.calls = append(s.calls, stubCall{receiver, chain, speakAs, signer, facet, now})
 	s.mu.Unlock()
@@ -320,7 +321,7 @@ func TestVerifyReturnsVerifiedOnChainReject(t *testing.T) {
 	root := w.recv.Consents[0]
 
 	recv := w.recv
-	recv.Chain = func(receiver cert.ActorID, consents, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, _ int64) (cert.Cert, []cert.Cert, error) {
+	recv.Chain = func(_ cert.Receiver, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, _ int64) (cert.Cert, []cert.Cert, error) {
 		// Rooted, signature-checked — then rejected on a later rule
 		// (expiry, caveat, aud binding). cert.VerifyChain does the same.
 		return cert.Cert{}, []cert.Cert{root}, errors.New("forced reject after root")

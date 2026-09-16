@@ -111,8 +111,10 @@ type Actor struct {
 	Grants map[GrantKey][]cert.Cert
 	// SpeakAs holds both roles of speak-as cert: those naming this
 	// actor's signer as aud (attached to outbound proofs so receivers
-	// can resolve a hot key) and those this actor issued to its own hot
-	// keys (used by #renew to recognise its own issuance).
+	// can resolve a hot key, AND handed to the inbox's chain verifier as
+	// the principals this actor answers for — protocol ADR-0003 rule 4)
+	// and those this actor issued to its own hot keys (used by #renew to
+	// recognise its own issuance).
 	SpeakAs []cert.Cert
 	// Mailbox is the bounded inbound queue depth; 0 ⇒ DefaultMailbox.
 	Mailbox int
@@ -382,8 +384,8 @@ func (a *Actor) loop(ctx context.Context) {
 // an actor's inbox verifies is rooted in one of its `invoke` consents.
 // Facets that expect another verb (M3 lighthouse #publish, relay
 // #relay) bind their own (talos-config-xwu).
-func invokeChain(receiver cert.ActorID, consents, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
-	return cert.VerifyChain(receiver, cert.VerbInvoke, consents, chain, speakAs, signer, facet, now)
+func invokeChain(r cert.Receiver, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
+	return cert.VerifyChain(r, cert.VerbInvoke, chain, speakAs, signer, facet, now)
 }
 
 // process runs the stateful steps for one invocation and returns the
@@ -395,6 +397,7 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 	res, err := envelope.Verify(env, envelope.Receiver{
 		ID:       a.ID(),
 		Consents: a.Consents,
+		SpeakAs:  a.SpeakAs,
 		Chain:    invokeChain,
 		HWM:      a.hwm,
 	}, now)

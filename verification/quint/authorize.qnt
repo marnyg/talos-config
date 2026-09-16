@@ -43,7 +43,7 @@
 //   identity from member only  invIdentityFromMember
 //   issuer-scoped groups       invCrossIssuerGroupRejects (resolved issuers),
 //                              invGroupMatchRootedInChain
-//   target/facet in chain      invTargetIsReceiver, invFacetMatchesAlpn
+//   target/facet in chain      invTargetIsAnswerable, invFacetMatchesAlpn
 //   blocklist                  invBlocklistRejects
 //   member issuer consented    invMemberIssuerConsented (2b, resolved)
 //   speak-as bounds (ADR-0018) invSpeakAsExpiredRejects (verification-time
@@ -90,14 +90,16 @@
 // contain g" — never "resolved issuers are equal".
 //
 // N-LINK CHAIN VERIFIER (protocol ADR-0001, talos-config-0bc.2.1). One
-// pure def `verifyChain(receiver, verb, consents, chain, speakAs,
+// pure def `verifyChain(receiver, verb, consents, held, chain, speakAs,
 // signer, facet, now)` is the spec both the Go `cert.VerifyChain` and
 // its rapid laws follow 1:1. The caller presents `chain` — only the
 // links it holds; the verifier PREPENDS a receiver-signed consent itself
 // and folds `attenuate` (the Go `cert.Attenuate`, ported field for
 // field) over `[consent, chain...]`. `verb` is what the receiver expects
 // for this operation (an envelope invocation: `invoke`; a lighthouse
-// `#publish`: `publish` — talos-config-xwu). Rules:
+// `#publish`: `publish` — talos-config-xwu). `consents` and `held` are
+// the RECEIVER's own configuration (Go: one `cert.Receiver` value);
+// `chain` and `speakAs` are what the CALLER presented. Rules:
 //   1. first link signed by the receiver — every admitting root is one
 //      of R's own consents (`iss == R`, verifies, `can == verb`). From
 //      here on the chain's verb IS the root consent's `can`: every link
@@ -112,10 +114,13 @@
 //      effective cert carries `postage`. A `group:` audience is the
 //      `AudGroup` sentinel (Go: `ErrGroupAud` beside `eff`): the chain
 //      verified, the talos layer resolves the group (same-w rule below);
-//   4. on the effective cert: `target ∋ receiver`, `facet ∋ facet`, no
-//      unknown caveat (taint is OR over the chain), `exp > now` (min
-//      over the chain), and every speak-as used is live at `now`;
-//      `delegable: false` admits no following link.
+//   4. on the effective cert: `target ∋ receiver` — or `target ∋ P` for
+//      a principal P whose live `speak-as P→receiver` the receiver HOLDS
+//      (`held`, its own configuration, protocol ADR-0003 / talos-config-kau;
+//      a `speak-as P→receiver` in the caller's bundle widens nothing) —
+//      `facet ∋ facet`, no unknown caveat (taint is OR over the chain),
+//      `exp > now` (min over the chain), and every speak-as used is live
+//      at `now`; `delegable: false` admits no following link.
 // The result is the SET of verdicts `{eff, consent, aud}` — one per
 // consent that roots the chain — because R may hold consents for N>1
 // sovereigns; Accept ⇔ non-empty. `verified` (the rooted certs that
@@ -147,10 +152,13 @@
 //   postage                   invPostageMonotone, invPostageConflictRejects
 //   fail closed per link      invChainForgedLinkRejects, invChainExpiredLinkRejects,
 //                             invChainUnknownCaveatRejects, invChainNotDelegableStops
-//   target/facet              invChainTargetsReceiver, invChainFacetMatches
+//   target/facet              invChainTargetsAnswerable, invChainFacetMatches
+//   receiver answers for P    invBundleSpeakAsNeverWidensTarget (ADR-0003; the
+//                             mutant "held := held ∪ bundle" dies here)
 //   witness                   chainHappyPathTest (3 links, hub-signed, aud-side
 //                             speak-as), starPostageTest, consentOnlyTest,
-//                             publishChainTest (a non-invoke chain)
+//                             publishChainTest (a non-invoke chain),
+//                             answersForTest (grant names P; R holds P→R)
 //
 // Time (ADR-0019, talos-config-439): `NOW` here is the verifier's
 // EFFECTIVE clock, max(local clock, low-water mark over verified `iat`s).
@@ -180,6 +188,7 @@ module authorize {
   pure val HOT_KEYS = HUBS.union(Set(CALLER_HOT)) // every key that holds authority only via speak-as
   pure val PEERS = Set(CALLER, ROGUE)
   pure val RECEIVERS = Set(R, OTHER_R)
+  pure val TARGETS = RECEIVERS.union(Set(OWNER1))  // what a cav.target may name: a receiver, or a principal a receiver answers for (ADR-0003)
   pure val FACETS = Set("apid", "kube-api")
   pure val NO_FACET = ""          // total-lookup sentinel: no grant's cav.facet ever contains it
   pure val GROUPS = Set("admins", "media")
@@ -282,15 +291,27 @@ module authorize {
     | _ => Set()
   }
 
+  // Rule 4's target test (protocol ADR-0003, talos-config-kau): a target
+  // set admits at R if it names R itself, or a principal P for which R
+  // HOLDS a live `speak-as P→R` — `held` is the receiver's own
+  // configuration, never the caller's bundle. Liveness only: `cav.verbs`
+  // says what R may SIGN as P (ADR-0018), and being addressed is not
+  // signing. Go: `cert.Receiver.answersFor`.
+  pure def answersFor(r: int, held: Set[Cert], target: Set[int], now: int): bool =
+    target.contains(r)
+    or held.exists(s => s.can == SpeakAs and isKey(s.aud, r) and sigOk(s, now)
+                        and target.contains(s.iss))
+
   // (2b) on resolved issuers: the consented sovereigns that vouch for
   // the member cert — a live delegable consent from R whose `target`
-  // still names R (glossary step 2b; ruled 2026-09-06 with 44r: the Go
-  // port checked `target ∋ R` here and the model did not — the model
-  // now matches). Empty ⇒ name/groups are stranger-chosen (3cx).
-  pure def memberSovereigns(r: int, consents: Set[Cert], speakAs: Set[Cert],
+  // still names R, or a principal R answers for (glossary step 2b; ruled
+  // 2026-09-06 with 44r: the Go port checked `target ∋ R` here and the
+  // model did not — the model now matches; rule 4's test since kau).
+  // Empty ⇒ name/groups are stranger-chosen (3cx).
+  pure def memberSovereigns(r: int, consents: Set[Cert], held: Set[Cert], speakAs: Set[Cert],
                             member: Cert, now: int): Set[int] =
     resolve(speakAs, member.iss, Member, member.cav.groups, now)
-      .filter(w => consentsFor(consents, r, w, now).exists(c => c.cav.target.contains(r)))
+      .filter(w => consentsFor(consents, r, w, now).exists(c => answersFor(r, held, c.cav.target, now)))
 
   // ---- the N-link chain verifier (protocol ADR-0001) ------------------
 
@@ -338,9 +359,10 @@ module authorize {
       { ok: false, eff: c }
     else attenuate(acc.eff, c)
 
-  // Rule 4 on the effective cert.
-  pure def effAdmits(eff: Cert, r: int, facet: str, now: int): bool =
-    eff.cav.target.contains(r) and eff.cav.facet.contains(facet)
+  // Rule 4 on the effective cert. The target test consults `held` (the
+  // receiver's own speak-as set) and never the caller's `speakAs`.
+  pure def effAdmits(eff: Cert, r: int, held: Set[Cert], facet: str, now: int): bool =
+    answersFor(r, held, eff.cav.target, now) and eff.cav.facet.contains(facet)
     and not(eff.cav.unknown) and eff.exp > now
 
   // Rule 3 — the last link's `aud` (which `attenuate` keeps, so it is
@@ -366,26 +388,30 @@ module authorize {
   // The chain's verb is the ROOT CONSENT's `can` (xwu): the fold and the
   // aud binding read it off `c`, never a literal.
   type Verdict = { eff: Cert, consent: Cert, aud: AudVerdict }
-  pure def chainUnder(c: Cert, chain: List[Cert], speakAs: Set[Cert], r: int,
+  pure def chainUnder(c: Cert, chain: List[Cert], held: Set[Cert], speakAs: Set[Cert], r: int,
                       signer: int, facet: str, now: int): { ok: bool, v: Verdict } = {
     val verb = c.can
     val f = chain.foldl({ ok: true, eff: c }, (acc, l) => linkStep(acc, l, speakAs, verb, now))
-    { ok: f.ok and effAdmits(f.eff, r, facet, now),
+    { ok: f.ok and effAdmits(f.eff, r, held, facet, now),
       v: { consent: c, eff: f.eff, aud: audBinding(f.eff, signer, speakAs, verb, now) } }
   }
 
-  // verifyChain — the Go `cert.VerifyChain(receiver, verb, consents,
-  // chain, speakAs, signer, facet, now)`. Rule 1: the roots are R's own
-  // consents that verify and carry `verb` — the verb the receiver
-  // expects for this operation; everything else about the consent
-  // (target ∋ R, delegable, expiry, taint) is judged by the fold like
-  // any other link. An empty caller chain is legal: the consented
-  // sovereign presents R's consent alone and binds as its `aud`.
-  pure def verifyChain(r: int, verb: Verb, consents: Set[Cert], chain: List[Cert], speakAs: Set[Cert],
+  // verifyChain — the Go `cert.VerifyChain(receiver{ID: r, Consents:
+  // consents, SpeakAs: held}, verb, chain, speakAs, signer, facet, now)`.
+  // Rule 1: the roots are R's own consents that verify and carry `verb`
+  // — the verb the receiver expects for this operation; everything else
+  // about the consent (target, delegable, expiry, taint) is judged by
+  // the fold like any other link. An empty caller chain is legal: the
+  // consented sovereign presents R's consent alone and binds as its
+  // `aud`. `held` (receiver-side) and `speakAs` (caller-side) are both
+  // speak-as sets and must never be conflated: the Go port makes the
+  // split a type (`cert.Receiver`); here the laws pin it.
+  pure def verifyChain(r: int, verb: Verb, consents: Set[Cert], held: Set[Cert],
+                       chain: List[Cert], speakAs: Set[Cert],
                        signer: int, facet: str, now: int): Set[Verdict] =
     consents
       .filter(c => c.iss == r and c.can == verb and not(c.forged))
-      .map(c => chainUnder(c, chain, speakAs, r, signer, facet, now))
+      .map(c => chainUnder(c, chain, held, speakAs, r, signer, facet, now))
       .filter(o => o.ok and match o.v.aud { | AudUnbound => false | _ => true })
       .map(o => o.v)
 
@@ -397,9 +423,9 @@ module authorize {
   // chain vouches for the member cert and the member's groups contain
   // it. Groups are sovereign-scoped names — never hot-key-scoped, never
   // global (FINDING 2026-09-06).
-  pure def grantAdmits(r: int, facet: str, consents: Set[Cert], speakAs: Set[Cert],
+  pure def grantAdmits(r: int, facet: str, consents: Set[Cert], held: Set[Cert], speakAs: Set[Cert],
                        g: Cert, member: Cert, peer: int, now: int): bool =
-    verifyChain(r, Invoke, consents, [g], speakAs, peer, facet, now).exists(v => match v.aud {
+    verifyChain(r, Invoke, consents, held, [g], speakAs, peer, facet, now).exists(v => match v.aud {
       | AudBound => true
       | AudUnbound => false
       | AudGroup(grp) =>
@@ -408,7 +434,7 @@ module authorize {
     })
 
   // authorize(): glossary steps (1)–(4), including (2a) and (2b).
-  pure def authorize(r: int, table: str -> str, consents: Set[Cert], blocklist: Set[int],
+  pure def authorize(r: int, table: str -> str, consents: Set[Cert], held: Set[Cert], blocklist: Set[int],
                      now: int, alpn: str, peer: int, member: Cert, speakAs: Set[Cert],
                      grants: Set[Cert]): Result =
     // (1) ALPN → facet; unknown ⇒ reject. The lookup is TOTAL (NO_FACET
@@ -423,12 +449,12 @@ module authorize {
       if (not(member.can == Member and sigOk(member, now) and isKey(member.aud, peer))) Reject
       // (2a)+(2b) resolve the member's issuer through the bundle's speak-as;
       //      some resolved issuer must be one R consented to (3cx)
-      else if (memberSovereigns(r, consents, speakAs, member, now) == Set()) Reject
+      else if (memberSovereigns(r, consents, held, speakAs, member, now) == Set()) Reject
       // (3) blocklist — plain git list keyed by member key in v0
       else if (blocklist.contains(peer)) Reject
       // (3) any grant whose chain verifies admits — grants are alternatives,
       //     one chain each; identity from the member cert ONLY
-      else if (grants.exists(g => grantAdmits(r, facet, consents, speakAs, g, member, peer, now)))
+      else if (grants.exists(g => grantAdmits(r, facet, consents, held, speakAs, g, member, peer, now)))
         Accept({ key: peer, name: member.cav.name, groups: member.cav.groups })
       // (4) no grant matched
       else Reject
@@ -480,6 +506,7 @@ module authorize {
   var member: Cert
   var speakAs: Set[Cert]     // the bundle's speak-as links (ADR-0018)
   var consents: Set[Cert]
+  var held: Set[Cert]        // the speak-as certs R HOLDS naming it as aud (ADR-0003); shared by both halves
   var grants: Set[Cert]
   var grantsAtt: Set[Cert]   // grants with one link attenuated
   var speakAsAtt: Set[Cert]  // speak-as with one link attenuated (or unchanged)
@@ -492,10 +519,14 @@ module authorize {
   var cfacet: str                 // the facet the caller derived (`to.facet` / AcceptTable[ALPN])
   var cverb: Verb                 // the verb the receiver expects the chain to carry (xwu)
 
-  val res = authorize(R, ACCEPT_TABLE, consents, blocklist, NOW, alpn, peer, member, speakAs, grants)
-  val resAtt = authorize(R, ACCEPT_TABLE, consents, blocklist, NOW, alpn, peer, member, speakAsAtt, grantsAtt)
-  val chainRes = verifyChain(R, cverb, consents, chain, chainSpeakAs, signer, cfacet, NOW)
-  val chainResAtt = verifyChain(R, cverb, consents, chainAtt, chainSpeakAsAtt, signer, cfacet, NOW)
+  val res = authorize(R, ACCEPT_TABLE, consents, held, blocklist, NOW, alpn, peer, member, speakAs, grants)
+  val resAtt = authorize(R, ACCEPT_TABLE, consents, held, blocklist, NOW, alpn, peer, member, speakAsAtt, grantsAtt)
+  val chainRes = verifyChain(R, cverb, consents, held, chain, chainSpeakAs, signer, cfacet, NOW)
+  val chainResAtt = verifyChain(R, cverb, consents, held, chainAtt, chainSpeakAsAtt, signer, cfacet, NOW)
+
+  // The speak-as a sovereign issues to R's key when R is its hot key
+  // (ADR-0018 shape: {iss: wallet, aud: hubkey, verbs, groups}); held by R.
+  pure val HELD_OWNER1 = mkSpeakAs(OWNER1, R, VERBS, GROUPS, false, 10, false)
 
   pure val CONSENT1 = mkCert(R, AKey(OWNER1), Invoke, Set(R), FACETS, Set(), "", true, false, 10, false)
                         .withEndpoints(ENDPOINTS)
@@ -522,6 +553,7 @@ module authorize {
     member' = mkCert(OWNER1, AKey(CALLER), Member, Set(), Set(), Set("admins"), "laptop", false, false, 10, false),
     speakAs' = Set(),
     consents' = Set(CONSENT1),
+    held' = Set(),
     grants' = Set(mkCert(OWNER1, AGroup("admins"), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false)),
     grantsAtt' = Set(mkCert(OWNER1, AGroup("admins"), Invoke, Set(R), Set("apid"), Set(), "", false, true, 10, false)),
     speakAsAtt' = Set(),
@@ -551,6 +583,7 @@ module authorize {
     member' = mkCert(OWNER1, AKey(CALLER), Member, Set(), Set(), Set("admins"), "laptop", false, false, 10, false),
     speakAs' = Set(),
     consents' = Set(CONSENT1, CONSENT1_PUB),
+    held' = Set(),
     grants' = Set(asVerb(mkCert(OWNER1, AKey(CALLER), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false), Publish)),
     grantsAtt' = Set(),
     speakAsAtt' = Set(),
@@ -576,6 +609,7 @@ module authorize {
     member' = mkCert(OWNER1, AKey(CALLER), Member, Set(), Set(), Set("admins"), "laptop", false, false, 10, false),
     speakAs' = Set(),
     consents' = Set(CONSENT1),
+    held' = Set(),
     grants' = Set(mkCert(OWNER1, AKey(CALLER), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false)),
     grantsAtt' = Set(mkCert(OWNER1, AKey(CALLER), Invoke, Set(R), Set("apid"), Set(), "", false, true, 10, false)),
     speakAsAtt' = Set(),
@@ -599,6 +633,7 @@ module authorize {
     speakAs' = Set(mkSpeakAs(OWNER1, HUB_A, VERBS, GROUPS, false, 10, false),
                    mkSpeakAs(OWNER1, HUB_B, VERBS, GROUPS, false, 10, false)),
     consents' = Set(CONSENT1),
+    held' = Set(),
     grants' = Set(mkCert(HUB_B, AGroup("admins"), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false)),
     grantsAtt' = Set(mkCert(HUB_B, AGroup("admins"), Invoke, Set(R), Set("apid"), Set(), "", false, false, 10, false)),
     // attenuated: the member's speak-as expired — ADR-0018 axiom 2
@@ -611,6 +646,34 @@ module authorize {
     chainSpeakAsAtt' = Set(),
     signer' = OWNER1,
     cfacet' = "kube-api",
+    cverb' = Invoke,
+  }
+
+  // ADR-0003 witness (kau): R is OWNER1's hot key and holds OWNER1→R.
+  // Its consent names {R, OWNER1}; the caller's grant names OWNER1 only
+  // (the shape every grant to a hub facet has — `target: wallet`), so
+  // it survives R's key rotating. Chain half: the same grant as a
+  // one-link chain presented by CALLER; the attenuated twin shrinks the
+  // link's target to ∅ by excluding OWNER1.
+  pure val CONSENT1_HUB = CONSENT1.with("cav", CONSENT1.cav.with("target", Set(R, OWNER1)))
+  pure val GRANT_TO_OWNER1 = mkCert(OWNER1, AKey(CALLER), Invoke, Set(OWNER1), Set("apid"), Set(), "", false, false, 10, false)
+  action initAnswersFor = all {
+    alpn' = "mesh/apid/v1",
+    peer' = CALLER,
+    blocklist' = Set(),
+    member' = mkCert(OWNER1, AKey(CALLER), Member, Set(), Set(), Set("admins"), "laptop", false, false, 10, false),
+    speakAs' = Set(),
+    consents' = Set(CONSENT1_HUB),
+    held' = Set(HELD_OWNER1),
+    grants' = Set(GRANT_TO_OWNER1),
+    grantsAtt' = Set(addCaveat(GRANT_TO_OWNER1, ShrinkTarget, OWNER1, "", "")),
+    speakAsAtt' = Set(),
+    chain' = [GRANT_TO_OWNER1],
+    chainAtt' = [addCaveat(GRANT_TO_OWNER1, ShrinkTarget, OWNER1, "", "")],
+    chainSpeakAs' = Set(),
+    chainSpeakAsAtt' = Set(),
+    signer' = CALLER,
+    cfacet' = "apid",
     cverb' = Invoke,
   }
 
@@ -631,7 +694,7 @@ module authorize {
     nondet c1Iss = RECEIVERS.oneOf()
     nondet c1Aud = WALLETS.oneOf()
     nondet c1Can = Set(Invoke, Member, Publish).oneOf()
-    nondet c1Target = RECEIVERS.powerset().oneOf()
+    nondet c1Target = TARGETS.powerset().oneOf()
     nondet c1Facet = FACETS.powerset().oneOf()
     nondet c1Deleg = Bool.oneOf()
     nondet c1Unknown = Bool.oneOf()
@@ -662,7 +725,7 @@ module authorize {
     nondet g1Iss = SIGNERS.oneOf()
     nondet g1Aud = Set(AKey(CALLER), AKey(ROGUE), AGroup("admins"), AGroup("media"), AAny).oneOf()
     nondet g1Can = Set(Invoke, Member, Publish, OtherVerb).oneOf()
-    nondet g1Target = RECEIVERS.powerset().oneOf()
+    nondet g1Target = TARGETS.powerset().oneOf()
     nondet g1Facet = FACETS.powerset().oneOf()
     nondet g1Unknown = Bool.oneOf()
     nondet g1Exp = EXPS.oneOf()
@@ -681,7 +744,7 @@ module authorize {
     nondet l1Iss = SIGNERS.oneOf()
     nondet l1Aud = CHAIN_AUDS.oneOf()
     nondet l1Can = CHAIN_VERBS.oneOf()
-    nondet l1Target = RECEIVERS.powerset().oneOf()
+    nondet l1Target = TARGETS.powerset().oneOf()
     nondet l1Facet = FACETS.powerset().oneOf()
     nondet l1Deleg = Bool.oneOf()
     nondet l1Unknown = Bool.oneOf()
@@ -701,7 +764,7 @@ module authorize {
     nondet l2Postage = POSTAGES.oneOf()
     nondet cLen = Set(0, 1, 2).oneOf()
     nondet cs1Iss = WALLETS.union(PEERS).oneOf()
-    nondet cs1Aud = HOT_KEYS.oneOf()
+    nondet cs1Aud = HOT_KEYS.union(Set(R)).oneOf()   // incl. a speak-as naming R in the CALLER's bundle (must widen nothing)
     nondet cs1Verbs = VERBS.powerset().oneOf()
     nondet cs1Exp = EXPS.oneOf()
     nondet cs1Forged = Bool.oneOf()
@@ -711,10 +774,16 @@ module authorize {
     nondet csCount = Set(0, 1, 2).oneOf()
     nondet signer_ = SIGNERS.union(PEERS).union(Set(CALLER_HOT)).oneOf()
     nondet cfacet_ = FACETS.oneOf()
+    // what R holds: nothing, or one speak-as wallet→R (any wallet, any state)
+    nondet hIss = WALLETS.oneOf()
+    nondet hAud = RECEIVERS.oneOf()
+    nondet hExp = EXPS.oneOf()
+    nondet hForged = Bool.oneOf()
+    nondet hCount = Set(0, 1).oneOf()
     nondet attI = Set(0, 1).oneOf()
     // one attenuation applied to g1 / chain link attI (or to every speak-as)
     nondet att = ATTS.oneOf()
-    nondet attT = RECEIVERS.oneOf()
+    nondet attT = TARGETS.oneOf()
     nondet attF = FACETS.oneOf()
     nondet attG = GROUPS.oneOf()
     nondet attE = ENDPOINTS.oneOf()
@@ -732,6 +801,7 @@ module authorize {
     val cs1 = mkSpeakAs(cs1Iss, cs1Aud, cs1Verbs, GROUPS, false, cs1Exp, cs1Forged)
     val cs2 = mkSpeakAs(cs2Iss, CALLER_HOT, cs2Verbs, Set(), false, cs2Exp, false)
     val csa = if (csCount == 0) Set() else if (csCount == 1) Set(cs1) else Set(cs1, cs2)
+    val h = if (hCount == 0) Set() else Set(mkSpeakAs(hIss, hAud, VERBS, GROUPS, false, hExp, hForged))
     all {
       alpn' = alpn_,
       peer' = peer_,
@@ -741,6 +811,7 @@ module authorize {
       consents' = Set(
         mkCert(c1Iss, AKey(c1Aud), c1Can, c1Target, c1Facet, Set(), "", c1Deleg, c1Unknown, c1Exp, c1Forged),
         mkCert(c2Iss, AKey(c2Aud), Invoke, Set(R), FACETS, Set(), "", c2Deleg, false, c2Exp, c2Forged)),
+      held' = h,
       grants' = Set(g1, g2),
       grantsAtt' = Set(addCaveat(g1, att, attT, attF, attE), g2),
       speakAsAtt' = sa.map(s => addSpeakAsCaveat(s, att, attG)),
@@ -773,7 +844,9 @@ module authorize {
     | FNoConsentOwner2
     | FGrantForged | FGrantExpired | FGrantVerbOther | FGrantUnknown
     | FGrantIssuerOwner2 | FGrantAudRogueKey | FGrantAudMedia
-    | FGrantTargetOtherR | FGrantFacetKubeOnly
+    | FGrantTargetOtherR | FGrantFacetKubeOnly | FGrantTargetOwner1
+    // held speak-as faults (ADR-0003): what R holds naming itself as aud
+    | FHeldMissing | FHeldExpired | FHeldForged | FHeldFromOwner2 | FHeldAudOtherR | FHeldInBundleOnly
     // speak-as faults (hub-signed scenarios; no-ops otherwise)
     | FSpeakAsAMissing | FSpeakAsAExpired | FSpeakAsAForged | FSpeakAsAUnknown
     | FSpeakAsAWrongVerb | FSpeakAsAVerbsInvokeOnly | FSpeakAsAGroupsMedia
@@ -784,7 +857,7 @@ module authorize {
     // N-link chain faults (genNear's chain half; drawn from CFAULTS)
     | FLink1Forged | FLink1Expired | FLink1Unknown | FLink1NotDelegable
     | FLink1IssRogue | FLink1AudRogue | FLink1TargetOtherR | FLink1FacetKubeOnly
-    | FLink1EndpointsA | FLink1Postage | FLink1VerbOtherChain
+    | FLink1EndpointsA | FLink1Postage | FLink1VerbOtherChain | FChainTargetOwner1
     | FLink2Forged | FLink2Expired | FLink2Unknown | FLink2IssRogue | FLink2VerbOther
     | FLink2AudRogue | FLink2FacetKubeOnly | FLink2EndpointsB | FLink2Postage
     | FPostageConflict | FStarNoPostage | FSignerRogue | FDropLink1
@@ -796,11 +869,14 @@ module authorize {
   // link under an `invoke` root, or vice versa) — well-formed on its own,
   // wrong for this root (xwu). FAudSpeakAsNoVerb / FHubBSpeakAsVerbless:
   // the speak-as covers `member` only, not the chain's verb.
+  // FChainTargetOwner1 (ADR-0003): every caller link names OWNER1, not R
+  // — accepted only while R holds a live OWNER1→R (the FHeld* faults in
+  // FAULTS perturb that); the consent then names {R, OWNER1}.
   pure val CFAULTS = Set(
     FNone,
     FLink1Forged, FLink1Expired, FLink1Unknown, FLink1NotDelegable,
     FLink1IssRogue, FLink1AudRogue, FLink1TargetOtherR, FLink1FacetKubeOnly,
-    FLink1EndpointsA, FLink1Postage, FLink1VerbOtherChain,
+    FLink1EndpointsA, FLink1Postage, FLink1VerbOtherChain, FChainTargetOwner1,
     FLink2Forged, FLink2Expired, FLink2Unknown, FLink2IssRogue, FLink2VerbOther,
     FLink2AudRogue, FLink2FacetKubeOnly, FLink2EndpointsB, FLink2Postage,
     FPostageConflict, FStarNoPostage, FSignerRogue, FDropLink1,
@@ -834,7 +910,7 @@ module authorize {
       if (f.contains(FLink1IssRogue)) ROGUE else if (hubSigned) HUB_A else OWNER1,
       AKey(if (f.contains(FLink1AudRogue)) ROGUE else OWNER2),
       if (f.contains(FLink1VerbOtherChain)) otherChainVerb(verb) else verb,
-      if (f.contains(FLink1TargetOtherR)) Set(OTHER_R) else Set(R),
+      if (f.contains(FLink1TargetOtherR)) Set(OTHER_R) else if (f.contains(FChainTargetOwner1)) Set(OWNER1) else Set(R),
       if (f.contains(FLink1FacetKubeOnly)) Set("kube-api") else FACETS,
       Set(), "",
       not(f.contains(FLink1NotDelegable)),
@@ -851,7 +927,7 @@ module authorize {
         | _ => AKey(if (f.contains(FLink2AudRogue)) ROGUE else CALLER)
       },
       if (f.contains(FLink2VerbOther)) OtherVerb else verb,
-      Set(R),
+      if (f.contains(FChainTargetOwner1)) Set(OWNER1) else Set(R),
       if (f.contains(FLink2FacetKubeOnly)) Set("kube-api") else Set("apid"),
       Set(), "", false,
       f.contains(FLink2Unknown),
@@ -899,7 +975,8 @@ module authorize {
     FNoConsentOwner2,
     FGrantForged, FGrantExpired, FGrantVerbOther, FGrantUnknown,
     FGrantIssuerOwner2, FGrantAudRogueKey, FGrantAudMedia,
-    FGrantTargetOtherR, FGrantFacetKubeOnly,
+    FGrantTargetOtherR, FGrantFacetKubeOnly, FGrantTargetOwner1,
+    FHeldMissing, FHeldExpired, FHeldForged, FHeldFromOwner2, FHeldAudOtherR, FHeldInBundleOnly,
     FSpeakAsAMissing, FSpeakAsAExpired, FSpeakAsAForged, FSpeakAsAUnknown,
     FSpeakAsAWrongVerb, FSpeakAsAVerbsInvokeOnly, FSpeakAsAGroupsMedia,
     FSpeakAsAFromOwner2, FSpeakAsAAudHubB,
@@ -921,19 +998,23 @@ module authorize {
     nondet cPostage = Set(NO_POSTAGE, "pow:20").oneOf()   // postage on the consent itself
     nondet attI = Set(0, 1).oneOf()
     nondet att = ATTS.oneOf()
-    nondet attT = RECEIVERS.oneOf()
+    nondet attT = TARGETS.oneOf()
     nondet attF = FACETS.oneOf()
     nondet attG = GROUPS.oneOf()
     nondet attE = ENDPOINTS.oneOf()
     nondet audKind = Set(0, 1).oneOf()   // 0: grant to the key, 1: grant to group:admins
     nondet hubSigned = Bool.oneOf()      // false: wallets sign directly (pre-ADR-0018 shape)
-    val nc = nearChain(Set(cf1, cf2), ckind, cHub, cv)
+    val cf = Set(cf1, cf2)
+    val nc = nearChain(cf, ckind, cHub, cv)
     val memberSigner = if (hubSigned) HUB_A else OWNER1
     val grantSigner = if (hubSigned) HUB_B else OWNER1
+    // ADR-0003 shape: when either half addresses OWNER1 instead of R, the
+    // consent names both (the hub's consent: `target: {hubkey, wallet}`).
+    val targetsOwner1 = f.contains(FGrantTargetOwner1) or cf.contains(FChainTargetOwner1)
     val consent1 = mkCert(
       if (f.contains(FConsentSignedByOtherR)) OTHER_R else R,
       AKey(OWNER1), Invoke,
-      if (f.contains(FConsentTargetOtherR)) Set(OTHER_R) else Set(R),
+      if (f.contains(FConsentTargetOtherR)) Set(OTHER_R) else if (targetsOwner1) Set(R, OWNER1) else Set(R),
       if (f.contains(FConsentFacetKubeOnly)) Set("kube-api") else FACETS,
       Set(), "",
       not(f.contains(FConsentNotDelegable)), false,
@@ -946,7 +1027,7 @@ module authorize {
       else if (f.contains(FGrantAudMedia)) AGroup("media")
       else if (audKind == 0) AKey(CALLER) else AGroup("admins"),
       if (f.contains(FGrantVerbOther)) OtherVerb else Invoke,
-      if (f.contains(FGrantTargetOtherR)) Set(OTHER_R) else Set(R),
+      if (f.contains(FGrantTargetOtherR)) Set(OTHER_R) else if (f.contains(FGrantTargetOwner1)) Set(OWNER1) else Set(R),
       if (f.contains(FGrantFacetKubeOnly)) Set("kube-api") else Set("apid"),
       Set(), "", false,
       f.contains(FGrantUnknown),
@@ -976,11 +1057,24 @@ module authorize {
     // chain a `cv` twin of consent1 joins the shared consents — and the
     // connection-level half must never root an invoke grant in it.
     val rootConsents = if (cv == Invoke) Set(consent1) else Set(consent1, consent1.with("can", cv))
+    // what R holds: OWNER1→R by default (R is OWNER1's hot key), perturbed
+    // by the FHeld* faults; FHeldInBundleOnly moves it into BOTH halves'
+    // caller bundles instead — where it must widen nothing.
+    val heldCert = mkSpeakAs(
+      if (f.contains(FHeldFromOwner2)) OWNER2 else OWNER1,
+      if (f.contains(FHeldAudOtherR)) OTHER_R else R,   // a speak-as R happens to hold that names another key
+      VERBS, GROUPS, false,
+      if (f.contains(FHeldExpired)) NOW else 10,
+      f.contains(FHeldForged))
+    val h = if (f.contains(FHeldMissing) or f.contains(FHeldInBundleOnly)) Set() else Set(heldCert)
+    val leaked = if (f.contains(FHeldInBundleOnly)) Set(heldCert) else Set()
     val sa =
-      if (not(hubSigned)) Set()
+      (if (not(hubSigned)) Set()
       else (if (f.contains(FSpeakAsAMissing)) Set() else Set(sA))
         .union(if (f.contains(FSpeakAsBMissing)) Set() else Set(sB))
-        .union(if (f.contains(FSpeakAsRogueVouchesBoth)) rogue else Set())
+        .union(if (f.contains(FSpeakAsRogueVouchesBoth)) rogue else Set()))
+      .union(leaked)
+    val csa = nc.speakAs.union(leaked)
     all {
       alpn' = if (f.contains(FAlpnBogus)) "mesh/bogus/v1" else "mesh/apid/v1",
       peer' = CALLER,
@@ -997,13 +1091,14 @@ module authorize {
         f.contains(FMemberForged)),
       speakAs' = sa,
       consents' = if (f.contains(FNoConsentOwner2)) rootConsents else rootConsents.union(Set(CONSENT2)),
+      held' = h,
       grants' = Set(g),
       grantsAtt' = Set(addCaveat(g, att, attT, attF, attE)),
       speakAsAtt' = sa.map(s => addSpeakAsCaveat(s, att, attG)),
       chain' = nc.chain,
       chainAtt' = addChainCaveat(nc.chain, attI, att, attT, attF, attE),
-      chainSpeakAs' = nc.speakAs,
-      chainSpeakAsAtt' = nc.speakAs.map(s => addSpeakAsCaveat(s, att, attG)),
+      chainSpeakAs' = csa,
+      chainSpeakAsAtt' = csa.map(s => addSpeakAsCaveat(s, att, attG)),
       signer' = nc.signer,
       cfacet' = "apid",
       cverb' = cv,
@@ -1019,6 +1114,12 @@ module authorize {
   // A live R-signed consent naming sovereign `w`.
   def liveConsentTo(w: int): bool =
     consents.exists(c => c.iss == R and isKey(c.aud, w) and sigOk(c, NOW))
+
+  // The principals R answers for (ADR-0003, raw fields): itself, plus
+  // every P with a live `speak-as P→R` in what R HOLDS. Computed from
+  // `held` only — never from `speakAs` / `chainSpeakAs` (the bundles).
+  def answerable: Set[int] =
+    Set(R).union(held.filter(s => s.can == SpeakAs and isKey(s.aud, R) and sigOk(s, NOW)).map(s => s.iss))
 
   // A speak-as `s` that would let wallet `w` vouch for signer `k` (raw fields).
   pure def vouches(s: Cert, w: int, k: int, now: int): bool =
@@ -1042,10 +1143,11 @@ module authorize {
   val invConsentMustDelegate =
     consents.forall(c => not(c.cav.delegable)) implies not(accepted(res))
 
-  // A consent that does not name the receiver itself in `target` cannot
-  // root a chain at that receiver (consent is `invoke {target: self}`).
+  // A consent that names neither the receiver nor a principal it answers
+  // for in `target` cannot root a chain at that receiver (consent is
+  // `invoke {target: self}`; ADR-0003: self may be spelled as the root).
   val invConsentTargetsSelf =
-    consents.forall(c => not(c.cav.target.contains(R))) implies not(accepted(res))
+    consents.forall(c => c.cav.target.intersect(answerable) == Set()) implies not(accepted(res))
 
   // Fail-closed (2): a member cert that is forged, expired, wrong verb,
   // not bound to the QUIC peer, or carrying an unknown caveat, admits nothing.
@@ -1155,9 +1257,11 @@ module authorize {
           and (w == member.iss or speakAs.exists(s => vouches(s, w, member.iss, NOW))))
     })
 
-  // Target: a grant whose target set omits R never admits at R.
-  val invTargetIsReceiver =
-    grants.forall(g => not(g.cav.target.contains(R))) implies not(accepted(res))
+  // Target: a grant whose target set names neither R nor a principal R
+  // holds a live speak-as from never admits at R — whatever speak-as the
+  // caller's bundle carries (ADR-0003).
+  val invTargetIsAnswerable =
+    grants.forall(g => g.cav.target.intersect(answerable) == Set()) implies not(accepted(res))
 
   // Facet: ALPN routes, grants authorize — the granted facet must
   // contain the one the ALPN selects.
@@ -1316,11 +1420,20 @@ module authorize {
     (chain.length() > 0 and consents.forall(c => not(c.cav.delegable))) implies not(chainAccepted),
   }
 
-  // Rule 4 — target and facet: every link must name R and the facet
-  // (the intersection does iff each does).
-  val invChainTargetsReceiver =
-    chainAccepted implies (chain.indices().forall(i => chain.nth(i).cav.target.contains(R))
-                           and consents.exists(c => c.cav.target.contains(R)))
+  // Rule 4 — target and facet: some ONE principal R answers for (R, or P
+  // with a live held P→R) is named by every link and by a consent (the
+  // intersection contains it iff each does); the facet likewise.
+  val invChainTargetsAnswerable =
+    chainAccepted implies answerable.exists(p =>
+      chain.indices().forall(i => chain.nth(i).cav.target.contains(p))
+      and consents.exists(c => c.cav.target.contains(p)))
+  // ADR-0003's mutant, stated directly: a link naming no principal R
+  // answers for rejects, however many `speak-as → R` the caller's bundle
+  // carries (the mutant "held := held ∪ chainSpeakAs" dies here under
+  // FHeldInBundleOnly / cs1Aud == R).
+  val invBundleSpeakAsNeverWidensTarget =
+    chain.indices().exists(i => chain.nth(i).cav.target.intersect(answerable) == Set())
+    implies not(chainAccepted)
   val invChainFacetMatches =
     chainAccepted implies (chain.indices().forall(i => chain.nth(i).cav.facet.contains(cfacet))
                            and consents.exists(c => c.cav.facet.contains(cfacet)))
@@ -1347,7 +1460,7 @@ module authorize {
     invGrantsFailClosed,
     invCrossIssuerGroupRejects,
     invGroupMatchRootedInChain,
-    invTargetIsReceiver,
+    invTargetIsAnswerable,
     invFacetMatchesAlpn,
     invIdentityFromMember,
     invMonotone,
@@ -1368,7 +1481,8 @@ module authorize {
     invChainVerbIsRoot,
     invChainVerbUniform,
     invChainNotDelegableStops,
-    invChainTargetsReceiver,
+    invChainTargetsAnswerable,
+    invBundleSpeakAsNeverWidensTarget,
     invChainFacetMatches,
     invChainMonotone,
   }
@@ -1400,9 +1514,9 @@ module authorize {
                                 and v.aud == AudBound and v.consent == CONSENT1)),
     assert(chainResAtt == Set()),
     // the same chain presented by a key nobody vouches for is unbound
-    assert(verifyChain(R, Invoke, consents, chain, chainSpeakAs, ROGUE, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Invoke, consents, held, chain, chainSpeakAs, ROGUE, cfacet, NOW) == Set()),
     // and, with the aud-side speak-as lacking `invoke`, too
-    assert(verifyChain(R, Invoke, consents, chain,
+    assert(verifyChain(R, Invoke, consents, held, chain,
       Set(mkSpeakAs(OWNER1, HUB_A, Set(Invoke), Set(), false, 10, false),
           mkSpeakAs(OWNER2, HUB_B, Set(Invoke), Set(), false, 10, false),
           mkSpeakAs(CALLER, CALLER_HOT, Set(Member), Set(), false, 10, false)),
@@ -1416,12 +1530,12 @@ module authorize {
     assert(chainAccepted),
     assert(chainRes.forall(v => v.eff.cav.postage == "pow:20")),
     assert(chainResAtt == Set()),
-    assert(verifyChain(R, Invoke, Set(CONSENT1.withPostage("pay:1")), chain, Set(), ROGUE, cfacet, NOW) == Set()),
-    assert(verifyChain(R, Invoke, Set(CONSENT1.withPostage("pow:20")), chain, Set(), ROGUE, cfacet, NOW) != Set()),
+    assert(verifyChain(R, Invoke, Set(CONSENT1.withPostage("pay:1")), Set(), chain, Set(), ROGUE, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Invoke, Set(CONSENT1.withPostage("pow:20")), Set(), chain, Set(), ROGUE, cfacet, NOW) != Set()),
     // the connection-level check binds `*` the same way (postage on the grant)
-    assert(accepted(authorize(R, ACCEPT_TABLE, Set(CONSENT1), Set(), NOW, "mesh/apid/v1", CALLER, member, Set(),
+    assert(accepted(authorize(R, ACCEPT_TABLE, Set(CONSENT1), Set(), Set(), NOW, "mesh/apid/v1", CALLER, member, Set(),
                               Set(STAR_LINK)))),
-    assert(not(accepted(authorize(R, ACCEPT_TABLE, Set(CONSENT1), Set(), NOW, "mesh/apid/v1", CALLER, member, Set(),
+    assert(not(accepted(authorize(R, ACCEPT_TABLE, Set(CONSENT1), Set(), Set(), NOW, "mesh/apid/v1", CALLER, member, Set(),
                                   Set(STAR_LINK.withPostage(NO_POSTAGE)))))),
     step,
   })
@@ -1432,9 +1546,9 @@ module authorize {
   run consentOnlyTest = initMixedEpoch.then(all {
     assert(chainAccepted),
     assert(chainRes.forall(v => v.eff == CONSENT1)),
-    assert(verifyChain(R, Invoke, consents, [], Set(mkSpeakAs(OWNER1, HUB_A, Set(Invoke), Set(), false, 10, false)),
+    assert(verifyChain(R, Invoke, consents, held, [], Set(mkSpeakAs(OWNER1, HUB_A, Set(Invoke), Set(), false, 10, false)),
                        HUB_A, cfacet, NOW) != Set()),
-    assert(verifyChain(R, Invoke, consents, [], Set(), OWNER2, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Invoke, consents, held, [], Set(), OWNER2, cfacet, NOW) == Set()),
     step,
   })
 
@@ -1449,9 +1563,38 @@ module authorize {
     assert(chainAccepted),
     assert(chainRes.forall(v => v.consent == CONSENT1_PUB and v.eff.can == Publish and v.aud == AudBound)),
     assert(chainResAtt == Set()),
-    assert(verifyChain(R, Invoke, consents, chain, chainSpeakAs, signer, cfacet, NOW) == Set()),
-    assert(verifyChain(R, Publish, consents, chain, CHAIN_SPEAKAS, signer, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Invoke, consents, held, chain, chainSpeakAs, signer, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Publish, consents, held, chain, CHAIN_SPEAKAS, signer, cfacet, NOW) == Set()),
     assert(not(accepted(res))),
+    step,
+  })
+
+  // ADR-0003 witness (kau): a grant `target: OWNER1` is accepted by R
+  // holding a live OWNER1→R — both as an envelope chain and at
+  // connection level — and its effective target is {OWNER1} (R itself
+  // is NOT in it: the consent's {R, OWNER1} ∩ the grant's {OWNER1}).
+  // The same grant is refused when R holds nothing, when the speak-as is
+  // expired, when it is from another wallet, and — the mutant — when the
+  // very same cert arrives in the caller's bundle instead of R's
+  // configuration. Shrinking the link's target to ∅ rejects.
+  run answersForTest = initAnswersFor.then(all {
+    assert(chainAccepted),
+    assert(chainRes.forall(v => v.eff.cav.target == Set(OWNER1) and v.aud == AudBound and v.consent == CONSENT1_HUB)),
+    assert(chainResAtt == Set()),
+    assert(accepted(res)),
+    assert(not(accepted(resAtt))),
+    // R holds nothing ⇒ ErrTargetMismatch
+    assert(verifyChain(R, Invoke, consents, Set(), chain, chainSpeakAs, signer, cfacet, NOW) == Set()),
+    assert(not(accepted(authorize(R, ACCEPT_TABLE, consents, Set(), Set(), NOW, alpn, peer, member, speakAs, grants)))),
+    // expired / another wallet's speak-as
+    assert(verifyChain(R, Invoke, consents, Set(HELD_OWNER1.with("exp", NOW)), chain, chainSpeakAs, signer, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Invoke, consents, Set(mkSpeakAs(OWNER2, R, VERBS, GROUPS, false, 10, false)), chain, chainSpeakAs, signer, cfacet, NOW) == Set()),
+    // the mutant: OWNER1→R presented by the CALLER widens nothing
+    assert(verifyChain(R, Invoke, consents, Set(), chain, Set(HELD_OWNER1), signer, cfacet, NOW) == Set()),
+    assert(not(accepted(authorize(R, ACCEPT_TABLE, consents, Set(), Set(), NOW, alpn, peer, member, Set(HELD_OWNER1), grants)))),
+    // liveness only, no verb condition: a held speak-as covering `member`
+    // alone still lets R be ADDRESSED as OWNER1 for an invoke chain
+    assert(verifyChain(R, Invoke, consents, Set(mkSpeakAs(OWNER1, R, Set(Member), Set(), false, 10, false)), chain, chainSpeakAs, signer, cfacet, NOW) != Set()),
     step,
   })
 }

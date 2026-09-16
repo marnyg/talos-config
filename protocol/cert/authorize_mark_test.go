@@ -49,8 +49,8 @@ func TestVerifiedExcludesStranger(t *testing.T) {
 		t.Fatal("stranger member should have a VALID self-signature")
 	}
 	in := Input{
-		Receiver: id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
-		Consents: []Cert{consent}, Blocklist: map[ActorID]bool{}, Now: testNOW,
+		Receiver: Receiver{ID: id["R"], Consents: []Cert{consent}}, AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+		Blocklist: map[ActorID]bool{}, Now: testNOW,
 		ALPN: "mesh/apid/v1", Peer: id["CALLER"],
 		Bundle: Bundle{Member: strangerMember, Grants: nil},
 	}
@@ -84,8 +84,8 @@ func TestVerifiedIncludesExpiredButRooted(t *testing.T) {
 		cav: Caveats{Groups: []string{"admins"}, Name: "laptop"}, iat: 50, exp: testNOW /* expired */})
 
 	in := Input{
-		Receiver: id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
-		Consents: []Cert{consent}, Blocklist: map[ActorID]bool{}, Now: testNOW,
+		Receiver: Receiver{ID: id["R"], Consents: []Cert{consent}}, AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+		Blocklist: map[ActorID]bool{}, Now: testNOW,
 		ALPN: "mesh/apid/v1", Peer: id["CALLER"],
 		Bundle: Bundle{Member: expiredMember, Grants: nil},
 	}
@@ -113,8 +113,8 @@ func TestVerifiedExcludesStrangerSpeakAs(t *testing.T) {
 		cav: Caveats{Groups: []string{"admins"}, Name: "laptop"}, iat: 1_000_000, exp: 1_000_100})
 
 	in := Input{
-		Receiver: id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
-		Consents: []Cert{consent}, Blocklist: map[ActorID]bool{}, Now: testNOW,
+		Receiver: Receiver{ID: id["R"], Consents: []Cert{consent}}, AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+		Blocklist: map[ActorID]bool{}, Now: testNOW,
 		ALPN: "mesh/apid/v1", Peer: id["CALLER"],
 		Bundle: Bundle{Member: member, Grants: nil, SpeakAs: []Cert{saStranger}},
 	}

@@ -145,6 +145,14 @@ const (
 	fGrantAudMedia
 	fGrantTargetOtherR
 	fGrantFacetKubeOnly
+	fGrantTargetOwner1 // grant names OWNER1, not R (ADR-0003: R answers for OWNER1 via the held speak-as)
+	// held speak-as faults (ADR-0003): what R holds naming itself as aud
+	fHeldMissing
+	fHeldExpired
+	fHeldForged
+	fHeldFromOwner2
+	fHeldAudOtherR    // a speak-as R happens to hold that names another key as aud
+	fHeldInBundleOnly // the OWNER1→R cert arrives in the CALLER's bundle instead — must widen nothing
 	// speak-as faults (hub-signed scenarios; no-ops otherwise)
 	fSpeakAsAMissing
 	fSpeakAsAExpired
@@ -186,6 +194,7 @@ type scenario struct {
 	member    Cert
 	grant     Cert
 	speakAs   []Cert // the bundle's speak-as links (ADR-0018)
+	held      []Cert // the speak-as certs R HOLDS naming it as aud (ADR-0003)
 	consents  []Cert
 	alpn      string
 	facet     string
@@ -230,7 +239,8 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 		memberSigner, grantSigner = "HUB_A", "HUB_B"
 	}
 
-	consents := buildConsents(f, flt, "", VerbInvoke)
+	consents := buildConsents(f, flt, "", VerbInvoke, has(flt, fGrantTargetOwner1))
+	held, leaked := buildHeld(f, flt)
 
 	// member cert with its faults.
 	memberIss := memberSigner
@@ -282,8 +292,11 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 		grantCan = VerbRelay
 	}
 	grantTarget := []ActorID{id["R"]}
-	if has(flt, fGrantTargetOtherR) {
+	switch {
+	case has(flt, fGrantTargetOtherR):
 		grantTarget = []ActorID{id["OTHER_R"]}
+	case has(flt, fGrantTargetOwner1):
+		grantTarget = []ActorID{id["OWNER1"]}
 	}
 	grantFacet := []string{"apid"}
 	if has(flt, fGrantFacetKubeOnly) {
@@ -387,6 +400,7 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 			}
 		}
 	}
+	saSpecs = append(saSpecs, leaked...)
 	speakAs := make([]Cert, 0, len(saSpecs))
 	speakAsAtt := make([]Cert, 0, len(saSpecs))
 	for _, sp := range saSpecs {
@@ -420,15 +434,58 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 	}
 
 	base := Input{
-		Receiver: id["R"], AcceptTable: table, Consents: consents,
+		Receiver: Receiver{ID: id["R"], Consents: consents, SpeakAs: held}, AcceptTable: table,
 		Blocklist: blocklist, Now: testNOW, ALPN: alpn, Peer: id["CALLER"],
 		Bundle: Bundle{Member: member, Grants: []Cert{grant}, SpeakAs: speakAs},
 	}
 	att := base
 	att.Bundle = Bundle{Member: member, Grants: []Cert{grantAtt}, SpeakAs: speakAsAtt}
 
-	return scenario{in: base, att: att, member: member, grant: grant, speakAs: speakAs,
+	return scenario{in: base, att: att, member: member, grant: grant, speakAs: speakAs, held: held,
 		consents: consents, alpn: alpn, facet: "apid", hubSigned: hubSigned, f: flt}
+}
+
+// buildHeld is the model's genNear `heldCert` / `h` / `leaked` (ADR-0003):
+// what R HOLDS naming itself as aud — OWNER1→R by default (R is
+// OWNER1's hot key), perturbed by the fHeld* faults. leaked is the spec
+// to append to the CALLER's bundle under fHeldInBundleOnly, where the
+// very same cert must widen nothing.
+func buildHeld(f fixture, flt map[fault]bool) (held []Cert, leaked []certSpec) {
+	id := f.id
+	iss := "OWNER1"
+	if has(flt, fHeldFromOwner2) {
+		iss = "OWNER2"
+	}
+	exp := int64(10)
+	if has(flt, fHeldExpired) {
+		exp = testNOW
+	}
+	aud := id["R"]
+	if has(flt, fHeldAudOtherR) {
+		aud = id["OTHER_R"]
+	}
+	spec := certSpec{iss: iss, aud: string(aud), can: VerbSpeakAs,
+		cav: Caveats{Verbs: modelVerbs, Groups: modelGroups}, exp: exp, forged: has(flt, fHeldForged)}
+	switch {
+	case has(flt, fHeldInBundleOnly):
+		return nil, []certSpec{spec}
+	case has(flt, fHeldMissing):
+		return nil, nil
+	}
+	return []Cert{f.build(spec)}, nil
+}
+
+// answerable ports the model's `answerable` (raw fields): R itself plus
+// every P with a live speak-as P→R in what R HOLDS — computed from held
+// only, never from a bundle.
+func answerable(id map[string]ActorID, held []Cert) []ActorID {
+	out := []ActorID{id["R"]}
+	for _, s := range held {
+		if s.Can == VerbSpeakAs && s.Aud == string(id["R"]) && sigOKlaw(s) && !containsID(out, s.Iss) {
+			out = append(out, s.Iss)
+		}
+	}
+	return out
 }
 
 // buildConsents is the receiver's consent set of the model's genNear:
@@ -439,7 +496,10 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 // model's genNear `cv`); for a non-invoke verb a twin of consent1 in
 // that verb joins the set (the model's rootConsents), and the
 // connection-level half must never root an invoke grant in it.
-func buildConsents(f fixture, flt map[fault]bool, postage string, chainVerb Verb) []Cert {
+// targetsOwner1 is the model's `targetsOwner1` (ADR-0003): when either
+// half addresses OWNER1 instead of R, consent1 names both — the hub's
+// consent shape, `target: {hubkey, wallet}`.
+func buildConsents(f fixture, flt map[fault]bool, postage string, chainVerb Verb, targetsOwner1 bool) []Cert {
 	id := f.id
 	facets := []string{"apid", "kube-api"}
 	consent1Iss := "R"
@@ -447,8 +507,11 @@ func buildConsents(f fixture, flt map[fault]bool, postage string, chainVerb Verb
 		consent1Iss = "OTHER_R"
 	}
 	consent1Target := []ActorID{id["R"]}
-	if has(flt, fConsentTargetOtherR) {
+	switch {
+	case has(flt, fConsentTargetOtherR):
 		consent1Target = []ActorID{id["OTHER_R"]}
+	case targetsOwner1:
+		consent1Target = []ActorID{id["R"], id["OWNER1"]}
 	}
 	consent1Facet := facets
 	if has(flt, fConsentFacetKubeOnly) {
@@ -656,15 +719,17 @@ func checkLaws(t failer, f fixture, s scenario, res, resAtt Result) {
 	if allNonDeleg && res.OK {
 		t.Fatal("invConsentMustDelegate: accepted with no delegable consent")
 	}
-	// invConsentTargetsSelf: no consent targets R ⇒ reject.
+	// invConsentTargetsSelf: no consent targets R or a principal R answers
+	// for (held speak-as, ADR-0003) ⇒ reject.
+	ans := answerable(id, s.held)
 	anyTargetsR := false
 	for _, c := range s.consents {
-		if containsID(c.Cav.Target, id["R"]) {
+		if len(intersectID(c.Cav.Target, ans)) > 0 {
 			anyTargetsR = true
 		}
 	}
 	if !anyTargetsR && res.OK {
-		t.Fatal("invConsentTargetsSelf: accepted with no consent targeting R")
+		t.Fatal("invConsentTargetsSelf: accepted with no consent targeting R or a principal it answers for")
 	}
 	// invMemberRequired
 	badMember := !sigValid(m) || m.Exp <= testNOW || m.Can != VerbMember ||
@@ -713,9 +778,10 @@ func checkLaws(t failer, f fixture, s scenario, res, resAtt Result) {
 			t.Fatal("invCrossIssuerGroupRejects: cross-issuer group grant accepted")
 		}
 	}
-	// invTargetIsReceiver
-	if !containsID(g.Cav.Target, id["R"]) && res.OK {
-		t.Fatal("invTargetIsReceiver: accepted a grant not targeting R")
+	// invTargetIsAnswerable: a grant naming neither R nor a principal R
+	// holds a live speak-as from never admits — whatever the bundle carries.
+	if len(intersectID(g.Cav.Target, ans)) == 0 && res.OK {
+		t.Fatal("invTargetIsAnswerable: accepted a grant targeting neither R nor a principal it answers for")
 	}
 	// invFacetMatchesAlpn
 	if fct, ok := table[s.alpn]; ok && !containsStr(g.Cav.Facet, fct) && res.OK {
@@ -828,8 +894,8 @@ func TestAuthorizeHappyPath(t *testing.T) {
 	for _, audKind := range []string{string(id["CALLER"]), "group:admins"} {
 		grant := f.build(certSpec{iss: "OWNER1", aud: audKind, can: VerbInvoke,
 			cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}}, exp: 10})
-		in := Input{Receiver: id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
-			Consents: []Cert{consent}, Blocklist: map[ActorID]bool{}, Now: testNOW,
+		in := Input{Receiver: Receiver{ID: id["R"], Consents: []Cert{consent}}, AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+			Blocklist: map[ActorID]bool{}, Now: testNOW,
 			ALPN: "mesh/apid/v1", Peer: id["CALLER"], Bundle: Bundle{Member: member, Grants: []Cert{grant}}}
 		res := Authorize(in)
 		if !res.OK {

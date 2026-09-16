@@ -93,15 +93,16 @@ type Reply struct {
 }
 
 // ChainVerifier is the proof-chain rule, injected so this package never
-// depends on chain semantics. Contract (cert.VerifyChain): chain is the
-// caller-presented links; the verifier prepends the receiver-held consent
-// it resolves for the first link's signer, folds Attenuate, checks
-// target/facet/expiry/delegability/aud binding against signer, and
-// returns the effective cert plus the rooted certs the caller should
-// feed to its clock.Mark (ObserveAll).
+// depends on chain semantics. Contract (cert.VerifyChain): r is the
+// receiver's own configuration (id, consents, held speak-as); chain and
+// speakAs are the caller-presented proof. The verifier prepends the
+// receiver-held consent it resolves for the first link's signer, folds
+// Attenuate, checks target/facet/expiry/delegability/aud binding against
+// signer, and returns the effective cert plus the rooted certs the
+// caller should feed to its clock.Mark (ObserveAll).
 type ChainVerifier func(
-	receiver cert.ActorID,
-	consents, chain, speakAs []cert.Cert,
+	r cert.Receiver,
+	chain, speakAs []cert.Cert,
 	signer cert.ActorID,
 	facet string,
 	now int64,
@@ -109,10 +110,13 @@ type ChainVerifier func(
 
 // Receiver is the verifier-side state an actor holds for Verify: its own
 // id, the consents it issued (roots of every valid chain, invariant 2),
-// the chain rule, and its volatile seq high-water marks.
+// the speak-as certs it holds naming it as aud (the principals it
+// answers for, protocol ADR-0003), the chain rule, and its volatile seq
+// high-water marks.
 type Receiver struct {
 	ID       cert.ActorID
 	Consents []cert.Cert
+	SpeakAs  []cert.Cert
 	Chain    ChainVerifier
 	HWM      *HWM
 }
@@ -535,7 +539,7 @@ func Verify(e Envelope, r Receiver, now int64) (Result, error) {
 		return Result{}, ErrNoChainVerifier
 	}
 	chain, speakAs := splitProof(e.Proof)
-	eff, verified, err := r.Chain(r.ID, r.Consents, chain, speakAs, e.From, e.To.Facet, now)
+	eff, verified, err := r.Chain(cert.Receiver{ID: r.ID, Consents: r.Consents, SpeakAs: r.SpeakAs}, chain, speakAs, e.From, e.To.Facet, now)
 	if err != nil {
 		// Verified, not Result{}: the rooted certs the chain rule did
 		// verify still advance the caller's low-water mark.

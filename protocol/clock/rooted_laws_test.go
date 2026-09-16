@@ -173,8 +173,8 @@ func (w world) issue(t fataler, i issuer, iat, exp int64, honest bool) issued {
 // feeds Verified to the mark — what a receiver does per connect.
 func (w world) present(mark *Mark, c issued, local int64) cert.Result {
 	res := cert.Authorize(cert.Input{
-		Receiver: w.id["R"], AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
-		Consents: w.consents, Blocklist: map[cert.ActorID]bool{}, Now: mark.Now(local),
+		Receiver: cert.Receiver{ID: w.id["R"], Consents: w.consents}, AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+		Blocklist: map[cert.ActorID]bool{}, Now: mark.Now(local),
 		ALPN: "mesh/apid/v1", Peer: w.id["CALLER"], Bundle: c.bundle,
 	})
 	mark.ObserveAll(res.Verified)
