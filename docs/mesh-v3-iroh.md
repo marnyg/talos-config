@@ -188,6 +188,8 @@ All on scratch infra; no repo changes beyond a spike branch.
    `VpnService` with gvisor netstack fake-IP; Jellyfin app streams a
    4K remux ≥ 80 Mbps sustained through it (kill-criterion parity
    with mesh-v2 #3), acceptable battery over a 2h stream.
+   **Feasibility + battery PASSED 2026-09-16; throughput pending the
+   at-home LAN-direct run** — see §P0.2 below.
 3. **Talos extension proof**: minimal agent as a system extension —
    boots, dials the hub relay outbound, forwards one inbound
    ALPN-gated stream to apid; survives `talosctl reboot`. **PASSED
@@ -414,6 +416,64 @@ Not exercised (Phase 1): certs and `authorize()` on accept (ALPN gates
 the forward table only), `ExtensionServiceConfig` for relay URL/policy
 (hard-coded in the spec for the spike), a Talos ingress firewall
 (none enabled; the agent's UDP port is ephemeral), staged upgrades.
+
+### P0.2 Android feasibility — data (2026-09-16, throughput pending)
+
+Bead `talos-config-359.1.2`, branch `spike/mesh-v3-p0.2`; working plan
+and step-by-step log in `docs/mesh-v3-p0.2-android.md`. Owner's phone
+(Sony XQ-BQ52, Android 13). Everything on the device is **Go in one
+gomobile AAR**: `iroh-go/mobile` (package `p0mobile`: iroh endpoint,
+gvisor netstack on the tun fd, fake-IP DNS for `*.mesh.internal`) inside
+the spike APK `iroh-go/android-p0/` (`VpnService`, split-routed
+`198.18.0.0/15` only). Node side: `p0agent serve` as a stand-in on the
+NixOS box forwarding `mesh/http/v1` to the box's own Jellyfin, fed a
+synthetic 4K H.264 file at **95 Mbps CBR** (`nal-hrd=cbr`; the library
+had nothing ≥ 80 Mbps and w1, which holds the cluster's media, is down).
+
+| check | result |
+|---|---|
+| `libiroh_ffi.a` for `aarch64-linux-android` | **PASS.** nixpkgs cross (`pkgsCross.aarch64-android-prebuilt`, NDK 27) on the same iroh-ffi 1.1.0 source + patched lock as the desktop build: **zero Rust or lock changes**, ~1 h unattended. ring/aws-lc found the NDK sysroot through the cross stdenv. |
+| gomobile bind, iroh statically linked | **PASS.** `libgojni.so` 31.5 MB arm64, `NEEDED` = bionic only, 0 undefined `uniffi_iroh_*`. Three one-line fights: prose in a cgo preamble; `#cgo linux` also matches `GOOS=android` (no libpthread on bionic → `linux,!android`); lld prefers the `.so` the nix output ships next to the `.a` (stage the `.a` alone). `tools.go` keeps `x/mobile` in go.mod. |
+| netstack + fake IP + DNS in a `VpnService` | **PASS.** Tunnel up in 3.5 s (relay online) + 211 ms (peer connect). `jellyfin.mesh.internal` → fake IP, non-mesh names forwarded to the underlay through a `protect()`ed socket, TCP flows spliced into per-flow iroh `OpenBi` streams. |
+| Jellyfin app plays the file through it | **PASS, Direct Play** confirmed server-side (`/Sessions`: `PlayMethod: DirectPlay`, no transcoder). Firefox as a player buffers forever (no MKV demuxer) — use the app. |
+| ≥ 80 Mbps sustained, 4K remux | **PENDING — not measurable today.** Nobody was on the home LAN (Mac `10.144.x`, phone `10.150.9.x` + Tailscale, box `10.0.0.11`), and with QAD off (P0.1) neither side learns a public `ip:port`, so no WAN punch is attempted: every session stayed `*relay:`. **Relay path: 48.8 Mbps avg, 74.6 peak over 32 min**, one session, zero redials — that is the fly relay's ceiling to a phone across the internet, not a design property. The LAN-direct Shield run is the remaining step. |
+| battery over a long stream | **PASS.** 32 min Direct Play 4K, screen on, unplugged: **99 → 91 %**. `dumpsys batterystats` (computed drain 312 mAh of 3644): Jellyfin app 205 (screen 131, video decode 36, Wi-Fi 28.5); **the tunnel process 8.5 mAh — ≈ 3 % of drain, ≈ 0.4 %/h**. Stopped early: the per-app split, not more minutes, is the number that matters, and it is an order of magnitude below anything a parity comparison could resolve. |
+
+Findings that shape Phase 1:
+
+- **One `VpnService` per device.** Starting the mesh app evicts
+  Tailscale (or any other VPN). The shipped app has the same
+  constraint; the UX must say so rather than silently win.
+- **iroh-ffi's Android network monitor needs a JNI context we do not
+  give it.** logcat: `ndk-context: android context was not initialized`
+  — a thread panic inside iroh-ffi, non-fatal (the tunnel comes up),
+  but network-change detection on the phone is presumably dead. Either
+  initialise `ndk_context` from Kotlin at load, or drive redials from
+  `ConnectivityManager` callbacks ourselves (the spike's tunnel already
+  redials per flow).
+- **Interface discovery does work** on Android 13 (iroh listed the
+  Wi-Fi, cellular and tun addresses). The `LinkProperties →
+  AddExternalAddr` plumbing added on the opposite theory stays as
+  belt-and-braces. Diagnostic gotcha: the node-side `remote_addr()` of a
+  peer holds *validated* addresses, so an empty set on a relay-stuck
+  connection means "no candidate reached us", not "peer sent nothing".
+- **Android Private DNS probes DoT (`:853`) at the fake resolver**; the
+  netstack forwarded it into iroh where it died at the node. Harmless
+  (falls back to `:53`) but the resolver IP should accept `:53` only.
+- **The relay is a real ceiling when direct fails**: ~50–75 Mbps to
+  one phone from fly's edge. Fine as a fallback, not as a path for 4K.
+  Reinforces ADR-0006's stance (remote-direct out of scope) as a
+  *known cost*, and makes the membership/QAD questions (`0pq`) worth
+  their beads if remote 4K ever becomes a goal.
+- **Sideloading a debug APK** on this phone works only via `adb
+  install` (the Files-app installer fails silently after Play Protect).
+  Packaging is pinned to compressed jniLibs + 16 KB LOAD alignment so
+  the same APK also loads on 16 KB-page devices.
+
+Not exercised: the Shield (throughput device), cp1 as the node side
+(step 7: extension `0.0.4` with the Jellyfin forward), UDP flows other
+than DNS, IPv6 inside the tunnel, the `SocketProtector` path under
+routes wider than `198.18/15`.
 
 ### Phase 1 — identity plane beside nebula (dual plane)
 

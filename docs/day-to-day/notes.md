@@ -101,6 +101,37 @@
   The laptop's wired `en7` gets LAN-direct paths; Wi-Fi `en0` is
   relay-only (Cisco filter, 2026-09-13 note).
 
+- 2026-09-16 — **P0.2 scratch on the NixOS box** (tear down at the gate
+  `359.1.5`): user unit `p0agent-standin` (`systemctl --user`, linger
+  on; NodeId `5852d8b0…db513c`, UDP **7842** — `41641` is Tailscale's;
+  binary `~/p0-jf/p0agent` is a dynamic build against the store's
+  `iroh-ffi-1.1.0`), `~/p0-jf/` (key, Jellyfin token, 5.7 GB test file,
+  compose backup). The owner's compose `jellyfin` (`~/disks/1TB-old/
+  server/docker-compose.yml`) carries one added `:ro` bind
+  `/data/p0test` and a library "P0 Test"; the 1TB disk is **100 %
+  full** — never copy onto it. Firewall hole `iptables -I nixos-fw -i
+  wlp12s0 -p udp --dport 7842 -j ACCEPT` is temporary (gone on reboot).
+  `mar@nixos:~/p0` is a single-branch clone at `fa003f8` + scp'd files
+  — not a checkout of the branch; sync by `scp`, rebuild with
+  `NIXPKGS_ALLOW_UNFREE=1 nix-shell --impure iroh-go/android-p0/shell.nix
+  --run 'IROH_FFI_ANDROID_LIB=/tmp/android-ffi-result/lib ./build-aar.sh
+  && gradle --no-daemon assembleDebug'` (`/tmp/android-ffi-result` is a
+  nix GC root only as long as nobody runs `nix-collect-garbage`).
+- 2026-09-16 — **Phone testing = `adb`, from the Mac**: `nix shell
+  nixpkgs#android-tools`; the Sony XQ-BQ52 only enumerates adb after
+  USB debugging is on *and* the cable is re-plugged. The Files-app
+  installer fails silently ("The app wasn't installed") on the debug
+  APK after the Play Protect prompt; `adb install -r` works. Starting
+  p0mesh **evicts Tailscale** on the phone (one VpnService). The
+  Jellyfin *app* is required for Direct Play (Firefox has no MKV
+  demuxer and buffers forever while pulling the raw stream). Server
+  side: `curl /Sessions` with `~/p0-jf/token` shows `PlayMethod`.
+- 2026-09-16 — **Outside the home LAN every iroh path is the fly relay**
+  (QAD off ⇒ no WAN punch attempted): ~50–75 Mbps to a phone. Do not
+  read a throughput number taken from outside as a design result;
+  `journalctl --user -u p0agent-standin -f` prints `paths=[*relay:…]`
+  vs `*ip:10.0.0.x` every 5 s while bytes move.
+
 ## Hub / mesh (nebula, as running)
 
 - Every fly deploy **re-seals the hub**: derived roles (mesh CA, KMS,

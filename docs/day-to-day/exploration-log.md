@@ -4,6 +4,30 @@
      Granularity: strategy-level pivots only. Not "used ripgrep instead of sed".
      Yes: "tried library X, ruled out for reason Y." -->
 
+## Mesh v3 P0.2 — Android (2026-09-16)
+
+- 2026-09-16 — Tried measuring the ≥ 80 Mbps throughput check with
+  owner, phone and Mac away from the home LAN. Ruled out: with QAD off
+  (ADR-0022) neither side learns a public `ip:port`, so no WAN punch is
+  attempted and every session is the fly relay (~50–75 Mbps to a
+  phone). Landed on: relay figure recorded as a relay measurement;
+  LAN-direct on the Shield done at home.
+- 2026-09-16 — Suspected iroh cannot enumerate interfaces inside an
+  Android app (netlink restrictions ≥ API 30) and plumbed
+  `LinkProperties → AddExternalAddr`. Ruled out as the cause: iroh
+  listed Wi-Fi, cellular and tun addresses itself on Android 13. The
+  plumbing stays as belt-and-braces; the empty `peer-direct` on the
+  node was "nothing validated", not "nothing advertised".
+- 2026-09-16 — Considered enabling QAD on the scratch relay to get a
+  WAN-direct data point from outside. Ruled out for the spike: needs
+  the relay to own a TLS cert (DNS-01 as a fly secret), and remote-
+  direct is out of scope (ADR-0006/0022). Stays under `0pq`.
+- 2026-09-16 — Considered powering w1 on (cluster Jellyfin's media
+  volumes have their only replica there) vs. a stand-in. Landed on: the
+  owner's existing Jellyfin on the NixOS box with a synthetic 95 Mbps
+  CBR file — synthetic content otherwise compresses to nothing, hence
+  `nal-hrd=cbr`. The final measurement still goes through cp1 (step 7).
+
 ## Mesh v3 P0.3 — Talos extension (2026-09-15)
 
 - 2026-09-15 — Tried shipping the node agent through the Image

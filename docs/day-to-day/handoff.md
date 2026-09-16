@@ -33,8 +33,10 @@ throughput deferred to at-home** (branch `spike/mesh-v3-p0.2`, bead
   detection); Android Private DNS tries DoT at the fake resolver
   (netstack should refuse non-:53 to it); box-side `peer-direct=[]`
   means *nothing validated*, not *nothing advertised*.
-- Owner confirmed: reuse the box's Jellyfin (not w1). Still unanswered:
-  the cp1 reboot 2026-09-15 10:31Z.
+- Owner confirmed: reuse the box's Jellyfin (not w1); the cp1 reboot
+  2026-09-15 10:31Z was the owner's. **§P0.2 written up** in
+  `mesh-v3-iroh.md` (table + Phase-1 findings), pending only the
+  throughput row.
 
 ## Loose threads
 
