@@ -293,8 +293,37 @@ Findings along the way, all recorded for the writeup:
 - `p0agent serve` now logs its advertised direct addrs at start and, per
   connection, a 5 s `Mbps to peer, paths=…` ticker while bytes move.
 
-**Battery test started 2026-09-16 ~13:50 CEST** at 87 % (unplugged),
-relay path; result to be appended.
+**Jellyfin app, Direct Play confirmed server-side** (`/Sessions`:
+`Jellyfin for Android XQ-BQ52 | P0 Remux Test | PlayMethod: DirectPlay`,
+no TranscodingInfo, no ffmpeg). Firefox first: buffers forever (no MKV
+demuxer) while pulling the raw stream — 1.69 GB in 5 m 07 s ≈ 44 Mbps
+avg over the relay; useless as a player, fine as a throughput probe.
+
+**Battery run 14:34–15:07 CEST, relay path, Direct Play 4K, screen on,
+unplugged: 99 % → 91 % (8 %, ≈ 15 %/h).** Box-side ticker: 346 samples,
+29 of 32 min streaming, **avg 48.8 Mbps, peak 74.6**, one iroh session,
+zero redials. `dumpsys batterystats` (computed drain 312 mAh, actual
+255–292, capacity 3644):
+
+| consumer | mAh | detail |
+|---|---|---|
+| Jellyfin app (u0a445) | 205 | screen 131 · video decode 36.4 · Wi-Fi 28.5 · audio 7.7 |
+| **p0mesh tunnel (u0a431)** | **8.5** | cpu 3.84 (31 m 32 s fgs) · Wi-Fi 4.63 |
+| rest (idle, mobile radio, system) | ~100 | |
+
+The tunnel — iroh QUIC + gvisor netstack + fake DNS at ~49 Mbps for half
+an hour — is **≈ 3 % of the drain, ≈ 0.4 %/h of the battery**; screen
+and the 4K decoder dwarf it. **Battery: pass**; the nebula-app parity
+comparison is moot at this magnitude. Stopped at 32 min: the trend was
+clear and the per-app split is the number that matters. Caveat: relay
+path, not LAN-direct — crypto and netstack work are the same either way,
+so the app-side figure transfers; only the Wi-Fi share could shift.
+
+**P0.2 status:** feasibility (steps 1–5) **pass**, battery **pass**,
+throughput **pending the at-home LAN-direct run on the Shield** (the
+relay figure 49–75 Mbps from outside the home is a relay measurement,
+not a verdict). Then step 7 (cp1 extension 0.0.4) and the writeup in
+`mesh-v3-iroh.md §P0.2`.
 
 ## Scratch infra this spike adds (tear down or adopt at the gate)
 
