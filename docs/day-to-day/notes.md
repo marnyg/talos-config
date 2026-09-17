@@ -56,6 +56,13 @@
   HTTP over a stream facet) is revised by `mdv`: `/hosts` and `/policy`
   will not exist over the mesh — don't build them; the beat is
   `#renew` + `#bundle`.
+- 2026-09-18 — **Protocol ADR-0004 (target wildcard) is Proposed, not
+  built**: `DecodeCert` still rejects `"*"` as a target element until
+  `zeb` lands. `verification/nickel/mesh-policy-v3.ncl` and its
+  fixture still carry `relay` as a hub facet — that is stale by ruling,
+  not a contract to preserve; step 2 of the `359.8.5` build fixes both.
+  `talos/mesh-policy.yaml` (v2) is **frozen** except for emergencies;
+  new rules go in `mesh-policy-v3.yaml` once it exists.
 
 ## Mesh v3 spike infra (scratch)
 

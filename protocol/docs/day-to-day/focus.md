@@ -10,8 +10,9 @@ a receiver answers for principals whose `speak-as` it holds —
 `cert.Receiver`) and `7ei` (`#renew` binds `aud` like rule 3) all
 landed 2026-09-17/18. The hub is consuming: its Issuer and Enroll are
 live `Actor`s over `MemoryNetwork` (`actor.Hold` landed for the unseal
-lifecycle, 2026-09-17). The next protocol-side question is whether
-`cav.target` admits `group:<name>` for the policy compiler (`359.8.5`). M3 (`0bc.3`: lighthouse as a plain
+lifecycle, 2026-09-17). The next protocol-side change is
+**ADR-0004 (`zeb`)**: `cav.target` admits the wildcard `"*"` for the
+policy compiler (`359.8.5`) — model first, then `cert`. M3 (`0bc.3`: lighthouse as a plain
 actor, PoW postage for strangers) is unblocked on the protocol side —
 its `#publish` facet binds verb `publish` through the same fold; in the
 talos deployment the Phase 1 lighthouse is a view over the Issuer's

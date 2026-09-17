@@ -5,45 +5,38 @@
 
 ## Last session
 
-2026-09-17 — **First consumer-driven change: `actor.Hold`.** Commit
-`356bd2b` (+ `Authority()` accessor in `03a4769`).
+2026-09-18 — **ADR-0004 drafted (Proposed): `cav.target` admits the
+wildcard `"*"`.** Design only, from the root `359.8.5` grill-design;
+no code. Bead `zeb` carries the build.
 
-- The talos hub's Issuer (`config-server/issuer`) now `Listen`s for the
-  whole process life on the in-memory transport while its authority
-  set changes underneath it — empty when sealed, installed at unseal,
-  replaced at a re-unseal from the nag window (ADR-0018). The `Actor`
-  contract said exported fields are frozen after `Listen`. Rather than
-  stop/restart `Listen` around every unseal, **`Hold(consents,
-  speakAs)` swaps both under `a.mu`**; `process`, `proofFor` and
-  `renew.issuedByMe` read a snapshot (`authority()`), and `Authority()`
-  exports a copy for receiver-side `cert.Authorize` runs. Consents and
-  SpeakAs stay exported for pre-`Listen` configuration; `Grants` and
-  `AcceptTable` are still frozen-after-`Listen`.
-- `TestHoldWhileListening` (-race): sealed → unauthorized; `Hold` →
-  admitted; 400 flips under concurrent `Send`s; `Hold(nil, nil)` →
-  re-sealed.
-- Consumer shape worth knowing here: the hub's Enroll actor sends
-  `#mint-device` with an **empty chain** — it *is* the consented
-  principal (`aud` of the Issuer's sibling consent), so the receiver's
-  own consent roots the proof. First real use of "empty is legal".
+- The consumer's compiler cannot enumerate receiver keys (root
+  ADR-0015), and ADR-0002 fixed absent = ∅, so kind-wide grants needed
+  the wire sentinel ADR-0002 said an "unconstrained" reading would
+  require. `"*"` is the identity element of the `target` intersection;
+  rule 4 (ADR-0003) is untouched — the receiver's consent supplies the
+  concrete `self`. No other set caveat gets a sentinel.
+- Ruled out (root exploration-log 2026-09-18): `target: group:<kind>`
+  against the receiver's own member cert (kept as upgrade path);
+  targets from the location cache; generalising ADR-0003 to "R answers
+  for the sovereign it consented to".
+- Glossary **Attenuation** gained the wildcard sentence (both scopes).
 
 ## Loose threads
 
-- `Hold` is not an ADR. It changes a documented contract of `Actor`
-  and picks live-swap over restart — small, but the reasoning lives
-  only in the commit and the root ADR-0024 note. Draft ADR-0004 if the
-  pattern spreads (e.g. `Grants` needing the same for grant renewal).
-- The held `speak-as` is receiver configuration but not R-signed, so
-  it stays out of `Result.Verified`/`clock.Mark` (ADR-0003).
-- No facet→verb table yet: `actor.invokeChain` is the only verb
-  binding; M3 `#publish`/`#relay` facets must bind their own.
-- Two unchosen numbers, no bead: `DefaultMailbox = 64`, renewal-beat
-  fraction.
+- Two ADR-0004 details decided in drafting, not discussed: mixed
+  `["*", ed:…]` sets reject at decode; a consent with `target: "*"`
+  fails rule 4 by construction. Confirm or veto before `zeb`.
+- The 2026-09-17 thread about `actor.Hold` not being an ADR still
+  stands (the number 0004 is now taken; use 0005 if the pattern
+  spreads).
+- The held `speak-as` stays out of `Result.Verified` (ADR-0003); no
+  facet→verb table yet; `DefaultMailbox = 64` and the renewal-beat
+  fraction remain unbeaded.
 
 ## Suggested next steps
 
-- Root `359.8.5` may need `cert.Cav.Target` to admit `group:<name>`
-  (kind-wide grants to receivers whose NodeIds git cannot enumerate).
-  If so: `authorize.qnt` first, then `cert`, per the model-leads rule.
-- M3 `0bc.3` (lighthouse as a plain actor) stays unblocked on the
-  protocol side.
+- `zeb`, model first: `authorize.qnt` `TARGETS ∪ {ANY}`, `attenuate`
+  target case, `answersFor` ignores it, law
+  `invWildcardTargetNeverWidens`; then `decode.go` (singleton-set
+  rule), `intersectID`, one rapid law. Promote ADR-0004 on landing.
+- M3 `0bc.3` stays unblocked on the protocol side.

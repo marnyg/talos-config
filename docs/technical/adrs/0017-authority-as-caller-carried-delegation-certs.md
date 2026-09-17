@@ -13,6 +13,11 @@
   hub key; chain depth three; issuer rules compare *resolved* issuers),
   ADR-0019 (primitive gains `iat`; `authorize()` consumes the effective
   clock `max(local, lw)`). Inline 2026-09-05 notes: `z1z sqm xwz 3cx`.
+  **2026-09-18 amendment** (`359.8.5` grill-design; see "Amendment
+  2026-09-18" below): grant `target` is the wildcard (protocol
+  ADR-0004); kind ≡ facet vocabulary; the iroh relay is not a facet;
+  two recipe files during the dual plane; "(b) accept tables" is a
+  shared vocabulary, not a rendered artifact.
 - Related: ADR-0016 (Mesh v3), decision `talos-config-5w1` (protocol
   at the repo's center), `protocol/docs/sovereign-actor-protocol.md` §One
   primitive, `desired-state/domain-model.md` glossary (Verb, Grant,
@@ -128,6 +133,43 @@ domain-model glossary):
 - **Name map**: name→NodeId is the Owner's namespace (git);
   NodeId→{port: facet} is the producer's advertisement; a dialing
   directory, never an authorization input.
+
+### Amendment 2026-09-18 (`359.8.5` grill-design)
+
+Four pins the original text left open, settled before the compiler is
+built. Ruled-out alternatives are in `day-to-day/exploration-log.md`
+under the same date.
+
+- **Grant target is `"*"`** (protocol ADR-0004). Git cannot enumerate
+  receiver keys (ADR-0015), so the compiler names no receiver; a grant
+  is honored at every receiver that consented to the Owner for the
+  facet. **Kind ≡ facet vocabulary**: facet names are disjoint across
+  receiver kinds, so a grant's reach is its facet's; the recipe's
+  `node:/gateway:/hub:` keys are validation structure (Nickel `6z9`),
+  not compiled data. `host:` rules compile at `#bundle` time from the
+  caller's member cert (`cav.name` → `aud: <caller key>`), so the
+  compile step has no name-map dependency.
+- **The iroh relay is not a facet.** It is a keyless transport child
+  whose access hook sees only a NodeId; no grant can be presented to
+  it. Hub facets are `hub-http` (stream) and the Issuer's actor facets;
+  the `relay` rows leave the recipe; relay access is
+  membership-implied (`5gz`: blocklist + beat cache). The `relay`
+  *verb* stays reserved for the protocol's envelope relay (M3).
+- **Hub → node `apid` stays on nebula until Phase 4** (`359.11.2`);
+  then the hub is an ordinary caller with a self-minted kit and one
+  recipe row `{facet: apid, host: hub}`. No special path.
+- **Two recipe files during the dual plane**: `talos/mesh-policy.yaml`
+  (v2, frozen, nebula render) beside `talos/mesh-policy-v3.yaml` (this
+  ADR's shape; the compiler's input). Phase 4 deletes v2.
+- **"(b) per-receiver accept tables" restated**: the recipe carries no
+  forward address, so the hub renders no table for anyone. What hub
+  and receivers share is the **vocabulary** — kinds, the closed facet
+  set per kind, `ALPN(facet) = "talos-mesh/<facet>/v1"`, and
+  `AcceptTable(kind)` as the ALPN→facet map `authorize()` takes; the
+  receiver's `facet → forward` stays its own constant. The compiler is
+  a pure package (`config-server/policy`): `Compile(recipe, caller
+  identity, now) → []cert.Cert` unsigned, deterministic; the Issuer
+  signs at `#bundle`. `4un`'s round-trip law is stated on its bead.
 
 ### Consequences
 

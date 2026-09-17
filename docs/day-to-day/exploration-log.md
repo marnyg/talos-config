@@ -4,6 +4,64 @@
      Granularity: strategy-level pivots only. Not "used ripgrep instead of sed".
      Yes: "tried library X, ruled out for reason Y." -->
 
+## Policy compiler `359.8.5` — grill-design (2026-09-18)
+
+- 2026-09-18 — Target of a kind-wide grant (`{facet: apid, group:
+  admins}` under `node:`) when git cannot enumerate NodeIds
+  (ADR-0015) and `Attenuate` intersects `cav.target` with the node's
+  `{target: [self]}` consent. Ruled out: **per-receiver targets from
+  the location cache** — a cold cache after every deploy renders empty
+  targets, so callers lose node access for a poll interval per
+  redeploy, and a safe-to-lose cache becomes an authorization input
+  through the compiler. Ruled out: **`target: group:<kind>` resolved
+  against the receiver's own member cert** — a new rule in
+  `authorize.qnt` + `Receiver.Member` input, buying per-node-group
+  scoping nobody needs yet (keep as the upgrade path). Ruled out:
+  **generalizing ADR-0024 F to nodes** (`target: wallet`, consent
+  declares `[self, wallet]`) — weakens protocol rule 4 / ADR-0003 for
+  no gain over the wildcard. Landed on: **`target: "*"`** — a wildcard
+  sentinel in `cav.target` (precedent `aud "*"`), `intersect(X, *) =
+  X`, rule 4 untouched; kind is carried by the facet name (closed,
+  disjoint per kind), the recipe's `node:/gateway:/hub:` keys are
+  Nickel validation structure, not compiled data. No postage: `aud *`
+  is "anyone may present" (spam ⇒ postage), `target *` is "honored at
+  every receiver that consented to this sovereign for this facet" —
+  bounded by consent.
+- 2026-09-18 — Hub relay as a grantable facet (`{facet: relay, group:
+  …}` rows in `mesh-policy-v3.yaml`). Ruled out: the iroh relay is a
+  keyless child whose access hook (`5gz`) sees only
+  `X-Iroh-Endpoint-Id` — no bundle crosses the relay handshake, so a
+  relay grant is a cert nothing can verify (the "documentation
+  pretending to be enforcement" shape ADR-0017 forbids). Landed on:
+  relay access is membership-implied; hub facets shrink to `hub-http`
+  + the Issuer's actor facets; `relay` verb stays reserved for the M3
+  envelope relay. Caveat carried to `5gz`: gating on the beat cache has
+  a cold-cache trap after every deploy unless members can reach the
+  hub's own iroh endpoint without the relay (`e8d`) or the hook fails
+  open while cold.
+- 2026-09-18 — Where the v3 recipe lives during the dual plane. Ruled
+  out: **one file with both vocabularies** (`{port, proto, facet,
+  host|group}`) — ICMP rows have no facet, `host: any` has no `aud`,
+  `device:` has no v3 kind; a merged schema lies on one side. Ruled
+  out: **derive the nebula render from the v3 recipe** — rewrites the
+  plane `b2t` promised not to touch. Landed on: **two files** —
+  `talos/mesh-policy.yaml` (v2, frozen, nebula) beside
+  `talos/mesh-policy-v3.yaml` (the fixture promoted; the compiler's
+  input; `mesh-policy-v3.ncl` validates it). Phase 4 deletes v2 and
+  drops the suffix.
+- 2026-09-18 — "(b) hub renders per-receiver accept tables" (bead
+  title). Ruled out as stated: the recipe carries no forward address
+  (ports live only in the producer's facet definition), so the hub
+  cannot render `apid → 127.0.0.1:50000` for anyone. Landed on: the
+  compiler package owns the **shared vocabulary** — kinds, closed facet
+  set per kind, `ALPN(facet) = "talos-mesh/<facet>/v1"`,
+  `AcceptTable(kind)` as the ALPN→facet map `authorize()` takes — and
+  the receiver keeps `facet → forward` as its own constant. `Compile`
+  is per caller identity (name + groups), unsigned, deterministic;
+  the Issuer signs at `#bundle`. Compiling all groups and filtering in
+  `#bundle` was not taken: same security (groupSatisfied rejects a
+  grant for a group the member is not in), worse hygiene.
+
 ## Mesh v3 P0.2 — Android (2026-09-16)
 
 - 2026-09-16 — Tried measuring the ≥ 80 Mbps throughput check with

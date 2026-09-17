@@ -5,65 +5,51 @@
 
 ## Last session
 
-2026-09-17 — **`359.8.2.2` relay embedded and deployed; `359.8.2.3`
-part 1 (Enroll → `Issuer#mint-device`, v2 enrollment, `/.well-known`)
-built, not deployed.** Commits `240c322`, `9aba173`, `356bd2b`,
-`03a4769` (+ docs). **The production hub is sealed** since the deploy
-(both signatures needed at `/status`).
+2026-09-18 — **`359.8.5` policy compiler: design pinned (grill-design),
+no code.** The hub is unsealed again. Docs-only commit.
 
-- `config-server/relay.go` — `iroh-relay` runs as a keyless child on
-  loopback; the hub mux proxies only `/relay`, `/ping`,
-  `/generate_204` (ADR-0022 → Accepted). Runs sealed or not.
-  Confirmed through production with `p0relay`: PASS 5/5 at 45 ms, the
-  spike's figure. Dockerfile takes the static binary from
-  `n0computer/iroh-relay:v1.1.0` (core pin = iroh-go's).
-- Two latent deploy breaks fixed on the way: the image never copied
-  `protocol/` (the `go.mod` replace from `359.8.1`), and
-  `talos/extensions/p0agent/_out` (145 MB, gitignored) rode into the
-  image and overflowed `/dev/shm` → crash loop. `.dockerignore` now
-  excludes `**/_out`.
-- `protocol/actor`: `Hold(consents, speakAs)` swaps a live actor's
-  authority set under the mutex; `Authority()` snapshots it. The Issuer
-  now `Listen`s for the process's life (in-memory transport) and
-  refuses while sealed.
-- `config-server/enroll` (Enroll actor), `issuer/mintdevice.go`
-  (`#mint-device`: Issuer re-verifies the wallet's EIP-191 over the
-  **v2 message**), `enrollmsg` (v1 beside v2 = `+ node: ed:<hex>`).
-  WAN handlers take an optional `node` → JSON `{config, kit}`; both-
-  or-neither (sealed identity ⇒ 503 before the wallet acts). `/status`
-  card rebuilds v2 live. `GET /.well-known/talos-hub/speak-as`.
-- Decisions `0t9` (Issuer keeps no `#mint-device` replay state) and
-  `gci` (sibling consents `target: hubkey`); ADR-0024's open item
-  resolved in its text. Beads: `e8d` filed (hub's iroh endpoint = cgo
-  build change), `5gz` narrowed to the relay access hook, `359.8.5`
-  carries its design pins as a note.
+- Three pins from the bead's note settled: (1) grant `target` is the
+  wildcard `"*"` — protocol **ADR-0004 drafted (Proposed)**, kind ≡
+  facet vocabulary; (2) the iroh relay is **not a facet** (keyless
+  child, hook sees a NodeId only) — relay rows leave the recipe, hub
+  facets = `hub-http` + Issuer actor facets; (3) hub → node `apid`
+  stays on nebula until Phase 4 (note on `359.11.2`).
+- Shape pinned: two recipe files during the dual plane
+  (`mesh-policy.yaml` v2 frozen, `mesh-policy-v3.yaml` = fixture
+  promoted minus relay rows); new pure package `config-server/policy`
+  (`Load`, `Facets`, `ALPN(facet)="talos-mesh/<facet>/v1"`,
+  `AcceptTable(kind)`, `Compile(recipe, caller identity, now)`);
+  `host:` rules compile at `#bundle` time from the caller's member
+  cert. "(b) per-receiver accept tables" restated as shared
+  vocabulary — the recipe has no forward addresses.
+- Written: ADR-0017 inline amendment; glossary (Facet, Attenuation in
+  both scopes); exploration-log section with five rule-outs; `4un`
+  carries the round-trip law; `zeb` filed for the cert change.
 
 ## Loose threads
 
-- **The relay is open** (`access = "everyone"`) on the production hub
-  until `5gz` lands the `X-Iroh-Endpoint-Id` access hook. Accepted for
-  Phase 1; anyone can home on `https://marnyg-talos-config.fly.dev`.
-- `kql` (scratch relay teardown) stays blocked on `359.8.3`: cp1's
-  `ext-p0agent` still dials `marnyg-iroh-relay-spike`.
-- `tqr` (`/sealed` 503 in nag/sealed identity) now has a consumer (v2
-  enrollment) but the dev-mode env master would 503 forever — flip it
-  when the first member beats at the hubkey.
-- Nothing member-facing speaks v2 yet (irohup is `359.8.4`; Android
-  `359.9.4.x`). `Issuer#bundle` waits on the policy compiler
-  (`359.8.5`); `hub-http` shrink waits on `e8d`.
-- `config-server` still has no graceful shutdown beyond the relay's
-  signal hook (`log.Fatal(ListenAndServe)`).
-- Carried: `DefaultMailbox = 64` and the renewal-beat fraction have no
-  bead; `talos/talosconfig` endpoints stale; NixOS box disk full; w1
-  down (`0q0`, `kso`).
+- **ADR-0004 details not discussed, decided in drafting** — veto if
+  wrong: mixed `["*", ed:…]` target sets reject at decode; a *consent*
+  with `target: "*"` fails rule 4 by construction.
+- `5gz` (relay gate) has a **cold-cache trap**: gating on the beat
+  cache locks remote members out after every deploy unless the hub's
+  iroh endpoint is dialable without the relay (`e8d`) or the hook
+  fails open while cold. Decide there.
+- `mesh-policy-v3.ncl` still lists `relay` under `facets.hub` and the
+  fixture still has relay rows — both change in step 2 of the build.
+- `359.8.2.3` stays in_progress: `Issuer#bundle` is its remaining
+  half and waits on `Compile`.
+- Carried: `tqr` (`/sealed` 503 flips when the first member beats),
+  `kql` blocked on `359.8.3`, no graceful shutdown in `config-server`,
+  `DefaultMailbox = 64` / renewal-beat fraction unbeaded, w1 down
+  (`0q0`, `kso`).
 
 ## Suggested next steps
 
-- Unseal the hub (two signatures at `/status`) — configs/KMS are down
-  until then.
-- `359.8.5` in its own session: a short grill-design for the pins in
-  its note (kind-wide grant `target`, relay-as-facet, hub→apid), then
-  (a) grants + (b) accept tables + the `4un` round-trip suite.
-- `e8d` when ready to change the fly build (nix-built image or Rust in
-  the Dockerfile) — unblocks the hub's iroh endpoint, `#bundle`'s name
-  map half, and `tqr`.
+- **`zeb`** first, model-first: `authorize.qnt` `ANY` target +
+  `invWildcardTargetNeverWidens`, then `decode.go`/`intersectID` +
+  rapid law. Promote ADR-0004 to Accepted when it lands.
+- Then `359.8.5` steps 2–4: promote the fixture, update the Nickel
+  contract, build `config-server/policy`, write the `4un` suite
+  against the three-line reference interpreter.
+- `e8d` in parallel when ready to touch the fly build.

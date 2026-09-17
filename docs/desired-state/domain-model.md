@@ -369,7 +369,18 @@ provisioning or recovery path may depend on it.
   **producer-side** as an accept table `facet → forward target`. Closed
   per receiver kind: node agent `apid`, `kube-api`; gateway
   `ingress-http` (one class for every HTTP UI — per-app authorization
-  stays app-layer), `jellyfin` (raw TCP); hub `hub-http`, `relay`.
+  stays app-layer), `jellyfin` (raw TCP); hub `hub-http` (stream) plus
+  the Issuer's actor facets. **The iroh relay is not a facet**: it is
+  a keyless transport child whose access hook sees only a NodeId, so
+  no grant can be presented to it — relay access is membership-implied
+  (blocklist + beat cache, `5gz`), and the `relay` *verb* is reserved
+  for the protocol's M3 envelope relay, a different thing _(ruled
+  2026-09-18, `359.8.5` grill-design)_. **Kind ≡ facet vocabulary**:
+  facet names are disjoint across kinds, so a grant's reach is scoped
+  by its facet and its `cav.target` is the wildcard `"*"` — honored at
+  every receiver that consented to the grant's sovereign for that
+  facet; the recipe's `node:/gateway:/hub:` keys validate the facet
+  set, they do not compile to targets _(same ruling)_.
   Facets are what grants name (`cav.facet`). Two kinds, one cert
   shape. The **actor facet** is the primary form; the **stream facet**
   is the **compatibility mode** that lets an actor stand in front of a
@@ -428,6 +439,11 @@ provisioning or recovery path may depend on it.
 - **Attenuation** — a chain link adds caveats, never removes;
   effective authority is field-wise intersection over `target`,
   `facet` and every recognised caveat; an unknown caveat rejects.
+  **Target wildcard** _(protocol ADR-0004, Proposed 2026-09-18)_:
+  policy grants carry `target: ["*"]`, the identity element of the
+  `target` intersection; the receiver's consent supplies the concrete
+  `self` rule 4 needs, so a grant reaches exactly the receivers that
+  consented to the Owner for its facet.
   **Group resolution rule:** `aud: group:<g>` is satisfied when **one
   sovereign W that R holds a live consent for** both (i) vouches for
   the grant's signer and (ii) vouches for the `member` cert's signer

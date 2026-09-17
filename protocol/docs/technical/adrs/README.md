@@ -17,6 +17,11 @@ this scope.
   (rule 4: `Target ∋ R or ∋ P`); grants to hot-key-served facets name
   the root; the receiver-held set is a type (`cert.Receiver`).
   _Accepted 2026-09-18 (`kau`)._
+- [0004](0004-target-wildcard.md) — `cav.target` admits the wildcard
+  `"*"` (caveat vocabulary v3): honored at every receiver that
+  consented to the chain's sovereign for the facet; rule 4 unchanged;
+  no other set caveat gets a sentinel. _Proposed 2026-09-18
+  (`359.8.5` grill-design)._
 
 The protocol's **founding** decisions are root ADRs, referenced here,
 not copied:

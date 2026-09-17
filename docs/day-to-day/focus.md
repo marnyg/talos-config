@@ -10,10 +10,12 @@ Issuer (`359.8.1`), the relay child (`359.8.2.2`, deployed 2026-09-17,
 ADR-0022 Accepted) and Enroll → `Issuer#mint-device` with the v2
 enrollment message (`359.8.2.3` part 1) are built; a device that names
 its NodeId gets a member Kit from the same wallet signature that mints
-its nebula cert. **Next is the policy compiler `359.8.5`** (design pins
-first — see its note), which unblocks `Issuer#bundle` and `4un`; in
-parallel `e8d` gives the hub its own iroh endpoint (a fly build-pipeline
-change). Then `359.8.3` (cp1 agent) / `359.8.4` (irohup) consume the
+its nebula cert. **Now building the policy compiler `359.8.5`** —
+design pinned 2026-09-18 (protocol ADR-0004 target wildcard, relay not
+a facet, two recipe files, `config-server/policy`); the cert change
+`zeb` goes first, model-first, then the compiler and the `4un`
+round-trip suite, which unblocks `Issuer#bundle`. In parallel `e8d`
+gives the hub its own iroh endpoint (a fly build-pipeline change). Then `359.8.3` (cp1 agent) / `359.8.4` (irohup) consume the
 kit, and `kql` tears the scratch relay down. Exit checks are
 event-based (`359.8.6`).
 
