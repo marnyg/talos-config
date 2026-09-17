@@ -135,11 +135,12 @@ func approved(t *testing.T, w wallet, group string) (issuer.MintDeviceRequest, c
 // admits runs the protocol's connect check with the Issuer as receiver
 // and the kit as the presented bundle.
 func admits(h *hub, kit issuer.Kit, node cert.ActorID) bool {
+	consents, speakAs := h.issuer.Actor.Authority()
 	return cert.Authorize(cert.Input{
 		Receiver: cert.Receiver{
 			ID:       h.issuer.ID(),
-			Consents: h.issuer.Actor.Consents,
-			SpeakAs:  h.issuer.Actor.SpeakAs,
+			Consents: consents,
+			SpeakAs:  speakAs,
 		},
 		AcceptTable: map[string]string{"renew": actor.FacetRenew},
 		Now:         h.clk.Now(),

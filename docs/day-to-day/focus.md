@@ -4,26 +4,26 @@
      The link between current work and a higher-order goal. -->
 
 **Now:** **Mesh v3 Phase 1 — identity plane beside nebula** (`359.8`,
-unblocked by the Phase 0 gate 2026-09-16, decision `b2t`). Dual plane:
-nebula untouched, the iroh plane grows next to it until Phase 2 moves
-consumers one at a time. **Groomed 2026-09-16** into a DAG
-(`mesh-v3-iroh.md §Phase 1`); the **hub actor cut is designed**
-(ADR-0024 + protocol ADR-0003, domain-model §2 "Hub actors") and **the
-protocol pre-work is done** (`xwu`, `kau`, `7ei` landed 2026-09-17/18;
-protocol ADR-0002/0003 Accepted). **Membership issuance `359.8.1` is
-built** (2026-09-18: Issuer actor + two-signature unseal on `/status`,
-decision `ce8`) — the hub is the protocol's first real consumer. Next:
-`359.8.2.2` (relay embedded in the hub; the Issuer's actor gets its
-endpoint) and `359.8.2.3` (Enroll → `Issuer.Mint`). Exit checks are
-event-based (`359.8.6`): node reboot, hub re-seal, laptop roam.
+decision `b2t`). Dual plane: nebula untouched, the iroh plane grows
+next to it. **The hub is now a working set of protocol actors**: the
+Issuer (`359.8.1`), the relay child (`359.8.2.2`, deployed 2026-09-17,
+ADR-0022 Accepted) and Enroll → `Issuer#mint-device` with the v2
+enrollment message (`359.8.2.3` part 1) are built; a device that names
+its NodeId gets a member Kit from the same wallet signature that mints
+its nebula cert. **Next is the policy compiler `359.8.5`** (design pins
+first — see its note), which unblocks `Issuer#bundle` and `4un`; in
+parallel `e8d` gives the hub its own iroh endpoint (a fly build-pipeline
+change). Then `359.8.3` (cp1 agent) / `359.8.4` (irohup) consume the
+kit, and `kql` tears the scratch relay down. Exit checks are
+event-based (`359.8.6`).
 
-**Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016,
-gate passed) and **Sovereign-actor protocol at the center** — Phase 1's
-hub actors (Issuer, Enroll, Relay, Provisioner) are the protocol's
-first real inboxes.
+**Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016)
+and **Sovereign-actor protocol at the center** — the hub actors are
+the protocol's first real inboxes, and `actor.Hold` is the first
+protocol change driven by a consumer's lifecycle.
 
 **Out of scope:**
 - Phase 2 consumer moves (talosctl/kubectl bridges in anger, gateway,
   Android app swap, k8s off the mesh) until Phase 1's exit checks pass.
-- Tearing down the scratch relay (`kql`) before Phase 1.2 replaces it.
+- Relay access gating (`5gz`) before a member cert exists to gate on.
 - Parents'-TV deployment (`4te`); storage work until w1 returns.

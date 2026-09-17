@@ -109,11 +109,12 @@ func newNode(t tb) cert.EdSigner {
 // the receiver and the kit as the presented bundle — the receiver-side
 // view of "does what Mint handed out actually admit N".
 func authorizeAt(hub *Issuer, kit Kit, node cert.ActorID, now int64) cert.Result {
+	consents, speakAs := hub.Actor.Authority()
 	return cert.Authorize(cert.Input{
 		Receiver: cert.Receiver{
 			ID:       hub.ID(),
-			Consents: hub.Actor.Consents,
-			SpeakAs:  hub.Actor.SpeakAs,
+			Consents: consents,
+			SpeakAs:  speakAs,
 		},
 		AcceptTable: map[string]string{"renew": actor.FacetRenew},
 		Now:         now,

@@ -23,3 +23,6 @@ k8s/MIGRATION.md
 # rapid (pgregory.net/rapid) writes a repro file per failing property;
 # useful locally, never committed.
 **/testdata/rapid/
+
+# pi harness session state (screenshots, caches) — never tracked
+.pi/

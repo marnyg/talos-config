@@ -190,6 +190,15 @@ func (a *Actor) Hold(consents, speakAs []cert.Cert) {
 	a.SpeakAs = append([]cert.Cert(nil), speakAs...)
 }
 
+// Authority returns a snapshot of the held Consents and SpeakAs (what
+// Hold last installed, or the pre-Listen fields): the receiver-side
+// inputs a cert.Receiver needs to run Authorize as this actor would.
+// Read-only copies; safe while the actor runs.
+func (a *Actor) Authority() (consents, speakAs []cert.Cert) {
+	c, s := a.authority()
+	return append([]cert.Cert(nil), c...), append([]cert.Cert(nil), s...)
+}
+
 // authority snapshots Consents and SpeakAs under mu for one
 // verification or one Send; the snapshots are read-only.
 func (a *Actor) authority() (consents, speakAs []cert.Cert) {

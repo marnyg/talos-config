@@ -44,7 +44,7 @@ let
       # source tree. Caveats (git add first; FOD drift after touching
       # protocol/*.go or iroh-go/iroh/*.go; recompute recipe): see the
       # canonical vendorHash note on config-server-bin in flake.nix.
-      vendorHash = "sha256-6Wx9jIJRx3IxwrU4xy8SQvimsa+AcHyHCb3pfNE7Gw4=";
+      vendorHash = "sha256-+TdHxT453nUlGy5GJukty3KijqwGnEIafaVomf0D9q4=";
       env.CGO_ENABLED = 1;
       env.CGO_LDFLAGS = irohGo'.cgoLdflags;
       nativeBuildInputs = [ irohGo'.iroh-relay ];

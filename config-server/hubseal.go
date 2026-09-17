@@ -319,8 +319,12 @@ func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 	default:
 		fmt.Fprintln(w, "hub: unsealed")
 	}
-	// Identity is reported, not paged for, until a Phase 1 consumer
-	// depends on it (nothing listens on the hubkey yet, 359.8.2.x).
+	// Identity is reported, not paged for: the status code follows the
+	// master + mesh only. The Issuer does listen now (in-process, for
+	// Enroll's #mint-device) and v2 enrollment depends on it, but the
+	// dev-mode env master leaves identity sealed forever, so a 503 here
+	// would page every dev run. Flipping it is talos-config-tqr, gated
+	// on the first member that beats at the hubkey (359.8.3/359.8.4).
 	if s.hub != nil {
 		line, _ := s.hub.identityLine()
 		fmt.Fprintln(w, "identity: "+line)

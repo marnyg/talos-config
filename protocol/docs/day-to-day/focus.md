@@ -8,8 +8,10 @@ the protocol's first real consumer.** `cert`, `clock`, `envelope`,
 follows 1:1). `xwu` (ADR-0002, verb = root consent's), `kau` (ADR-0003,
 a receiver answers for principals whose `speak-as` it holds —
 `cert.Receiver`) and `7ei` (`#renew` binds `aud` like rule 3) all
-landed 2026-09-17/18. Nothing in `protocol/` gates talos `359.8.1`
-(membership issuance) any more. M3 (`0bc.3`: lighthouse as a plain
+landed 2026-09-17/18. The hub is consuming: its Issuer and Enroll are
+live `Actor`s over `MemoryNetwork` (`actor.Hold` landed for the unseal
+lifecycle, 2026-09-17). The next protocol-side question is whether
+`cav.target` admits `group:<name>` for the policy compiler (`359.8.5`). M3 (`0bc.3`: lighthouse as a plain
 actor, PoW postage for strangers) is unblocked on the protocol side —
 its `#publish` facet binds verb `publish` through the same fold; in the
 talos deployment the Phase 1 lighthouse is a view over the Issuer's

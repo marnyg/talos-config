@@ -2,7 +2,11 @@
 
 - Status: Proposed _(2026-09-16, grill-design on `talos-config-359.8.2.1`
   — the "define inbox message set + owned state first" task decision
-  `vl4` mandated; promote when Phase 1.2 lands against it)_
+  `vl4` mandated; promote when Phase 1.2 lands against it. Landed so
+  far: Issuer `359.8.1`; relay child `359.8.2.2`; Enroll →
+  `Issuer#mint-device` and `/.well-known` `359.8.2.3` part 1
+  (2026-09-17). Outstanding: `#bundle` (needs `359.8.5`), Provisioner
+  as an actor, the hub's iroh endpoint `e8d`.)_
 - Date: 2026-09-16
 - Refines: ADR-0018 (which named the actors and said "cut by state"
   without saying how many keys), ADR-0015 (where the boot token is
@@ -163,9 +167,20 @@ model §2 "Hub actors"):
 - The domain model's §2 "Policy: payload, not identity" render diagram
   is superseded by `#bundle`; redraw when Phase 1.2 lands (already
   flagged there).
-- Open, carried into implementation: the exact `#mint-device` payload
-  (which ADR-0012 approval message Enroll forwards; whether the Issuer
-  needs its own replay check or trusts Enroll's single-use nonce).
+- ~~Open, carried into implementation: the exact `#mint-device`
+  payload~~ **Resolved 2026-09-17 (`359.8.2.3`, decisions `0t9`,
+  `gci`):** the payload is `{node, name, group, fingerprint, nonce,
+  signature}` where `signature` is the wallet's EIP-191 over the **v2
+  enrollment message** (`config-server/enrollmsg`: ADR-0012's v1 text
+  plus a `node: ed:<hex>` line) — so the wallet, not Enroll, names the
+  NodeId, and one signature admits a device to both planes. The Issuer
+  rebuilds the message and checks the recovered wallet is the one it
+  speaks for; it keeps **no replay state** — Enroll's single-use nonce
+  is the replay check, and a replayed approval re-mints the same kit to
+  the same node. Sibling consents (Issuer → Enroll) use `target:
+  hubkey`: same process, same lifetime; rule F is for member-held
+  grants. The Issuer Listens for the process's life and swaps its
+  authority set through `actor.Hold` at each unseal.
 
 ### Confirmation
 

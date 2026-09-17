@@ -187,8 +187,8 @@ classDiagram
 
 | Actor | Key / endpoint | Inbox | State (all volatile) |
 |---|---|---|---|
-| **Issuer** | `hubkey`; iroh + in-memory | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{}` → grants for the caller's groups, blocklist, name map, current `speak-as`), `#mint-device` (from Enroll; Issuer verifies the **wallet's** approval), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal; location cache, `seq` HWM, `lw` (safe-to-lose); git checkout = compiler input |
-| **Enroll** | own key; in-memory only | none (WAN HTTPS handlers: `/device/code`, `/token`, `/verify`, `/mesh/enroll/*`) | device-flow store (minutes TTL) |
+| **Issuer** | `hubkey`; iroh (`e8d`, pending) + in-memory (built) | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{}` → grants for the caller's groups, blocklist, name map, current `speak-as`; pending `359.8.5`), `#mint-device` (from Enroll: `{node, name, group, fingerprint, nonce, signature}` — the Issuer rebuilds the **v2 enrollment message** and verifies the **wallet's** EIP-191 over it; built 2026-09-17), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal, swapped on the live actor via `actor.Hold`; location cache, `seq` HWM, `lw` (safe-to-lose); git checkout = compiler input. **No replay state** for `#mint-device` (decision `0t9`) |
+| **Enroll** | own key; in-memory only (built: `config-server/enroll`) | none (WAN HTTPS handlers: `/device/code`, `/token`, `/verify`, `/mesh/enroll/*`). Sends `#mint-device` when an enrollment named a `node`; refuses to start such a flow while the Issuer is not serving | device-flow store (minutes TTL) — its single-use nonce is the replay check |
 | **Provisioner** | own key; in-memory only | none (WAN HTTPS: `/config`, `/enroll/machine`, KMS) | seed (memory); boot-token seen-set |
 
 Rules that fall out of the cut:
@@ -212,7 +212,8 @@ Rules that fall out of the cut:
   `Issuer#mint-machine`. A compromised Provisioner already hands blank
   machines any config; requesting machine certs adds no new power.
 - **Cold cache after a deploy:** a member lacks only the new
-  `speak-as`; `GET /.well-known/…` over WAN HTTPS serves it —
+  `speak-as`; `GET /.well-known/talos-hub/speak-as` over WAN HTTPS
+  serves it (503 while sealed; built 2026-09-17) —
   wallet-signed, verified offline, web PKI as hint channel (invariant
   4's permitted direction, invariant 5's single entrypoint).
 
@@ -601,10 +602,18 @@ provisioning or recovery path may depend on it.
   (90 d), the `invoke` grant to the Owner's `#renew` facet (7 d,
   `target: wallet`), and the `speak-as` that resolves both certs'
   hot-key issuer. The member's initial **Bundle**; from then on the
-  beat keeps it fresh.
+  beat keeps it fresh. On the wire (`issuer.EncodeKit`): JSON
+  `{member, renew_grant, speak_as}`, each a cert in its JSON form; a
+  dual-plane enrollment returns `{config: <nebula yaml>, kit}`.
 - **Enrollment** — wallet-authorized minting of a binding: the member
   submits its own pubkey, the approver (at whatever signature
   distance) ratifies role + group, one signature mints the cert.
+  **Dual plane (Phase 1):** the signed text is `enrollmsg` **v1**
+  (name, group, nebula fingerprint, nonce — nebula only; deployed
+  clients) or **v2**, which adds `node: ed:<hex>`, the member's own
+  NodeId; one signature then mints the nebula cert *and* the member
+  Kit, and the wallet — not Enroll — is what named the NodeId. Both
+  accepted until Phase 4 deletes v1 with nebula.
 - **Group** — a *name for a set of members*, and nothing more: it
   appears in a `member` cert's `cav.groups` and as the `aud` of
   `invoke` grants. It has no semantics of its own — what a group may

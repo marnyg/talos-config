@@ -49,11 +49,13 @@
   **Canonical cert form changed** (`postage` always emitted): no signed
   certs existed in-repo, but any cert signed before `40c1755` will not
   verify.
-- 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed, not
-  built** (protocol ADR-0003, its rule-4 prerequisite, landed
-  2026-09-18 — `kau`). Decision `itb` (hub HTTP over a stream facet) is
-  revised by `mdv`: `/hosts` and `/policy` will not exist over the mesh
-  — don't build them; the beat is `#renew` + `#bundle`.
+- 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed and
+  partly built** (2026-09-17: Issuer listens in-process, Enroll →
+  `#mint-device`, relay child, `/.well-known`; `#bundle`, Provisioner-
+  as-actor and the iroh endpoint `e8d` are not). Decision `itb` (hub
+  HTTP over a stream facet) is revised by `mdv`: `/hosts` and `/policy`
+  will not exist over the mesh — don't build them; the beat is
+  `#renew` + `#bundle`.
 
 ## Mesh v3 spike infra (scratch)
 
@@ -63,7 +65,9 @@
   as an **open relay** (`access = "everyone"`) for the Phase 0 probes.
   Owner accepted this as spike scope against invariant 5 (2026-09-13);
   gate ruling 2026-09-16: **stays up until Phase 1.2** embeds the relay
-  in the hub — cp1's `ext-p0agent` dials it on every boot (`kql`). Deploy with
+  in the hub — done 2026-09-17 (`359.8.2.2`), but cp1's `ext-p0agent`
+  still dials the scratch app on every boot until `359.8.3` repoints
+  it (`kql`). Deploy with
   `fly deploy -c fly/relay-spike/fly.toml`; `curl …/ping` → 200 is the
   liveness check (`/generate_204` is 404 in plain-HTTP mode).
   Registry tag `registry.fly.io/marnyg-iroh-relay-spike:p0peer` is a
@@ -143,7 +147,29 @@
   `*ip:10.0.0.x` every 5 s while bytes move. At home the same setup
   went `*ip` within 5 s and held 97 Mbps avg (2026-09-16).
 
-## Hub / mesh (nebula, as running)
+## Hub / mesh (as running)
+
+- 2026-09-17 — **The production hub relays iroh** at
+  `https://marnyg-talos-config.fly.dev` (`/relay`, `/ping`,
+  `/generate_204` proxied to an `iroh-relay` child; `/status` has an
+  "iroh relay" row; child logs are prefixed `relay|`, level via
+  `RELAY_LOG`). It is **open** (`access = everyone`) until `5gz`, and it
+  runs while the hub is sealed. `RELAY_DISABLE=1` on the fly app turns
+  it off. Probe: `p0relay listen/dial -relay https://marnyg-talos-config.fly.dev`
+  (relay path only from the owner laptop — see the Cisco note).
+- 2026-09-17 — **Deploy footguns found the hard way:** the Docker
+  context is the *working tree*, not git — a gitignored
+  `talos/extensions/*/_out` (145 MB) shipped into the image and
+  overflowed `/dev/shm` at entrypoint `cp` (crash loop, "No space left
+  on device"). `.dockerignore` now excludes `**/_out`; keep build
+  outputs out of `talos/`. Locally, `docker run` needs
+  `--shm-size=256m` for the same `cp`. And the image must carry
+  `protocol/` beside `config-server/` (go.mod `replace`).
+- 2026-09-17 — **v2 enrollment exists server-side only.** Sending
+  `node=ed:<hex>` on `/mesh/enroll/challenge`, `/mesh/enroll` or
+  `/mesh/enroll/device` switches the payload to JSON `{config, kit}`
+  and requires the identity plane unsealed (503 otherwise). No client
+  sends it yet; nebup/Android are v1 and unaffected.
 
 - Every fly deploy **re-seals the hub**: derived roles (mesh CA, KMS,
   enrollment, DNS) are down until a wallet unseal at `/status`. The
