@@ -1,8 +1,13 @@
 # ADR-0022: Self-hosted iroh relay behind the hub's TLS terminator, without QUIC address discovery
 
-- Status: Proposed _(drafted 2026-09-13 from Mesh v3 probe P0.1,
-  `talos-config-359.1.1`, PASS; the deployed form is a scratch fly app,
-  the hub embedding is Phase 1 work `5gz`)_
+- Status: Accepted _(drafted 2026-09-13 from Mesh v3 probe P0.1,
+  `talos-config-359.1.1`, PASS; accepted 2026-09-17 when Phase 1 task
+  `359.8.2.2` embedded the relay in the hub — `config-server/relay.go`,
+  commit `240c322` — and `p0relay` confirmed the relay path through
+  `https://marnyg-talos-config.fly.dev` at 45 ms, the spike's figure.
+  The relay runs while the hub is sealed: it holds no key. Remaining:
+  the access hook (`5gz`, now only the membership gate) and the scratch
+  app teardown (`kql`, once cp1's agent is repointed in `359.8.3`).)_
 - Date: 2026-09-13
 - Related: ADR-0006 (remote members relay by default; remote-direct is
   not a goal), ADR-0016 (identity-native mesh), ADR-0021 (in-house
@@ -92,8 +97,12 @@ owned certificate machinery, and its one real cost — no remote
 hole-punching — is a capability ADR-0006 already gave up. Phase 1
 embeds it as **config-server spawning `iroh-relay` as a child process
 and reverse-proxying `/relay` (WebSocket upgrade), `/ping` and
-`/generate_204` on its existing listener** (`5gz`), so the hub's 443
-carries the relay protocol as `docs/mesh-v3-iroh.md` planned. Relay
+`/generate_204` on its existing listener** (`359.8.2.2`,
+`config-server/relay.go`), so the hub's 443 carries the relay protocol
+as `docs/mesh-v3-iroh.md` planned. Only those three paths cross the
+hub; the relay's index, `/metrics` and the rest stay on loopback. The
+binary is the static `/iroh-relay` from the upstream image, pinned to
+the same core version as iroh-go. Relay
 admission uses the upstream HTTP-POST access hook
 (`X-Iroh-Endpoint-Id`), which is how membership will gate the relay.
 
