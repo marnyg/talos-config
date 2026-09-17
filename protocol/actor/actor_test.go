@@ -1012,3 +1012,53 @@ func TestMemoryTransport(t *testing.T) {
 		t.Fatalf("accept ctx: %v", err)
 	}
 }
+
+// TestHoldWhileListening: the hot-key lifecycle. A receiver Listens
+// sealed (no consents); a caller's invocation is unauthorized. Hold
+// installs a consent on the RUNNING actor and the same caller is
+// admitted; Hold again with an empty set re-seals it. Under -race this
+// also proves Hold does not tear with the mailbox loop or Send.
+func TestHoldWhileListening(t *testing.T) {
+	w := newWorld(t)
+	r, rs, _ := w.actor("r")
+	r.AcceptTable["echo"] = echo
+	w.start(r)
+	c, _, _ := w.actor("c")
+	w.start(c)
+
+	if _, err := c.Send(w.ctx, r.ID(), "echo", []byte("x")); err == nil {
+		t.Fatal("sealed receiver admitted a caller")
+	} else {
+		wantRemote(t, err, StatusUnauthorized)
+	}
+
+	consent := issue(t, rs, string(c.ID()), []cert.ActorID{r.ID()}, []string{"echo"}, false, t0, t0+3600)
+	r.Hold([]cert.Cert{consent}, nil)
+	rep, err := c.Send(w.ctx, r.ID(), "echo", []byte("x"))
+	if err != nil || string(rep.Payload) != "x" {
+		t.Fatalf("after Hold: %v %+v", err, rep)
+	}
+
+	// Concurrent churn: Hold flips while Sends run.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			r.Hold([]cert.Cert{consent}, nil)
+			r.Hold(nil, nil)
+		}
+		r.Hold([]cert.Cert{consent}, nil)
+	}()
+	for i := 0; i < 50; i++ {
+		_, _ = c.Send(w.ctx, r.ID(), "echo", []byte("y"))
+	}
+	<-done
+	if _, err := c.Send(w.ctx, r.ID(), "echo", []byte("z")); err != nil {
+		t.Fatalf("after churn: %v", err)
+	}
+
+	r.Hold(nil, nil)
+	if _, err := c.Send(w.ctx, r.ID(), "echo", []byte("x")); err == nil {
+		t.Fatal("re-sealed receiver admitted a caller")
+	}
+}

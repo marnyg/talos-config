@@ -214,7 +214,8 @@ func (a *Actor) issuedByMe(c cert.Cert, proofSpeakAs []cert.Cert, now int64) boo
 		return true
 	}
 	verb := string(c.Can)
-	for _, s := range a.SpeakAs {
+	_, speakAs := a.authority()
+	for _, s := range speakAs {
 		if !liveSpeakAs(s, verb, now) {
 			continue
 		}

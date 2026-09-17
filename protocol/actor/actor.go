@@ -95,6 +95,10 @@ type GrantKey struct {
 // Actor is the runtime for one identity. Zero-value maps are allocated
 // by New; the exported fields are configuration read at Listen/Send
 // time and must not be mutated while the actor runs (use the methods).
+// The one authority set that legitimately changes on a live actor —
+// Consents and SpeakAs, when a hot key is (re-)delegated to (ADR-0018:
+// unseal, re-unseal from the nag window) — is swapped through Hold,
+// which is safe against a running Listen and Send.
 type Actor struct {
 	Signer cert.Signer
 	// Transport carries envelopes; an Endpoint additionally lets
@@ -171,6 +175,27 @@ func (a *Actor) ID() cert.ActorID { return a.Signer.ActorID() }
 // Grant records the caller-held chain for (target, facet).
 func (a *Actor) Grant(target cert.ActorID, facet string, chain ...cert.Cert) {
 	a.Grants[GrantKey{Target: target, Facet: facet}] = append([]cert.Cert(nil), chain...)
+}
+
+// Hold replaces the actor's authority set — the consents it signed and
+// the speak-as certs it holds in both roles — atomically with respect
+// to the mailbox loop and Send. This is the hot-key lifecycle: a
+// sealed actor Listens with an empty set, an unseal installs one, a
+// re-unseal replaces it. Copies are stored; the caller's slices are
+// not retained.
+func (a *Actor) Hold(consents, speakAs []cert.Cert) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Consents = append([]cert.Cert(nil), consents...)
+	a.SpeakAs = append([]cert.Cert(nil), speakAs...)
+}
+
+// authority snapshots Consents and SpeakAs under mu for one
+// verification or one Send; the snapshots are read-only.
+func (a *Actor) authority() (consents, speakAs []cert.Cert) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.Consents, a.SpeakAs
 }
 
 // HWM exposes the seq high-water mark table (diagnostics / tests).
@@ -398,10 +423,11 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 	env := in.env
 
 	now := a.now()
+	consents, speakAs := a.authority()
 	res, err := envelope.Verify(env, envelope.Receiver{
 		ID:       a.ID(),
-		Consents: a.Consents,
-		SpeakAs:  a.SpeakAs,
+		Consents: consents,
+		SpeakAs:  speakAs,
 		Chain:    invokeChain,
 		HWM:      a.hwm,
 	}, now)
@@ -454,7 +480,8 @@ func rejectStatus(err error) Status {
 // with) plus every speak-as that names this actor's signer.
 func (a *Actor) proofFor(to cert.ActorID, facet string) []cert.Cert {
 	proof := append([]cert.Cert(nil), a.Grants[GrantKey{Target: to, Facet: facet}]...)
-	for _, s := range a.SpeakAs {
+	_, speakAs := a.authority()
+	for _, s := range speakAs {
 		if s.Can == cert.VerbSpeakAs && s.Aud == string(a.ID()) {
 			proof = append(proof, s)
 		}
