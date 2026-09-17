@@ -361,3 +361,19 @@
 - 2026-09-13 — CI `static` job (iroh-transport.yml) is `continue-on-error`:
   a red `static` never fails the workflow. Check it explicitly with
   `gh run view <id>`; the job id is needed for `--log`.
+- 2026-09-18 — **The next hub deploy asks for two signatures at
+  `/status`** (decision `ce8`): the master message as before, plus
+  the hubkey speak-as proposal. The proposal is per wallet and names
+  the process's key — sign it only on that page (or `cast wallet sign`
+  over the exact `<pre>` text); a copy is useless against any other
+  process. Headless: `curl -d signature=… -d speakas_signature=…
+  /unseal`; either alone works, the second must be the same wallet.
+  Until `tqr`, `/sealed` only *reports* the identity plane — an
+  unsigned speak-as does not page.
+- 2026-09-18 — `config-server-bin` vendors `protocol/` via the go.mod
+  `replace`, so its `vendorHash` (and `iroh-transport`'s) drifts on
+  every `protocol/*.go` change and a cached FOD hides it locally.
+  After touching `protocol/`, run
+  `nix build .#config-server-bin.goModules --rebuild` and
+  `nix build .#iroh-transport.goModules --rebuild`; the canonical
+  caveat list is on `config-server-bin` in `flake.nix`.
