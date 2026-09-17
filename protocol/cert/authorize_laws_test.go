@@ -3,6 +3,7 @@ package cert
 import (
 	"crypto/ed25519"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 
@@ -488,7 +489,7 @@ func attenuateSpeakAs(sp certSpec, attKind int, attG string) certSpec {
 func answerable(id map[string]ActorID, held []Cert) []ActorID {
 	out := []ActorID{id["R"]}
 	for _, s := range held {
-		if s.Can == VerbSpeakAs && s.Aud == string(id["R"]) && sigOKlaw(s) && !containsID(out, s.Iss) {
+		if s.Can == VerbSpeakAs && s.Aud == string(id["R"]) && sigOKlaw(s) && !slices.Contains(out, s.Iss) {
 			out = append(out, s.Iss)
 		}
 	}
@@ -758,7 +759,7 @@ func checkLaws(t failer, f fixture, s scenario, res, resAtt Result) {
 				ok = true
 			}
 			for _, sa := range s.speakAs {
-				if vouches(sa, w, m.Iss) && containsStr(sa.Cav.Verbs, "member") && subset(m.Cav.Groups, sa.Cav.Groups) {
+				if vouches(sa, w, m.Iss) && slices.Contains(sa.Cav.Verbs, "member") && subset(m.Cav.Groups, sa.Cav.Groups) {
 					ok = true
 				}
 			}
@@ -791,7 +792,7 @@ func checkLaws(t failer, f fixture, s scenario, res, resAtt Result) {
 		t.Fatal("invTargetIsAnswerable: accepted a grant targeting neither R nor a principal it answers for")
 	}
 	// invFacetMatchesAlpn
-	if fct, ok := table[s.alpn]; ok && !containsStr(g.Cav.Facet, fct) && res.OK {
+	if fct, ok := table[s.alpn]; ok && !slices.Contains(g.Cav.Facet, fct) && res.OK {
 		t.Fatal("invFacetMatchesAlpn: accepted a grant whose facet omits the ALPN's")
 	}
 	// invIdentityFromMember
@@ -842,7 +843,7 @@ func vouches(s Cert, w, k ActorID) bool {
 func attributable(speakAs []Cert, k ActorID) []ActorID {
 	out := []ActorID{k}
 	for _, s := range speakAs {
-		if s.Aud == string(k) && !containsID(out, s.Iss) {
+		if s.Aud == string(k) && !slices.Contains(out, s.Iss) {
 			out = append(out, s.Iss)
 		}
 	}

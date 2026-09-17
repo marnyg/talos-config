@@ -3,6 +3,7 @@ package cert
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -412,7 +413,7 @@ func chainAttributable(speakAs []Cert, k ActorID) []ActorID { return attributabl
 func liveChainSpeakAs(speakAs []Cert, s, k ActorID, verb Verb) bool {
 	for _, sp := range speakAs {
 		if sp.Iss == s && sp.Aud == string(k) && sp.Can == VerbSpeakAs && sigOKlaw(sp) &&
-			containsStr(sp.Cav.Verbs, string(verb)) {
+			slices.Contains(sp.Cav.Verbs, string(verb)) {
 			return true
 		}
 	}
@@ -489,7 +490,7 @@ var chainLaws = []chainLaw{
 			vouched := false
 			for _, sp := range s.speakAs {
 				if sp.Aud == string(l.Iss) && sigValid(sp) && sp.Exp > testNOW && sp.Can == VerbSpeakAs &&
-					!sp.Cav.Unknown && containsStr(sp.Cav.Verbs, string(s.verb)) {
+					!sp.Cav.Unknown && slices.Contains(sp.Cav.Verbs, string(s.verb)) {
 					vouched = true
 				}
 			}
@@ -712,12 +713,12 @@ var chainLaws = []chainLaw{
 	principals:
 		for _, p := range answerable(id, s.held) {
 			for _, l := range s.chain {
-				if !containsID(l.Cav.Target, p) {
+				if !slices.Contains(l.Cav.Target, p) {
 					continue principals
 				}
 			}
 			for _, c := range s.consents {
-				if containsID(c.Cav.Target, p) {
+				if slices.Contains(c.Cav.Target, p) {
 					return true, true
 				}
 			}
@@ -741,13 +742,13 @@ var chainLaws = []chainLaw{
 			return false, true
 		}
 		for _, l := range s.chain {
-			if !containsStr(l.Cav.Facet, s.facet) {
+			if !slices.Contains(l.Cav.Facet, s.facet) {
 				return true, false
 			}
 		}
 		anyConsent := false
 		for _, c := range s.consents {
-			if containsStr(c.Cav.Facet, s.facet) {
+			if slices.Contains(c.Cav.Facet, s.facet) {
 				anyConsent = true
 			}
 		}
@@ -792,7 +793,7 @@ var chainLaws = []chainLaw{
 
 func subsetID(need, have []ActorID) bool {
 	for _, x := range need {
-		if !containsID(have, x) {
+		if !slices.Contains(have, x) {
 			return false
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/envelope"
@@ -237,7 +238,7 @@ func (a *Actor) issuedByMe(c cert.Cert, proofSpeakAs []cert.Cert, now int64) boo
 // at now, whose cav.verbs covers verb.
 func liveSpeakAs(s cert.Cert, verb string, now int64) bool {
 	return s.Can == cert.VerbSpeakAs && s.Exp > now &&
-		containsStr(s.Cav.Verbs, verb) && cert.Verify(s) == nil
+		slices.Contains(s.Cav.Verbs, verb) && cert.Verify(s) == nil
 }
 
 // narrower reports whether want's caveats are the same as or narrower
@@ -266,13 +267,4 @@ func narrower(old, want cert.Cert) bool {
 	a, err1 := cert.CanonicalBytes(eff)
 	b, err2 := cert.CanonicalBytes(want)
 	return err1 == nil && err2 == nil && bytes.Equal(a, b)
-}
-
-func containsStr(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
 }

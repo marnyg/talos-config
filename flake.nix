@@ -78,16 +78,24 @@
                 ];
               };
               modRoot = "config-server";
-              # git add new packages BEFORE recomputing this hash. Flakes only
-              # see tracked files, so an untracked directory is invisible to
-              # `go mod vendor` and its imports get silently left out of the
-              # vendor dir — the build then fails with "import lookup disabled
-              # by -mod=vendor" for a module that go.mod clearly requires.
-              # Worse, the vendor derivation is fixed-output: nix reuses any
-              # store path matching the hash, so a stale-but-matching vendor
-              # dir survives `go mod tidy`. Force a recompute by setting a
-              # bogus hash and reading nix's "got:" line.
-              vendorHash = "sha256-QmucnWmMfgLMtLtrXi/8bS+r56grFwCLeLz0Al5fl/c=";
+              # vendorHash caveats (canonical note; iroh-transport/nix points
+              # here):
+              #  1. git add new packages BEFORE recomputing. Flakes only see
+              #     tracked files, so an untracked directory is invisible to
+              #     `go mod vendor` and its imports get silently left out of
+              #     the vendor dir — the build then fails with "import lookup
+              #     disabled by -mod=vendor" for a module go.mod requires.
+              #  2. The vendor derivation is fixed-output: nix reuses any store
+              #     path matching the hash, so a stale-but-matching vendor dir
+              #     survives `go mod tidy`. Force a recompute by setting a
+              #     bogus hash and reading nix's "got:" line.
+              #  3. Local `replace`s (../protocol here) are vendored from the
+              #     source tree, so the hash changes whenever protocol/*.go
+              #     changes — and a cached FOD output hides the drift (CI run
+              #     34754508013: one job green from cache, another rebuilt the
+              #     FOD and mismatched). After touching a replaced tree, check
+              #     with `nix build .#<pkg>.goModules --rebuild`.
+              vendorHash = "sha256-6OtxKs8iEN6XDgYaEKVa2huIcnBWii9RQS2bP6XNlxQ=";
             };
 
             # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go

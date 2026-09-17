@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 
@@ -132,32 +133,14 @@ func (s *stubChain) verify(r cert.Receiver, chain, speakAs []cert.Cert, signer c
 	switch {
 	case eff.Exp <= now:
 		return cert.Cert{}, verified, errors.New("expired")
-	case !containsID(eff.Cav.Target, receiver):
+	case !slices.Contains(eff.Cav.Target, receiver):
 		return cert.Cert{}, verified, errors.New("target")
-	case !containsStr(eff.Cav.Facet, facet):
+	case !slices.Contains(eff.Cav.Facet, facet):
 		return cert.Cert{}, verified, errors.New("facet")
 	case chain[len(chain)-1].Aud != string(signer):
 		return cert.Cert{}, verified, errors.New("aud != signer")
 	}
 	return eff, verified, nil
-}
-
-func containsID(xs []cert.ActorID, x cert.ActorID) bool {
-	for _, y := range xs {
-		if y == x {
-			return true
-		}
-	}
-	return false
-}
-
-func containsStr(xs []string, x string) bool {
-	for _, y := range xs {
-		if y == x {
-			return true
-		}
-	}
-	return false
 }
 
 // world is the two-party fixture: receiver B holds a consent for
@@ -217,7 +200,7 @@ func TestEnvelopeSignVerify(t *testing.T) {
 			if err != nil {
 				t.Fatalf("verify: %v", err)
 			}
-			if !containsID(res.Eff.Cav.Target, w.b.ActorID()) || len(res.Verified) != 2 {
+			if !slices.Contains(res.Eff.Cav.Target, w.b.ActorID()) || len(res.Verified) != 2 {
 				t.Fatalf("unexpected result %+v", res)
 			}
 

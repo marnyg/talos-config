@@ -3,6 +3,7 @@ package cert
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -249,7 +250,7 @@ func (a *authCtx) resolve(c Cert, speakAs []Cert, now int64, groups []string) []
 			continue
 		}
 		if !a.sigOK(sa, sa.Exp, now) ||
-			!containsStr(sa.Cav.Verbs, string(c.Can)) ||
+			!slices.Contains(sa.Cav.Verbs, string(c.Can)) ||
 			!subset(groups, sa.Cav.Groups) {
 			continue
 		}
@@ -338,12 +339,12 @@ func (a *authCtx) memberSovereigns(in Input, m Cert) []sovereign {
 // never enters here). Liveness only: the speak-as's cav.verbs says what R
 // may SIGN as P (ADR-0018), and being addressed is not signing.
 func (a *authCtx) answersFor(r Receiver, target []ActorID, now int64) bool {
-	if containsID(target, r.ID) {
+	if slices.Contains(target, r.ID) {
 		return true
 	}
 	for _, s := range r.SpeakAs {
 		if s.Can == VerbSpeakAs && s.Aud == string(r.ID) && a.sigOK(s, s.Exp, now) &&
-			containsID(target, s.Iss) {
+			slices.Contains(target, s.Iss) {
 			return true
 		}
 	}
@@ -540,7 +541,7 @@ func (a *authCtx) chainUnder(consent Cert, chain, speakAs []Cert, r Receiver, si
 	switch {
 	case !a.answersFor(r, eff.Cav.Target, now):
 		return chainVerdict{}, rank, ErrTargetMismatch
-	case !containsStr(eff.Cav.Facet, facet):
+	case !slices.Contains(eff.Cav.Facet, facet):
 		return chainVerdict{}, rank, ErrFacetMismatch
 	case eff.Cav.PostageConflict:
 		return chainVerdict{}, rank, ErrPostageConflict
@@ -598,7 +599,7 @@ func SpeaksFor(s, signer ActorID, verb Verb, speakAs []Cert, now int64) bool {
 func (a *authCtx) speaksFor(s, signer ActorID, verb Verb, speakAs []Cert, now int64) bool {
 	for _, sp := range speakAs {
 		if sp.Iss == s && sp.Aud == string(signer) && sp.Can == VerbSpeakAs &&
-			a.sigOK(sp, sp.Exp, now) && containsStr(sp.Cav.Verbs, string(verb)) {
+			a.sigOK(sp, sp.Exp, now) && slices.Contains(sp.Cav.Verbs, string(verb)) {
 			return true
 		}
 	}
@@ -708,7 +709,7 @@ func (a *authCtx) grantAdmits(in Input, facet string, g Cert) bool {
 // member.cav.groups), live along that path) and the member's groups
 // contain grp.
 func (a *authCtx) groupSatisfied(in Input, grp string, member Cert, w ActorID) bool {
-	if !containsStr(member.Cav.Groups, grp) {
+	if !slices.Contains(member.Cav.Groups, grp) {
 		return false
 	}
 	for _, mw := range a.resolve(member, in.Bundle.SpeakAs, in.Now, member.Cav.Groups) {
@@ -768,28 +769,10 @@ func Attenuate(parent, child Cert) (Cert, error) {
 
 // --- small set helpers (nil-safe, order-insensitive membership) ---
 
-func containsStr(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
-}
-
-func containsID(xs []ActorID, x ActorID) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
-}
-
 func intersectStr(a, b []string) []string {
 	var out []string
 	for _, x := range a {
-		if containsStr(b, x) && !containsStr(out, x) {
+		if slices.Contains(b, x) && !slices.Contains(out, x) {
 			out = append(out, x)
 		}
 	}
@@ -799,7 +782,7 @@ func intersectStr(a, b []string) []string {
 func intersectID(a, b []ActorID) []ActorID {
 	var out []ActorID
 	for _, x := range a {
-		if containsID(b, x) && !containsID(out, x) {
+		if slices.Contains(b, x) && !slices.Contains(out, x) {
 			out = append(out, x)
 		}
 	}
@@ -809,7 +792,7 @@ func intersectID(a, b []ActorID) []ActorID {
 // subset reports whether every element of need is in have.
 func subset(need, have []string) bool {
 	for _, x := range need {
-		if !containsStr(have, x) {
+		if !slices.Contains(have, x) {
 			return false
 		}
 	}

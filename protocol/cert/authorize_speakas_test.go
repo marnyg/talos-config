@@ -2,6 +2,7 @@ package cert
 
 import (
 	"crypto/ed25519"
+	"slices"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -58,7 +59,7 @@ var speakAsLaws = []law{
 	// resolve a member cert.
 	{"invSpeakAsVerbScoped", func(id map[string]ActorID, s scenario, res Result) (bool, bool) {
 		m := s.member
-		ante := isHub(id, m.Iss) && allSpeakAs(s.speakAs, m.Iss, func(sa Cert) bool { return !containsStr(sa.Cav.Verbs, "member") })
+		ante := isHub(id, m.Iss) && allSpeakAs(s.speakAs, m.Iss, func(sa Cert) bool { return !slices.Contains(sa.Cav.Verbs, "member") })
 		return ante, !ante || !res.OK
 	}},
 	// ADR-0018 law 4 — a speak-as whose cav.groups does not cover the
@@ -90,7 +91,7 @@ var speakAsLaws = []law{
 		g := s.grant
 		ante := isHub(id, g.Iss) && allSpeakAs(s.speakAs, g.Iss, func(sa Cert) bool {
 			return sa.Exp <= testNOW || !sigValid(sa) || sa.Can != VerbSpeakAs || sa.Cav.Unknown ||
-				!containsStr(sa.Cav.Verbs, "invoke") || !liveConsentTo(id, s.consents, sa.Iss)
+				!slices.Contains(sa.Cav.Verbs, "invoke") || !liveConsentTo(id, s.consents, sa.Iss)
 		})
 		return ante, !ante || !res.OK
 	}},
@@ -100,7 +101,7 @@ var speakAsLaws = []law{
 		g := s.grant
 		grp, isGroup := trimGroup(g.Aud)
 		ante := isHub(id, g.Iss) && isGroup &&
-			allSpeakAs(s.speakAs, g.Iss, func(sa Cert) bool { return !containsStr(sa.Cav.Groups, grp) })
+			allSpeakAs(s.speakAs, g.Iss, func(sa Cert) bool { return !slices.Contains(sa.Cav.Groups, grp) })
 		return ante, !ante || !res.OK
 	}},
 	// FINDING 2026-09-06 (9l3, decision 4oz): a group match must be
@@ -119,7 +120,7 @@ var speakAsLaws = []law{
 		if !isGroup {
 			return hit, g.Aud == string(id["CALLER"])
 		}
-		if !containsStr(m.Cav.Groups, grp) {
+		if !slices.Contains(m.Cav.Groups, grp) {
 			return hit, false
 		}
 		for _, w := range wallets(id) {
@@ -325,7 +326,7 @@ func TestAttenuate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsID(eff.Cav.Target, "ed:b") || containsID(eff.Cav.Target, "ed:a") || containsID(eff.Cav.Target, "ed:c") {
+	if !slices.Contains(eff.Cav.Target, "ed:b") || slices.Contains(eff.Cav.Target, "ed:a") || slices.Contains(eff.Cav.Target, "ed:c") {
 		t.Fatalf("target intersection wrong: %v", eff.Cav.Target)
 	}
 	if len(eff.Cav.Facet) != 1 || eff.Cav.Facet[0] != "apid" {
