@@ -45,8 +45,6 @@ next deploy.
 - `Mint` has no caller: Enroll → `Issuer#mint-device` is `359.8.2.3`;
   the Issuer's `Actor` has no transport and does not `Listen` yet
   (`359.8.2.2` gives the hub its iroh endpoint).
-- Domain-model glossary still says the unseal is "one EIP-712 act"
-  (pre-`ce8`); proposed fix pending user confirmation (docs-update).
 - Root ADR-0024 stays Proposed until `359.8.2` builds the remaining
   actors.
 - Carried: `#mint-device` payload shape; §2 render diagram redraw at

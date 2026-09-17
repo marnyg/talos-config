@@ -4,33 +4,6 @@
      Granularity: strategy-level pivots only. Not "used ripgrep instead of sed".
      Yes: "tried library X, ruled out for reason Y." -->
 
-## Mesh v3 P1.2a — hub actor cut (2026-09-16, `359.8.2.1` grill-design)
-
-<!-- 2026-09-18: the "grants name the current hubkey" bullet pruned —
-     protocol ADR-0003 (Accepted, `kau`) records the ruling. -->
-
-- 2026-09-16 — Considered all hub actors (Issuer, Enroll, Relay,
-  Provisioner) sharing the one `hubkey` the unseal `speak-as` names.
-  Ruled out: in the protocol an actor *is* a keypair, so shared
-  `hubkey` = one actor with facets, and "promote to a process is a
-  transport change" (decision `vl4`) would mean copying a private key
-  across processes; `delegable: false` on the `speak-as` also forbids
-  re-delegating it to sibling keys. Landed on: `hubkey` is the
-  **Issuer's** key alone; Enroll and Provisioner hold their own
-  per-process keys with no wallet delegation, consented to by the
-  Issuer at boot; Relay is a transport component, not an actor.
-- 2026-09-16 — Considered dialing the *wallet* (`Dial(eth:…, hints)` with
-  a new `iroh:id=` hint, `to.target: wallet`, `reach-me-at` for the
-  wallet signed under the `speak-as`). Ruled out: an `ed:` actor id
-  *is* the iroh `EndpointId` (`iroh-transport/nodeid.go`), the TLS pin
-  and the Reply `from == to.target` check both hang on that, and an
-  `eth:` id has no endpoint by design. Landed on: the hub process's
-  transport identity is the **Issuer's `hubkey`**; members dial and
-  address `hubkey` (learned from the `speak-as` they hold anyway), only
-  the *grant* names the wallet; Enroll/Provisioner reach the Issuer over
-  the in-memory transport; the cold-cache fallback after a deploy is a
-  WAN HTTPS document serving the current `speak-as` alone.
-
 ## Mesh v3 P0.2 — Android (2026-09-16)
 
 - 2026-09-16 — Tried measuring the ≥ 80 Mbps throughput check with

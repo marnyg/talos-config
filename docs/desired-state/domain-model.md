@@ -128,7 +128,7 @@ classDiagram
     SpeakAs --> HubKey : empowers, bounded
     Git --> HubKey : roles + policy compiled
     HubKey --> BindingC : signs; bundle carries the speak-as
-    Wallet ..> Seed : same EIP-712 act; provisioner only
+    Wallet ..> Seed : 2nd EIP-191 sig, same wallet (ce8); provisioner only
 ```
 
 _Nebula-era shape, as built: `Wallet → Master (HKDF of the unseal
@@ -177,7 +177,7 @@ classDiagram
     class Shell["Shell (not an actor): mux, /unseal, /sealed, /status,\n/.well-known speak-as, relay child"]
     class Member["Member (node agent, irohup, app)"]
     Wallet --> Issuer : speak-as (unseal)
-    Wallet ..> Provisioner : seed (same EIP-712 act)
+    Wallet ..> Provisioner : seed (2nd EIP-191 sig, same wallet)
     Issuer --> Enroll : consent {facet: mint-device}
     Issuer --> Provisioner : consent {facet: mint-machine}
     Enroll --> Issuer : #mint-device {NodeId, name, groups, wallet sig}
@@ -571,12 +571,17 @@ provisioning or recovery path may depend on it.
   whose `cav.groups ∋ <g>`, just as a member cert needs one covering
   its groups (ruled 2026-09-06, `zpf`). The caller's bundle carries
   the `speak-as` alongside its member cert and grants.
-- **Unseal** — the wallet signing one `speak-as` cert to the hub
-  process's fresh key (`cav: {verbs: [member, invoke], groups ⊆
-  policy's list, delegable: false}`, 120 d). Nothing about the
-  signature is secret; replayed against another process it names a
-  key that process does not hold. While sealed, minting and renewal
-  are down; nothing is lost. Because the `speak-as` belongs to the
+- **Unseal** — the wallet signing the hub process's **proposal**: one
+  `speak-as` cert to its fresh key (`cav: {verbs: [member, invoke],
+  groups ⊆ policy's list, delegable: false}`, 120 d). Nothing about
+  the signature is secret; replayed against another process it names
+  a key that process does not hold. **Two EIP-191 signatures, one
+  wallet** (ruled 2026-09-16, `ce8`, amending `fje`'s "one act"):
+  the `speak-as` proposal roots hub authority; the frozen
+  `MasterMessage` roots the secrets seed (nebula plane, until Phase
+  4). The second must come from the wallet that signed the first;
+  either may arrive alone (`/status`, `POST /unseal`). While sealed,
+  minting and renewal are down; nothing is lost. Because the `speak-as` belongs to the
   process, a long-lived hub approaches its expiry silently — at < 30 d
   left `/sealed` returns 503 **and the hub stops serving beats**
   (ruled `q8h`: fail loudly at day 90, while one wallet act on the
@@ -584,7 +589,19 @@ provisioning or recovery path may depend on it.
   120 when every member must re-enroll), so a wallet act is due at
   least every 90 d even without a redeploy. _(Was: the signature over the frozen master
   message that recreates the HKDF master; that seed now roots secrets
-  only.)_
+  only.)_ _As built (2026-09-18, `359.8.1`): `/sealed` reports the
+  identity plane but does not yet 503 on it — `tqr`._
+- **Proposal** — the unsigned `speak-as` the hub offers a wallet to
+  sign at unseal: `iss` = that wallet, `aud` = this process's hubkey,
+  `iat`/`exp` fixed on first render so a page can be signed later;
+  per wallet, process-scoped, cleared on a successful unseal so a
+  re-unseal from the nag window gets a fresh 120 d. The message the
+  wallet signs is its RFC 8785 canonical JSON.
+- **Kit** — what `Issuer.Mint` hands a new member: its `member` cert
+  (90 d), the `invoke` grant to the Owner's `#renew` facet (7 d,
+  `target: wallet`), and the `speak-as` that resolves both certs'
+  hot-key issuer. The member's initial **Bundle**; from then on the
+  beat keeps it fresh.
 - **Enrollment** — wallet-authorized minting of a binding: the member
   submits its own pubkey, the approver (at whatever signature
   distance) ratifies role + group, one signature mints the cert.
@@ -601,8 +618,10 @@ provisioning or recovery path may depend on it.
   the **secrets seed** per (machine, partition); unlock rides WAN
   HTTPS, never the overlay (invariant 4). The seed also roots the age
   identity and recovery passphrases and nothing else (ADR-0018);
-  wallet-derived, from the same single EIP-712 unseal act as the
-  `speak-as` (ruled 2026-09-06, `qrb`).
+  wallet-derived from the `MasterMessage` signature — the second of
+  the unseal's two EIP-191 signatures, same wallet as the `speak-as`
+  (ruled 2026-09-06, `qrb`; EIP-712 single-act ruled out 2026-09-16,
+  `ce8`).
 - **Workload plane** — Kubernetes on the machines: ArgoCD syncs
   `k8s/` from git; ingress-nginx routes `<svc>.cp1.mesh.internal` on
   :80; SIWE→OIDC bridge gates every exposed service with the wallet.
