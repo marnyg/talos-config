@@ -26,9 +26,8 @@ no code. Bead `zeb` carries the build.
 - Two ADR-0004 details decided in drafting, not discussed: mixed
   `["*", ed:…]` sets reject at decode; a consent with `target: "*"`
   fails rule 4 by construction. Confirm or veto before `zeb`.
-- The 2026-09-17 thread about `actor.Hold` not being an ADR still
-  stands (the number 0004 is now taken; use 0005 if the pattern
-  spreads).
+- `actor.Hold` has no ADR — now tracked as `t29` (draft protocol
+  ADR-0005 if the pattern spreads).
 - The held `speak-as` stays out of `Result.Verified` (ADR-0003); no
   facet→verb table yet; `DefaultMailbox = 64` and the renewal-beat
   fraction remain unbeaded.

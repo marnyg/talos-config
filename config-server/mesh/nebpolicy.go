@@ -95,6 +95,10 @@ func parsePolicy(raw []byte) (*meshPolicy, error) {
 		"node":   p.Node.Inbound,
 		"device": p.Device.Inbound,
 	} {
+		// v2-only check: nebula's firewall drops what is not listed, so an
+		// empty scope means "not even ICMP". Do NOT lift this into the v3
+		// loader (config-server/policy): under ADR-0017 `inbound: []` is
+		// legal and means "no grant names this receiver kind".
 		if len(rules) == 0 {
 			return nil, fmt.Errorf("scope %q declares no inbound rules — a member class that drops everything (even ICMP) is almost certainly a mistake", scope)
 		}
