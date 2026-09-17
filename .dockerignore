@@ -1,6 +1,7 @@
 # Allowlist: only the server source, the talos tree, and the entrypoint.
 *
 !config-server
+!protocol
 !talos
 !fly
 
@@ -12,3 +13,4 @@ talos/fly-age-key.age
 talos/clusters/*/secrets.yaml
 talos/clusters/*/sealed-secrets.yaml
 config-server/config-server
+protocol/docs

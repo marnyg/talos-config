@@ -384,6 +384,7 @@ var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("
  <tr><th>hub</th><td{{if .Sealed}} class="warn"{{end}}>{{.Seal}}</td></tr>
  {{if .Identity}}<tr><th>identity</th><td{{if .IdentitySealed}} class="warn"{{end}}>{{.Identity}}</td></tr>{{end}}
  {{if .Mesh}}<tr><th>mesh</th><td{{if .MeshWarn}} class="warn"{{end}}>{{.Mesh}}</td></tr>{{end}}
+ {{if .Relay}}<tr><th>iroh relay</th><td{{if .RelayWarn}} class="warn"{{end}}>{{.Relay}}</td></tr>{{end}}
  {{with .Boot}}
  <tr><th>auto-bootstrap</th><td>{{.State}}{{if .Target}} — target {{.Target}} ({{.MeshIP}}){{end}}{{if .Done}} — cluster bootstrapped, idle{{else if .Attempted}} — Bootstrap called, watching etcd{{end}}{{if .LastErr}} — last error: {{.LastErr}}{{end}}</td></tr>
  {{else}}
@@ -624,6 +625,8 @@ type statusData struct {
 	Mesh          string // mesh seal-state line ("" = mesh disabled)
 	MeshWarn      bool
 	MeshRows      []mesh.MemberRow
+	Relay         string // iroh relay child line ("" = no relay)
+	RelayWarn     bool
 	Boot          *bootSnapshot
 	Pending       []verifyEntry
 	UndeclaredKMS []string
@@ -721,6 +724,9 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 			data.Mesh = "down"
 		}
 		data.MeshRows = nm.Members()
+	}
+	if s.relay != nil {
+		data.Relay, data.RelayWarn = s.relay.statusLine()
 	}
 	if !s.started.IsZero() {
 		data.Started = s.started.UTC().Format("2006-01-02 15:04 MST")

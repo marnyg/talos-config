@@ -16,9 +16,11 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"google.golang.org/grpc"
@@ -105,13 +107,14 @@ type server struct {
 	store        *deviceflow.Store
 	sessions     *sessionStore // SIWE sessions for /status
 	requireAuth  bool
-	clientID     string        // expected OAuth client_id ("" = accept any)
-	adminToken   string        // break-glass fallback for approval/login
-	adminAddrs   []string      // allowlisted wallet addresses (lowercase 0x)
-	hub          *hubManager   // nil = seal/mesh machinery disabled entirely
-	boot         *bootstrapper // nil unless --auto-bootstrap
-	kms          *kmsServer    // nil unless KMS enabled
-	kmsAdvertise string        // endpoint machines dial for disk unseal
+	clientID     string           // expected OAuth client_id ("" = accept any)
+	adminToken   string           // break-glass fallback for approval/login
+	adminAddrs   []string         // allowlisted wallet addresses (lowercase 0x)
+	hub          *hubManager      // nil = seal/mesh machinery disabled entirely
+	boot         *bootstrapper    // nil unless --auto-bootstrap
+	kms          *kmsServer       // nil unless KMS enabled
+	kmsAdvertise string           // endpoint machines dial for disk unseal
+	relay        *relaySupervisor // nil unless --relay-bin (iroh home relay, ADR-0022)
 	started      time.Time
 
 	fetchMu sync.Mutex
@@ -246,6 +249,11 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("POST /policy/clear", s.handlePolicyClear)
 	mux.HandleFunc("POST /status/login", s.handleStatusLogin)
 	mux.HandleFunc("POST /status/logout", s.handleStatusLogout)
+	if s.relay != nil {
+		// iroh relay protocol on the hub's own listener (ADR-0022): the
+		// WebSocket upgrade plus the two probes, proxied to the child.
+		s.relay.register(mux)
+	}
 	return mux
 }
 
@@ -266,6 +274,8 @@ func main() {
 		autoBoot     = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the mesh when its etcd waits for it")
 		kmsAdv       = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --mesh-port)")
 		kmsPort      = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared cleartext-h2 port)")
+		relayBin     = flag.String("relay-bin", "", "path to the iroh-relay binary; runs it as a child on loopback and proxies /relay, /ping, /generate_204 (empty = no iroh relay)")
+		relayPort    = flag.Int("relay-port", 3340, "loopback port the iroh-relay child binds (only reachable through the hub's proxy)")
 	)
 	flag.Parse()
 
@@ -341,6 +351,34 @@ func main() {
 		hub:          hub,
 		kmsAdvertise: *kmsAdv,
 		started:      time.Now(),
+	}
+
+	if *relayBin != "" {
+		// The iroh home relay (Mesh v3, ADR-0022) is a keyless transport
+		// component: it starts with the process and runs sealed or not, so
+		// the identity plane's remote paths survive a redeploy's seal
+		// window.
+		rs, err := newRelaySupervisor(*relayBin, *relayPort)
+		if err != nil {
+			log.Fatalf("relay: %v", err)
+		}
+		if err := rs.Start(context.Background()); err != nil {
+			// Not fatal: the supervisor keeps retrying, and config/KMS/
+			// unseal do not depend on the relay. /status shows it DOWN.
+			log.Printf("relay: %v (supervisor keeps retrying)", err)
+		}
+		s.relay = rs
+		// The child must not outlive the hub: on SIGTERM/SIGINT (fly stop,
+		// ^C locally) stop it before exiting. Nothing else here needs a
+		// graceful shutdown — every other surface is stateless.
+		go func() {
+			sigc := make(chan os.Signal, 1)
+			signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
+			sig := <-sigc
+			log.Printf("%v: stopping relay child", sig)
+			rs.Close()
+			os.Exit(0)
+		}()
 	}
 
 	if hub != nil {
