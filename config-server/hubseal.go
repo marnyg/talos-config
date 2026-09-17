@@ -23,6 +23,9 @@ package main
 // wallet that signed the first.
 
 import (
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log"
@@ -31,11 +34,13 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/marnyg/talos-config/config-server/enroll"
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebderive"
+	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
@@ -65,14 +70,37 @@ type hubManager struct {
 	issuer  *issuer.Issuer
 	wallets []cert.ActorID // adminAddrs as eth: actor ids
 
+	// enroll is the Enroll actor (ADR-0024): own key, consented to by
+	// the Issuer for #mint-device, speaking to it over the in-process
+	// actor network. The Issuer's inbox verifies the wallet's approval
+	// inside every request; Enroll is a courier, not an authority.
+	enroll *enroll.Enroll
+
 	mu     sync.Mutex
 	master []byte // nil while sealed
 	wallet string // wallet that unsealed the master; "" if sealed or from env
 }
 
 func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh.Manager) (*hubManager, error) {
-	iss, err := issuer.New(mesh.Groups(), nil, nil)
+	// The hub's actors on one in-process network: the Issuer (hubkey,
+	// random per process) listens; Enroll dials it. iroh comes later
+	// (talos-config-e8d) as a second transport, not a redesign.
+	net := actor.NewMemoryNetwork()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
+		return nil, fmt.Errorf("hubkey: %w", err)
+	}
+	hubID := cert.NewEdSigner(priv).ActorID()
+	ep, err := net.Bind(hubID, "hub")
+	if err != nil {
+		return nil, err
+	}
+	iss := issuer.NewWithKey(priv, mesh.Groups(), ep, nil)
+	en, err := enroll.New(net, hubID, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := iss.Admit(en.ID()); err != nil {
 		return nil, err
 	}
 	wallets := make([]cert.ActorID, 0, len(adminAddrs))
@@ -83,7 +111,15 @@ func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh
 		}
 		wallets = append(wallets, w)
 	}
-	return &hubManager{root: root, adminAddrs: adminAddrs, pinnedCAFP: pinnedCAFP, mesh: nm, issuer: iss, wallets: wallets}, nil
+	return &hubManager{root: root, adminAddrs: adminAddrs, pinnedCAFP: pinnedCAFP, mesh: nm, issuer: iss, wallets: wallets, enroll: en}, nil
+}
+
+// listen runs the Issuer's actor for the process's life. Sealed or
+// not: its inbox refuses until the wallet's speak-as is held.
+func (m *hubManager) listen(ctx context.Context) {
+	if err := m.issuer.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		log.Printf("issuer: listen: %v", err)
+	}
 }
 
 // current returns the unsealed master key, or nil while sealed.
@@ -310,4 +346,33 @@ func (s *server) mesh() *mesh.Manager {
 		return nil
 	}
 	return s.hub.mesh
+}
+
+// wellKnownSpeakAsPath serves the hub's current speak-as over WAN HTTPS
+// (ADR-0024 "cold cache after a deploy"): a member whose hub rotated
+// its hubkey lacks exactly one cert — the wallet's new speak-as — and
+// fetches it here before its first beat. The cert is wallet-signed and
+// verified offline; web PKI is only the hint channel (invariant 4's
+// permitted direction, invariant 5's single entrypoint). 503 while
+// sealed: there is nothing true to say yet.
+const wellKnownSpeakAsPath = "/.well-known/talos-hub/speak-as"
+
+func (s *server) handleWellKnownSpeakAs(w http.ResponseWriter, _ *http.Request) {
+	if s.hub == nil {
+		http.NotFound(w, nil)
+		return
+	}
+	sa := s.hub.issuer.SpeakAs()
+	if sa == nil {
+		http.Error(w, "sealed: the hub holds no speak-as", http.StatusServiceUnavailable)
+		return
+	}
+	b, err := cert.Encode(*sa)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(b)
 }

@@ -243,6 +243,7 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("POST /mesh/enroll/approve", s.handleMeshEnrollApprove)
 	mux.HandleFunc("GET /mesh/enroll/config", s.handleMeshEnrollConfig)
 	mux.HandleFunc("GET /sealed", s.handleSealed)
+	mux.HandleFunc("GET "+wellKnownSpeakAsPath, s.handleWellKnownSpeakAs)
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("GET /policy", s.handlePolicyPage)
 	mux.HandleFunc("POST /policy/overlay", s.handlePolicySet)
@@ -382,6 +383,9 @@ func main() {
 	}
 
 	if hub != nil {
+		// The Issuer actor listens from the start (ADR-0024); Enroll's
+		// #mint-device calls land here once the wallet has unsealed.
+		go hub.listen(context.Background())
 		// The overlay /config route serves hub-composed configs to admin
 		// devices; wired here because the handler needs the full server.
 		hub.mesh.TunnelConfig = http.HandlerFunc(s.handleTunnelConfig)

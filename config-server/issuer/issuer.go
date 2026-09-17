@@ -83,10 +83,11 @@ var (
 // Issuer is the hubkey and the actor around it. Construct with New,
 // unseal with Unseal, then mint. Safe for concurrent use.
 //
-// The embedded Actor is configured (SpeakAs, Consents, #renew guard)
-// by Unseal; per actor.Actor's contract its exported fields must not
-// change while it Listens, so wire a transport and call Listen only
-// AFTER Unseal. In 359.8.1 nothing listens yet.
+// The embedded Actor Listens for the life of the process (in-memory
+// transport for the sibling actors, iroh later — talos-config-e8d);
+// Unseal and re-unseal swap its authority set through actor.Hold, and
+// every facet guards itself with Serving, so a sealed Issuer is one
+// that refuses, not one that is absent.
 type Issuer struct {
 	signer cert.EdSigner
 	groups []string     // the finite group list the speak-as may delegate
@@ -99,6 +100,7 @@ type Issuer struct {
 	mu        sync.Mutex
 	proposals map[cert.ActorID]cert.Cert // per wallet: the unsigned speak-as offered for signing
 	speakAs   *cert.Cert                 // nil while sealed
+	admitted  []cert.ActorID             // in-process siblings consented to for #mint-device
 }
 
 // New returns a sealed Issuer over a fresh random hubkey. groups is the
@@ -137,7 +139,18 @@ func NewWithKey(priv ed25519.PrivateKey, groups []string, t actor.Transport, clo
 		}
 		return renew(ctx, inv)
 	}
+	a.AcceptTable[FacetMintDevice] = i.mintDeviceHandler
 	return i
+}
+
+// Listen runs the Issuer's actor on its transport until ctx ends. Safe
+// to call before Unseal: the inbox refuses everything until a
+// speak-as is held (no consents, and every facet checks Serving).
+func (i *Issuer) Listen(ctx context.Context) error {
+	if i.Actor.Transport == nil {
+		return actor.ErrNoTransport
+	}
+	return i.Actor.Listen(ctx)
 }
 
 // ID is the hubkey as an actor id (ed:<hex>), the iroh EndpointId the
@@ -245,11 +258,14 @@ func (i *Issuer) hold(sa cert.Cert) error {
 	if err != nil {
 		return fmt.Errorf("issuer: signing consent: %w", err)
 	}
+	siblings, err := i.siblingConsents(now, sa.Exp)
+	if err != nil {
+		return err
+	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.speakAs = &sa
-	i.Actor.SpeakAs = []cert.Cert{sa}
-	i.Actor.Consents = []cert.Cert{consent}
+	i.Actor.Hold(append([]cert.Cert{consent}, siblings...), []cert.Cert{sa})
 	i.proposals = make(map[cert.ActorID]cert.Cert)
 	return nil
 }

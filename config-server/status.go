@@ -404,13 +404,14 @@ server restart or it will not be able to unlock its disks.</div>
  <tr><th>User code</th><td>{{.Auth.UserCode}}</td></tr>
  <tr><th>kind</th><td>{{.Auth.Kind}}</td></tr>
  <tr><th>pubkey fingerprint</th><td><code>{{index .Auth.Identity "pubkey_fp"}}</code></td></tr>
+ {{with index .Auth.Identity "node"}}<tr><th>node id</th><td><code>{{.}}</code> — also joins the identity plane (member kit)</td></tr>{{end}}
  <tr><th>proposed</th><td>{{index .Auth.Identity "proposed_name"}} ({{index .Auth.Identity "proposed_group"}})</td></tr>
  <tr><th>Requested</th><td>{{.Auth.CreatedAt.Format "15:04:05"}}</td></tr>
 </table>
 <p>Verify the fingerprint against what the device shows before approving.
 You decide the final name and group — the device only proposed them.</p>
 <form method="POST" action="/mesh/enroll/approve" class="mesh-enroll"
-      data-fp="{{index .Auth.Identity "pubkey_fp"}}" data-nonce="{{.Auth.Nonce}}">
+      data-fp="{{index .Auth.Identity "pubkey_fp"}}" data-node="{{index .Auth.Identity "node"}}" data-nonce="{{.Auth.Nonce}}">
  <input type="hidden" name="user_code" value="{{.Auth.UserCode}}">
  <p>
   <label>name <input type="text" name="name" value="{{index .Auth.Identity "proposed_name"}}"></label>
@@ -548,18 +549,22 @@ You decide the final name and group — the device only proposed them.</p>
     } catch (e) { alert('signing failed: ' + (e.message || e)); }
   });
 
-  // Mesh-enroll cards (ADR-0012): the wallet signs the v1 enrollment
+  // Mesh-enroll cards (ADR-0012): the wallet signs the enrollment
   // message with the FINAL name/group the operator picks, so the
   // message is rebuilt from the form fields on every edit. The server
   // rebuilds the same message from the submitted values
-  // (handleMeshEnrollApprove) — the two must agree byte for byte,
-  // including the name normalization (trim + lowercase).
+  // (handleMeshEnrollApprove, enrollmsg) — the two must agree byte for
+  // byte, including the name normalization (trim + lowercase). v2 (a
+  // node id present) adds the "node" line: one signature, two planes.
   function meshEnrollMsg(form) {
     var name = form.querySelector('input[name=name]').value.trim().toLowerCase();
     var checked = form.querySelector('input[name=group]:checked');
     var group = checked ? checked.value : '';
-    return 'talos config-server mesh device enrollment v1\nname: ' + name +
+    var node = form.dataset.node || '';
+    var v = node ? 'v2' : 'v1';
+    return 'talos config-server mesh device enrollment ' + v + '\nname: ' + name +
            '\ngroup: ' + group + '\npubkey: ' + form.dataset.fp +
+           (node ? '\nnode: ' + node : '') +
            '\nnonce: ' + form.dataset.nonce;
   }
   function updateEnroll() {

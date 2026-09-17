@@ -95,7 +95,7 @@
               #     34754508013: one job green from cache, another rebuilt the
               #     FOD and mismatched). After touching a replaced tree, check
               #     with `nix build .#<pkg>.goModules --rebuild`.
-              vendorHash = "sha256-6OtxKs8iEN6XDgYaEKVa2huIcnBWii9RQS2bP6XNlxQ=";
+              vendorHash = "sha256-avDelzkuRJc4qliwZCrO4jP3sU7h5pb2x2kC6+CEsGw=";
             };
 
             # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go

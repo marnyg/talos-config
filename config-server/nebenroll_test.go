@@ -22,6 +22,7 @@ import (
 	"github.com/slackhq/nebula/overlay"
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/enrollmsg"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebderive"
@@ -317,7 +318,7 @@ func TestMeshEnrollRejects(t *testing.T) {
 	if err := json.Unmarshal(body, &ch); err != nil {
 		t.Fatal(err)
 	}
-	badMsg := meshEnrollMessageV1("laptop", mesh.GroupAdmins, ch.Fingerprint, "not-the-nonce")
+	badMsg := enrollmsg.V1("laptop", mesh.GroupAdmins, ch.Fingerprint, "not-the-nonce")
 	badSig := personalSign(t, testKey(t), badMsg)
 	badResp, err := http.PostForm(ts.URL+"/mesh/enroll", url.Values{
 		"name": {ch.Name}, "group": {ch.Group}, "pubkey": {pubHex},
@@ -564,7 +565,7 @@ func TestMeshEnrollDeviceFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sig := personalSign(t, testKey(t), meshEnrollMessageV1("livingroom", mesh.GroupMedia, fp, nonce))
+	sig := personalSign(t, testKey(t), enrollmsg.V1("livingroom", mesh.GroupMedia, fp, nonce))
 	resp := approveMeshEnroll(t, s, ts.URL, url.Values{
 		"user_code": {userCode}, "name": {"livingroom"},
 		"group": {mesh.GroupMedia}, "signature": {sig},
@@ -633,7 +634,7 @@ func TestMeshEnrollApproveAdminsRequiresRetype(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sig := personalSign(t, testKey(t), meshEnrollMessageV1("console", mesh.GroupAdmins, fp, nonce))
+	sig := personalSign(t, testKey(t), enrollmsg.V1("console", mesh.GroupAdmins, fp, nonce))
 
 	// No admin_retype: refused, flow still pending.
 	approveMeshEnroll(t, s, ts.URL, url.Values{
