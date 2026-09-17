@@ -10,7 +10,7 @@ require (
 	github.com/siderolabs/talos/pkg/machinery v1.12.6
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/slackhq/nebula v1.11.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/mobile v0.0.0-20260813181013-1960c775504c
 	golang.org/x/net v0.58.0
 	golang.org/x/sync v0.22.0
@@ -19,6 +19,8 @@ require (
 	gvisor.dev/gvisor v0.0.0-20250503011706-39ed1f5ac29c
 	pgregory.net/rapid v1.3.0
 )
+
+require github.com/gowebpki/jcs v1.0.1 // indirect
 
 require (
 	cel.dev/expr v0.25.1 // indirect
@@ -56,6 +58,7 @@ require (
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jsimonetti/rtnetlink/v2 v2.2.1-0.20260317095713-310581b9c6ac // indirect
+	github.com/marnyg/talos-config/protocol v0.0.0
 	github.com/mdlayher/ethtool v0.5.1 // indirect
 	github.com/mdlayher/genetlink v1.3.2 // indirect
 	github.com/mdlayher/netlink v1.9.0 // indirect
@@ -104,3 +107,5 @@ require (
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
+
+replace github.com/marnyg/talos-config/protocol => ../protocol

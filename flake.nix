@@ -65,11 +65,16 @@
               # policy tests deliberately run against the shipped file
               # (../talos/mesh-policy.yaml), so the sandbox must carry it
               # — a fixture copy would un-guard the file (019ce97).
+              # go.mod `replace`s ../protocol (issuer/, 359.8.1), so the
+              # protocol module's sources ride along like iroh-transport's.
               src = nixpkgs.lib.fileset.toSource {
                 root = ./.;
                 fileset = nixpkgs.lib.fileset.unions [
                   ./config-server
                   ./talos/mesh-policy.yaml
+                  ./protocol/go.mod
+                  ./protocol/go.sum
+                  (nixpkgs.lib.fileset.fileFilter (f: f.hasExt "go") ./protocol)
                 ];
               };
               modRoot = "config-server";
@@ -82,7 +87,7 @@
               # store path matching the hash, so a stale-but-matching vendor
               # dir survives `go mod tidy`. Force a recompute by setting a
               # bogus hash and reading nix's "got:" line.
-              vendorHash = "sha256-wffIVZiCnXrizVshV9W9zivCO11ts511eawyK6j0ABQ=";
+              vendorHash = "sha256-QmucnWmMfgLMtLtrXi/8bS+r56grFwCLeLz0Al5fl/c=";
             };
 
             # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go
