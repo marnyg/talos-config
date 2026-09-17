@@ -14,3 +14,7 @@ talos/clusters/*/secrets.yaml
 talos/clusters/*/sealed-secrets.yaml
 config-server/config-server
 protocol/docs
+# Extension build output (P0.3 imager chain) is gitignored but sits in
+# the working tree; 145 MB of it overflowed the fly VM's tmpfs at
+# entrypoint cp time and crash-looped the hub (2026-09-17).
+talos/extensions/**/_out
