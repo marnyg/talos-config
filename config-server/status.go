@@ -12,6 +12,7 @@ package main
 
 import (
 	"cmp"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/ethsig"
+	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/mesh"
@@ -265,10 +267,15 @@ func statusPageHead(title string) string {
 // so the request shape cannot drift between the login and dashboard
 // flows. Returns null when no wallet is present (already alerted).
 const walletSignJS = `
-  async function walletSign(msg) {
+  async function walletAddr() {
     if (!window.ethereum) { alert('no wallet found'); return null; }
     var accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-    return await ethereum.request({ method: 'personal_sign', params: [msg, accounts[0]] });
+    return accounts[0].toLowerCase();
+  }
+  async function walletSign(msg) {
+    var addr = await walletAddr();
+    if (!addr) return null;
+    return await ethereum.request({ method: 'personal_sign', params: [msg, addr] });
   }
 `
 
@@ -339,18 +346,34 @@ var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("
 <script>history.replaceState(null, '', '/status');</script>
 {{end}}
 <div id="live">
-{{if .Sealed}}
+{{if or .Sealed .IdentitySealed}}
 <div class="msg warn">
+{{if .Sealed}}
  <strong>⚠ Hub is SEALED</strong> — config serving is paused.
  <p>Unsealing signs the master-key derivation message. <strong>This signature IS the
  fleet master key.</strong> Only ever sign it on this page or offline via
  <code>cast wallet sign</code> — never on any other site.</p>
- <form method="POST" action="/unseal" id="unseal-form" data-msg="{{.MasterMessage}}">
+{{end}}
+{{if .IdentitySealed}}
+ <strong>⚠ Hub identity {{.Fingerprint}} needs your signature</strong> — {{.Identity}}.
+ <p>The speak-as signature lends this process's key your authority to issue member
+ certs for 120 days. It names this key, so it is useless anywhere else; a nag
+ here means the runway is under 30 days.</p>
+{{end}}
+ <form method="POST" action="/unseal" id="unseal-form"{{if .Sealed}} data-msg="{{.MasterMessage}}"{{end}}{{if .IdentitySealed}} data-proposals="{{.ProposalsJSON}}"{{end}}>
  {{if .WalletEnabled}}<button type="button" id="unseal-wallet">Unseal with wallet</button>{{end}}
   <details>
    <summary>Sign manually (e.g. cast wallet sign)</summary>
-   <p>Sign exactly:</p><pre>{{.MasterMessage}}</pre>
+{{if .Sealed}}
+   <p>Master — sign exactly:</p><pre>{{.MasterMessage}}</pre>
    <input type="text" name="signature" placeholder="0x signature" size="60">
+{{end}}
+{{if .IdentitySealed}}
+{{range .Proposals}}
+   <p>Speak-as for {{.Wallet}} — sign exactly:</p><pre>{{.Msg}}</pre>
+{{end}}
+   <input type="text" name="speakas_signature" placeholder="0x speak-as signature" size="60">
+{{end}}
    <button>Submit unseal</button>
   </details>
  </form>
@@ -359,6 +382,7 @@ var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("
 <table>
  <tr><th>server</th><td>{{.Version}}{{if .Started}} — up since {{.Started}}{{end}}</td></tr>
  <tr><th>hub</th><td{{if .Sealed}} class="warn"{{end}}>{{.Seal}}</td></tr>
+ {{if .Identity}}<tr><th>identity</th><td{{if .IdentitySealed}} class="warn"{{end}}>{{.Identity}}</td></tr>{{end}}
  {{if .Mesh}}<tr><th>mesh</th><td{{if .MeshWarn}} class="warn"{{end}}>{{.Mesh}}</td></tr>{{end}}
  {{with .Boot}}
  <tr><th>auto-bootstrap</th><td>{{.State}}{{if .Target}} — target {{.Target}} ({{.MeshIP}}){{end}}{{if .Done}} — cluster bootstrapped, idle{{else if .Attempted}} — Bootstrap called, watching etcd{{end}}{{if .LastErr}} — last error: {{.LastErr}}{{end}}</td></tr>
@@ -478,7 +502,29 @@ You decide the final name and group — the device only proposed them.</p>
     var form = btn.closest('form');
     var msg, action = null;
     if (btn.id === 'unseal-wallet') {
-      msg = form.dataset.msg;
+      // Up to two signatures from ONE wallet (ce8): the master message
+      // if the hub is sealed, the speak-as proposal addressed to that
+      // wallet if the identity is. The proposal is per wallet, so the
+      // connected account picks it.
+      ev.preventDefault();
+      try {
+        var addr = await walletAddr();
+        if (!addr) return;
+        if (form.dataset.msg) {
+          var s1 = await walletSign(form.dataset.msg);
+          if (!s1) return;
+          form.querySelector('input[name=signature]').value = s1;
+        }
+        if (form.dataset.proposals) {
+          var proposal = JSON.parse(form.dataset.proposals)[addr];
+          if (!proposal) { alert('wallet ' + addr + ' is not an admin wallet'); return; }
+          var s2 = await walletSign(proposal);
+          if (!s2) return;
+          form.querySelector('input[name=speakas_signature]').value = s2;
+        }
+        form.submit();
+      } catch (e) { alert('signing failed: ' + (e.message || e)); }
+      return;
     } else if (btn.classList.contains('mesh-approve')) {
       msg = meshEnrollMsg(form);
     } else if (btn.classList.contains('wallet') && btn.dataset.action) {
@@ -585,6 +631,22 @@ type statusData struct {
 	WalletEnabled bool
 	TokenEnabled  bool
 	MasterMessage string
+
+	// Identity plane (ADR-0018): the hubkey's state line, whether the
+	// owner must sign (sealed or nag), and the proposals to sign — the
+	// session wallet's if it is an admin, else every admin's (token
+	// sessions, headless callers).
+	Identity       string
+	IdentitySealed bool
+	Fingerprint    string
+	Proposals      []proposalView
+	ProposalsJSON  string // {lowercase 0x addr: canonical JSON} for the wallet button
+}
+
+// proposalView is one wallet's unsigned speak-as, as the page shows it.
+type proposalView struct {
+	Wallet string // lowercase 0x address
+	Msg    string // the exact bytes to personal_sign
 }
 
 func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
@@ -639,6 +701,13 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		TokenEnabled:  s.adminToken != "",
 		MasterMessage: masterderive.MasterMessage,
 	}
+	if s.hub != nil {
+		data.Identity, data.IdentitySealed = s.hub.identityLine()
+		data.Fingerprint = s.hub.issuer.Fingerprint()
+		if data.IdentitySealed {
+			data.Proposals, data.ProposalsJSON = s.proposalsFor(addr)
+		}
+	}
 	if nm := s.mesh(); nm != nil {
 		svc, _, meshErr := nm.State()
 		switch {
@@ -685,6 +754,33 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 	if err := statusTemplate.Execute(w, data); err != nil {
 		log.Printf("rendering status page: %v", err)
 	}
+}
+
+// proposalsFor renders the speak-as proposals the page offers: the
+// session wallet's alone when it is an admin, otherwise one per admin
+// wallet. When the master was wallet-unsealed, only that wallet may
+// sign the speak-as (ce8), so only its proposal is shown.
+func (s *server) proposalsFor(sessionAddr string) ([]proposalView, string) {
+	wallets := s.adminAddrs
+	switch {
+	case s.hub.masterWallet() != "":
+		wallets = []string{s.hub.masterWallet()}
+	case slices.Contains(s.adminAddrs, sessionAddr):
+		wallets = []string{sessionAddr}
+	}
+	var views []proposalView
+	byAddr := map[string]string{}
+	for _, a := range wallets {
+		_, msg, err := s.hub.issuer.Proposal(issuer.WalletID(a))
+		if err != nil {
+			log.Printf("status: proposal for %s: %v", a, err)
+			continue
+		}
+		views = append(views, proposalView{Wallet: a, Msg: msg})
+		byAddr[a] = msg
+	}
+	j, _ := json.Marshal(byAddr)
+	return views, string(j)
 }
 
 // ago renders a compact relative time.

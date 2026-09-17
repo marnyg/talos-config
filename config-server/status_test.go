@@ -1,6 +1,7 @@
 package main
 
 import (
+	"html/template"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -13,6 +14,7 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/issuer"
 )
 
 // testMAC is the machine declared by newTestServer.
@@ -282,13 +284,27 @@ func TestStatusShowsUnsealFormWhenSealed(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("status: got %d", code)
 	}
-	for _, want := range []string{"SEALED", `action="/unseal"`} {
+	// Both planes sealed: the master message, the session wallet's
+	// speak-as proposal (and only its — the SIWE session picked it), the
+	// fingerprint, and both inputs.
+	_, proposal, err := m.issuer.Proposal(issuer.WalletID(wellKnownAddr))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"SEALED", `action="/unseal"`, `name="signature"`, `name="speakas_signature"`,
+		"Hub identity " + m.issuer.Fingerprint(), "Speak-as for " + wellKnownAddr,
+		template.HTMLEscapeString(proposal), `data-proposals="`, ">identity</th>",
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("sealed status page missing %q", want)
 		}
 	}
+	if strings.Count(body, "Speak-as for ") != 1 {
+		t.Error("a wallet session should see exactly its own proposal")
+	}
 
-	// Unsealing from the dashboard re-renders it, form gone.
+	// Master only: the form stays for the identity half.
 	resp, err := client.PostForm(ts.URL+"/unseal", url.Values{"signature": {unsealSig(t)}})
 	if err != nil {
 		t.Fatal(err)
@@ -297,8 +313,55 @@ func TestStatusShowsUnsealFormWhenSealed(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("unseal: got %d", resp.StatusCode)
 	}
-	if !strings.Contains(body, "hub unsealed") || strings.Contains(body, `action="/unseal"`) {
+	if !strings.Contains(body, "hub unsealed") || !strings.Contains(body, `name="speakas_signature"`) || strings.Contains(body, `name="signature"`) {
+		t.Error("post-master-unseal page should confirm and keep only the speak-as half")
+	}
+	// The proposal shown is unchanged by the master unseal (same wallet).
+	if !strings.Contains(body, template.HTMLEscapeString(proposal)) {
+		t.Error("proposal changed across the master unseal")
+	}
+
+	// Speak-as: form gone, identity line reports the wallet.
+	resp, err = client.PostForm(ts.URL+"/unseal", url.Values{"speakas_signature": {speakAsSig(t, m, testKey(t))}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("speak-as unseal: got %d", resp.StatusCode)
+	}
+	if !strings.Contains(body, "hub identity unsealed") || strings.Contains(body, `action="/unseal"`) {
 		t.Error("post-unseal page should confirm and drop the unseal form")
+	}
+	if !strings.Contains(body, "speaks for "+wellKnownAddr) {
+		t.Error("identity line missing the wallet")
+	}
+}
+
+// TestStatusTokenSessionSeesEveryProposal: a break-glass session has no
+// wallet, so the page offers every admin's proposal for the manual
+// (cast wallet sign) path.
+func TestStatusTokenSessionSeesEveryProposal(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr, otherAddr(t)}, "")
+	s := &server{
+		root:       m.root,
+		store:      deviceflow.NewStore(),
+		sessions:   newSessionStore(),
+		adminAddrs: m.adminAddrs,
+		adminToken: "test-admin-token",
+		hub:        m,
+	}
+	ts := httptest.NewServer(s.mux())
+	defer ts.Close()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	resp, err := client.PostForm(ts.URL+"/status/login", url.Values{"admin_token": {"test-admin-token"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := readBody(t, resp)
+	if strings.Count(body, "Speak-as for ") != 2 {
+		t.Fatalf("token session should see both proposals, got %d", strings.Count(body, "Speak-as for "))
 	}
 }
 

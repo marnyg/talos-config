@@ -12,17 +12,31 @@ package main
 // and recovery passphrases, and the age identity that decrypts the
 // repo's secrets. The unseal used to live on the wg0 manager; phase 2
 // deleted wg0 and lifted it here, the hub-level concern it always was.
+//
+// Beside the master lives the hub's IDENTITY (ADR-0018, ADR-0024): a
+// random per-process hubkey that holds no authority until the same
+// wallet signs a speak-as cert to it. The unseal is therefore two
+// EIP-191 signatures from one allowlisted wallet (decision ce8): one
+// over MasterMessage (master/seed — the nebula plane), one over the
+// Issuer's proposal (hubkey authority — the identity plane). They may
+// arrive in one POST or separately; the second must come from the
+// wallet that signed the first.
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/marnyg/talos-config/config-server/ethsig"
+	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebderive"
+	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // hubManager owns the hub's seal state: the master key and everything
@@ -44,12 +58,32 @@ type hubManager struct {
 	// that exercise seal state alone.
 	mesh *mesh.Manager
 
+	// issuer is the hub's identity: the per-process hubkey and the
+	// speak-as the wallet signs to it. Sealed independently of the
+	// master (a dev-mode master unseal leaves it sealed; the nag window
+	// re-seals it while the master stays held).
+	issuer  *issuer.Issuer
+	wallets []cert.ActorID // adminAddrs as eth: actor ids
+
 	mu     sync.Mutex
 	master []byte // nil while sealed
+	wallet string // wallet that unsealed the master; "" if sealed or from env
 }
 
-func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh.Manager) *hubManager {
-	return &hubManager{root: root, adminAddrs: adminAddrs, pinnedCAFP: pinnedCAFP, mesh: nm}
+func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh.Manager) (*hubManager, error) {
+	iss, err := issuer.New(mesh.Groups(), nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	wallets := make([]cert.ActorID, 0, len(adminAddrs))
+	for _, a := range adminAddrs {
+		w := issuer.WalletID(a)
+		if err := w.Validate(); err != nil {
+			return nil, fmt.Errorf("admin address %q: %w", a, err)
+		}
+		wallets = append(wallets, w)
+	}
+	return &hubManager{root: root, adminAddrs: adminAddrs, pinnedCAFP: pinnedCAFP, mesh: nm, issuer: iss, wallets: wallets}, nil
 }
 
 // current returns the unsealed master key, or nil while sealed.
@@ -71,14 +105,7 @@ func (m *hubManager) unsealWithSignature(sigHex string) error {
 	if err != nil {
 		return fmt.Errorf("signature verification failed: %w", err)
 	}
-	allowed := false
-	for _, a := range m.adminAddrs {
-		if addr == a {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
+	if !slices.Contains(m.adminAddrs, addr) {
 		return fmt.Errorf("wallet %s not in allowlist", addr)
 	}
 	master, err := masterderive.MasterFromSignatureHex(sigHex)
@@ -88,8 +115,59 @@ func (m *hubManager) unsealWithSignature(sigHex string) error {
 	if err := m.unsealWithMaster(master); err != nil {
 		return err
 	}
+	m.mu.Lock()
+	m.wallet = addr
+	m.mu.Unlock()
 	log.Printf("wallet %s unsealed the hub", addr)
 	return nil
+}
+
+// masterWallet is the wallet whose signature derived the held master,
+// "" while sealed or when the master came from the dev env.
+func (m *hubManager) masterWallet() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.wallet
+}
+
+// unsealIssuer accepts the wallet's EIP-191 signature over the Issuer's
+// speak-as proposal. The signature selects the wallet among the
+// allowlist (the proposal names it as iss); it must be the wallet that
+// unsealed the master, when one did (ce8: one root, two signatures).
+func (m *hubManager) unsealIssuer(sigHex string) (string, error) {
+	if len(m.wallets) == 0 {
+		return "", fmt.Errorf("no admin addresses configured; cannot verify speak-as signature")
+	}
+	candidates := m.wallets
+	if mw := m.masterWallet(); mw != "" {
+		candidates = []cert.ActorID{issuer.WalletID(mw)}
+	}
+	w, err := m.issuer.Unseal(sigHex, candidates)
+	if err != nil {
+		if errors.Is(err, issuer.ErrNotAllowed) && len(candidates) < len(m.wallets) {
+			return "", fmt.Errorf("speak-as must be signed by %s, the wallet that unsealed the master: %w", candidates[0], err)
+		}
+		return "", err
+	}
+	addr := string(w)[len("eth:"):]
+	log.Printf("wallet %s unsealed hub identity %s (speak-as until +%dd)", addr, m.issuer.Fingerprint(), m.issuer.Runway()/issuer.Day)
+	return addr, nil
+}
+
+// identityLine renders the Issuer's state for /sealed and /status; warn
+// is true when the owner must act (sealed or in the nag window).
+func (m *hubManager) identityLine() (line string, warn bool) {
+	fp := m.issuer.Fingerprint()
+	wallet := strings.TrimPrefix(string(m.issuer.Wallet()), "eth:")
+	days := m.issuer.Runway() / issuer.Day
+	switch err := m.issuer.Serving(); {
+	case errors.Is(err, issuer.ErrSealed):
+		return "hubkey " + fp + " — SEALED: no speak-as held; sign the proposal above", true
+	case errors.Is(err, issuer.ErrNag):
+		return fmt.Sprintf("hubkey %s speaks for %s — %d d left, NAG: re-sign the proposal above to renew", fp, wallet, days), true
+	default:
+		return fmt.Sprintf("hubkey %s speaks for %s — %d d left", fp, wallet, days), false
+	}
 }
 
 // unsealWithMaster checks the derived CA against the pin, decrypts the
@@ -134,7 +212,12 @@ func (m *hubManager) unsealWithMaster(master []byte) error {
 	return nil
 }
 
-// handleUnseal accepts the admin's signature over MasterMessage.
+// handleUnseal accepts the admin's signatures: `signature` over
+// MasterMessage and/or `speakas_signature` over the Issuer's proposal.
+// Either alone is fine (the page only asks for what is still sealed);
+// with both, the master goes first so the speak-as is bound to the
+// same wallet. A rejected speak-as after an accepted master is still a
+// 403 — the master stays held (idempotent), the page re-asks.
 func (s *server) handleUnseal(w http.ResponseWriter, r *http.Request) {
 	if s.hub == nil {
 		http.Error(w, "hub sealing disabled", http.StatusNotFound)
@@ -144,17 +227,29 @@ func (s *server) handleUnseal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	sig := r.FormValue("signature")
-	if sig == "" {
+	sig, saSig := r.FormValue("signature"), r.FormValue("speakas_signature")
+	if sig == "" && saSig == "" {
 		http.Error(w, "missing signature", http.StatusBadRequest)
 		return
 	}
-	if err := s.hub.unsealWithSignature(sig); err != nil {
-		log.Printf("unseal rejected: %v", err)
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
+	var done []string
+	if sig != "" {
+		if err := s.hub.unsealWithSignature(sig); err != nil {
+			log.Printf("unseal rejected: %v", err)
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		done = append(done, "hub unsealed")
 	}
-	s.respondAction(w, r, "hub unsealed")
+	if saSig != "" {
+		if _, err := s.hub.unsealIssuer(saSig); err != nil {
+			log.Printf("identity unseal rejected: %v", err)
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		done = append(done, "hub identity unsealed ("+s.hub.issuer.Fingerprint()+")")
+	}
+	s.respondAction(w, r, strings.Join(done, "; "))
 }
 
 // handleSealed is a monitoring endpoint: 200 when healthy, 503 when the
@@ -187,6 +282,12 @@ func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "hub: SEALED")
 	default:
 		fmt.Fprintln(w, "hub: unsealed")
+	}
+	// Identity is reported, not paged for, until a Phase 1 consumer
+	// depends on it (nothing listens on the hubkey yet, 359.8.2.x).
+	if s.hub != nil {
+		line, _ := s.hub.identityLine()
+		fmt.Fprintln(w, "identity: "+line)
 	}
 
 	switch {

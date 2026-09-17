@@ -312,7 +312,10 @@ func main() {
 			listenHost = mesh.ResolveListenHost()
 		}
 		nm := mesh.NewManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root)
-		hub = newHubManager(*root, addrs, *meshCAPin, nm)
+		hub, err = newHubManager(*root, addrs, *meshCAPin, nm)
+		if err != nil {
+			log.Fatalf("hub: %v", err)
+		}
 		log.Printf("mesh enabled: %s on udp/%d, binding %s (unseals with the hub)", subnet, *meshPort, listenHost)
 
 		// Dev/testing escape hatch: the master env auto-unseals — but
@@ -354,6 +357,9 @@ func main() {
 			}
 			log.Printf("hub unsealed from %s env (dev mode)", masterKeyEnv)
 		}
+		// The identity plane has no env escape hatch by design (ADR-0018:
+		// the hubkey is per process, nothing durable seeds it).
+		log.Printf("hub identity %s SEALED: an admin must sign the speak-as proposal at /status", hub.issuer.Fingerprint())
 	}
 
 	if *kmsAdv != "" {

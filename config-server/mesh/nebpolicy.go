@@ -17,8 +17,10 @@ package mesh
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
@@ -52,6 +54,13 @@ var policyGroups = map[string]bool{
 	GroupAdmins:   true,
 	GroupMedia:    true,
 	GroupMachines: true,
+}
+
+// Groups is the closed group vocabulary, sorted — what the Issuer's
+// speak-as proposal delegates (ADR-0018: the wallet delegates the
+// finite list, the hub can put a member in no other group).
+func Groups() []string {
+	return slices.Sorted(maps.Keys(policyGroups))
 }
 
 // loadPolicy reads and validates talos/mesh-policy.yaml.

@@ -46,19 +46,20 @@ import (
 
 // Lifetimes in seconds (ADR-0018 "Lifetimes"; runway.qnt).
 const (
-	day = 24 * 60 * 60
+	// Day is the unit the page renders runway in.
+	Day int64 = 24 * 60 * 60
 	// SpeakAsTTL is the unseal speak-as lifetime: the longest a process
 	// may hold authority before the wallet must act again.
-	SpeakAsTTL int64 = 120 * day
+	SpeakAsTTL int64 = 120 * Day
 	// MemberTTL is a member cert's lifetime.
-	MemberTTL int64 = 90 * day
+	MemberTTL int64 = 90 * Day
 	// GrantTTL is an invoke grant's lifetime.
-	GrantTTL int64 = 7 * day
+	GrantTTL int64 = 7 * Day
 	// NagBefore is the seal threshold: with less than this left on the
 	// speak-as the Issuer stops serving beats (ADR-0018 q8h — the nag IS
 	// a seal), so no cert leaves with less than the member runway
 	// behind it. NagBefore == member runway, zero margin, by design.
-	NagBefore int64 = 30 * day
+	NagBefore int64 = 30 * Day
 )
 
 // Verbs the speak-as delegates. Literal (ADR-0018 "Caveats are literal").
@@ -199,6 +200,8 @@ func (i *Issuer) Proposal(wallet cert.ActorID) (cert.Cert, string, error) {
 // speak-as. Returns the wallet that signed. Idempotent once unsealed
 // (a second valid signature replaces the held speak-as — that is how
 // a long-lived process leaves the nag window without a redeploy).
+// A malformed allowlist entry is a configuration error and fails the
+// whole unseal loudly rather than being skipped.
 func (i *Issuer) Unseal(sigHex string, wallets []cert.ActorID) (cert.ActorID, error) {
 	sig, err := hex.DecodeString(strings.TrimPrefix(strings.TrimSpace(sigHex), "0x"))
 	if err != nil || len(sig) != 65 {
@@ -207,7 +210,7 @@ func (i *Issuer) Unseal(sigHex string, wallets []cert.ActorID) (cert.ActorID, er
 	for _, w := range wallets {
 		c, _, err := i.Proposal(w)
 		if err != nil {
-			continue
+			return "", fmt.Errorf("issuer: allowlist entry %q: %w", w, err)
 		}
 		c.Sig = sig
 		if cert.Verify(c) != nil {

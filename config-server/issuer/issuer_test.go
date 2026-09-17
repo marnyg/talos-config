@@ -214,7 +214,7 @@ func TestProposalShapeAndStability(t *testing.T) {
 			rt.Fatalf("message is not the proposal's canonical JSON")
 		}
 		// Stability: the clock moves, the page does not.
-		clk.Advance(rapid.Int64Range(1, day).Draw(rt, "later"))
+		clk.Advance(rapid.Int64Range(1, Day).Draw(rt, "later"))
 		c2, msg2, err := iss.Proposal(w)
 		if err != nil {
 			rt.Fatal(err)
@@ -277,6 +277,13 @@ func TestUnsealAcceptsOnlyAnAllowlistedWalletOverThisProcess(t *testing.T) {
 	raw[7] ^= 0x01
 	if _, err := a.Unseal("0x"+hex.EncodeToString(raw), []cert.ActorID{w.id}); !errors.Is(err, ErrNotAllowed) {
 		t.Fatalf("tampered signature: %v", err)
+	}
+	// A malformed allowlist entry is a config error, not a skipped wallet.
+	if _, err := a.Unseal(sigA, []cert.ActorID{"eth:0xnope", w.id}); err == nil || errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("malformed allowlist entry: %v", err)
+	}
+	if a.Serving() == nil {
+		t.Fatal("unsealed despite a malformed allowlist")
 	}
 	// The allowlist may be wide; the signature selects the wallet.
 	got, err := a.Unseal(sigA, []cert.ActorID{other.id, w.id})
@@ -462,7 +469,7 @@ func TestKitAuthorizesAtAnyIssuerTheSameWalletUnsealed(t *testing.T) {
 	// Process A dies; B is a fresh key unsealed by the same wallet. What A
 	// signed admits at B: B answers for W (rule 4) and the kit's
 	// speak-as resolves A → W.
-	clk.Advance(day)
+	clk.Advance(Day)
 	b := newIssuer(t, clk, nil)
 	w.unseal(t, b)
 	res := authorizeAt(b, kit, N, clk.Now())
@@ -570,7 +577,7 @@ func TestRenewAcrossIssuerRotation(t *testing.T) {
 
 	// Process B: fresh hubkey, bound to the network, unsealed BEFORE it
 	// listens (Issuer's contract), same wallet.
-	clk.Advance(day)
+	clk.Advance(Day)
 	_, privB, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)

@@ -11,11 +11,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nebstack"
+	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 var nebSealSubnet = netip.MustParsePrefix("10.42.0.0/16")
@@ -65,7 +68,11 @@ func testHubManager(t *testing.T, adminAddrs []string, pinnedCAFP string) *hubMa
 	}
 
 	nm, _ := testNebManager(t, root)
-	return newHubManager(root, adminAddrs, pinnedCAFP, nm)
+	m, err := newHubManager(root, adminAddrs, pinnedCAFP, nm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
 // unsealSig produces the well-known test key's signature over the
@@ -73,6 +80,90 @@ func testHubManager(t *testing.T, adminAddrs []string, pinnedCAFP string) *hubMa
 func unsealSig(t *testing.T) string {
 	t.Helper()
 	return personalSign(t, testKey(t), masterderive.MasterMessage)
+}
+
+// speakAsSig is the second unseal signature (ce8): priv's EIP-191
+// signature over m's speak-as proposal addressed to priv's own wallet.
+func speakAsSig(t *testing.T, m *hubManager, priv *secp256k1.PrivateKey) string {
+	t.Helper()
+	addr := cert.NewEthSigner(priv).ActorID()
+	_, msg, err := m.issuer.Proposal(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return personalSign(t, priv, msg)
+}
+
+// otherAddr is otherKey's lowercase 0x address.
+func otherAddr(t *testing.T) string {
+	t.Helper()
+	return strings.TrimPrefix(string(cert.NewEthSigner(otherKey(t)).ActorID()), "eth:")
+}
+
+func TestNewHubManagerRejectsMalformedAdmin(t *testing.T) {
+	if _, err := newHubManager(t.TempDir(), []string{"0xnope"}, "", nil); err == nil {
+		t.Fatal("malformed admin address accepted")
+	}
+}
+
+// TestUnsealIssuer: the identity plane seals and unseals independently
+// of the master, and the speak-as must come from the wallet that
+// unsealed the master when one did.
+func TestUnsealIssuer(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr, otherAddr(t)}, "")
+	if line, warn := m.identityLine(); !warn || !strings.Contains(line, "SEALED") {
+		t.Fatalf("fresh identity line: %q warn=%v", line, warn)
+	}
+
+	// A non-admin wallet's signature over its own proposal is refused.
+	stranger := func() *secp256k1.PrivateKey {
+		b := make([]byte, 32)
+		b[31] = 3
+		return secp256k1.PrivKeyFromBytes(b)
+	}()
+	if _, err := m.unsealIssuer(speakAsSig(t, m, stranger)); err == nil {
+		t.Fatal("stranger unsealed the identity")
+	}
+
+	// Master by the well-known wallet, then the OTHER admin tries the
+	// speak-as: two roots, refused (ce8).
+	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
+		t.Fatal(err)
+	}
+	if m.masterWallet() != wellKnownAddr {
+		t.Fatalf("master wallet %q", m.masterWallet())
+	}
+	if _, err := m.unsealIssuer(speakAsSig(t, m, otherKey(t))); err == nil || !strings.Contains(err.Error(), wellKnownAddr) {
+		t.Fatalf("other admin's speak-as after well-known's master: %v", err)
+	}
+	if m.issuer.Serving() == nil {
+		t.Fatal("identity unsealed by the wrong wallet")
+	}
+
+	// Same wallet: accepted; the Issuer speaks for it with full runway.
+	addr, err := m.unsealIssuer(speakAsSig(t, m, testKey(t)))
+	if err != nil || addr != wellKnownAddr {
+		t.Fatalf("unsealIssuer: %v (%s)", err, addr)
+	}
+	if m.issuer.Wallet() != issuer.WalletID(wellKnownAddr) || m.issuer.Runway() != issuer.SpeakAsTTL {
+		t.Fatalf("held speak-as: wallet %s runway %d", m.issuer.Wallet(), m.issuer.Runway())
+	}
+	if line, warn := m.identityLine(); warn || !strings.Contains(line, wellKnownAddr) || !strings.Contains(line, "120 d left") {
+		t.Fatalf("unsealed identity line: %q warn=%v", line, warn)
+	}
+}
+
+// TestUnsealIssuerBeforeMaster: with the master from the dev env (no
+// wallet), any admin may sign the speak-as; the order of the two
+// signatures is free.
+func TestUnsealIssuerBeforeMaster(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr, otherAddr(t)}, "")
+	if _, err := m.unsealIssuer(speakAsSig(t, m, otherKey(t))); err != nil {
+		t.Fatalf("speak-as while master sealed: %v", err)
+	}
+	if m.sealed() != true || m.issuer.Serving() != nil {
+		t.Fatal("identity unseal touched the master, or failed")
+	}
 }
 
 func TestUnsealWithSignature(t *testing.T) {
@@ -295,5 +386,60 @@ func TestUnsealEndpoint(t *testing.T) {
 	s.handleSealed(rec, httptest.NewRequest("GET", "/sealed", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/sealed after unseal: got %d, want 200", rec.Code)
+	}
+	// Identity is reported (not paged for) while still sealed.
+	if !strings.Contains(rec.Body.String(), "identity: hubkey "+m.issuer.Fingerprint()+" — SEALED") {
+		t.Fatalf("/sealed body: %q", rec.Body.String())
+	}
+
+	post := func(form url.Values) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "/unseal", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		s.handleUnseal(rec, req)
+		return rec
+	}
+	// Bad speak-as signature: 403, identity stays sealed.
+	if rec := post(url.Values{"speakas_signature": {"0xdeadbeef"}}); rec.Code != http.StatusForbidden || m.issuer.Serving() == nil {
+		t.Fatalf("bad speak-as: got %d", rec.Code)
+	}
+	// Second signature alone, same wallet: identity unsealed.
+	rec = post(url.Values{"speakas_signature": {speakAsSig(t, m, testKey(t))}})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "hub identity unsealed ("+m.issuer.Fingerprint()+")") {
+		t.Fatalf("speak-as unseal: got %d: %s", rec.Code, rec.Body.String())
+	}
+	if m.issuer.Serving() != nil {
+		t.Fatal("identity still sealed after a valid speak-as")
+	}
+	rec = httptest.NewRecorder()
+	s.handleSealed(rec, httptest.NewRequest("GET", "/sealed", nil))
+	if !strings.Contains(rec.Body.String(), "identity: hubkey "+m.issuer.Fingerprint()+" speaks for "+wellKnownAddr) {
+		t.Fatalf("/sealed body: %q", rec.Body.String())
+	}
+}
+
+// TestUnsealEndpointBothSignatures is the page's normal path: one POST
+// with both signatures from one wallet unseals both planes.
+func TestUnsealEndpointBothSignatures(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr}, "")
+	s := &server{root: m.root, store: deviceflow.NewStore(), hub: m, adminAddrs: m.adminAddrs}
+	form := url.Values{"signature": {unsealSig(t)}, "speakas_signature": {speakAsSig(t, m, testKey(t))}}
+	req := httptest.NewRequest("POST", "/unseal", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	s.handleUnseal(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "hub unsealed; hub identity unsealed") {
+		t.Fatalf("both: got %d: %s", rec.Code, rec.Body.String())
+	}
+	if m.sealed() || m.issuer.Serving() != nil {
+		t.Fatal("a plane is still sealed")
+	}
+	// Nothing to sign: 400.
+	req = httptest.NewRequest("POST", "/unseal", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	s.handleUnseal(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty unseal: got %d", rec.Code)
 	}
 }
