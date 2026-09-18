@@ -204,6 +204,23 @@ model §2 "Hub actors"):
   key — the compiler declining output, git being its declared input,
   not a receiver reading git.
 
+- **Amended 2026-09-18 (`e8d`) — the endpoint as built.** "hubkey =
+  the hub process's iroh `EndpointId`" holds literally: `newHubManager`
+  generates the key and binds it on iroh (`iroh-transport`, homed on the
+  relay child at `http://127.0.0.1:<port>`, advertised as the public
+  URL — the relay forwards by `EndpointId`, so two names for one server
+  meet) and on the in-process network, and the Issuer's actor serves
+  both through one `actor.Multi`: no second key, no second inbox, Enroll
+  untouched. The hub is relay-only by construction (ADR-0022), so its
+  `reach-me-at` carries only `iroh:relay=…`. The cold-cache story gains
+  a second document: a member's cached location record names the dead
+  `hubkey` (a `reach-me-at` is valid only signed by the actor it
+  locates), so `/.well-known/talos-hub/reach-me-at` serves the live
+  one beside the speak-as — still "at most one `/.well-known` fetch" in
+  spirit (two GETs, one hostname, before the first beat). The hub's
+  record lives `GrantTTL` (7 d), not ADR-0001's ≈ 1 h: a beat is days
+  apart and the hub does not roam.
+
 ### Confirmation
 
 Right if: a redeploy rotates `hubkey` and every member's next beat

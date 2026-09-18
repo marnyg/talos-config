@@ -174,7 +174,7 @@ classDiagram
     class Issuer["Issuer — hubkey = speak-as.aud = iroh EndpointId\n#renew #bundle #mint-device #mint-machine · hub-http:/config"]
     class Enroll["Enroll — own key, no wallet delegation\nWAN: device flow, wallet approval"]
     class Provisioner["Provisioner — own key, holds the secrets seed\nWAN: /config (+boot token), /enroll/machine, KMS"]
-    class Shell["Shell (not an actor): mux, /unseal, /sealed, /status,\n/.well-known speak-as, relay child"]
+    class Shell["Shell (not an actor): mux, /unseal, /sealed, /status,\n/.well-known speak-as + reach-me-at, relay child"]
     class Member["Member (node agent, irohup, app)"]
     Wallet --> Issuer : speak-as (unseal)
     Wallet ..> Provisioner : seed (2nd EIP-191 sig, same wallet)
@@ -187,7 +187,7 @@ classDiagram
 
 | Actor | Key / endpoint | Inbox | State (all volatile) |
 |---|---|---|---|
-| **Issuer** | `hubkey`; iroh (`e8d`, pending) + in-memory (built) | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{member: <cert>}` → hubkey-signed grants `policy.Compile`d for the cert's name/groups, the v3 blocklist, current `speak-as`; the Issuer verifies the member cert itself — own signature, or a dead `hubkey` resolved via `cert.SpeaksFor` over the proof's `speak-as` from *its* wallet, `aud == From` — built 2026-09-18, decision `1tg`; the name map waits on `e8d`), `#mint-device` (from Enroll: `{node, name, group, fingerprint, nonce, signature}` — the Issuer rebuilds the **v2 enrollment message** and verifies the **wallet's** EIP-191 over it; built 2026-09-17), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal, swapped on the live actor via `actor.Hold`; location cache, `seq` HWM, `lw` (safe-to-lose); git checkout = compiler input. **No replay state** for `#mint-device` (decision `0t9`) |
+| **Issuer** | `hubkey`; one inbox on two wires via `actor.Multi` — in-memory (Enroll) + the hub's own iroh endpoint, homed on the relay child over loopback and advertised as `iroh:relay=https://marnyg-talos-config.fly.dev` (built 2026-09-18, `e8d`; relay-only by construction, ADR-0022) | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{member: <cert>}` → hubkey-signed grants `policy.Compile`d for the cert's name/groups, the v3 blocklist, current `speak-as`; the Issuer verifies the member cert itself — own signature, or a dead `hubkey` resolved via `cert.SpeaksFor` over the proof's `speak-as` from *its* wallet, `aud == From` — built 2026-09-18, decision `1tg`; the name map is next — `359.8.2.3`, unblocked by `e8d`), `#mint-device` (from Enroll: `{node, name, group, fingerprint, nonce, signature}` — the Issuer rebuilds the **v2 enrollment message** and verifies the **wallet's** EIP-191 over it; built 2026-09-17), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal, swapped on the live actor via `actor.Hold`; location cache, `seq` HWM, `lw` (safe-to-lose); git checkout = compiler input. **No replay state** for `#mint-device` (decision `0t9`) |
 | **Enroll** | own key; in-memory only (built: `config-server/enroll`) | none (WAN HTTPS handlers: `/device/code`, `/token`, `/verify`, `/mesh/enroll/*`). Sends `#mint-device` when an enrollment named a `node`; refuses to start such a flow while the Issuer is not serving | device-flow store (minutes TTL) — its single-use nonce is the replay check |
 | **Provisioner** | own key; in-memory only | none (WAN HTTPS: `/config`, `/enroll/machine`, KMS) | seed (memory); boot-token seen-set |
 
@@ -211,11 +211,18 @@ Rules that fall out of the cut:
   verifies at `/enroll/machine` (`54n` is its own choice), then asks
   `Issuer#mint-machine`. A compromised Provisioner already hands blank
   machines any config; requesting machine certs adds no new power.
-- **Cold cache after a deploy:** a member lacks only the new
-  `speak-as`; `GET /.well-known/talos-hub/speak-as` over WAN HTTPS
-  serves it (503 while sealed; built 2026-09-17) —
-  wallet-signed, verified offline, web PKI as hint channel (invariant
-  4's permitted direction, invariant 5's single entrypoint).
+- **Cold cache after a deploy:** a member lacks the new `hubkey`'s
+  `speak-as` **and its `reach-me-at`** (a location record is valid only
+  signed by the actor it locates, so the cached one names the dead
+  key); `GET /.well-known/talos-hub/{speak-as,reach-me-at}` over WAN
+  HTTPS serve both (503 while sealed / unpublished; built 2026-09-17
+  and 2026-09-18) — wallet-signed resp. hubkey-signed, verified offline,
+  web PKI as hint channel (invariant 4's permitted direction, invariant
+  5's single entrypoint). The hub's record carries only its relay tag
+  and lives `GrantTTL` (7 d, refreshed 6-hourly): a beat is days apart
+  and the hub does not roam, so ADR-0001's ≈ 1 h sketch would put a
+  WAN fetch in front of every beat. After one beat the reply's
+  piggyback keeps it current.
 
 ### Policy: payload, not identity
 

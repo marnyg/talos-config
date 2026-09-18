@@ -206,7 +206,8 @@ flyctl logs -a marnyg-talos-config --no-tail | grep "device auth started"
      && talosctl validate -c /tmp/new.yaml -m metal
    ```
 
-5. Commit, then `fly deploy`. **The deploy re-seals the hub**, so unseal
+5. Commit, then deploy the hub (see [Deploying the hub](#deploying-the-hub)).
+   **The deploy re-seals the hub**, so unseal
    at [`/status`](https://marnyg-talos-config.fly.dev/status) with the
    wallet afterwards — config serving, KMS and the mesh are all down
    until you do.
@@ -224,6 +225,30 @@ flyctl logs -a marnyg-talos-config --no-tail | grep "device auth started"
 
 Subsequent config changes are `nix run .#apply` (over the mesh, hub-composed
 — never composed locally, which would strip serve-time identity).
+
+## Deploying the hub
+
+The fly image is built by nix (`fly/image.nix`), not by fly's remote
+builder: `config-server` is cgo against `libiroh_ffi.a` since the hub
+bound its own iroh endpoint (`e8d`, ADR-0024), and the Rust pin lives
+in one place (`iroh-go/nix/sources.nix`). The image is x86_64-linux, so
+from a laptop the build runs in a linux nix store over ssh:
+
+```bash
+HUB_BUILDER=mar@nixos fly/deploy.sh     # build + push on the box, fly deploy --image
+fly/deploy.sh --no-deploy               # on a linux host: build + push only
+```
+
+`.github/workflows/hub-image.yml` builds the same derivation on every
+push (and pushes it on `workflow_dispatch` with `FLY_API_TOKEN`), so a
+laptop without a builder is never stuck. A bare `fly deploy` has no
+`[build]` section to work from and fails on purpose. The deploy
+**re-seals the hub** — sign both proposals at `/status` afterwards.
+
+Everyday `go test ./...` in `config-server/` stays C-free: the iroh
+binding sits behind the `iroh` build tag (`hubiroh.go` / `hubiroh_stub.go`);
+`nix build .#config-server-bin` runs the tagged suite, including the
+hub beat over a local `iroh-relay`.
 
 ## Secret management
 

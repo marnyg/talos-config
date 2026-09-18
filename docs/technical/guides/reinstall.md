@@ -25,11 +25,11 @@ disk unattended.
   https://marnyg-talos-config.fly.dev/sealed` must return `200`
   (`503` = sealed, or the mesh failed to start). A sealed hub cannot
   serve the composed config, and the node will sit in maintenance mode.
-- Owner wallet available: `fly deploy` re-seals, and the returning node
+- Owner wallet available: a hub deploy (`fly/deploy.sh`) re-seals, and the returning node
   needs an approval signature.
 - **Geometry is committed first.** Partition layout is fixed at
   creation: capping EPHEMERAL or adding a user volume in `patch.yaml`
-  does nothing to an installed node. Commit and `fly deploy` *before*
+  does nothing to an installed node. Commit and deploy the hub *before*
   the wipe, or the node comes back with the old layout.
 
 ## Steps
