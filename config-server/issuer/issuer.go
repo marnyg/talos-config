@@ -40,6 +40,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
@@ -53,8 +54,10 @@ const (
 	SpeakAsTTL int64 = 120 * Day
 	// MemberTTL is a member cert's lifetime.
 	MemberTTL int64 = 90 * Day
-	// GrantTTL is an invoke grant's lifetime.
-	GrantTTL int64 = 7 * Day
+	// GrantTTL is an invoke grant's lifetime — the Kit's beat grant and
+	// every compiled grant share it (runway.qnt: 6 d starvation, one
+	// day inside), so it is policy's constant, not a second one.
+	GrantTTL int64 = policy.GrantTTL
 	// NagBefore is the seal threshold: with less than this left on the
 	// speak-as the Issuer stops serving beats (ADR-0018 q8h — the nag IS
 	// a seal), so no cert leaves with less than the member runway
@@ -96,8 +99,7 @@ var (
 // that refuses, not one that is absent.
 type Issuer struct {
 	signer cert.EdSigner
-	groups []string     // the finite group list the speak-as may delegate
-	clock  func() int64 // local clock, Unix seconds
+	groups []string // the finite group list the speak-as may delegate
 
 	// Actor is the protocol runtime for hubkey: #renew, #bundle and
 	// #mint-device are served from here. Transport is whatever the
@@ -138,7 +140,6 @@ func NewWithKey(priv ed25519.PrivateKey, groups []string, t actor.Transport, clo
 	i := &Issuer{
 		signer:    s,
 		groups:    slices.Sorted(slices.Values(slices.Clone(groups))),
-		clock:     clock,
 		Actor:     a,
 		proposals: make(map[cert.ActorID]cert.Cert),
 	}
@@ -169,6 +170,12 @@ func (i *Issuer) Listen(ctx context.Context) error {
 	}
 	return i.Actor.Listen(ctx)
 }
+
+// now is the clock every cert leaves here with: the actor's EFFECTIVE
+// clock max(local, lw) (ADR-0019), the same one #renew stamps with —
+// one signer, one clock, so a rolled-back hub clock cannot back-date
+// what it issues.
+func (i *Issuer) now() int64 { return i.Actor.Now() }
 
 // ID is the hubkey as an actor id (ed:<hex>), the iroh EndpointId the
 // hub's endpoint will have (ADR-0024).
@@ -203,7 +210,7 @@ func (i *Issuer) Proposal(wallet cert.ActorID) (cert.Cert, string, error) {
 	defer i.mu.Unlock()
 	c, ok := i.proposals[wallet]
 	if !ok {
-		now := i.clock()
+		now := i.now()
 		c = cert.Cert{
 			Iss: wallet,
 			Aud: string(i.ID()),
@@ -257,7 +264,7 @@ func (i *Issuer) Unseal(sigHex string, wallets []cert.ActorID) (cert.ActorID, er
 // every member chain that reaches this hub. Grants the hub later issues name
 // target: wallet too, so they survive hubkey rotation.
 func (i *Issuer) hold(sa cert.Cert) error {
-	now := i.clock()
+	now := i.now()
 	if sa.Exp <= now {
 		return fmt.Errorf("issuer: speak-as already expired")
 	}
@@ -313,7 +320,7 @@ func (i *Issuer) Runway() int64 {
 	if sa == nil {
 		return 0
 	}
-	return sa.Exp - i.clock()
+	return sa.Exp - i.now()
 }
 
 // Serving reports whether the Issuer may sign right now: unsealed and
@@ -366,7 +373,7 @@ func (i *Issuer) Mint(node cert.ActorID, name string, groups []string) (Kit, err
 			return Kit{}, fmt.Errorf("%w: %q", ErrGroup, g)
 		}
 	}
-	now := i.clock()
+	now := i.now()
 	member, err := cert.Sign(cert.Cert{
 		Aud: string(node),
 		Can: cert.VerbMember,

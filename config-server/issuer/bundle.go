@@ -197,7 +197,7 @@ func (i *Issuer) bundleHandler(_ context.Context, inv *actor.Invocation) ([]byte
 	if err := json.Unmarshal(inv.Envelope.Payload, &req); err != nil {
 		return nil, fmt.Errorf("issuer: bundle: %w", err)
 	}
-	now := i.clock()
+	now := i.now()
 	_, proofSpeakAs := envelope.SplitProof(inv.Envelope.Proof)
 	m, err := i.verifyMember(req.Member, inv.From, proofSpeakAs, now)
 	if err != nil {
