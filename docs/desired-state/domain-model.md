@@ -344,8 +344,9 @@ provisioning or recovery path may depend on it.
   spike `359.2`.)_
 - **Grant** — a delegation cert with `can: invoke`: the Owner (or any
   grantor) authorizes an `aud` — an actor *or a group name* — to
-  reach `cav.target` on `cav.facet`. `talos/mesh-policy.yaml` is the
-  Owner's *recipe*; the hub compiles it into grants. **The grant is
+  reach `cav.target` on `cav.facet`. `talos/mesh-policy-v3.yaml` is
+  the Owner's *recipe*; the hub compiles it into grants (v2
+  `mesh-policy.yaml` is the frozen nebula recipe until Phase 4). **The grant is
   the record**: the grantee stores and presents it; the grantor keeps
   no authoritative state (it may log, never consult). Renewal =
   present the expiring cert, grantor re-verifies its own signature
@@ -632,6 +633,21 @@ provisioning or recovery path may depend on it.
   NodeId; one signature then mints the nebula cert *and* the member
   Kit, and the wallet — not Enroll — is what named the NodeId. Both
   accepted until Phase 4 deletes v1 with nebula.
+- **Recipe** — the Owner's declared who×facet table,
+  `talos/mesh-policy-v3.yaml`: rows `{facet, host|group}` under a
+  **receiver kind** (`node`, `gateway`, `hub` — the actors that hold
+  accept tables; a device only initiates and is not a kind). Kind ≡
+  facet vocabulary: each kind owns a closed, disjoint facet set, so a
+  row's kind is validation structure (Nickel), never compiled data.
+  Its *meaning* is `Recipe.Allows(caller, kind, facet)` — some row
+  under the kind names the facet and the caller's name or one of its
+  groups; `Compile(recipe, caller, now)` must emit grants that
+  `Authorize` admits exactly there (the `4un` round-trip law,
+  `config-server/policy`). The compiler package is also the **shared
+  vocabulary** hub and receivers agree on without exchanging a table:
+  kinds, `Facets(kind)`, `ALPN(facet) = talos-mesh/<facet>/v1`,
+  `AcceptTable(kind)`; the receiver's `facet → forward` stays its own
+  constant. _(Built 2026-09-18, `359.8.5`; ADR-0017 amendment.)_
 - **Group** — a *name for a set of members*, and nothing more: it
   appears in a `member` cert's `cav.groups` and as the `aud` of
   `invoke` grants. It has no semantics of its own — what a group may

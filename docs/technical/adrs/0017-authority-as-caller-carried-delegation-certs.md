@@ -137,8 +137,13 @@ domain-model glossary):
 ### Amendment 2026-09-18 (`359.8.5` grill-design)
 
 Four pins the original text left open, settled before the compiler is
-built. Ruled-out alternatives are in `day-to-day/exploration-log.md`
-under the same date.
+built. Ruled-out alternatives (per-receiver targets from the location
+cache; `target: group:<kind>` against the receiver's member cert —
+kept as the upgrade path; generalising ADR-0024 F to nodes; relay as a
+grantable facet; one merged v2+v3 file; deriving the nebula render from
+v3; compiling all groups and filtering in `#bundle`) were logged in
+`day-to-day/exploration-log.md` on 2026-09-18 and pruned once this
+amendment was built (`git log -S"Policy compiler \`359.8.5\`"`).
 
 - **Grant target is `"*"`** (protocol ADR-0004). Git cannot enumerate
   receiver keys (ADR-0015), so the compiler names no receiver; a grant

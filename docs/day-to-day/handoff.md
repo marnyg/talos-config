@@ -37,10 +37,13 @@ Three commits `c4f5389`, `795949e`, `2ca2003`, all pushed.
 
 ## Loose threads
 
-- **`4un` and `359.8.5` are in_progress, not closed**: the compiler's
-  remaining half — `Issuer#bundle` calling `policy.Compile` from the
-  verified member cert and signing — belongs to `359.8.2.3`. Close
-  both if you agree; otherwise `359.8.5` stays open until `#bundle`.
+- `4un` and `359.8.5` **closed**; the compiler's remaining half —
+  `Issuer#bundle` calling `policy.Compile` from the verified member
+  cert and signing — is `359.8.2.3` part 2 (note on the bead).
+- Glossary gained **Recipe** / receiver kind; the `359.8.5`
+  exploration-log section was pruned (rule-outs summarised in the
+  ADR-0017 amendment). Several artifacts date the `zeb` landing
+  2026-09-19 vs. commits on 09-18 — left as is.
 - `mesh-policy-v3.yaml` compiles to nothing anyone *serves* yet: no
   `#bundle`, so edits there have no runtime effect until `359.8.2.3`.
 - `5gz` cold-cache trap and `mesh-policy-v3.ncl`/glossary "Issuer
