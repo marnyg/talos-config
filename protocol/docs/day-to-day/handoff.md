@@ -5,37 +5,37 @@
 
 ## Last session
 
-2026-09-18 — **ADR-0004 drafted (Proposed): `cav.target` admits the
-wildcard `"*"`.** Design only, from the root `359.8.5` grill-design;
-no code. Bead `zeb` carries the build.
+2026-09-18 (second session) — **ADR-0004 Accepted and built** (`zeb`,
+commit `c4f5389`): `cav.target` admits the wildcard `"*"`.
 
-- The consumer's compiler cannot enumerate receiver keys (root
-  ADR-0015), and ADR-0002 fixed absent = ∅, so kind-wide grants needed
-  the wire sentinel ADR-0002 said an "unconstrained" reading would
-  require. `"*"` is the identity element of the `target` intersection;
-  rule 4 (ADR-0003) is untouched — the receiver's consent supplies the
-  concrete `self`. No other set caveat gets a sentinel.
-- Ruled out (root exploration-log 2026-09-18): `target: group:<kind>`
-  against the receiver's own member cert (kept as upgrade path);
-  targets from the location cache; generalising ADR-0003 to "R answers
-  for the sovereign it consented to".
-- Glossary **Attenuation** gained the wildcard sentence (both scopes).
+- Model first: `authorize.qnt` `TARGETS ∪ {ANY}`, `intersectTarget`
+  identity case, `answersFor` ignores it, law
+  `invWildcardTargetNeverWidens`, witness `wildcardTargetTest`;
+  `check.sh run` green (authorize exhaustive depth 2 ≈ 173 s under
+  `verify`).
+- Go 1:1: `TargetAny`/`IsTargetAny` in `cert.go`, `DecodeCert` rejects
+  a mixed `["*", ed:…]` set, `intersectTarget` in `authorize.go`, the
+  root filter in `verifyChain` rejects a consent whose target is `{*}`
+  (decision `znk`: wildcard is grant-only; `invConsentTargetsSelf`
+  unchanged), rapid law + chain-law cases.
+- First consumer of the wildcard is live: the talos policy compiler
+  (`config-server/policy`) emits every grant with `target: ["*"]` and
+  its round-trip suite exercises `cert.Authorize` with them.
 
 ## Loose threads
 
-- Two ADR-0004 details decided in drafting, not discussed: mixed
-  `["*", ed:…]` sets reject at decode; a consent with `target: "*"`
-  fails rule 4 by construction. Confirm or veto before `zeb`.
-- `actor.Hold` has no ADR — now tracked as `t29` (draft protocol
-  ADR-0005 if the pattern spreads).
+- Decided in drafting, confirmed by landing, never discussed: mixed
+  target sets reject at decode (not "ignore the `*`"); a `*` consent
+  roots nothing rather than failing rule 4 later. Veto ⇒ reopen ADR-0004.
+- `actor.Hold` has no ADR — `t29` (draft ADR-0005 if the pattern
+  spreads).
 - The held `speak-as` stays out of `Result.Verified` (ADR-0003); no
   facet→verb table yet; `DefaultMailbox = 64` and the renewal-beat
   fraction remain unbeaded.
 
 ## Suggested next steps
 
-- `zeb`, model first: `authorize.qnt` `TARGETS ∪ {ANY}`, `attenuate`
-  target case, `answersFor` ignores it, law
-  `invWildcardTargetNeverWidens`; then `decode.go` (singleton-set
-  rule), `intersectID`, one rapid law. Promote ADR-0004 on landing.
-- M3 `0bc.3` stays unblocked on the protocol side.
+- No protocol change is queued by the talos consumer: `Issuer#bundle`
+  (`359.8.2.3`) and the cp1 agent (`359.8.3`) use `cert` as is.
+- M3 `0bc.3` (lighthouse actor, `#publish`/`#lookup`, PoW postage for
+  strangers) is the next protocol-side build when picked up.

@@ -56,13 +56,20 @@
   HTTP over a stream facet) is revised by `mdv`: `/hosts` and `/policy`
   will not exist over the mesh — don't build them; the beat is
   `#renew` + `#bundle`.
-- 2026-09-18 — **Protocol ADR-0004 (target wildcard) is Proposed, not
-  built**: `DecodeCert` still rejects `"*"` as a target element until
-  `zeb` lands. `verification/nickel/mesh-policy-v3.ncl` and its
-  fixture still carry `relay` as a hub facet — that is stale by ruling,
-  not a contract to preserve; step 2 of the `359.8.5` build fixes both.
-  `talos/mesh-policy.yaml` (v2) is **frozen** except for emergencies;
-  new rules go in `mesh-policy-v3.yaml` once it exists.
+- 2026-09-18 — **Two recipe files, one live.** `talos/mesh-policy.yaml`
+  (v2) is **frozen** except for emergencies and is what nebula
+  enforces. `talos/mesh-policy-v3.yaml` is the compiler's input
+  (`config-server/policy`, protocol ADR-0004 built), but **no caller
+  receives its grants yet** — `Issuer#bundle` (`359.8.2.3`) does not
+  exist, so a v3 edit changes nothing at runtime until it does. Its
+  closed sets live in three places kept in step by tests
+  (`mesh-policy-v3.ncl` ← `TestVocabularyMatchesNickel`, `policy.Groups`
+  ← `mesh.Groups()`); change the glossary first, then all three.
+- 2026-09-18 — **Touching `protocol/*.go` stales `config-server-bin`'s
+  `vendorHash`** (flake.nix caveat 3) and a cached FOD hides it — `nix
+  build` then fails with an "undefined: cert.X" that looks like a code
+  bug. Recompute with a bogus hash; CI job `vendor-hash` now catches
+  it on push.
 
 ## Mesh v3 spike infra (scratch)
 

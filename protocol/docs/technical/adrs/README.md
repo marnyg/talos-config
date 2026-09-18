@@ -20,8 +20,8 @@ this scope.
 - [0004](0004-target-wildcard.md) — `cav.target` admits the wildcard
   `"*"` (caveat vocabulary v3): honored at every receiver that
   consented to the chain's sovereign for the facet; rule 4 unchanged;
-  no other set caveat gets a sentinel. _Proposed 2026-09-18
-  (`359.8.5` grill-design)._
+  no other set caveat gets a sentinel. _Accepted 2026-09-18/19
+  (`zeb`; Proposed 2026-09-18 from the `359.8.5` grill-design)._
 
 The protocol's **founding** decisions are root ADRs, referenced here,
 not copied:

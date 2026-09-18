@@ -24,7 +24,8 @@
   current 2026-09-13, `djs`.)_ _Update 2026-09-17: ~135 s since the
   chain verb became a scenario variable; `check.sh` note refreshed._
   _Update 2026-09-18: ~165–170 s since `cav.target` may name a
-  principal the receiver answers for (kau)._
+  principal the receiver answers for (kau); ~173 s with the ADR-0004
+  wildcard target sets (zeb)._
 - 2026-09-13 — `envelope.Verify` returns `Result{}` on chain reject,
   so `actor` captures `verified` in its `ChainVerifier` closure to feed
   `clock.Mark`. _Resolved 2026-09-13 (`kp4`): `Verify` returns

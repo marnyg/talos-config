@@ -10,14 +10,15 @@ Issuer (`359.8.1`), the relay child (`359.8.2.2`, deployed 2026-09-17,
 ADR-0022 Accepted) and Enroll → `Issuer#mint-device` with the v2
 enrollment message (`359.8.2.3` part 1) are built; a device that names
 its NodeId gets a member Kit from the same wallet signature that mints
-its nebula cert. **Now building the policy compiler `359.8.5`** —
-design pinned 2026-09-18 (protocol ADR-0004 target wildcard, relay not
-a facet, two recipe files, `config-server/policy`); the cert change
-`zeb` goes first, model-first, then the compiler and the `4un`
-round-trip suite, which unblocks `Issuer#bundle`. In parallel `e8d`
-gives the hub its own iroh endpoint (a fly build-pipeline change). Then `359.8.3` (cp1 agent) / `359.8.4` (irohup) consume the
-kit, and `kql` tears the scratch relay down. Exit checks are
-event-based (`359.8.6`).
+its nebula cert. **The policy compiler exists** (`config-server/policy`,
+2026-09-18; protocol ADR-0004 Accepted, `talos/mesh-policy-v3.yaml`
+real, `4un` round-trip law green). **Now: `Issuer#bundle`**
+(`359.8.2.3` part 2) — the beat that signs `Compile`'s grants for a
+verified member, the first place the recipe reaches a caller. In
+parallel `e8d` gives the hub its own iroh endpoint (a fly
+build-pipeline change). Then `359.8.3` (cp1 agent, consuming
+`policy.AcceptTable`) / `359.8.4` (irohup) consume the kit, and `kql`
+tears the scratch relay down. Exit checks are event-based (`359.8.6`).
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016)
 and **Sovereign-actor protocol at the center** — the hub actors are
