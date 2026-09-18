@@ -51,17 +51,22 @@
   verify.
 - 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed and
   partly built** (2026-09-17: Issuer listens in-process, Enroll →
-  `#mint-device`, relay child, `/.well-known`; `#bundle`, Provisioner-
-  as-actor and the iroh endpoint `e8d` are not). Decision `itb` (hub
+  `#mint-device`, relay child, `/.well-known`; 2026-09-18: `#bundle`
+  minus its name map; Provisioner-as-actor and the iroh endpoint `e8d`
+  are not). Decision `itb` (hub
   HTTP over a stream facet) is revised by `mdv`: `/hosts` and `/policy`
   will not exist over the mesh — don't build them; the beat is
   `#renew` + `#bundle`.
 - 2026-09-18 — **Two recipe files, one live.** `talos/mesh-policy.yaml`
   (v2) is **frozen** except for emergencies and is what nebula
   enforces. `talos/mesh-policy-v3.yaml` is the compiler's input
-  (`config-server/policy`, protocol ADR-0004 built), but **no caller
-  receives its grants yet** — `Issuer#bundle` (`359.8.2.3`) does not
-  exist, so a v3 edit changes nothing at runtime until it does. Its
+  (`config-server/policy`, protocol ADR-0004 built) and `Issuer#bundle`
+  signs its output (same day), but **no caller receives its grants
+  yet** — the Issuer's transport is in-memory until `e8d` and no
+  member client exists (`359.8.3`/`359.8.4`), so a v3 edit changes
+  nothing at runtime until they land. Same for
+  `talos/mesh-blocklist-v3.txt` (ed: ids; v2's `mesh-blocklist.txt`
+  stays the one nebula enforces). Its
   closed sets live in three places kept in step by tests
   (`mesh-policy-v3.ncl` ← `TestVocabularyMatchesNickel`, `policy.Groups`
   ← `mesh.Groups()`); change the glossary first, then all three.

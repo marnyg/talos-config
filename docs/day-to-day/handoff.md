@@ -5,60 +5,59 @@
 
 ## Last session
 
-2026-09-18 (second session) — **`zeb` landed and closed; `359.8.5`
-policy compiler built (steps 2–4); `4un` round-trip suite green.**
-Three commits `c4f5389`, `795949e`, `2ca2003`, all pushed.
+2026-09-18 (third session) — **`Issuer#bundle` built** (`359.8.2.3`
+part 2; commit `cedf639`). The recipe reaches a caller for the first
+time.
 
-- **Protocol ADR-0004 Accepted and built** (`zeb`): `authorize.qnt`
-  `ANY` target + `invWildcardTargetNeverWidens` + `wildcardTargetTest`;
-  `cert` decode rejects mixed sets, `intersectTarget` treats `*` as
-  identity, a `*` consent roots no chain (decision `znk`). Quint
-  `check.sh run` + Go all green before commit.
-- **`talos/mesh-policy-v3.yaml` is real** (fixture promoted, relay
-  rows dropped, fixture retired); `mesh-policy-v3.ncl` hub facets =
-  `[hub-http]`, `check.ncl`/`check.sh` validate the real file (mutant
-  10b: relay under hub is blamed).
-- **`config-server/policy`**: `Load/Parse/Validate` (Go twin of the
-  Nickel contracts; `TestVocabularyMatchesNickel` reads the `.ncl` so
-  the tables cannot drift), `Kinds/Facets/KindOf/ALPN/AcceptTable`,
-  `Recipe.Allows` (the 3-line reference interpreter), `Compile(recipe,
-  caller, now)` → unsigned invoke grants `{aud group:<g> | caller key,
-  target ["*"], facet, 7 d}`.
-- **`4un`**: `policy_laws_test.go` — rapid law `Allows ⇔ Authorize.OK`
-  over the real `cert.Authorize` with ALPN-miss / blocklist / expiry
-  negatives, plus shape laws; six compiler mutants killed. No Quint
-  model of `Compile` (the law over the real verifier covers it).
-- Broken windows fixed: one closed group set (`mesh.Groups()` reads
-  `policy.Groups`, guard test); CI job `vendor-hash` rebuilds the
-  `goModules` FOD every push (caveat 3 bit again: `zeb` changed
-  `protocol/cert`, the cached FOD hid the stale `vendorHash` until
-  `nix build` failed on `cert.TargetAny`); `verify.yml` no longer
-  duplicates the artifact list.
+- **`config-server/issuer/bundle.go`**: `#bundle {member: <cert>}` →
+  `Bundle {grants[], blocklist[], speak_as}`. The Issuer verifies the
+  member cert itself (verb, sig, unexpired, `aud == From`, issuer =
+  this hubkey **or** a dead hubkey resolved via `cert.SpeaksFor` over
+  the proof's speak-as from *its* wallet), then `policy.Compile` for
+  `cav.name`/`cav.groups` and signs each grant with the hot key.
+  `PolicySource` / `FilePolicy(root)` reads recipe + blocklist from
+  the checkout on every beat; wired in `hubseal.go`.
+- **Blocklist on the beat** (`j0b`): `talos/mesh-blocklist-v3.txt`
+  (ed: ids; `policy.LoadBlocklist`, strict parse) rides every bundle;
+  a listed caller is refused at `#renew` **and** `#bundle`, so its
+  certs run out.
+- **Kit grant → `BeatGrant`** with `facet: [#renew, #bundle]` (wire key
+  `beat_grant`); the wallet consent widens the same way
+  (`issuer.BeatFacets`). Decision `1tg` records the `{}`→`{member}`
+  payload deviation from ADR-0024 (proof chains are invoke-only).
+- Tests: `bundle_test.go` (compile-for-member + admits at a node
+  receiver, refusals, wire, beat across an Issuer rotation over
+  `MemoryNetwork`); `policy.TestBlocklist`. All `config-server` green.
 
 ## Loose threads
 
-- `4un` and `359.8.5` **closed**; the compiler's remaining half —
-  `Issuer#bundle` calling `policy.Compile` from the verified member
-  cert and signing — is `359.8.2.3` part 2 (note on the bead).
-- Glossary gained **Recipe** / receiver kind; the `359.8.5`
-  exploration-log section was pruned (rule-outs summarised in the
-  ADR-0017 amendment). Several artifacts date the `zeb` landing
-  2026-09-19 vs. commits on 09-18 — left as is.
-- `mesh-policy-v3.yaml` compiles to nothing anyone *serves* yet: no
-  `#bundle`, so edits there have no runtime effect until `359.8.2.3`.
-- `5gz` cold-cache trap and `mesh-policy-v3.ncl`/glossary "Issuer
-  actor facets are not recipe rows" — decided in code comments, not
-  discussed; veto if wrong.
+- `359.8.2.3` stays **in_progress**: the **name map** half of `#bundle`
+  waits on `e8d` (the location cache needs real iroh endpoints); the
+  "hub-http shrink to /config" is spec-only — no hub-http stream facet
+  exists in code to shrink.
+- **Nobody calls `#bundle` yet**: no member client exists (`359.8.3`
+  cp1 agent, `359.8.4` irohup) and the Issuer's transport is in-memory
+  until `e8d`. A `mesh-policy-v3.yaml` edit still changes nothing at
+  runtime.
+- Docs proposals pending user confirmation (see this session's report):
+  domain-model Issuer row + Kit glossary drift, a **Bundle** glossary
+  disambiguation (connect-time bundle vs `#bundle` reply), a
+  **Blocklist (v3)** glossary line, an ADR-0024 amendment note.
+- The Issuer refusing `#renew` to a blocklisted key reads git inside
+  an inbound-call decision. Judged as the *compiler* declining output
+  (invariant 2 names receivers as the parties that never read git),
+  not surfaced as a violation — veto if wrong.
 - Carried: `tqr`, `kql` (blocked on `359.8.3`), no graceful shutdown in
   `config-server`, `DefaultMailbox = 64` / renewal-beat fraction
-  unbeaded, w1 down (`0q0`, `kso`).
+  unbeaded, w1 down (`0q0`, `kso`), `5gz` cold-cache trap.
 
 ## Suggested next steps
 
-- **`359.8.2.3` part 2 — `Issuer#bundle`**: verify the presented member
-  cert (own signature via speak-as), `policy.Load(talosRoot)` →
-  `Compile(recipe, Caller{Key: aud, Name, Groups}, now)` → sign each
-  with the Issuer's hot key; blocklist on the beat (`j0b`); name map
-  waits on `e8d`. Then shrink hub-http to `/config` (`mdv`).
-- `e8d` (hub's own iroh endpoint) in parallel — a fly build change.
-- Then `359.8.3` (cp1 agent) consumes `policy.AcceptTable(KindNode)`.
+- **`e8d`** — the hub binds its own iroh Endpoint (fly build change:
+  cgo + `libiroh_ffi`); then `Issuer.Listen` on iroh and the name map
+  half of `#bundle`.
+- **`359.8.3`** cp1 agent: consumes `policy.AcceptTable(KindNode)`,
+  runs the beat (`#renew` + `#bundle`), replaces its blocklist copy
+  from the bundle; `kql` tears the scratch relay down after.
+- Promote ADR-0024 toward Accepted once `e8d` lands (Provisioner as an
+  actor is the other outstanding item).
