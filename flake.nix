@@ -36,7 +36,7 @@
       ];
       systems = nixpkgs.lib.systems.flakeExposed;
 
-      perSystem = { pkgs, self', lib, ... }:
+      perSystem = { pkgs, self', inputs', lib, ... }:
         let
           sshKey = "$HOME/.ssh/id_ed25519";
           # In-house iroh Go binding (task talos-config-ow7): iroh-ffi 1.1.0
@@ -46,6 +46,9 @@
           # own Go module (iroh-transport/, replaces ../protocol + ../iroh-go);
           # protocol/ itself never imports iroh-go. See iroh-transport/README.md.
           irohTransport = import ./iroh-transport/nix { inherit pkgs lib; self = self'; };
+          # The hub binary (cgo against iroh-go, -tags iroh) and its static
+          # variant for the fly image. See config-server/nix/default.nix.
+          configServer = import ./config-server/nix { inherit pkgs lib; self = self'; };
         in
         lib.mkMerge [
           {
@@ -55,54 +58,12 @@
             };
             packages.talosctl = pkgs.talosctl;
 
-            # buildGo126Module, not buildGoModule: the embedded nebula
-            # (slackhq/nebula 1.11.0, for the mesh CA + lighthouse/relay)
-            # requires go >= 1.26.0, while pkgs.go is still 1.25.x here.
-            packages.config-server-bin = pkgs.buildGo126Module {
-              pname = "config-server";
-              version = "0.1.0";
-              # config-server plus the real talos/mesh-policy*.yaml: the
-              # policy tests deliberately run against the shipped files
-              # (mesh/ reads v2, policy/ reads v3 and asserts its facet
-              # vocabulary against the Nickel contract), so the sandbox
-              # must carry them — a fixture copy would un-guard the file
-              # (019ce97).
-              # go.mod `replace`s ../protocol (issuer/, 359.8.1), so the
-              # protocol module's sources ride along like iroh-transport's.
-              src = nixpkgs.lib.fileset.toSource {
-                root = ./.;
-                fileset = nixpkgs.lib.fileset.unions [
-                  ./config-server
-                  ./talos/mesh-policy.yaml
-                  ./talos/mesh-policy-v3.yaml
-                  ./verification/nickel/mesh-policy-v3.ncl
-                  ./protocol/go.mod
-                  ./protocol/go.sum
-                  (nixpkgs.lib.fileset.fileFilter (f: f.hasExt "go") ./protocol)
-                ];
-              };
-              modRoot = "config-server";
-              # vendorHash caveats (canonical note; iroh-transport/nix points
-              # here):
-              #  1. git add new packages BEFORE recomputing. Flakes only see
-              #     tracked files, so an untracked directory is invisible to
-              #     `go mod vendor` and its imports get silently left out of
-              #     the vendor dir — the build then fails with "import lookup
-              #     disabled by -mod=vendor" for a module go.mod requires.
-              #  2. The vendor derivation is fixed-output: nix reuses any store
-              #     path matching the hash, so a stale-but-matching vendor dir
-              #     survives `go mod tidy`. Force a recompute by setting a
-              #     bogus hash and reading nix's "got:" line.
-              #  3. (CI job `vendor-hash` in .github/workflows/verify.yml rebuilds
-              #     the FOD on every push, so drift fails there first.)
-              #     Local `replace`s (../protocol here) are vendored from the
-              #     source tree, so the hash changes whenever protocol/*.go
-              #     changes — and a cached FOD output hides the drift (CI run
-              #     34754508013: one job green from cache, another rebuilt the
-              #     FOD and mismatched). After touching a replaced tree, check
-              #     with `nix build .#<pkg>.goModules --rebuild`.
-              vendorHash = "sha256-98oejwn2AhQT5YwtYe0tZ6Fg/WyKPEWol2PMxSRcj4Y=";
-            };
+            # The hub. cgo (iroh) since talos-config-e8d; recipe, vendorHash
+            # caveats and the static/musl variant live in config-server/nix.
+            #   nix build .#config-server-bin      host build + test suite
+            #   nix build .#config-server-static   musl, what the fly image ships (linux)
+            #   nix build .#hub-image              the fly image (linux; fly/image.nix)
+            packages.config-server-bin = configServer.bin;
 
             # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go
             #                               package, drift-checked against iroh-go/iroh
@@ -341,6 +302,16 @@
             packages.iroh-transport-static = irohTransport.static;
             # nix build .#p0relay-static — static musl smoke + p0relay (P0.1 probe)
             packages.p0relay-static = irohTransport.p0relayStatic;
+            packages.config-server-static = configServer.static;
+            # nix build .#hub-image; nix run .#hub-image.copyToRegistry —
+            # the fly image (fly/image.nix; driver: fly/deploy.sh).
+            packages.hub-image = import ./fly/image.nix {
+              inherit pkgs lib;
+              self = inputs.self;
+              nix2container = inputs'.nix2container.packages.nix2container;
+              configServer = configServer.static;
+              irohRelay = configServer.irohRelayStatic;
+            };
           })
         ];
     };

@@ -26,6 +26,15 @@ if [ -z "${RELAY_DISABLE:-}" ] && [ -x /usr/local/bin/iroh-relay ]; then
     RELAY_ARGS="--relay-bin /usr/local/bin/iroh-relay"
 fi
 
+# The hub's own iroh endpoint (talos-config-e8d, ADR-0024): the hubkey
+# is the EndpointId; homed on the relay child above, advertised to
+# members as IROH_RELAY_URL (the public hostname). Unset = in-process
+# actors only, as before e8d.
+IROH_ARGS=""
+if [ -n "${IROH_RELAY_URL:-}" ]; then
+    IROH_ARGS="--iroh-relay $IROH_RELAY_URL"
+fi
+
 # shellcheck disable=SC2086
 exec config-server \
     --root /dev/shm/talos \
@@ -33,5 +42,6 @@ exec config-server \
     --port 8080 \
     --require-auth \
     $RELAY_ARGS \
+    $IROH_ARGS \
     ${ADMIN_ADDRESSES:+--admin-address "$ADMIN_ADDRESSES"} \
     $MESH_ARGS

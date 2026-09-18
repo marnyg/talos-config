@@ -244,6 +244,7 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("GET /mesh/enroll/config", s.handleMeshEnrollConfig)
 	mux.HandleFunc("GET /sealed", s.handleSealed)
 	mux.HandleFunc("GET "+wellKnownSpeakAsPath, s.handleWellKnownSpeakAs)
+	mux.HandleFunc("GET "+wellKnownReachMeAtPath, s.handleWellKnownReachMeAt)
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("GET /policy", s.handlePolicyPage)
 	mux.HandleFunc("POST /policy/overlay", s.handlePolicySet)
@@ -277,6 +278,8 @@ func main() {
 		kmsPort      = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared cleartext-h2 port)")
 		relayBin     = flag.String("relay-bin", "", "path to the iroh-relay binary; runs it as a child on loopback and proxies /relay, /ping, /generate_204 (empty = no iroh relay)")
 		relayPort    = flag.Int("relay-port", 3340, "loopback port the iroh-relay child binds (only reachable through the hub's proxy)")
+		irohRelay    = flag.String("iroh-relay", "", "public relay URL members dial the hub's iroh endpoint through (e.g. https://host); binds the hubkey on iroh, homed on the relay child when --relay-bin is set (empty = in-process only; needs a -tags iroh build)")
+		irohBind     = flag.String("iroh-bind", "0.0.0.0:0", "UDP socket the hub's iroh endpoint binds (relay-only on fly: nothing reaches it directly)")
 	)
 	flag.Parse()
 
@@ -323,9 +326,23 @@ func main() {
 			listenHost = mesh.ResolveListenHost()
 		}
 		nm := mesh.NewManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root)
-		hub, err = newHubManager(*root, addrs, *meshCAPin, nm)
+		// The hub's iroh endpoint (talos-config-e8d): homed on its own
+		// relay child over loopback when there is one, else on the public
+		// URL itself; advertised as the public URL either way.
+		var wan hubTransport
+		if *irohRelay != "" {
+			home := *irohRelay
+			if *relayBin != "" {
+				home = fmt.Sprintf("http://127.0.0.1:%d", *relayPort)
+			}
+			wan = irohHubTransport(home, *irohRelay, *irohBind)
+		}
+		hub, err = newHubManager(*root, addrs, *meshCAPin, nm, wan)
 		if err != nil {
 			log.Fatalf("hub: %v", err)
+		}
+		if wan != nil {
+			log.Printf("hub identity %s on iroh, advertised at %s", hub.issuer.Fingerprint(), hub.endpoints())
 		}
 		log.Printf("mesh enabled: %s on udp/%d, binding %s (unseals with the hub)", subnet, *meshPort, listenHost)
 

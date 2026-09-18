@@ -1,10 +1,13 @@
 # Talos config server on fly.io.
 # Secrets: AGE_KEY (dedicated deploy key; see talos/fly-age-key.age).
+#
+# No [build]: the image is built by nix (fly/image.nix — config-server is
+# cgo against libiroh_ffi since talos-config-e8d, which fly's remote
+# builder cannot link) and deployed by reference:
+#   fly/deploy.sh            build on a linux builder, push, fly deploy --image
+# A bare `fly deploy` has nothing to build and fails, on purpose.
 app = "marnyg-talos-config"
 primary_region = "arn"
-
-[build]
-dockerfile = "Dockerfile"
 
 [env]
 ADMIN_ADDRESSES = "0xf56863bF40A75dC3c632C17fc65AA2EB06a89406"
@@ -22,6 +25,10 @@ MESH_ENDPOINT = "213.188.219.215:4242"
 # unseal signature — `recover -ca-fingerprint -sig <unseal-sig>`).
 # Unseal fails if a signature derives anything else.
 MESH_CA_PIN = "b881d6ffb00822272d6937fd2eb033f6253edc0c1716104bf467cd1be6177527"
+# Public relay URL the hub's iroh endpoint is advertised at (see the
+# [http_service] note below). The hub homes on its relay child over
+# loopback; members dial this.
+IROH_RELAY_URL = "https://marnyg-talos-config.fly.dev"
 # Mesh devices are no longer declared here (ADR-0012): enrollment is
 # wallet-signed, the device generates its keypair locally, and the
 # approver at /status decides the final name and group per enrollment.
@@ -33,7 +40,10 @@ MESH_CA_PIN = "b881d6ffb00822272d6937fd2eb033f6253edc0c1716104bf467cd1be6177527"
 # probes), which the fly proxy forwards to config-server's :8080, which
 # proxies to the iroh-relay child on loopback. No QUIC address
 # discovery (would need a relay-owned cert on UDP 7842). Members dial
-# https://marnyg-talos-config.fly.dev as their RelayMode::Custom URL.
+# https://marnyg-talos-config.fly.dev as their RelayMode::Custom URL —
+# and the hub's own iroh endpoint (hubkey = EndpointId, ADR-0024, e8d)
+# is homed on that same relay and advertised at this URL, so a member
+# reaches the Issuer's inbox wherever it is: `iroh:relay=<this>`.
 [http_service]
 internal_port = 8080
 force_https = true

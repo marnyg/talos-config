@@ -33,6 +33,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/marnyg/talos-config/config-server/enroll"
 	"github.com/marnyg/talos-config/config-server/ethsig"
@@ -76,26 +77,58 @@ type hubManager struct {
 	// inside every request; Enroll is a courier, not an authority.
 	enroll *enroll.Enroll
 
+	// wan is the Issuer's second wire (talos-config-e8d): the hub's own
+	// iroh endpoint, bound with the hubkey so hubkey == EndpointId
+	// (ADR-0024). nil ⇒ in-process only (tests, --iroh-relay unset).
+	wan actor.Endpoint
+
 	mu     sync.Mutex
 	master []byte // nil while sealed
 	wallet string // wallet that unsealed the master; "" if sealed or from env
 }
 
-func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh.Manager) (*hubManager, error) {
+// hubTransport binds the hubkey on a second wire beside the in-process
+// network. The key is generated inside newHubManager (per process,
+// never durable), so the binder receives it rather than the reverse.
+type hubTransport func(priv ed25519.PrivateKey) (actor.Endpoint, error)
+
+// locationTTL is the hub's reach-me-at lifetime. ADR-0001 sketches
+// ≈ 1 h for roaming actors; the hub sits behind one fixed relay URL
+// for the process's life, and a member beats days apart, so a record
+// that outlives one grant runway (GrantTTL) spares every beat a
+// /.well-known round trip. Refreshed well inside that.
+const (
+	locationTTL     = issuer.GrantTTL
+	locationRefresh = 6 * time.Hour
+)
+
+func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh.Manager, wan hubTransport) (*hubManager, error) {
 	// The hub's actors on one in-process network: the Issuer (hubkey,
-	// random per process) listens; Enroll dials it. iroh comes later
-	// (talos-config-e8d) as a second transport, not a redesign.
+	// random per process) listens; Enroll dials it. With wan set the
+	// same key is also bound on iroh and the Issuer accepts from both
+	// through one actor.Multi (talos-config-e8d): one actor, one inbox,
+	// two wires.
 	net := actor.NewMemoryNetwork()
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("hubkey: %w", err)
 	}
 	hubID := cert.NewEdSigner(priv).ActorID()
-	ep, err := net.Bind(hubID, "hub")
+	mem, err := net.Bind(hubID, "hub")
 	if err != nil {
 		return nil, err
 	}
-	iss := issuer.NewWithKey(priv, mesh.Groups(), ep, nil)
+	var transport actor.Endpoint = mem
+	var wanEp actor.Endpoint
+	if wan != nil {
+		if wanEp, err = wan(priv); err != nil {
+			return nil, fmt.Errorf("hub endpoint: %w", err)
+		}
+		if transport, err = actor.NewMulti(mem, wanEp); err != nil {
+			return nil, err
+		}
+	}
+	iss := issuer.NewWithKey(priv, mesh.Groups(), transport, nil)
 	// #bundle compiles talos/mesh-policy-v3.yaml and hands out
 	// mesh-blocklist-v3.txt from the checkout on every beat: git as
 	// compiler input, nothing cached (invariant 2).
@@ -115,15 +148,65 @@ func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh
 		}
 		wallets = append(wallets, w)
 	}
-	return &hubManager{root: root, adminAddrs: adminAddrs, pinnedCAFP: pinnedCAFP, mesh: nm, issuer: iss, wallets: wallets, enroll: en}, nil
+	return &hubManager{root: root, adminAddrs: adminAddrs, pinnedCAFP: pinnedCAFP, mesh: nm, issuer: iss, wallets: wallets, enroll: en, wan: wanEp}, nil
 }
 
 // listen runs the Issuer's actor for the process's life. Sealed or
-// not: its inbox refuses until the wallet's speak-as is held.
+// not: its inbox refuses until the wallet's speak-as is held. With a
+// wan endpoint it also keeps the hub's reach-me-at fresh: the record
+// piggybacks on every reply, so a member that beat once knows where
+// the hub is without any lookup service (ADR-0001 location records).
 func (m *hubManager) listen(ctx context.Context) {
+	if m.wan != nil {
+		go m.publishLocation(ctx)
+	}
 	if err := m.issuer.Listen(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Printf("issuer: listen: %v", err)
 	}
+}
+
+func (m *hubManager) publishLocation(ctx context.Context) {
+	t := time.NewTicker(locationRefresh)
+	defer t.Stop()
+	for {
+		if loc, err := m.issuer.Actor.PublishLocation(locationTTL, m.wanTags()...); err != nil {
+			log.Printf("issuer: reach-me-at: %v", err)
+		} else {
+			log.Printf("issuer: reach-me-at %v (until +%dd)", loc.Cav.Endpoints, locationTTL/issuer.Day)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// wanTags are the tags the hub publishes: the wan endpoint's relay
+// tags only. The hub is relay-only by construction (ADR-0022: no QUIC
+// address discovery, no inbound UDP on fly's shared address), so a
+// direct iroh:udp= tag would name a 6PN-private socket nobody can use;
+// the in-process mem: tag is not for anyone outside the process.
+func (m *hubManager) wanTags() []string {
+	if m.wan == nil {
+		return nil
+	}
+	var out []string
+	for _, tag := range m.wan.Endpoints() {
+		if strings.HasPrefix(tag, irohTagRelay) {
+			out = append(out, tag)
+		}
+	}
+	return out
+}
+
+// irohTagRelay mirrors irohtransport.TagRelay without importing the
+// cgo module into the untagged build.
+const irohTagRelay = "iroh:relay="
+
+// endpoints are the hub's advertised wan tags ("" when in-process only).
+func (m *hubManager) endpoints() string {
+	return strings.Join(m.wanTags(), " ")
 }
 
 // current returns the unsealed master key, or nil while sealed.
@@ -200,13 +283,17 @@ func (m *hubManager) identityLine() (line string, warn bool) {
 	fp := m.issuer.Fingerprint()
 	wallet := strings.TrimPrefix(string(m.issuer.Wallet()), "eth:")
 	days := m.issuer.Runway() / issuer.Day
+	at := ""
+	if eps := m.endpoints(); eps != "" {
+		at = " · at " + eps
+	}
 	switch err := m.issuer.Serving(); {
 	case errors.Is(err, issuer.ErrSealed):
-		return "hubkey " + fp + " — SEALED: no speak-as held; sign the proposal above", true
+		return "hubkey " + fp + " — SEALED: no speak-as held; sign the proposal above" + at, true
 	case errors.Is(err, issuer.ErrNag):
-		return fmt.Sprintf("hubkey %s speaks for %s — %d d left, NAG: re-sign the proposal above to renew", fp, wallet, days), true
+		return fmt.Sprintf("hubkey %s speaks for %s — %d d left, NAG: re-sign the proposal above to renew%s", fp, wallet, days, at), true
 	default:
-		return fmt.Sprintf("hubkey %s speaks for %s — %d d left", fp, wallet, days), false
+		return fmt.Sprintf("hubkey %s speaks for %s — %d d left%s", fp, wallet, days, at), false
 	}
 }
 
@@ -365,6 +452,15 @@ func (s *server) mesh() *mesh.Manager {
 // sealed: there is nothing true to say yet.
 const wellKnownSpeakAsPath = "/.well-known/talos-hub/speak-as"
 
+// wellKnownReachMeAtPath serves the hub's current reach-me-at beside
+// it (talos-config-e8d): the same cold-cache case needs the NEW
+// hubkey's location record too, since a location record is only valid
+// signed by the actor it locates (checkLocation: iss == id) and a
+// member's cached one names the dead key. Hubkey-signed; the speak-as
+// from the sibling path is what makes that key worth listening to.
+// 503 while the hub has no wan endpoint or has not published yet.
+const wellKnownReachMeAtPath = "/.well-known/talos-hub/reach-me-at"
+
 func (s *server) handleWellKnownSpeakAs(w http.ResponseWriter, _ *http.Request) {
 	if s.hub == nil {
 		http.NotFound(w, nil)
@@ -375,7 +471,24 @@ func (s *server) handleWellKnownSpeakAs(w http.ResponseWriter, _ *http.Request) 
 		http.Error(w, "sealed: the hub holds no speak-as", http.StatusServiceUnavailable)
 		return
 	}
-	b, err := cert.Encode(*sa)
+	writeCert(w, *sa)
+}
+
+func (s *server) handleWellKnownReachMeAt(w http.ResponseWriter, _ *http.Request) {
+	if s.hub == nil {
+		http.NotFound(w, nil)
+		return
+	}
+	loc := s.hub.issuer.Actor.CurrentLocation()
+	if loc == nil {
+		http.Error(w, "the hub has no published location", http.StatusServiceUnavailable)
+		return
+	}
+	writeCert(w, *loc)
+}
+
+func writeCert(w http.ResponseWriter, c cert.Cert) {
+	b, err := cert.Encode(c)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

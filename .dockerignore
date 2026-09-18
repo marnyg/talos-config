@@ -1,4 +1,6 @@
-# Allowlist: only the server source, the talos tree, and the entrypoint.
+# Allowlist for Dockerfile.siweoidc (the hub's own image is nix-built,
+# fly/image.nix, since talos-config-e8d): the server source, the talos
+# tree, and the entrypoint.
 *
 !config-server
 !protocol

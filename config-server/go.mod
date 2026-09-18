@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	filippo.io/age v1.3.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
+	github.com/marnyg/talos-config/iroh-transport v0.0.0
 	github.com/siderolabs/crypto v0.6.5
 	github.com/siderolabs/kms-client v0.2.0
 	github.com/siderolabs/talos/pkg/machinery v1.12.6
@@ -20,7 +21,10 @@ require (
 	pgregory.net/rapid v1.3.0
 )
 
-require github.com/gowebpki/jcs v1.0.1 // indirect
+require (
+	github.com/gowebpki/jcs v1.0.1 // indirect
+	github.com/marnyg/talos-config/iroh-go v0.0.0 // indirect
+)
 
 require (
 	cel.dev/expr v0.25.1 // indirect
@@ -109,3 +113,10 @@ require (
 )
 
 replace github.com/marnyg/talos-config/protocol => ../protocol
+
+// The hub's iroh endpoint (talos-config-e8d, hubiroh.go, -tags iroh):
+// iroh-transport replaces ../iroh-go itself, so both replaces are needed
+// here too — Go applies the main module's replaces only.
+replace github.com/marnyg/talos-config/iroh-transport => ../iroh-transport
+
+replace github.com/marnyg/talos-config/iroh-go => ../iroh-go

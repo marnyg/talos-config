@@ -1,0 +1,74 @@
+# The hub's fly image (fly/image.nix; task talos-config-e8d), on
+# x86_64-linux — the self-contained fallback for the laptop path
+# (fly/deploy.sh over a linux builder). Two jobs:
+#
+#   build   nix build .#hub-image — the static musl config-server (-tags
+#           iroh, cgo against libiroh_ffi.a; checkPhase = the whole
+#           config-server suite incl. the hub beat over a local
+#           iroh-relay), the static iroh-relay, and the image.json. Gate.
+#   (push)  the last step, workflow_dispatch with push=true only: copy the
+#           image to registry.fly.io with FLY_API_TOKEN (repo secret;
+#           `fly tokens create deploy`). Deploy stays a human act —
+#           `fly deploy --image <ref>` re-seals the hub and someone has to
+#           sign at /status afterwards — so the step prints the ref and
+#           stops.
+#
+# Same cache pair as iroh-go.yml / iroh-transport.yml; the musl iroh-ffi
+# and iroh-relay are shared with the `static` job there when pins match.
+name: hub-image
+on:
+  push:
+    branches: [main]
+    paths:
+      - config-server/**
+      - protocol/**
+      - iroh-transport/**
+      - iroh-go/**
+      - talos/**
+      - fly/**
+      - flake.nix
+      - flake.lock
+      - .github/workflows/hub-image.yml
+  pull_request:
+    paths:
+      - config-server/**
+      - protocol/**
+      - iroh-transport/**
+      - iroh-go/**
+      - fly/**
+      - flake.nix
+      - flake.lock
+      - .github/workflows/hub-image.yml
+  workflow_dispatch:
+    inputs:
+      push:
+        description: push the image to registry.fly.io (needs FLY_API_TOKEN)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          use-flakehub: false # no FlakeHub account; silences the per-job auth ##[error]
+      - name: nix build .#hub-image
+        run: nix build .#hub-image -L
+      - name: image tag
+        id: tag
+        run: echo "tag=$(nix eval --raw .#hub-image.imageTag)" | tee -a "$GITHUB_OUTPUT"
+      - name: push to registry.fly.io
+        if: github.event_name == 'workflow_dispatch' && inputs.push
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          test -n "$FLY_API_TOKEN" || { echo "FLY_API_TOKEN secret missing"; exit 1; }
+          f=$(mktemp); trap 'rm -f "$f"' EXIT
+          printf '{"auths":{"registry.fly.io":{"auth":"%s"}}}' "$(printf 'x:%s' "$FLY_API_TOKEN" | base64 -w0)" > "$f"
+          REGISTRY_AUTH_FILE="$f" nix run .#hub-image.copyToRegistry
+          echo "deploy with: fly deploy --app marnyg-talos-config --image registry.fly.io/marnyg-talos-config:${{ steps.tag.outputs.tag }}"

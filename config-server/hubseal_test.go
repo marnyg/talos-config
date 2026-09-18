@@ -18,6 +18,7 @@ import (
 	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nebstack"
+	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
@@ -53,7 +54,24 @@ func testNebManager(t *testing.T, root string) (*mesh.Manager, *[]byte) {
 // one declared machine and a stub-started mesh (no real overlay).
 func testHubManager(t *testing.T, adminAddrs []string, pinnedCAFP string) *hubManager {
 	t.Helper()
+	return testHubManagerOn(t, adminAddrs, pinnedCAFP, nil)
+}
+
+// testHubManagerOn is testHubManager with a second wire for the hubkey
+// (hubiroh_test.go binds it on iroh). The v3 recipe and blocklist ride
+// along so #bundle compiles against the repo's real files.
+func testHubManagerOn(t *testing.T, adminAddrs []string, pinnedCAFP string, wan hubTransport) *hubManager {
+	t.Helper()
 	root := t.TempDir()
+	for _, f := range []string{policy.File, policy.BlocklistFile} {
+		b, err := os.ReadFile(filepath.Join("..", "talos", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, f), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	machineDir := filepath.Join(root, "machines", "aa-bb-cc-dd-ee-ff")
 	if err := os.MkdirAll(machineDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -68,7 +86,7 @@ func testHubManager(t *testing.T, adminAddrs []string, pinnedCAFP string) *hubMa
 	}
 
 	nm, _ := testNebManager(t, root)
-	m, err := newHubManager(root, adminAddrs, pinnedCAFP, nm)
+	m, err := newHubManager(root, adminAddrs, pinnedCAFP, nm, wan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +119,7 @@ func otherAddr(t *testing.T) string {
 }
 
 func TestNewHubManagerRejectsMalformedAdmin(t *testing.T) {
-	if _, err := newHubManager(t.TempDir(), []string{"0xnope"}, "", nil); err == nil {
+	if _, err := newHubManager(t.TempDir(), []string{"0xnope"}, "", nil, nil); err == nil {
 		t.Fatal("malformed admin address accepted")
 	}
 }
