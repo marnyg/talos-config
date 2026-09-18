@@ -1,6 +1,6 @@
 # Gates the Go code and the Quint design models on every change, so
 # neither drifts unnoticed again (verification/quint/check.sh went stale
-# for two weeks; there was no Go test workflow at all). Four jobs:
+# for two weeks; there was no Go test workflow at all). Five jobs:
 #
 #   go            go vet + go test -race for each module (config-server,
 #                 protocol), Go version pinned from each module's go.mod.
@@ -10,8 +10,13 @@
 #                 (`check.sh verify`) — minutes long, so nightly +
 #                 manual only.
 #   nickel        verification/nickel/check.sh — the durable artifacts
-#                 (talos/mesh-policy.yaml, talos/mesh-policy-v3.yaml) against their
-#                 snapshot contracts, on every push/PR.
+#                 against their snapshot contracts (the list lives in
+#                 that script's header), on every push/PR.
+#   vendor-hash   rebuilds config-server-bin's fixed-output vendor
+#                 derivation from scratch so a stale vendorHash fails
+#                 here, not on the next `nix build` (flake.nix caveat 3:
+#                 ../protocol is a local replace, so the hash moves with
+#                 protocol/*.go and a cached FOD hides the drift).
 #
 # Both check.sh headers name this workflow; keep them in sync.
 name: verify
@@ -79,3 +84,14 @@ jobs:
       # evaluated.
       - name: check.sh
         run: nix shell --inputs-from . nixpkgs#nickel -c verification/nickel/check.sh
+  vendor-hash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: DeterminateSystems/nix-installer-action@v22
+      # --rebuild forces the FOD even if a matching store path exists;
+      # a fresh runner has none anyway. Mismatch ⇒ "hash mismatch in
+      # fixed-output derivation" with the `got:` line to paste into
+      # flake.nix.
+      - name: goModules FOD rebuild
+        run: nix build .#config-server-bin.goModules --rebuild --no-link

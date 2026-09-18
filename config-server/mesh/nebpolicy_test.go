@@ -3,6 +3,7 @@ package mesh
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -267,5 +268,20 @@ func TestSetPolicyOverlayRejectsInvalid(t *testing.T) {
 	}
 	if raw, by, _, ok := m.PolicyOverlay(); !ok || by != "0xabc" || string(raw) != nebOverlayDoc {
 		t.Error("failed set clobbered the installed overlay")
+	}
+}
+
+// The v2 Group* constants name members of the one closed set the v3
+// compiler owns (policy.Groups); a constant outside it would let v2
+// mint a group the v3 plane never grants.
+func TestGroupConstantsAreInTheClosedSet(t *testing.T) {
+	got := Groups()
+	for _, g := range []string{GroupAdmins, GroupMedia, GroupMachines} {
+		if !slices.Contains(got, g) {
+			t.Fatalf("%q is not in policy.Groups %v", g, got)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("Groups() = %v, want exactly the three v2 constants", got)
 	}
 }

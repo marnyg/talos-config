@@ -93,7 +93,9 @@
               #     path matching the hash, so a stale-but-matching vendor dir
               #     survives `go mod tidy`. Force a recompute by setting a
               #     bogus hash and reading nix's "got:" line.
-              #  3. Local `replace`s (../protocol here) are vendored from the
+              #  3. (CI job `vendor-hash` in .github/workflows/verify.yml rebuilds
+              #     the FOD on every push, so drift fails there first.)
+              #     Local `replace`s (../protocol here) are vendored from the
               #     source tree, so the hash changes whenever protocol/*.go
               #     changes — and a cached FOD output hides the drift (CI run
               #     34754508013: one job green from cache, another rebuilt the

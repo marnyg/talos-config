@@ -17,7 +17,6 @@ package mesh
 import (
 	"bytes"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,6 +24,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/marnyg/talos-config/config-server/policy"
 )
 
 // PolicyFile lives beside machines/ under the talos tree, like the
@@ -46,21 +47,15 @@ type policyScope struct {
 	Inbound []nebRuleYAML `yaml:"inbound"`
 }
 
-// policyGroups is the closed set of cert groups a rule may name. The
-// firewall matches groups signed into peer certificates, so a group
-// unknown to enrollment would silently admit nobody — rejected at load
-// for the same reason the blocklist rejects malformed fingerprints.
-var policyGroups = map[string]bool{
-	GroupAdmins:   true,
-	GroupMedia:    true,
-	GroupMachines: true,
-}
-
 // Groups is the closed group vocabulary, sorted — what the Issuer's
 // speak-as proposal delegates (ADR-0018: the wallet delegates the
-// finite list, the hub can put a member in no other group).
+// finite list, the hub can put a member in no other group). ONE copy:
+// the v3 compiler (config-server/policy) owns the set and the Nickel
+// contracts assert against it; v2 (this package) reads it, so the two
+// planes cannot disagree on what a group is. The Group* constants in
+// nebconf.go are names for members of that set, not a second copy.
 func Groups() []string {
-	return slices.Sorted(maps.Keys(policyGroups))
+	return slices.Sorted(slices.Values(policy.Groups))
 }
 
 // loadPolicy reads and validates talos/mesh-policy.yaml.
@@ -213,7 +208,10 @@ func validatePolicyRule(r nebRuleYAML) error {
 	if (r.Host == "") == (r.Group == "") {
 		return fmt.Errorf("exactly one of host/group must be set (host=%q group=%q)", r.Host, r.Group)
 	}
-	if r.Group != "" && !policyGroups[r.Group] {
+	// A group unknown to enrollment would silently admit nobody —
+	// rejected at load for the same reason the blocklist rejects
+	// malformed fingerprints.
+	if r.Group != "" && !slices.Contains(policy.Groups, r.Group) {
 		return fmt.Errorf("group %q is not a cert group this mesh issues (admins/media/machines)", r.Group)
 	}
 	return nil
