@@ -136,6 +136,7 @@ const (
 	fConsentExpired
 	fConsentFacetKubeOnly
 	fConsentTargetOtherR
+	fConsentTargetAny // consent1 carries target {"*"} (ADR-0004, decision a): roots nothing
 	fNoConsentOwner2
 	fGrantForged
 	fGrantExpired
@@ -147,6 +148,7 @@ const (
 	fGrantTargetOtherR
 	fGrantFacetKubeOnly
 	fGrantTargetOwner1 // grant names OWNER1, not R (ADR-0003: R answers for OWNER1 via the held speak-as)
+	fGrantTargetAny    // grant carries target {"*"} (ADR-0004): the compiler's shape, not a fault
 	// held speak-as faults (ADR-0003): what R holds naming itself as aud
 	fHeldMissing
 	fHeldExpired
@@ -192,11 +194,13 @@ const (
 type scenario struct {
 	in        Input
 	att       Input // same, but with one link (grant or speak-as) attenuated
+	fix       fixture
 	member    Cert
 	grant     Cert
-	speakAs   []Cert // the bundle's speak-as links (ADR-0018)
-	held      []Cert // the speak-as certs R HOLDS naming it as aud (ADR-0003)
-	heldAtt   []Cert // the same, one caveat added (the model's heldAtt)
+	grantSpec certSpec // unsigned grant, re-signed inside invGrantWildcardNeverWidens
+	speakAs   []Cert   // the bundle's speak-as links (ADR-0018)
+	held      []Cert   // the speak-as certs R HOLDS naming it as aud (ADR-0003)
+	heldAtt   []Cert   // the same, one caveat added (the model's heldAtt)
 	consents  []Cert
 	alpn      string
 	facet     string
@@ -295,6 +299,8 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 	}
 	grantTarget := []ActorID{id["R"]}
 	switch {
+	case has(flt, fGrantTargetAny):
+		grantTarget = []ActorID{TargetAny}
 	case has(flt, fGrantTargetOtherR):
 		grantTarget = []ActorID{id["OTHER_R"]}
 	case has(flt, fGrantTargetOwner1):
@@ -326,8 +332,12 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 		Facet:  append([]string(nil), grantSpec.cav.Facet...),
 	}
 	switch attKind {
-	case attShrinkTarget: // drop R
-		attSpec.cav.Target = removeID(attSpec.cav.Target, id["R"])
+	case attShrinkTarget: // drop R; a `*` grant narrows to {OTHER_R} (the model's addCaveat)
+		if IsTargetAny(attSpec.cav.Target) {
+			attSpec.cav.Target = []ActorID{id["OTHER_R"]}
+		} else {
+			attSpec.cav.Target = removeID(attSpec.cav.Target, id["R"])
+		}
 	case attShrinkFacet: // drop apid
 		attSpec.cav.Facet = removeStr(attSpec.cav.Facet, "apid")
 	case attAddUnknownCaveat:
@@ -429,7 +439,7 @@ func buildScenario(f fixture, p scenarioParams) scenario {
 	att.Receiver.SpeakAs = heldAtt
 	att.Bundle = Bundle{Member: member, Grants: []Cert{grantAtt}, SpeakAs: speakAsAtt}
 
-	return scenario{in: base, att: att, member: member, grant: grant, speakAs: speakAs, held: held, heldAtt: heldAtt,
+	return scenario{in: base, att: att, fix: f, member: member, grant: grant, grantSpec: grantSpec, speakAs: speakAs, held: held, heldAtt: heldAtt,
 		consents: consents, alpn: alpn, facet: "apid", hubSigned: hubSigned, f: flt}
 }
 
@@ -516,6 +526,8 @@ func buildConsents(f fixture, flt map[fault]bool, postage string, chainVerb Verb
 	}
 	consent1Target := []ActorID{id["R"]}
 	switch {
+	case has(flt, fConsentTargetAny):
+		consent1Target = []ActorID{TargetAny}
 	case has(flt, fConsentTargetOtherR):
 		consent1Target = []ActorID{id["OTHER_R"]}
 	case targetsOwner1:
@@ -788,8 +800,31 @@ func checkLaws(t failer, f fixture, s scenario, res, resAtt Result) {
 	}
 	// invTargetIsAnswerable: a grant naming neither R nor a principal R
 	// holds a live speak-as from never admits — whatever the bundle carries.
-	if len(intersectID(g.Cav.Target, ans)) == 0 && res.OK {
+	// A `*` grant does not narrow and is exempt (ADR-0004; bounded by
+	// invGrantWildcardNeverWidens below).
+	if !IsTargetAny(g.Cav.Target) && len(intersectID(g.Cav.Target, ans)) == 0 && res.OK {
 		t.Fatal("invTargetIsAnswerable: accepted a grant targeting neither R nor a principal it answers for")
+	}
+	// invGrantWildcardNeverWidens (ADR-0004): a `*` grant admits only where
+	// the same grant re-signed with SOME R-signed consent's own target
+	// would.
+	if res.OK && IsTargetAny(g.Cav.Target) {
+		ok := false
+		for _, c := range s.consents {
+			if c.Iss != id["R"] {
+				continue
+			}
+			sp := s.grantSpec
+			sp.cav = Caveats{Target: append([]ActorID(nil), c.Cav.Target...), Facet: sp.cav.Facet}
+			in := s.in
+			in.Bundle = Bundle{Member: s.member, Grants: []Cert{s.fix.build(sp)}, SpeakAs: s.speakAs}
+			if Authorize(in).OK {
+				ok = true
+			}
+		}
+		if !ok {
+			t.Fatal("invGrantWildcardNeverWidens: a `*` grant accepted where no consent's own target would")
+		}
 	}
 	// invFacetMatchesAlpn
 	if fct, ok := table[s.alpn]; ok && !slices.Contains(g.Cav.Facet, fct) && res.OK {

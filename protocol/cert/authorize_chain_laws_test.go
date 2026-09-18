@@ -74,6 +74,8 @@ const (
 	cfHubBSpeakAsExpired
 	cfHubBSpeakAsVerbless // likewise, on the HUB_B link
 	cfChainTargetOwner1   // every caller link names OWNER1, not R (ADR-0003); consent1 then names {R, OWNER1}
+	cfLink1TargetAny      // link 1 carries target {"*"} (ADR-0004): not a fault — the compiler's shape
+	cfLink2TargetAny      // link 2 likewise
 	numCFaults
 )
 
@@ -118,6 +120,8 @@ type chainParams struct {
 
 type chainScenario struct {
 	p          chainParams
+	fix        fixture    // to re-sign links inside a law (invWildcardTargetNeverWidens)
+	chainSpecs []certSpec // the unsigned chain, for the same
 	consents   []Cert
 	chain      []Cert
 	chainAtt   []Cert
@@ -199,6 +203,8 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 	}
 	l1Target := []ActorID{id["R"]}
 	switch {
+	case hasC(flt, cfLink1TargetAny):
+		l1Target = []ActorID{TargetAny}
 	case hasC(flt, cfLink1TargetOtherR):
 		l1Target = []ActorID{id["OTHER_R"]}
 	case hasC(flt, cfChainTargetOwner1):
@@ -262,7 +268,10 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 		l2Exp = testNOW
 	}
 	l2Target := []ActorID{id["R"]}
-	if hasC(flt, cfChainTargetOwner1) {
+	switch {
+	case hasC(flt, cfLink2TargetAny):
+		l2Target = []ActorID{TargetAny}
+	case hasC(flt, cfChainTargetOwner1):
 		l2Target = []ActorID{id["OWNER1"]}
 	}
 	l2 := certSpec{iss: l2Iss, aud: l2Aud, can: l2Can,
@@ -350,7 +359,12 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 			}
 			switch p.attKind {
 			case attShrinkTarget:
-				ap.cav.Target = removeID(ap.cav.Target, id[p.attT])
+				// the model's addCaveat: a `*` link narrows to {attT}
+				if IsTargetAny(ap.cav.Target) {
+					ap.cav.Target = []ActorID{id[p.attT]}
+				} else {
+					ap.cav.Target = removeID(ap.cav.Target, id[p.attT])
+				}
 			case attShrinkFacet:
 				ap.cav.Facet = removeStr(ap.cav.Facet, p.attF)
 			case attShrinkEndpoints:
@@ -370,7 +384,7 @@ func buildChainScenario(f fixture, p chainParams) chainScenario {
 		speakAsAtt = append(speakAsAtt, f.build(attenuateSpeakAs(sp, p.attKind, p.attG)))
 	}
 
-	return chainScenario{p: p, consents: consents, chain: chain, chainAtt: chainAtt,
+	return chainScenario{p: p, fix: f, chainSpecs: chainSpecs, consents: consents, chain: chain, chainAtt: chainAtt,
 		speakAs: speakAs, speakAsAtt: speakAsAtt, held: held, heldAtt: heldAtt, signer: signer, facet: "apid", verb: verb, f: flt}
 }
 
@@ -552,11 +566,12 @@ var chainLaws = []chainLaw{
 		return false, true
 	}},
 	// Attenuation only (invariant 5): the effective cert is below every
-	// link in every recognised caveat and in expiry.
+	// link in every recognised caveat and in expiry. A `*` target link
+	// does not narrow (ADR-0004), so it bounds nothing.
 	{"invEffectiveIsIntersection", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
 		for _, v := range res.verdicts {
 			for _, l := range links(v, s.chain) {
-				if !subsetID(v.eff.Cav.Target, l.Cav.Target) || !subset(v.eff.Cav.Facet, l.Cav.Facet) ||
+				if (!IsTargetAny(l.Cav.Target) && !subsetID(v.eff.Cav.Target, l.Cav.Target)) || !subset(v.eff.Cav.Facet, l.Cav.Facet) ||
 					!subset(v.eff.Cav.Groups, l.Cav.Groups) || !subset(v.eff.Cav.Endpoints, l.Cav.Endpoints) ||
 					v.eff.Exp > l.Exp {
 					return true, false
@@ -705,7 +720,8 @@ var chainLaws = []chainLaw{
 		return hit, true
 	}},
 	// Rule 4 — target and facet: some ONE principal R answers for (R, or P
-	// with a live held P→R) is named by every link and by a consent.
+	// with a live held P→R) is named by every non-wildcard link and,
+	// concretely, by a consent (ADR-0004: `*` links do not narrow).
 	{"invChainTargetsAnswerable", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
 		if !res.accepted() {
 			return false, true
@@ -713,7 +729,7 @@ var chainLaws = []chainLaw{
 	principals:
 		for _, p := range answerable(id, s.held) {
 			for _, l := range s.chain {
-				if !slices.Contains(l.Cav.Target, p) {
+				if !IsTargetAny(l.Cav.Target) && !slices.Contains(l.Cav.Target, p) {
 					continue principals
 				}
 			}
@@ -731,11 +747,66 @@ var chainLaws = []chainLaw{
 	{"invBundleSpeakAsNeverWidensTarget", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
 		ans := answerable(id, s.held)
 		for _, l := range s.chain {
-			if len(intersectID(l.Cav.Target, ans)) == 0 {
+			if !IsTargetAny(l.Cav.Target) && len(intersectID(l.Cav.Target, ans)) == 0 {
 				return true, !res.accepted()
 			}
 		}
 		return false, true
+	}},
+	// ADR-0004 (zeb, decision a): a wildcard consent roots nothing — on
+	// every verdict, and as a rejection when R signed nothing else.
+	{"invChainWildConsentRootsNothing", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
+		for _, v := range res.verdicts {
+			if IsTargetAny(v.consent.Cav.Target) {
+				return true, false
+			}
+		}
+		anyWild, onlyWild := false, true
+		for _, c := range s.consents {
+			if c.Iss != id["R"] {
+				continue
+			}
+			if IsTargetAny(c.Cav.Target) {
+				anyWild = true
+			} else {
+				onlyWild = false
+			}
+		}
+		if anyWild && onlyWild {
+			return true, !res.accepted()
+		}
+		return anyWild, true
+	}},
+	// ADR-0004's law: `*` never widens. For every verdict, the same chain
+	// with each `*` link's target replaced by the ROOTING CONSENT's own
+	// target (re-signed by its issuer) verifies under that consent with the
+	// SAME effective target — a wildcard link contributes exactly what the
+	// receiver consented to, never more.
+	{"invWildcardTargetNeverWidens", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
+		hit := false
+		for _, v := range res.verdicts {
+			concrete := make([]Cert, 0, len(s.chainSpecs))
+			for _, sp := range s.chainSpecs {
+				if IsTargetAny(sp.cav.Target) {
+					hit = true
+					sp.cav.Target = append([]ActorID(nil), v.consent.Cav.Target...)
+				}
+				concrete = append(concrete, s.fix.build(sp))
+			}
+			ctx := newAuthCtx()
+			r := Receiver{ID: id["R"], Consents: []Cert{v.consent}, SpeakAs: s.held}
+			ws, _ := ctx.verifyChain(r, s.verb, concrete, s.speakAs, s.signer, s.facet, testNOW)
+			same := false
+			for _, w := range ws {
+				if subsetID(w.eff.Cav.Target, v.eff.Cav.Target) && subsetID(v.eff.Cav.Target, w.eff.Cav.Target) {
+					same = true
+				}
+			}
+			if !same {
+				return true, false
+			}
+		}
+		return hit, true
 	}},
 	{"invChainFacetMatches", func(id map[string]ActorID, s chainScenario, res, _ chainResult) (bool, bool) {
 		if !res.accepted() {
@@ -845,25 +916,43 @@ func TestChainLaws(t *testing.T) {
 // (ADR-0003); they bite on the chain only when a link addresses OWNER1.
 var heldFaults = []fault{fNone, fHeldMissing, fHeldExpired, fHeldForged, fHeldFromOwner2, fHeldAudOtherR, fHeldInBundleOnly}
 
+// wildConsentPairs join the sweep where a link carries `*` (ADR-0004):
+// the wildcard consent beside CONSENT2, and with CONSENT2 gone so that R
+// signed nothing concrete — the antecedent of
+// invChainWildConsentRootsNothing's rejection clause. Only the
+// chain-level root filter refuses a wildcard consent (connection level
+// already fails it in step 2b), so the connection-level sweep cannot
+// stand in for this.
+var wildConsentPairs = [][2]fault{{fConsentTargetAny, fNone}, {fConsentTargetAny, fNoConsentOwner2}}
+
 // TestChainFaultPairSweep enumerates nearChain's fault space EXHAUSTIVELY
 // — every unordered chain-fault pair × kind × hubSigned (consents
 // fault-free, the consent faults being the connection-level sweep's
 // job; the held faults joined only where cfChainTargetOwner1 makes them
-// bite) — the deterministic backbone behind the random suite.
+// bite, the wildcard-consent faults only where a link carries `*`) —
+// the deterministic backbone behind the random suite.
 func TestChainFaultPairSweep(t *testing.T) {
 	f := detFixture(60)
 	n := 0
 	for c1 := cfault(0); c1 < numCFaults; c1++ {
 		for c2 := c1; c2 < numCFaults; c2++ {
-			hf := heldFaults[:1]
+			// connection-level fault pairs joining this chain pair: none by
+			// default; the held faults where a link addresses OWNER1; the
+			// wildcard-consent pairs where a link carries `*`.
+			cpairs := [][2]fault{{fNone, fNone}}
 			if c1 == cfChainTargetOwner1 || c2 == cfChainTargetOwner1 {
-				hf = heldFaults
+				for _, hfault := range heldFaults[1:] {
+					cpairs = append(cpairs, [2]fault{hfault, fNone})
+				}
 			}
-			for _, f1 := range hf {
+			if c1 == cfLink1TargetAny || c2 == cfLink1TargetAny || c1 == cfLink2TargetAny || c2 == cfLink2TargetAny {
+				cpairs = append(cpairs, wildConsentPairs...)
+			}
+			for _, cp := range cpairs {
 				for kind := chainKind(0); kind < numKinds; kind++ {
 					for _, hub := range []bool{false, true} {
 						for _, verb := range chainVerbs {
-							p := chainParams{cf1: c1, cf2: c2, kind: kind, verb: verb, hubSigned: hub, f1: f1,
+							p := chainParams{cf1: c1, cf2: c2, kind: kind, verb: verb, hubSigned: hub, f1: cp[0], f2: cp[1],
 								attI: n % 2, attKind: n % numAtts, attT: "R", attF: "apid",
 								attG: modelGroups[n%len(modelGroups)], attE: modelEndpoints[n%len(modelEndpoints)]}
 							checkChainLaws(sweepCT{t, p}, f.id, buildChainScenario(f, p), nil)
@@ -1268,5 +1357,93 @@ func TestVerifyChainAnswersFor(t *testing.T) {
 	in.Receiver.SpeakAs = nil
 	if Authorize(in).OK {
 		t.Fatal("step 2b: consent targeting OWNER1 only accepted at R holding nothing")
+	}
+}
+
+// TestVerifyChainWildcardTarget is the model's wildcardTargetTest
+// (protocol ADR-0004, talos-config-zeb): every caller link says
+// `target: ["*"]` — the policy compiler's shape — and the consent names
+// {R}. The chain accepts with effective target {R}, both as an envelope
+// chain and at connection level; at a receiver answering for OWNER1
+// under a consent {R, OWNER1} the wildcard contributes exactly that set;
+// where the consent names OTHER_R only, `*` does not reach R. A wildcard
+// CONSENT roots nothing (decision a) — under `*` links and under {R}
+// links, ErrChainUnrooted. Narrowing a `*` link to {OTHER_R} rejects;
+// narrowing it to {R} leaves the verdict unchanged.
+func TestVerifyChainWildcardTarget(t *testing.T) {
+	f := detFixture(120)
+	id := f.id
+	consent := f.build(certSpec{iss: "R", aud: string(id["OWNER1"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid", "kube-api"}, Delegable: true, Endpoints: modelEndpoints}, exp: 10})
+	l1 := certSpec{iss: "OWNER1", aud: string(id["OWNER2"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{TargetAny}, Facet: []string{"apid", "kube-api"}, Delegable: true, Endpoints: modelEndpoints}, exp: 10}
+	l2 := certSpec{iss: "OWNER2", aud: string(id["CALLER"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{TargetAny}, Facet: []string{"apid"}, Endpoints: []string{"quic:a"}}, exp: 10}
+	chain := []Cert{f.build(l1), f.build(l2)}
+	recv := func(consents []Cert, sa ...Cert) Receiver {
+		return Receiver{ID: id["R"], Consents: consents, SpeakAs: sa}
+	}
+
+	eff, _, err := VerifyChain(recv([]Cert{consent}), VerbInvoke, chain, nil, id["CALLER"], "apid", testNOW)
+	if err != nil {
+		t.Fatalf("wildcard chain under consent {R}: %v", err)
+	}
+	if len(eff.Cav.Target) != 1 || eff.Cav.Target[0] != id["R"] {
+		t.Fatalf("eff.Target = %v, want {R}", eff.Cav.Target)
+	}
+	// the wildcard contributes exactly the consent's target
+	consentHub := f.build(certSpec{iss: "R", aud: string(id["OWNER1"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{id["R"], id["OWNER1"]}, Facet: []string{"apid"}, Delegable: true, Endpoints: modelEndpoints}, exp: 10})
+	held := f.build(certSpec{iss: "OWNER1", aud: string(id["R"]), can: VerbSpeakAs, cav: Caveats{Verbs: modelVerbs, Groups: modelGroups}, exp: 10})
+	eff, _, err = VerifyChain(recv([]Cert{consentHub}, held), VerbInvoke, chain, nil, id["CALLER"], "apid", testNOW)
+	if err != nil {
+		t.Fatalf("wildcard chain under consent {R, OWNER1}: %v", err)
+	}
+	if !subsetID(eff.Cav.Target, []ActorID{id["R"], id["OWNER1"]}) || !subsetID([]ActorID{id["R"], id["OWNER1"]}, eff.Cav.Target) {
+		t.Fatalf("eff.Target = %v, want {R, OWNER1}", eff.Cav.Target)
+	}
+	// a consent naming only another receiver: `*` does not reach R
+	consentOther := f.build(certSpec{iss: "R", aud: string(id["OWNER1"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{id["OTHER_R"]}, Facet: []string{"apid"}, Delegable: true, Endpoints: modelEndpoints}, exp: 10})
+	if _, _, err := VerifyChain(recv([]Cert{consentOther}), VerbInvoke, chain, nil, id["CALLER"], "apid", testNOW); !errors.Is(err, ErrTargetMismatch) {
+		t.Fatalf("consent {OTHER_R}: err = %v, want ErrTargetMismatch", err)
+	}
+	// a wildcard consent roots nothing — decision (a)
+	consentWild := f.build(certSpec{iss: "R", aud: string(id["OWNER1"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{TargetAny}, Facet: []string{"apid"}, Delegable: true, Endpoints: modelEndpoints}, exp: 10})
+	if _, _, err := VerifyChain(recv([]Cert{consentWild}), VerbInvoke, chain, nil, id["CALLER"], "apid", testNOW); !errors.Is(err, ErrChainUnrooted) {
+		t.Fatalf("wildcard consent, wildcard links: err = %v, want ErrChainUnrooted", err)
+	}
+	c1, c2 := l1, l2
+	c1.cav.Target, c2.cav.Target = []ActorID{id["R"]}, []ActorID{id["R"]}
+	if _, _, err := VerifyChain(recv([]Cert{consentWild}), VerbInvoke, []Cert{f.build(c1), f.build(c2)}, nil, id["CALLER"], "apid", testNOW); !errors.Is(err, ErrChainUnrooted) {
+		t.Fatalf("wildcard consent, {R} links: err = %v, want ErrChainUnrooted", err)
+	}
+	// narrowing a `*` link: to {OTHER_R} rejects, to {R} changes nothing
+	n2 := l2
+	n2.cav.Target = []ActorID{id["OTHER_R"]}
+	if _, _, err := VerifyChain(recv([]Cert{consent}), VerbInvoke, []Cert{chain[0], f.build(n2)}, nil, id["CALLER"], "apid", testNOW); !errors.Is(err, ErrTargetMismatch) {
+		t.Fatalf("last link narrowed to {OTHER_R}: err = %v, want ErrTargetMismatch", err)
+	}
+	n2.cav.Target = []ActorID{id["R"]}
+	effN, _, err := VerifyChain(recv([]Cert{consent}), VerbInvoke, []Cert{chain[0], f.build(n2)}, nil, id["CALLER"], "apid", testNOW)
+	if err != nil || len(effN.Cav.Target) != 1 || effN.Cav.Target[0] != id["R"] {
+		t.Fatalf("last link narrowed to {R}: eff.Target = %v, err = %v", effN.Cav.Target, err)
+	}
+
+	// connection level: a `*` grant admits under consent {R}, not under a wildcard consent
+	member := f.build(certSpec{iss: "OWNER1", aud: string(id["CALLER"]), can: VerbMember,
+		cav: Caveats{Groups: []string{"admins"}, Name: "laptop"}, exp: 10})
+	grant := f.build(certSpec{iss: "OWNER1", aud: string(id["CALLER"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{TargetAny}, Facet: []string{"apid"}}, exp: 10})
+	in := Input{Receiver: recv([]Cert{consent}), AcceptTable: map[string]string{"mesh/apid/v1": "apid"},
+		Blocklist: map[ActorID]bool{}, Now: testNOW, ALPN: "mesh/apid/v1", Peer: id["CALLER"],
+		Bundle: Bundle{Member: member, Grants: []Cert{grant}}}
+	if !Authorize(in).OK {
+		t.Fatal("connection level: `*` grant rejected under consent {R}")
+	}
+	in.Receiver = recv([]Cert{consentWild})
+	if Authorize(in).OK {
+		t.Fatal("connection level: `*` grant accepted under a wildcard consent")
 	}
 }

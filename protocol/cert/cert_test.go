@@ -3,6 +3,7 @@ package cert
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 
@@ -256,4 +257,41 @@ func mustHex(t *testing.T, s string) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// ADR-0004: cav.target admits "*" only as the whole set. Encode/Decode
+// round-trip it; a mixed ["*", id] is a decode error (ErrMixedTargetAny);
+// "*" never validates as an actor id on its own.
+func TestDecodeTargetWildcard(t *testing.T) {
+	_, priv, _ := ed25519.GenerateKey(nil)
+	s := NewEdSigner(priv)
+	c, _ := Sign(Cert{
+		Aud: string(s.ActorID()), Can: VerbInvoke,
+		Cav: Caveats{Target: []ActorID{TargetAny}, Facet: []string{"apid"}},
+		Iat: 5, Exp: 6,
+	}, s)
+	enc, err := Encode(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, err := DecodeCert(enc)
+	if err != nil {
+		t.Fatalf("decode {\"*\"}: %v", err)
+	}
+	if !IsTargetAny(dec.Cav.Target) {
+		t.Fatalf("decoded target = %v, want {\"*\"}", dec.Cav.Target)
+	}
+	if err := Verify(dec); err != nil {
+		t.Fatalf("decoded wildcard cert fails verify: %v", err)
+	}
+	mixed := strings.Replace(string(enc), `"target":["*"]`, `"target":["*","`+string(s.ActorID())+`"]`, 1)
+	if mixed == string(enc) {
+		t.Fatal("test setup: target not found in encoding")
+	}
+	if _, err := DecodeCert([]byte(mixed)); !errors.Is(err, ErrMixedTargetAny) {
+		t.Fatalf("mixed target: err = %v, want ErrMixedTargetAny", err)
+	}
+	if TargetAny.Validate() == nil {
+		t.Fatal(`"*" validated as an actor id`)
+	}
 }

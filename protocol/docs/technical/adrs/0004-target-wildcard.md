@@ -1,7 +1,8 @@
 # ADR-0004: `cav.target` admits the wildcard `"*"` — honored at every receiver that consented to the chain's sovereign
 
-- Status: Proposed _(2026-09-18, from the `359.8.5` grill-design;
-  promote when the model law and the Go port land)_
+- Status: Accepted _(2026-09-19 — model law + Go port landed,
+  `talos-config-zeb`; Proposed 2026-09-18 from the `359.8.5`
+  grill-design)_
 - Date: 2026-09-18
 - Amends: ADR-0002 (an absent set caveat stays ∅; this adds the
   explicit wire sentinel ADR-0002 said an "unconstrained" reading
@@ -61,9 +62,9 @@ the back door. Ruled out.
 `target` set: `intersect(X, {*}) = X`, `intersect({*}, {*}) = {*}`;
 a `"*"` that survives to the effective cert is treated by rule 4 as
 "names no one" (rule 4 tests `eff.target ∋ R or ∋ P` for concrete
-ids only — so a chain whose *consent* also says `"*"` is rejected,
-which is correct: a receiver that names no concrete self in its
-consent has consented to nothing).
+ids only). A *consent* saying `"*"` is refused at the root (rule 1,
+see below): a receiver that names no concrete self in its consent has
+consented to nothing.
 
 **Option D: generalise ADR-0003 so a receiver answers for the
 sovereign it consented to** (`target: wallet` for every facet, consent
@@ -82,9 +83,19 @@ contain the string `"*"`.
   wildcard is the whole set or absent.
 - **Rule 4 unchanged**: the effective target must name the receiver
   (or a speak-as principal it holds) *concretely*. Because a
-  receiver's own consent always names `self`, the effective target of
-  `[consent, grant{target: *}]` is `[self]` and rule 4 passes; a
-  consent with `target: "*"` fails rule 4 by construction.
+  receiver's own consent names `self`, the effective target of
+  `[consent, grant{target: *}]` is `[self]` and rule 4 passes.
+- **The wildcard is for grants; a consent never carries it** _(ruled
+  2026-09-19 while building the model, decision `talos-config-zeb`
+  option a)_. The draft claimed a `"*"` consent "fails rule 4 by
+  construction" — false: `[consent{*}, grant{R}]` folds to `{R}` and
+  passes. Rather than let a receiver name itself by omission, **rule 1
+  gains a clause**: a consent whose `target` is `["*"]` roots no chain
+  (`verifyChain`'s root filter; Go `IsTargetAny(c.Cav.Target)` ⇒ skip,
+  `ErrChainUnrooted` when nothing else roots). The alternative — allow
+  it and weaken `invConsentTargetsSelf` to the effective cert — was
+  rejected: "a consent names self" stays a stated shape, and the
+  model gets a mutant to kill.
 - **Bound**: a `target: "*"` grant is honored at exactly the receivers
   that hold a live delegable consent to the grant's sovereign for the
   requested facet — no wider. It does not need postage: `aud "*"`
@@ -96,13 +107,28 @@ contain the string `"*"`.
 
 ### Consequences
 
-- `authorize.qnt` first: `TARGETS` gains an `ANY` value; `attenuate`'s
-  target case handles it; `answersFor` ignores it; new law
-  `invWildcardTargetNeverWidens` (for every chain, admitting with a
-  `*` link ⇒ admitting with that link's target replaced by the
-  consent's own target). Then Go 1:1: `decode.go` accepts `"*"` as a
-  target element only as the singleton set; `intersectID` handles the
-  sentinel; a rapid law mirrors the Quint one.
+- `authorize.qnt` _(landed 2026-09-19)_: `ANY`/`WILD` constants;
+  `intersectTarget` in `attenuate`; `answersFor` ignores it by
+  construction (ANY is no principal); the root filter refuses a
+  `WILD` consent; generators draw `WILD` as a whole set for consents,
+  grants and links (`FConsentTargetAny`, `FGrantTargetAny`,
+  `FLink{1,2}TargetAny`); `ShrinkTarget` on a `*` link narrows it to
+  `{tgt}`. Laws: `invWildcardTargetNeverWidens` (for every verdict,
+  the chain with each `*` link's target replaced by the *rooting
+  consent's* target verifies under that consent with the **same**
+  effective target), `invChainWildConsentRootsNothing`,
+  `invGrantWildcardNeverWidens` (connection level);
+  `invEffectiveIsIntersection`, `invChainTargetsAnswerable`,
+  `invBundleSpeakAsNeverWidensTarget`, `invTargetIsAnswerable` exempt
+  `*` links. Witness `wildcardTargetTest`. Mutants killed: root filter
+  dropped; `*` child ⇒ `*` eff; union instead of "other side".
+  Apalache depth 2 still exhaustive (~173 s).
+- Go 1:1 _(same day)_: `cert.TargetAny`, `cert.IsTargetAny`,
+  `ErrMixedTargetAny` at decode (the singleton rule), `intersectTarget`
+  beside the raw `intersectID` (laws stay on raw sets), the rule-1
+  clause in `verifyChain`; rapid laws mirror the model's, the chain
+  sweep joins the wildcard-consent pairs where a link carries `*`;
+  witness `TestVerifyChainWildcardTarget`, `TestDecodeTargetWildcard`.
 - The first consumer's compiler (root `359.8.5`) emits
   `target: ["*"]` on every policy grant; the consumer's "kind" axis is
   carried by the facet vocabulary (root ADR-0017 amendment).

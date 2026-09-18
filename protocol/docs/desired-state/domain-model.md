@@ -257,12 +257,15 @@ protocol scope must never contradict these entries.
 - **Attenuation** — a chain link adds caveats, never removes;
   effective authority is field-wise intersection over `target`,
   `facet` and every recognised caveat; an unknown caveat rejects.
-  **Target wildcard** _(ADR-0004, Proposed 2026-09-18)_: `target:
+  **Target wildcard** _(ADR-0004, Accepted 2026-09-19)_: `target:
   ["*"]` is the identity element of the `target` intersection — the
   link does not narrow the target; rule 4 still needs a concrete
   receiver in the effective set (the consent's `self`), so `*` reaches
-  exactly the receivers that consented to the chain's sovereign. No
-  other set caveat has a sentinel (ADR-0002: absent = ∅).
+  exactly the receivers that consented to the chain's sovereign. It is
+  the whole set or absent (mixed rejects at decode), and it is for
+  grants only: a **consent** whose target is `["*"]` roots no chain
+  (rule 1; decision `zeb` a). No other set caveat has a sentinel
+  (ADR-0002: absent = ∅).
   **Group resolution rule:** `aud: group:<g>` is satisfied when
   **one sovereign W that R holds a live consent for** both (i)
   vouches for the grant's signer and (ii) vouches for the `member`

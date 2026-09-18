@@ -128,8 +128,15 @@ func ValidVerb(v Verb) bool { return knownVerbs[v] }
 // requirement string; its presence is MONOTONE over a chain (a link may
 // add it, none may remove it; two links that set it must agree) and it
 // never gates invoke by itself — it only unlocks aud "*" (VerifyChain).
+//
+// Caveat vocabulary v3 (ADR-0004): Target alone admits the wildcard
+// TargetAny as its WHOLE set (a mixed ["*", id] is a decode error). It
+// means "this link does not narrow the target": intersectTarget yields
+// the other side, so a chain [consent{self}, grant{*}] has effective
+// target {self}. It is for grants; a consent whose target is {*} roots
+// nothing (VerifyChain rule 1). No other set caveat has a sentinel.
 type Caveats struct {
-	Target    []ActorID // grants: the actors this authority may reach
+	Target    []ActorID // grants: the actors this authority may reach, or the singleton {TargetAny}
 	Facet     []string  // grants: the facet classes it may reach
 	Groups    []string  // member certs: the groups the member is in
 	Name      string    // member certs: the member's durable name
@@ -194,6 +201,15 @@ func nonNil(s []string) []string {
 	}
 	return s
 }
+
+// TargetAny is the wildcard target (ADR-0004): as the whole Target set
+// it means the link does not narrow the target. It is not an ActorID
+// any receiver answers for — a "*" that survives to the effective cert
+// names no one.
+const TargetAny ActorID = "*"
+
+// IsTargetAny reports whether t is exactly the wildcard singleton.
+func IsTargetAny(t []ActorID) bool { return len(t) == 1 && t[0] == TargetAny }
 
 func targetsToStrings(t []ActorID) []string {
 	out := make([]string, len(t))

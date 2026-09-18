@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -60,6 +61,14 @@ func DecodeCert(data []byte) (Cert, error) {
 	target := make([]ActorID, len(w.Cav.Target))
 	for i, t := range w.Cav.Target {
 		id := ActorID(t)
+		if id == TargetAny {
+			// ADR-0004: the wildcard is the whole set or absent.
+			if len(w.Cav.Target) != 1 {
+				return Cert{}, fmt.Errorf("cert: cav.target: %w", ErrMixedTargetAny)
+			}
+			target[i] = id
+			continue
+		}
 		if err := id.Validate(); err != nil {
 			return Cert{}, fmt.Errorf("cert: cav.target[%d]: %w", i, err)
 		}
@@ -116,6 +125,10 @@ func Encode(c Cert) ([]byte, error) {
 }
 
 const groupPrefix = "group:"
+
+// ErrMixedTargetAny: cav.target mixes the wildcard "*" with concrete ids
+// (ADR-0004: the wildcard is the whole set or absent).
+var ErrMixedTargetAny = errors.New("cert: cav.target mixes \"*\" with actor ids")
 
 // AudAny is the wildcard audience: anyone may present the chain, but
 // VerifyChain binds it only when the effective cert carries Postage

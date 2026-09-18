@@ -155,10 +155,15 @@
 //   target/facet              invChainTargetsAnswerable, invChainFacetMatches
 //   receiver answers for P    invBundleSpeakAsNeverWidensTarget (ADR-0003; the
 //                             mutant "held := held ∪ bundle" dies here)
+//   target wildcard `*`       invWildcardTargetNeverWidens, invChainWildConsentRootsNothing,
+//                             invGrantWildcardNeverWidens (protocol ADR-0004, zeb:
+//                             `*` on a link = "does not narrow"; a `*` consent
+//                             roots nothing — decision (a), 2026-09-19)
 //   witness                   chainHappyPathTest (3 links, hub-signed, aud-side
 //                             speak-as), starPostageTest, consentOnlyTest,
 //                             publishChainTest (a non-invoke chain),
-//                             answersForTest (grant names P; R holds P→R)
+//                             answersForTest (grant names P; R holds P→R),
+//                             wildcardTargetTest (every link `*` ⇒ eff = consent's)
 //
 // Time (ADR-0019, talos-config-439): `NOW` here is the verifier's
 // EFFECTIVE clock, max(local clock, low-water mark over verified `iat`s).
@@ -189,6 +194,14 @@ module authorize {
   pure val PEERS = Set(CALLER, ROGUE)
   pure val RECEIVERS = Set(R, OTHER_R)
   pure val TARGETS = RECEIVERS.union(Set(OWNER1))  // what a cav.target may name: a receiver, or a principal a receiver answers for (ADR-0003)
+  // Protocol ADR-0004 (zeb): the wire `"*"` in cav.target. ANY is no
+  // principal — never a receiver, never a speak-as issuer — so
+  // `answersFor` ignores it by construction. It is only ever the WHOLE
+  // set (decode rejects a mixed `["*", id]`), hence the set constants.
+  pure val ANY = 0
+  pure val WILD = Set(ANY)
+  pure val TARGET_SETS = TARGETS.powerset().union(Set(WILD))     // what a consent / grant / link may carry
+  pure val RTARGET_SETS = RECEIVERS.powerset().union(Set(WILD))  // the narrower draw for second links
   pure val FACETS = Set("apid", "kube-api")
   pure val NO_FACET = ""          // total-lookup sentinel: no grant's cav.facet ever contains it
   pure val GROUPS = Set("admins", "media")
@@ -296,7 +309,8 @@ module authorize {
   // HOLDS a live `speak-as P→R` — `held` is the receiver's own
   // configuration, never the caller's bundle. Liveness only: `cav.verbs`
   // says what R may SIGN as P (ADR-0018), and being addressed is not
-  // signing. Go: `cert.Receiver.answersFor`.
+  // signing. Go: `cert.Receiver.answersFor`. Concrete ids only: a `*`
+  // that survives to the effective cert names no one (ADR-0004).
   pure def answersFor(r: int, held: Set[Cert], target: Set[int], now: int): bool =
     target.contains(r)
     or held.exists(s => s.can == SpeakAs and isKey(s.aud, r) and sigOk(s, now)
@@ -318,10 +332,17 @@ module authorize {
   // A fold step's outcome: Go's `(Cert, error)`.
   type Fold = { ok: bool, eff: Cert }
 
+  // Target intersection with the ADR-0004 wildcard: `*` on either side
+  // means "this link does not narrow" — the other side is the result;
+  // both `*` stays `*` (and then fails rule 4: no concrete self). Go:
+  // `cert.intersectID`.
+  pure def intersectTarget(a: Set[int], b: Set[int]): Set[int] =
+    if (a == WILD) b else if (b == WILD) a else a.intersect(b)
+
   // attenuate — the Go `cert.Attenuate(parent, child)`, 1:1: the child
-  // under its parent is the field-wise intersection over target, facet,
-  // groups, verbs and endpoints; `exp` is the min; an unknown caveat on
-  // either taints the result; a parent with `delegable: false` admits no
+  // under its parent is the field-wise intersection over target (with
+  // the `*` rule above), facet, groups, verbs and endpoints; `exp` is the
+  // min; an unknown caveat on either taints the result; a parent with `delegable: false` admits no
   // following link (ErrNotDelegable); a child with another verb is not a
   // link of the same chain (ErrVerbMismatch — linkStep rejects it first
   // with the chain's own diagnostic, so this is the fold's belt to that
@@ -336,7 +357,7 @@ module authorize {
         eff: child
           .with("exp", if (parent.exp < child.exp) parent.exp else child.exp)
           .with("cav", child.cav
-            .with("target", parent.cav.target.intersect(child.cav.target))
+            .with("target", intersectTarget(parent.cav.target, child.cav.target))
             .with("facet", parent.cav.facet.intersect(child.cav.facet))
             .with("groups", parent.cav.groups.intersect(child.cav.groups))
             .with("verbs", parent.cav.verbs.intersect(child.cav.verbs))
@@ -398,10 +419,14 @@ module authorize {
 
   // verifyChain — the Go `cert.VerifyChain(receiver{ID: r, Consents:
   // consents, SpeakAs: held}, verb, chain, speakAs, signer, facet, now)`.
-  // Rule 1: the roots are R's own consents that verify and carry `verb`
-  // — the verb the receiver expects for this operation; everything else
-  // about the consent (target, delegable, expiry, taint) is judged by
-  // the fold like any other link. An empty caller chain is legal: the
+  // Rule 1: the roots are R's own consents that verify, carry `verb`
+  // — the verb the receiver expects for this operation — and name a
+  // concrete target (ADR-0004, decision zeb (a): the wildcard is for
+  // grants; a consent `target: "*"` roots nothing, otherwise
+  // `[consent{*}, grant{R}]` would fold to {R} and the consent would
+  // have named self by omission). Everything else about the consent
+  // (target contents, delegable, expiry, taint) is judged by the fold
+  // like any other link. An empty caller chain is legal: the
   // consented sovereign presents R's consent alone and binds as its
   // `aud`. `held` (receiver-side) and `speakAs` (caller-side) are both
   // speak-as sets and must never be conflated: the Go port makes the
@@ -410,7 +435,7 @@ module authorize {
                        chain: List[Cert], speakAs: Set[Cert],
                        signer: int, facet: str, now: int): Set[Verdict] =
     consents
-      .filter(c => c.iss == r and c.can == verb and not(c.forged))
+      .filter(c => c.iss == r and c.can == verb and not(c.forged) and c.cav.target != WILD)
       .map(c => chainUnder(c, chain, held, speakAs, r, signer, facet, now))
       .filter(o => o.ok and match o.v.aud { | AudUnbound => false | _ => true })
       .map(o => o.v)
@@ -476,8 +501,11 @@ module authorize {
   pure val ATTS = Set(ShrinkTarget, ShrinkFacet, ShrinkEndpoints, AddUnknownCaveat, ShortenExpiry,
                       ShrinkSpeakAsGroups, ShrinkSpeakAsVerbs, ShortenSpeakAsExpiry)
 
+  // ShrinkTarget on a `*` link narrows it to {tgt} — the one attenuation a
+  // wildcard link admits (excluding from {ANY} would be a no-op).
   pure def addCaveat(g: Cert, a: Att, tgt: int, fct: str, ep: str): Cert = match a {
-    | ShrinkTarget => g.with("cav", g.cav.with("target", g.cav.target.exclude(Set(tgt))))
+    | ShrinkTarget => g.with("cav", g.cav.with("target",
+        if (g.cav.target == WILD) Set(tgt) else g.cav.target.exclude(Set(tgt))))
     | ShrinkFacet => g.with("cav", g.cav.with("facet", g.cav.facet.exclude(Set(fct))))
     | ShrinkEndpoints => g.with("cav", g.cav.with("endpoints", g.cav.endpoints.exclude(Set(ep))))
     | AddUnknownCaveat => g.with("cav", g.cav.with("unknown", true))
@@ -683,6 +711,34 @@ module authorize {
     cverb' = Invoke,
   }
 
+  // ADR-0004 witness (zeb): the compiler's shape — every caller link says
+  // `target: *`, the consent names {R}. Accepts with effective target
+  // {R}; the attenuated twin narrows the last link to {OTHER_R}.
+  pure val WILD_GRANT = mkCert(OWNER1, AKey(CALLER), Invoke, WILD, Set("apid"), Set(), "", false, false, 10, false)
+  pure val WILD_LINK1 = LINK1.with("cav", LINK1.cav.with("target", WILD))
+  pure val WILD_LINK2 = LINK2.with("cav", LINK2.cav.with("target", WILD))
+  pure val CONSENT1_WILD = CONSENT1.with("cav", CONSENT1.cav.with("target", WILD))
+  action initWildcard = all {
+    alpn' = "mesh/apid/v1",
+    peer' = CALLER,
+    blocklist' = Set(),
+    member' = mkCert(OWNER1, AKey(CALLER), Member, Set(), Set(), Set("admins"), "laptop", false, false, 10, false),
+    speakAs' = Set(),
+    consents' = Set(CONSENT1),
+    held' = Set(),
+    heldAtt' = Set(),
+    grants' = Set(WILD_GRANT),
+    grantsAtt' = Set(addCaveat(WILD_GRANT, ShrinkTarget, OTHER_R, "", "")),
+    speakAsAtt' = Set(),
+    chain' = [WILD_LINK1, WILD_LINK2],
+    chainAtt' = [WILD_LINK1, addCaveat(WILD_LINK2, ShrinkTarget, OTHER_R, "", "")],
+    chainSpeakAs' = CHAIN_SPEAKAS,
+    chainSpeakAsAtt' = CHAIN_SPEAKAS,
+    signer' = CALLER_HOT,
+    cfacet' = "apid",
+    cverb' = Invoke,
+  }
+
   action gen = {
     nondet alpn_ = ALPNS.oneOf()
     nondet peer_ = PEERS.oneOf()
@@ -700,7 +756,7 @@ module authorize {
     nondet c1Iss = RECEIVERS.oneOf()
     nondet c1Aud = WALLETS.oneOf()
     nondet c1Can = Set(Invoke, Member, Publish).oneOf()
-    nondet c1Target = TARGETS.powerset().oneOf()
+    nondet c1Target = TARGET_SETS.oneOf()
     nondet c1Facet = FACETS.powerset().oneOf()
     nondet c1Deleg = Bool.oneOf()
     nondet c1Unknown = Bool.oneOf()
@@ -731,7 +787,7 @@ module authorize {
     nondet g1Iss = SIGNERS.oneOf()
     nondet g1Aud = Set(AKey(CALLER), AKey(ROGUE), AGroup("admins"), AGroup("media"), AAny).oneOf()
     nondet g1Can = Set(Invoke, Member, Publish, OtherVerb).oneOf()
-    nondet g1Target = TARGETS.powerset().oneOf()
+    nondet g1Target = TARGET_SETS.oneOf()
     nondet g1Facet = FACETS.powerset().oneOf()
     nondet g1Unknown = Bool.oneOf()
     nondet g1Exp = EXPS.oneOf()
@@ -740,7 +796,7 @@ module authorize {
     nondet g2Iss = SIGNERS.oneOf()
     nondet g2Aud = Set(AKey(CALLER), AKey(ROGUE), AGroup("admins"), AGroup("media")).oneOf()
     nondet g2Can = Set(Invoke, OtherVerb).oneOf()
-    nondet g2Target = RECEIVERS.powerset().oneOf()
+    nondet g2Target = RTARGET_SETS.oneOf()
     nondet g2Facet = FACETS.powerset().oneOf()
     nondet g2Exp = EXPS.oneOf()
     nondet g2Forged = Bool.oneOf()
@@ -750,7 +806,7 @@ module authorize {
     nondet l1Iss = SIGNERS.oneOf()
     nondet l1Aud = CHAIN_AUDS.oneOf()
     nondet l1Can = CHAIN_VERBS.oneOf()
-    nondet l1Target = TARGETS.powerset().oneOf()
+    nondet l1Target = TARGET_SETS.oneOf()
     nondet l1Facet = FACETS.powerset().oneOf()
     nondet l1Deleg = Bool.oneOf()
     nondet l1Unknown = Bool.oneOf()
@@ -761,7 +817,7 @@ module authorize {
     nondet l2Iss = SIGNERS.union(PEERS).oneOf()
     nondet l2Aud = CHAIN_AUDS.oneOf()
     nondet l2Can = Set(Invoke, Publish, OtherVerb).oneOf()
-    nondet l2Target = RECEIVERS.powerset().oneOf()
+    nondet l2Target = RTARGET_SETS.oneOf()
     nondet l2Facet = FACETS.powerset().oneOf()
     nondet l2Deleg = Bool.oneOf()
     nondet l2Exp = EXPS.oneOf()
@@ -847,11 +903,11 @@ module authorize {
     | FMemberUnknown | FMemberIssuerRogue | FMemberNoGroups
     | FBlocklisted
     | FConsentSignedByOtherR | FConsentNotDelegable | FConsentForged
-    | FConsentExpired | FConsentFacetKubeOnly | FConsentTargetOtherR
+    | FConsentExpired | FConsentFacetKubeOnly | FConsentTargetOtherR | FConsentTargetAny
     | FNoConsentOwner2
     | FGrantForged | FGrantExpired | FGrantVerbOther | FGrantUnknown
     | FGrantIssuerOwner2 | FGrantAudRogueKey | FGrantAudMedia
-    | FGrantTargetOtherR | FGrantFacetKubeOnly | FGrantTargetOwner1
+    | FGrantTargetOtherR | FGrantFacetKubeOnly | FGrantTargetOwner1 | FGrantTargetAny
     // held speak-as faults (ADR-0003): what R holds naming itself as aud
     | FHeldMissing | FHeldExpired | FHeldForged | FHeldFromOwner2 | FHeldAudOtherR | FHeldInBundleOnly
     // speak-as faults (hub-signed scenarios; no-ops otherwise)
@@ -865,6 +921,7 @@ module authorize {
     | FLink1Forged | FLink1Expired | FLink1Unknown | FLink1NotDelegable
     | FLink1IssRogue | FLink1AudRogue | FLink1TargetOtherR | FLink1FacetKubeOnly
     | FLink1EndpointsA | FLink1Postage | FLink1VerbOtherChain | FChainTargetOwner1
+    | FLink1TargetAny | FLink2TargetAny
     | FLink2Forged | FLink2Expired | FLink2Unknown | FLink2IssRogue | FLink2VerbOther
     | FLink2AudRogue | FLink2FacetKubeOnly | FLink2EndpointsB | FLink2Postage
     | FPostageConflict | FStarNoPostage | FSignerRogue | FDropLink1
@@ -879,11 +936,15 @@ module authorize {
   // FChainTargetOwner1 (ADR-0003): every caller link names OWNER1, not R
   // — accepted only while R holds a live OWNER1→R (the FHeld* faults in
   // FAULTS perturb that); the consent then names {R, OWNER1}.
+  // FLink1TargetAny / FLink2TargetAny (ADR-0004): the link carries `*` —
+  // not a fault but the compiler's shape; the chain must accept exactly
+  // as with the concrete target (invWildcardTargetNeverWidens).
   pure val CFAULTS = Set(
     FNone,
     FLink1Forged, FLink1Expired, FLink1Unknown, FLink1NotDelegable,
     FLink1IssRogue, FLink1AudRogue, FLink1TargetOtherR, FLink1FacetKubeOnly,
     FLink1EndpointsA, FLink1Postage, FLink1VerbOtherChain, FChainTargetOwner1,
+    FLink1TargetAny, FLink2TargetAny,
     FLink2Forged, FLink2Expired, FLink2Unknown, FLink2IssRogue, FLink2VerbOther,
     FLink2AudRogue, FLink2FacetKubeOnly, FLink2EndpointsB, FLink2Postage,
     FPostageConflict, FStarNoPostage, FSignerRogue, FDropLink1,
@@ -917,7 +978,8 @@ module authorize {
       if (f.contains(FLink1IssRogue)) ROGUE else if (hubSigned) HUB_A else OWNER1,
       AKey(if (f.contains(FLink1AudRogue)) ROGUE else OWNER2),
       if (f.contains(FLink1VerbOtherChain)) otherChainVerb(verb) else verb,
-      if (f.contains(FLink1TargetOtherR)) Set(OTHER_R) else if (f.contains(FChainTargetOwner1)) Set(OWNER1) else Set(R),
+      if (f.contains(FLink1TargetAny)) WILD
+      else if (f.contains(FLink1TargetOtherR)) Set(OTHER_R) else if (f.contains(FChainTargetOwner1)) Set(OWNER1) else Set(R),
       if (f.contains(FLink1FacetKubeOnly)) Set("kube-api") else FACETS,
       Set(), "",
       not(f.contains(FLink1NotDelegable)),
@@ -934,7 +996,7 @@ module authorize {
         | _ => AKey(if (f.contains(FLink2AudRogue)) ROGUE else CALLER)
       },
       if (f.contains(FLink2VerbOther)) OtherVerb else verb,
-      if (f.contains(FChainTargetOwner1)) Set(OWNER1) else Set(R),
+      if (f.contains(FLink2TargetAny)) WILD else if (f.contains(FChainTargetOwner1)) Set(OWNER1) else Set(R),
       if (f.contains(FLink2FacetKubeOnly)) Set("kube-api") else Set("apid"),
       Set(), "", false,
       f.contains(FLink2Unknown),
@@ -978,11 +1040,11 @@ module authorize {
     FMemberUnknown, FMemberIssuerRogue, FMemberNoGroups,
     FBlocklisted,
     FConsentSignedByOtherR, FConsentNotDelegable, FConsentForged,
-    FConsentExpired, FConsentFacetKubeOnly, FConsentTargetOtherR,
+    FConsentExpired, FConsentFacetKubeOnly, FConsentTargetOtherR, FConsentTargetAny,
     FNoConsentOwner2,
     FGrantForged, FGrantExpired, FGrantVerbOther, FGrantUnknown,
     FGrantIssuerOwner2, FGrantAudRogueKey, FGrantAudMedia,
-    FGrantTargetOtherR, FGrantFacetKubeOnly, FGrantTargetOwner1,
+    FGrantTargetOtherR, FGrantFacetKubeOnly, FGrantTargetOwner1, FGrantTargetAny,
     FHeldMissing, FHeldExpired, FHeldForged, FHeldFromOwner2, FHeldAudOtherR, FHeldInBundleOnly,
     FSpeakAsAMissing, FSpeakAsAExpired, FSpeakAsAForged, FSpeakAsAUnknown,
     FSpeakAsAWrongVerb, FSpeakAsAVerbsInvokeOnly, FSpeakAsAGroupsMedia,
@@ -1021,7 +1083,8 @@ module authorize {
     val consent1 = mkCert(
       if (f.contains(FConsentSignedByOtherR)) OTHER_R else R,
       AKey(OWNER1), Invoke,
-      if (f.contains(FConsentTargetOtherR)) Set(OTHER_R) else if (targetsOwner1) Set(R, OWNER1) else Set(R),
+      if (f.contains(FConsentTargetAny)) WILD
+      else if (f.contains(FConsentTargetOtherR)) Set(OTHER_R) else if (targetsOwner1) Set(R, OWNER1) else Set(R),
       if (f.contains(FConsentFacetKubeOnly)) Set("kube-api") else FACETS,
       Set(), "",
       not(f.contains(FConsentNotDelegable)), false,
@@ -1034,7 +1097,8 @@ module authorize {
       else if (f.contains(FGrantAudMedia)) AGroup("media")
       else if (audKind == 0) AKey(CALLER) else AGroup("admins"),
       if (f.contains(FGrantVerbOther)) OtherVerb else Invoke,
-      if (f.contains(FGrantTargetOtherR)) Set(OTHER_R) else if (f.contains(FGrantTargetOwner1)) Set(OWNER1) else Set(R),
+      if (f.contains(FGrantTargetAny)) WILD
+      else if (f.contains(FGrantTargetOtherR)) Set(OTHER_R) else if (f.contains(FGrantTargetOwner1)) Set(OWNER1) else Set(R),
       if (f.contains(FGrantFacetKubeOnly)) Set("kube-api") else Set("apid"),
       Set(), "", false,
       f.contains(FGrantUnknown),
@@ -1153,7 +1217,10 @@ module authorize {
 
   // A consent that names neither the receiver nor a principal it answers
   // for in `target` cannot root a chain at that receiver (consent is
-  // `invoke {target: self}`; ADR-0003: self may be spelled as the root).
+  // `invoke {target: self}`; ADR-0003: self may be spelled as the root;
+  // ADR-0004: `*` names no one, so a wildcard consent roots nothing —
+  // at connection level step 2b already refuses it; the chain-level
+  // root filter's `!= WILD` is pinned by invChainWildConsentRootsNothing).
   val invConsentTargetsSelf =
     consents.forall(c => c.cav.target.intersect(answerable) == Set()) implies not(accepted(res))
 
@@ -1267,9 +1334,22 @@ module authorize {
 
   // Target: a grant whose target set names neither R nor a principal R
   // holds a live speak-as from never admits at R — whatever speak-as the
-  // caller's bundle carries (ADR-0003).
+  // caller's bundle carries (ADR-0003). A `*` grant does not narrow and
+  // is exempt (ADR-0004; bounded by invGrantWildcardNeverWidens).
   val invTargetIsAnswerable =
-    grants.forall(g => g.cav.target.intersect(answerable) == Set()) implies not(accepted(res))
+    grants.forall(g => g.cav.target != WILD and g.cav.target.intersect(answerable) == Set())
+    implies not(accepted(res))
+
+  // ADR-0004 at connection level: a `*` grant admits only where the same
+  // grant with the rooting consent's own target would — for SOME consent
+  // R holds. Replace every wildcard with that consent's target and the
+  // verdict must survive.
+  pure def dewildCert(g: Cert, t: Set[int]): Cert =
+    if (g.cav.target == WILD) g.with("cav", g.cav.with("target", t)) else g
+  val invGrantWildcardNeverWidens =
+    accepted(res) implies consents.exists(c => c.iss == R and
+      accepted(authorize(R, ACCEPT_TABLE, consents, held, blocklist, NOW, alpn, peer, member, speakAs,
+                         grants.map(g => dewildCert(g, c.cav.target)))))
 
   // Facet: ALPN routes, grants authorize — the granted facet must
   // contain the one the ALPN selects.
@@ -1365,12 +1445,13 @@ module authorize {
     }) implies not(chainAccepted)
 
   // Attenuation only (invariant 5): the effective cert is below every
-  // link in every recognised caveat and in expiry.
+  // link in every recognised caveat and in expiry. A `*` target link
+  // does not narrow (ADR-0004), so it bounds nothing.
   val invEffectiveIsIntersection =
     chainRes.forall(v => links(v).indices().forall(i => {
       val l = links(v).nth(i)
       and {
-        v.eff.cav.target.subseteq(l.cav.target),
+        l.cav.target == WILD or v.eff.cav.target.subseteq(l.cav.target),
         v.eff.cav.facet.subseteq(l.cav.facet),
         v.eff.cav.groups.subseteq(l.cav.groups),
         v.eff.cav.endpoints.subseteq(l.cav.endpoints),
@@ -1430,19 +1511,39 @@ module authorize {
   }
 
   // Rule 4 — target and facet: some ONE principal R answers for (R, or P
-  // with a live held P→R) is named by every link and by a consent (the
-  // intersection contains it iff each does); the facet likewise.
+  // with a live held P→R) is named by every non-wildcard link and,
+  // CONCRETELY, by a consent (the intersection contains it iff each
+  // does; ADR-0004: `*` links do not narrow, a `*` consent never roots);
+  // the facet likewise.
   val invChainTargetsAnswerable =
     chainAccepted implies answerable.exists(p =>
-      chain.indices().forall(i => chain.nth(i).cav.target.contains(p))
+      chain.indices().forall(i => chain.nth(i).cav.target == WILD or chain.nth(i).cav.target.contains(p))
       and consents.exists(c => c.cav.target.contains(p)))
-  // ADR-0003's mutant, stated directly: a link naming no principal R
-  // answers for rejects, however many `speak-as → R` the caller's bundle
-  // carries (the mutant "held := held ∪ chainSpeakAs" dies here under
-  // FHeldInBundleOnly / cs1Aud == R).
+  // ADR-0003's mutant, stated directly: a concrete link naming no
+  // principal R answers for rejects, however many `speak-as → R` the
+  // caller's bundle carries (the mutant "held := held ∪ chainSpeakAs"
+  // dies here under FHeldInBundleOnly / cs1Aud == R).
   val invBundleSpeakAsNeverWidensTarget =
-    chain.indices().exists(i => chain.nth(i).cav.target.intersect(answerable) == Set())
+    chain.indices().exists(i => chain.nth(i).cav.target != WILD
+                                and chain.nth(i).cav.target.intersect(answerable) == Set())
     implies not(chainAccepted)
+  // ADR-0004 (zeb, decision a): a wildcard consent roots nothing — on
+  // every verdict and as a rejection when R signed nothing else.
+  val invChainWildConsentRootsNothing = and {
+    chainRes.forall(v => v.consent.cav.target != WILD),
+    consents.forall(c => c.iss != R or c.cav.target == WILD) implies not(chainAccepted),
+  }
+  // ADR-0004's law: `*` never widens. For every verdict, the same chain
+  // with each `*` link's target replaced by the ROOTING CONSENT's own
+  // target verifies under that consent with the SAME effective target —
+  // a wildcard link contributes exactly what the receiver consented to,
+  // never more. (Vacuous when no link is `*`: dewild is the identity.)
+  pure def dewild(ch: List[Cert], t: Set[int]): List[Cert] =
+    ch.foldl([], (acc, l) => acc.append(dewildCert(l, t)))
+  val invWildcardTargetNeverWidens =
+    chainRes.forall(v =>
+      verifyChain(R, cverb, Set(v.consent), held, dewild(chain, v.consent.cav.target), chainSpeakAs, signer, cfacet, NOW)
+        .exists(w => w.eff.cav.target == v.eff.cav.target))
   val invChainFacetMatches =
     chainAccepted implies (chain.indices().forall(i => chain.nth(i).cav.facet.contains(cfacet))
                            and consents.exists(c => c.cav.facet.contains(cfacet)))
@@ -1471,6 +1572,7 @@ module authorize {
     invCrossIssuerGroupRejects,
     invGroupMatchRootedInChain,
     invTargetIsAnswerable,
+    invGrantWildcardNeverWidens,
     invFacetMatchesAlpn,
     invIdentityFromMember,
     invMonotone,
@@ -1493,6 +1595,8 @@ module authorize {
     invChainNotDelegableStops,
     invChainTargetsAnswerable,
     invBundleSpeakAsNeverWidensTarget,
+    invChainWildConsentRootsNothing,
+    invWildcardTargetNeverWidens,
     invChainFacetMatches,
     invChainMonotone,
   }
@@ -1605,6 +1709,37 @@ module authorize {
     // liveness only, no verb condition: a held speak-as covering `member`
     // alone still lets R be ADDRESSED as OWNER1 for an invoke chain
     assert(verifyChain(R, Invoke, consents, Set(mkSpeakAs(OWNER1, R, Set(Member), Set(), false, 10, false)), chain, chainSpeakAs, signer, cfacet, NOW) != Set()),
+    step,
+  })
+
+  // ADR-0004 witness (zeb): `target: *` on every caller link folds to the
+  // consent's own target — {R} here — both as an envelope chain and at
+  // connection level. The same links reach a receiver that answers for
+  // OWNER1 exactly as a concrete {OWNER1} grant would (kau shape), and
+  // are refused where the consent names OTHER_R only. A wildcard
+  // CONSENT roots nothing (decision a), with a `*` grant or a concrete
+  // one. Narrowing a `*` link to {OTHER_R} rejects; narrowing it to {R}
+  // is a no-op on the verdict.
+  run wildcardTargetTest = initWildcard.then(all {
+    assert(chainAccepted),
+    assert(chainRes.forall(v => v.eff.cav.target == Set(R) and v.aud == AudBound and v.consent == CONSENT1)),
+    assert(chainResAtt == Set()),
+    assert(accepted(res)),
+    assert(not(accepted(resAtt))),
+    // the wildcard contributes exactly the consent's target: {R, OWNER1} here
+    assert(verifyChain(R, Invoke, Set(CONSENT1_HUB), Set(HELD_OWNER1), chain, chainSpeakAs, signer, cfacet, NOW)
+             .forall(v => v.eff.cav.target == Set(R, OWNER1))),
+    assert(verifyChain(R, Invoke, Set(CONSENT1_HUB), Set(HELD_OWNER1), chain, chainSpeakAs, signer, cfacet, NOW) != Set()),
+    // a consent naming only another receiver: `*` does not reach R
+    assert(verifyChain(R, Invoke, Set(CONSENT1.with("cav", CONSENT1.cav.with("target", Set(OTHER_R)))), Set(),
+                       chain, chainSpeakAs, signer, cfacet, NOW) == Set()),
+    // a wildcard consent roots nothing — under `*` links and under {R} links
+    assert(verifyChain(R, Invoke, Set(CONSENT1_WILD), Set(), chain, chainSpeakAs, signer, cfacet, NOW) == Set()),
+    assert(verifyChain(R, Invoke, Set(CONSENT1_WILD), Set(), [LINK1, LINK2], chainSpeakAs, signer, cfacet, NOW) == Set()),
+    assert(not(accepted(authorize(R, ACCEPT_TABLE, Set(CONSENT1_WILD), Set(), Set(), NOW, alpn, peer, member, Set(), grants)))),
+    // narrowing a `*` link to the consent's own target changes nothing
+    assert(verifyChain(R, Invoke, consents, held, [WILD_LINK1, addCaveat(WILD_LINK2, ShrinkTarget, R, "", "")],
+                       chainSpeakAs, signer, cfacet, NOW) == chainRes),
     step,
   })
 }

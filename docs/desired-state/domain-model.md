@@ -439,11 +439,13 @@ provisioning or recovery path may depend on it.
 - **Attenuation** — a chain link adds caveats, never removes;
   effective authority is field-wise intersection over `target`,
   `facet` and every recognised caveat; an unknown caveat rejects.
-  **Target wildcard** _(protocol ADR-0004, Proposed 2026-09-18)_:
+  **Target wildcard** _(protocol ADR-0004, Accepted 2026-09-19)_:
   policy grants carry `target: ["*"]`, the identity element of the
   `target` intersection; the receiver's consent supplies the concrete
   `self` rule 4 needs, so a grant reaches exactly the receivers that
-  consented to the Owner for its facet.
+  consented to the Owner for its facet. Consents never carry it — the
+  hub's consent shape stays `target: {hubkey, wallet}`, a node's
+  `{self}`.
   **Group resolution rule:** `aud: group:<g>` is satisfied when **one
   sovereign W that R holds a live consent for** both (i) vouches for
   the grant's signer and (ii) vouches for the `member` cert's signer

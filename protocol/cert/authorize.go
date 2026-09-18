@@ -435,11 +435,13 @@ type chainVerdict struct {
 //
 //  1. First link signed by the receiver: every admitting root is one of
 //     receiver's own consents (iss == receiver, signature verifies,
-//     can == verb). From here on the chain's verb IS the root consent's
-//     Can: every link carries it (ErrChainVerb otherwise) and every
-//     speak-as used must cover it. Everything else about the consent
-//     (target, facet, delegability, expiry, taint) is judged by the fold
-//     like any link.
+//     can == verb, and Target is not the wildcard {"*"} — ADR-0004: a
+//     consent must name self concretely; the wildcard is for grants).
+//     From here on the chain's verb IS the root consent's Can: every
+//     link carries it (ErrChainVerb otherwise) and every speak-as used
+//     must cover it. Everything else about the consent (target contents,
+//     facet, delegability, expiry, taint) is judged by the fold like
+//     any link.
 //  2. Linkage: link i's signer resolves — itself, or a principal with a
 //     live speak-as to it covering the chain's verb and the groups the
 //     link names (resolve, ADR-0018 step 2a) — to the principal link
@@ -453,7 +455,8 @@ type chainVerdict struct {
 //  4. On the effective cert: Target ∋ receiver — or Target ∋ P for a
 //     principal P whose live speak-as P→receiver the receiver HOLDS
 //     (r.SpeakAs; ADR-0003 — a speak-as naming the receiver inside the
-//     caller's bundle widens nothing) — Facet ∋ facet, no Unknown caveat
+//     caller's bundle widens nothing); concrete ids only, a surviving
+//     "*" names no one (ADR-0004) — Facet ∋ facet, no Unknown caveat
 //     (taint is OR over the chain, including conflicting postage — that
 //     case reports the sharper ErrPostageConflict, which is still an
 //     ErrUnknownCaveat), Exp > now (min over the chain), every speak-as
@@ -493,7 +496,7 @@ func (a *authCtx) verifyChain(r Receiver, verb Verb, chain, speakAs []Cert, sign
 	var best error
 	bestRank := -1
 	for _, c := range r.Consents {
-		if c.Iss != r.ID || c.Can != verb || !a.verify(c) {
+		if c.Iss != r.ID || c.Can != verb || !a.verify(c) || IsTargetAny(c.Cav.Target) {
 			continue
 		}
 		v, rank, err := a.chainUnder(c, chain, speakAs, r, signer, facet, now)
@@ -733,8 +736,9 @@ func (a *authCtx) consentTargets(r Receiver, consents []Cert, now int64) bool {
 
 // Attenuate computes the effective authority of a child link under its
 // parent (the model's `attenuate`, field for field): the child keeps
-// its own iss/aud/can; Target, Facet, Groups, Verbs and Endpoints are
-// the intersections; Exp is the min; an unknown caveat on either side
+// its own iss/aud/can; Target (with the ADR-0004 wildcard rule of
+// intersectTarget), Facet, Groups, Verbs and Endpoints are the
+// intersections; Exp is the min; an unknown caveat on either side
 // taints the result. Postage is MONOTONE: whichever side set it carries
 // forward; if both set it they must agree, else the result is tainted
 // (Unknown) and the chain rejects. A conflict also sets the verifier-side
@@ -751,7 +755,7 @@ func Attenuate(parent, child Cert) (Cert, error) {
 		return Cert{}, ErrVerbMismatch
 	}
 	eff := child
-	eff.Cav.Target = intersectID(parent.Cav.Target, child.Cav.Target)
+	eff.Cav.Target = intersectTarget(parent.Cav.Target, child.Cav.Target)
 	eff.Cav.Facet = intersectStr(parent.Cav.Facet, child.Cav.Facet)
 	eff.Cav.Groups = intersectStr(parent.Cav.Groups, child.Cav.Groups)
 	eff.Cav.Verbs = intersectStr(parent.Cav.Verbs, child.Cav.Verbs)
@@ -787,6 +791,22 @@ func intersectID(a, b []ActorID) []ActorID {
 		}
 	}
 	return out
+}
+
+// intersectTarget is the model's intersectTarget (ADR-0004): the
+// wildcard {"*"} on either side means "does not narrow", so the other
+// side is the result; both wildcard stays wildcard (and then fails rule
+// 4 — no concrete self). Otherwise plain intersection. A mixed set never
+// reaches here from the wire (DecodeCert rejects it); built in-process it
+// intersects like any set and its "*" element names no one.
+func intersectTarget(a, b []ActorID) []ActorID {
+	switch {
+	case IsTargetAny(a):
+		return slices.Clone(b)
+	case IsTargetAny(b):
+		return slices.Clone(a)
+	}
+	return intersectID(a, b)
 }
 
 // subset reports whether every element of need is in have.

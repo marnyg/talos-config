@@ -22,7 +22,8 @@
 #              protocol ADR-0001/0002 verifyChain(): the N-link fold it is a
 #              case of, verb = the root consent's (invoke | publish);
 #              ADR-0003 rule 4: the receiver answers for principals whose
-#              speak-as it HOLDS (never the caller's bundle)
+#              speak-as it HOLDS (never the caller's bundle); ADR-0004: the
+#              target wildcard `*` never widens, a `*` consent roots nothing
 #   runway     ADR-0017/0018 cert lifetimes vs. sealed-hub starvation incl.
 #              the per-process speak-as bound and the 30 d nag
 #   clock      ADR-0019 time as trust input: iat low-water mark vs. clock rollback;
@@ -40,8 +41,9 @@
 #
 # Depths: hub/approval verify at 12–15 steps; enroll's growing sets
 # verify at 8; authorize regenerates its whole scenario every step so
-# depth 2 is exhaustive (~170 s since cav.target may name a principal the
-# receiver answers for, kau; ~135 s after xwu; ~95 s before); runway's nondet
+# depth 2 is exhaustive (~173 s with the ADR-0004 wildcard target sets,
+# zeb; ~170 s since cav.target may name a principal the receiver answers
+# for, kau; ~135 s after xwu; ~95 s before); runway's nondet
 # init reaches the 6 d boundaries in ≤ 10 steps — the 30 d speak-as
 # cliff is 720 h out and is covered by its witness tests (nag*Test,
 # rotationConvergesTest) instead; clock's 8-tick horizon is covered at 10. Every invariant
