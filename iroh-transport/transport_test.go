@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -226,5 +227,79 @@ func TestConcurrentStreamsOnePeer(t *testing.T) {
 	ex.mu.Unlock()
 	if pooled != 1 {
 		t.Fatalf("pooled connections = %d, want 1", pooled)
+	}
+}
+
+// TestAdvertiseRelay: the hub's shape (talos-config-e8d). The receiver
+// homes on the relay at one name (loopback, as the hub does with its
+// relay child) and advertises another (the public hostname); the
+// caller, homed at the advertised name, dials with only that hint. The
+// relay forwards by EndpointId, so two names for one server meet.
+// Needs IROH_RELAY_BIN or iroh-relay on PATH; skipped otherwise.
+func TestAdvertiseRelay(t *testing.T) {
+	ctx := testCtx(t)
+	home := startRelay(t) // http://127.0.0.1:<port>
+	public := strings.Replace(home, "127.0.0.1", "localhost", 1)
+
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub, err := Bind(priv, Options{BindAddr: "127.0.0.1:0", Relay: home, AdvertiseRelay: public})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = hub.Close() })
+	member, _ := bindLoopback(t, public)
+	if err := hub.Online(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := member.Online(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	tags := hub.Endpoints()
+	if len(tags) == 0 || tags[0] != TagRelay+public {
+		t.Fatalf("Endpoints() = %v, want %s first", tags, TagRelay+public)
+	}
+	for _, tag := range tags[1:] {
+		if strings.HasPrefix(tag, TagRelay) {
+			t.Fatalf("second relay tag %q", tag)
+		}
+	}
+
+	srv := make(chan error, 1)
+	go func() {
+		s, peer, err := hub.Accept(ctx)
+		if err != nil {
+			srv <- err
+			return
+		}
+		defer s.Close()
+		if peer != member.ID() {
+			srv <- fmt.Errorf("peer %s, want %s", peer, member.ID())
+			return
+		}
+		msg, err := s.RecvMsg(ctx)
+		if err != nil {
+			srv <- err
+			return
+		}
+		srv <- s.SendMsg(ctx, append([]byte("re:"), msg...))
+	}()
+	s, err := member.Dial(ctx, hub.ID(), []string{TagRelay + public})
+	if err != nil {
+		t.Fatalf("dial through the advertised name: %v", err)
+	}
+	defer s.Close()
+	if err := s.SendMsg(ctx, []byte("beat")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.RecvMsg(ctx)
+	if err != nil || string(got) != "re:beat" {
+		t.Fatalf("reply %q %v", got, err)
+	}
+	if err := <-srv; err != nil {
+		t.Fatal(err)
 	}
 }

@@ -34,6 +34,13 @@ type Options struct {
 	// Relay is the home relay URL to use (RelayMode::Custom); "" ⇒
 	// RelayMode::Disabled. PresetMinimal never adds n0's relays.
 	Relay string
+	// AdvertiseRelay, when set, is the relay URL Endpoints() reports
+	// instead of Relay: the address PEERS reach the same relay server
+	// at. The hub homes on its relay child over loopback but is dialled
+	// through the public hostname fly terminates TLS on (ADR-0022); the
+	// relay forwards by EndpointId, so the two names meet at one server.
+	// "" ⇒ report Relay (or what iroh learned).
+	AdvertiseRelay string
 	// MaxMsg bounds one message; 0 ⇒ DefaultMaxMsg.
 	MaxMsg uint32
 }
@@ -41,10 +48,11 @@ type Options struct {
 // Endpoint is an iroh Endpoint bound to one actor identity. It
 // implements actor.Endpoint.
 type Endpoint struct {
-	ep     *iroh.Endpoint
-	id     cert.ActorID
-	relay  string
-	maxMsg uint32
+	ep        *iroh.Endpoint
+	id        cert.ActorID
+	relay     string
+	advertise string
+	maxMsg    uint32
 
 	accept chan accepted
 	closed chan struct{}
@@ -108,13 +116,14 @@ func Bind(priv ed25519.PrivateKey, o Options) (*Endpoint, error) {
 		return nil, fmt.Errorf("irohtransport: iroh id %s != actor id %s (%v)", got, id, err)
 	}
 	e := &Endpoint{
-		ep:     ep,
-		id:     id,
-		relay:  o.Relay,
-		maxMsg: maxMsg,
-		accept: make(chan accepted),
-		closed: make(chan struct{}),
-		conns:  make(map[cert.ActorID]*iroh.Connection),
+		ep:        ep,
+		id:        id,
+		relay:     o.Relay,
+		advertise: o.AdvertiseRelay,
+		maxMsg:    maxMsg,
+		accept:    make(chan accepted),
+		closed:    make(chan struct{}),
+		conns:     make(map[cert.ActorID]*iroh.Connection),
 	}
 	e.loops.Add(1)
 	go e.acceptLoop()
@@ -139,15 +148,19 @@ func (e *Endpoint) Online(ctx context.Context) error {
 }
 
 // Endpoints returns the transport-tagged strings peers can Dial with:
-// "iroh:relay=<url>" for the home relay (if any) and "iroh:udp=<ip:port>"
-// for every dialable bound or discovered socket.
+// "iroh:relay=<url>" for the home relay (if any; AdvertiseRelay when
+// set) and "iroh:udp=<ip:port>" for every dialable bound or discovered
+// socket.
 func (e *Endpoint) Endpoints() []string {
 	var out []string
 	addr := e.ep.Addr()
 	defer addr.Destroy()
-	if r := addr.RelayUrl(); r != nil && *r != "" {
+	switch r := addr.RelayUrl(); {
+	case e.advertise != "" && (e.relay != "" || (r != nil && *r != "")):
+		out = append(out, TagRelay+e.advertise)
+	case r != nil && *r != "":
 		out = append(out, TagRelay+*r)
-	} else if e.relay != "" {
+	case e.relay != "":
 		out = append(out, TagRelay+e.relay)
 	}
 	seen := map[string]bool{}
