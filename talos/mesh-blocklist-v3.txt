@@ -1,0 +1,11 @@
+# Mesh v3 blocklist — blocked MEMBER KEYS, one `ed:<64 lowercase hex>`
+# actor id (the member's iroh EndpointId, its member cert's aud) per
+# line; '#' starts a comment. Sibling of mesh-blocklist.txt (the frozen
+# v2 nebula-fingerprint list, read by the nebula render until Phase 4).
+#
+# Enforcement is the beat (decision j0b): the Issuer refuses #renew and
+# #bundle to a listed key and hands the list out in every #bundle;
+# receivers replace their copy wholesale (a safe-to-lose cache,
+# ADR-0019). Latency = poll cadence + stream cap; during hub starvation
+# a listed member keeps access for the grant runway (structural
+# trade-off "revocation latency ≥ runway").

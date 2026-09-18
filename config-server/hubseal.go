@@ -96,6 +96,10 @@ func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh
 		return nil, err
 	}
 	iss := issuer.NewWithKey(priv, mesh.Groups(), ep, nil)
+	// #bundle compiles talos/mesh-policy-v3.yaml and hands out
+	// mesh-blocklist-v3.txt from the checkout on every beat: git as
+	// compiler input, nothing cached (invariant 2).
+	iss.Policy = issuer.FilePolicy(root)
 	en, err := enroll.New(net, hubID, nil)
 	if err != nil {
 		return nil, err

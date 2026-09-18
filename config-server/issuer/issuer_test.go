@@ -122,7 +122,7 @@ func authorizeAt(hub *Issuer, kit Kit, node cert.ActorID, now int64) cert.Result
 		Peer:        node,
 		Bundle: cert.Bundle{
 			Member:  kit.Member,
-			Grants:  []cert.Cert{kit.RenewGrant},
+			Grants:  []cert.Cert{kit.BeatGrant},
 			SpeakAs: []cert.Cert{kit.SpeakAs},
 		},
 	})
@@ -302,7 +302,8 @@ func TestUnsealAcceptsOnlyAnAllowlistedWalletOverThisProcess(t *testing.T) {
 		t.Fatalf("wallet %s runway %d", a.Wallet(), a.Runway())
 	}
 	// hold() wired the actor: it answers for the wallet (rule 4) and
-	// consents to the wallet for #renew with target wallet (ADR-0024 F).
+	// consents to the wallet for the beat facets with target wallet
+	// (ADR-0024 F).
 	if len(a.Actor.SpeakAs) != 1 || a.Actor.SpeakAs[0].Iss != w.id {
 		t.Fatalf("actor speak-as: %+v", a.Actor.SpeakAs)
 	}
@@ -311,7 +312,7 @@ func TestUnsealAcceptsOnlyAnAllowlistedWalletOverThisProcess(t *testing.T) {
 	}
 	c := a.Actor.Consents[0]
 	if c.Iss != a.ID() || c.Aud != string(w.id) || c.Can != cert.VerbInvoke ||
-		!slices.Equal(c.Cav.Target, []cert.ActorID{w.id}) || !slices.Equal(c.Cav.Facet, []string{actor.FacetRenew}) ||
+		!slices.Equal(c.Cav.Target, []cert.ActorID{w.id}) || !slices.Equal(c.Cav.Facet, BeatFacets) ||
 		!c.Cav.Delegable || c.Exp != sa.Exp || cert.Verify(c) != nil {
 		t.Fatalf("consent: %+v", c)
 	}
@@ -362,12 +363,12 @@ func TestMintProperties(t *testing.T) {
 		if m.Iat != now || m.Exp != now+MemberTTL || cert.Verify(m) != nil {
 			rt.Fatalf("member time/sig: %+v", m)
 		}
-		g := kit.RenewGrant
+		g := kit.BeatGrant
 		if g.Iss != iss.ID() || g.Aud != string(N) || g.Can != cert.VerbInvoke || g.Cav.Delegable {
 			rt.Fatalf("grant: %+v", g)
 		}
-		if !slices.Equal(g.Cav.Target, []cert.ActorID{w.id}) || !slices.Equal(g.Cav.Facet, []string{actor.FacetRenew}) {
-			rt.Fatalf("grant names %v/%v, want target wallet, facet #renew", g.Cav.Target, g.Cav.Facet)
+		if !slices.Equal(g.Cav.Target, []cert.ActorID{w.id}) || !slices.Equal(g.Cav.Facet, BeatFacets) {
+			rt.Fatalf("grant names %v/%v, want target wallet, facets #renew + #bundle", g.Cav.Target, g.Cav.Facet)
 		}
 		if g.Iat != now || g.Exp != now+GrantTTL || cert.Verify(g) != nil {
 			rt.Fatalf("grant time/sig: %+v", g)
@@ -617,10 +618,10 @@ func TestRenewAcrossIssuerRotation(t *testing.T) {
 	}
 	n := actor.New(node, epN)
 	n.Clock = clk.Now
-	n.Grant(B, actor.FacetRenew, kit.RenewGrant, kit.SpeakAs)
+	n.Grant(B, actor.FacetRenew, kit.BeatGrant, kit.SpeakAs)
 	listen(n)
 
-	payload, err := actor.EncodeRenewRequest([]cert.Cert{kit.Member, kit.RenewGrant}, nil)
+	payload, err := actor.EncodeRenewRequest([]cert.Cert{kit.Member, kit.BeatGrant}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -648,7 +649,7 @@ func TestRenewAcrossIssuerRotation(t *testing.T) {
 		t.Fatalf("grant not re-issued by B: %+v", g)
 	}
 	// The renewed pair, with B's own speak-as, is a kit that admits at B.
-	kitB := Kit{Member: m, RenewGrant: g, SpeakAs: *b.SpeakAs()}
+	kitB := Kit{Member: m, BeatGrant: g, SpeakAs: *b.SpeakAs()}
 	if res := authorizeAt(b, kitB, N, now); !res.OK {
 		t.Fatalf("renewed kit does not authorize at B: %+v", res)
 	}
@@ -664,7 +665,7 @@ func TestRenewAcrossIssuerRotation(t *testing.T) {
 	c := NewWithKey(privC, testGroups, epC, clk.Now)
 	w2.unseal(t, c)
 	listen(c.Actor)
-	n.Grant(C, actor.FacetRenew, kit.RenewGrant, kit.SpeakAs)
+	n.Grant(C, actor.FacetRenew, kit.BeatGrant, kit.SpeakAs)
 	if _, err := n.Send(ctx, C, actor.FacetRenew, payload); err == nil {
 		t.Fatal("hub unsealed by another wallet renewed A's kit")
 	}

@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -35,6 +36,12 @@ import (
 // File is the recipe's name under the talos tree, beside the frozen v2
 // mesh-policy.yaml that the nebula render keeps reading until Phase 4.
 const File = "mesh-policy-v3.yaml"
+
+// BlocklistFile is the v3 blocklist beside File: one blocked member key
+// (an ed: actor id — the iroh EndpointId a member cert names) per line.
+// Sibling of the frozen v2 mesh-blocklist.txt (nebula cert
+// fingerprints), which the nebula render keeps reading until Phase 4.
+const BlocklistFile = "mesh-blocklist-v3.txt"
 
 // GrantTTL is a compiled grant's lifetime: 7 days. Callers refetch on
 // the renewal beat; the runway model (verification/quint/runway.qnt)
@@ -154,6 +161,48 @@ func Load(root string) (Recipe, error) {
 		return Recipe{}, fmt.Errorf("%s: %w", File, err)
 	}
 	return r, nil
+}
+
+// LoadBlocklist reads <root>/mesh-blocklist-v3.txt: one ed: actor id per
+// line, '#' comments and blank lines ignored, sorted and de-duplicated.
+// A missing file is an empty list (nothing blocked yet); a malformed
+// entry is an error, because silently skipping a typoed id would leave
+// a blocked member served — the failure mode the file exists to
+// prevent. The Issuer hands the list out on every #bundle (decision
+// j0b): receivers replace their copy wholesale, a safe-to-lose cache.
+func LoadBlocklist(root string) ([]cert.ActorID, error) {
+	raw, err := os.ReadFile(filepath.Join(root, BlocklistFile))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", BlocklistFile, err)
+	}
+	return ParseBlocklist(raw)
+}
+
+// ParseBlocklist is LoadBlocklist over bytes.
+func ParseBlocklist(raw []byte) ([]cert.ActorID, error) {
+	var out []cert.ActorID
+	for i, line := range strings.Split(string(raw), "\n") {
+		if idx := strings.IndexByte(line, '#'); idx >= 0 {
+			line = line[:idx]
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		id := cert.ActorID(line)
+		if sch, err := id.Scheme(); err != nil || sch != "ed:" {
+			return nil, fmt.Errorf("%s:%d: %q is not an ed: actor id", BlocklistFile, i+1, line)
+		}
+		if err := id.Validate(); err != nil {
+			return nil, fmt.Errorf("%s:%d: %w", BlocklistFile, i+1, err)
+		}
+		out = append(out, id)
+	}
+	slices.Sort(out)
+	return slices.Compact(out), nil
 }
 
 // Parse decodes and validates a recipe document. Strict fields: a typoed

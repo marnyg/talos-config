@@ -117,8 +117,8 @@ func TestMeshEnrollV2Direct(t *testing.T) {
 	if kit.SpeakAs.Iss != issuer.WalletID(wellKnownAddr) {
 		t.Fatalf("speak-as issuer %s, want the approving wallet", kit.SpeakAs.Iss)
 	}
-	if !slices.Equal(kit.RenewGrant.Cav.Target, []pcert.ActorID{issuer.WalletID(wellKnownAddr)}) {
-		t.Fatalf("renew grant target %v, want the wallet (ADR-0024 F)", kit.RenewGrant.Cav.Target)
+	if !slices.Equal(kit.BeatGrant.Cav.Target, []pcert.ActorID{issuer.WalletID(wellKnownAddr)}) {
+		t.Fatalf("renew grant target %v, want the wallet (ADR-0024 F)", kit.BeatGrant.Cav.Target)
 	}
 }
 

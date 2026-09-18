@@ -148,7 +148,7 @@ func admits(h *hub, kit issuer.Kit, node cert.ActorID) bool {
 		Peer:        node,
 		Bundle: cert.Bundle{
 			Member:  kit.Member,
-			Grants:  []cert.Cert{kit.RenewGrant},
+			Grants:  []cert.Cert{kit.BeatGrant},
 			SpeakAs: []cert.Cert{kit.SpeakAs},
 		},
 	}).OK
@@ -170,8 +170,8 @@ func TestMintDeviceHappyPath(t *testing.T) {
 		m.Exp != h.clk.Now()+issuer.MemberTTL {
 		t.Fatalf("member: %+v", m)
 	}
-	if !slices.Equal(kit.RenewGrant.Cav.Target, []cert.ActorID{w.id}) {
-		t.Fatalf("renew grant names %v, want the wallet", kit.RenewGrant.Cav.Target)
+	if !slices.Equal(kit.BeatGrant.Cav.Target, []cert.ActorID{w.id}) {
+		t.Fatalf("renew grant names %v, want the wallet", kit.BeatGrant.Cav.Target)
 	}
 	if kit.SpeakAs.Iss != w.id || kit.SpeakAs.Aud != string(h.issuer.ID()) {
 		t.Fatalf("speak-as: %+v", kit.SpeakAs)

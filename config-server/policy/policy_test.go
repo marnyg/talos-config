@@ -179,3 +179,29 @@ hub:
 		t.Fatalf("a machine matches no row here, got %+v", got)
 	}
 }
+
+// The shipped v3 blocklist loads (empty today), and the parser is
+// strict: ed: ids only, comments and blanks skipped, duplicates folded,
+// a typo is an error rather than a silently unblocked member.
+func TestBlocklist(t *testing.T) {
+	if bl, err := LoadBlocklist(filepath.Join(repoRoot(t), "talos")); err != nil || len(bl) != 0 {
+		t.Fatalf("shipped blocklist: %v %v", bl, err)
+	}
+	if bl, err := LoadBlocklist(t.TempDir()); err != nil || bl != nil {
+		t.Fatalf("missing file should be an empty list: %v %v", bl, err)
+	}
+	a := "ed:" + strings.Repeat("ab", 32)
+	b := "ed:" + strings.Repeat("cd", 32)
+	bl, err := ParseBlocklist([]byte("# header\n" + b + "  # tv\n\n" + a + "\n" + b + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(bl, []cert.ActorID{cert.ActorID(a), cert.ActorID(b)}) {
+		t.Fatalf("got %v", bl)
+	}
+	for _, bad := range []string{"eth:0x" + strings.Repeat("ab", 20), "ed:" + strings.Repeat("ab", 31), strings.Repeat("ab", 32), "ed:" + strings.Repeat("AB", 32)} {
+		if _, err := ParseBlocklist([]byte(bad + "\n")); err == nil {
+			t.Fatalf("%q accepted", bad)
+		}
+	}
+}

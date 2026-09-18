@@ -65,6 +65,12 @@ const (
 // Verbs the speak-as delegates. Literal (ADR-0018 "Caveats are literal").
 var speakAsVerbs = []string{string(cert.VerbMember), string(cert.VerbInvoke)}
 
+// BeatFacets are the Owner's talos-layer facets a member's beat
+// invokes at whichever hot key holds the unseal: #renew for the certs
+// it holds, #bundle for the recipe's grants (ADR-0024 I, decision mdv).
+// One consent to the wallet and one grant per member name both.
+var BeatFacets = []string{actor.FacetRenew, FacetBundle}
+
 var (
 	// ErrSealed: the Issuer holds no live speak-as.
 	ErrSealed = errors.New("issuer: sealed (no speak-as held)")
@@ -93,9 +99,15 @@ type Issuer struct {
 	groups []string     // the finite group list the speak-as may delegate
 	clock  func() int64 // local clock, Unix seconds
 
-	// Actor is the protocol runtime for hubkey: #renew is served from
-	// here. Transport is whatever the caller wired (nil until 359.8.2.x).
+	// Actor is the protocol runtime for hubkey: #renew, #bundle and
+	// #mint-device are served from here. Transport is whatever the
+	// caller wired (in-memory today; iroh with talos-config-e8d).
 	Actor *actor.Actor
+
+	// Policy is the recipe + blocklist source #bundle compiles from and
+	// #renew/#bundle refuse blocklisted callers by. nil ⇒ #bundle refuses
+	// (ErrNoPolicy) and nothing is blocked. Set before Listen.
+	Policy PolicySource
 
 	mu        sync.Mutex
 	proposals map[cert.ActorID]cert.Cert // per wallet: the unsigned speak-as offered for signing
@@ -130,15 +142,20 @@ func NewWithKey(priv ed25519.PrivateKey, groups []string, t actor.Transport, clo
 		Actor:     a,
 		proposals: make(map[cert.ActorID]cert.Cert),
 	}
-	// #renew serves only while unsealed and outside the nag window; the
-	// actor's own handler does the cert work.
+	// #renew serves only while unsealed, outside the nag window and to
+	// a caller off the blocklist (a listed member's certs run out, j0b);
+	// the actor's own handler does the cert work.
 	renew := a.AcceptTable[actor.FacetRenew]
 	a.AcceptTable[actor.FacetRenew] = func(ctx context.Context, inv *actor.Invocation) ([]byte, error) {
 		if err := i.Serving(); err != nil {
 			return nil, err
 		}
+		if err := i.blocked(inv.From); err != nil {
+			return nil, err
+		}
 		return renew(ctx, inv)
 	}
+	a.AcceptTable[FacetBundle] = i.bundleHandler
 	a.AcceptTable[FacetMintDevice] = i.mintDeviceHandler
 	return i
 }
@@ -236,8 +253,8 @@ func (i *Issuer) Unseal(sigHex string, wallets []cert.ActorID) (cert.ActorID, er
 
 // hold installs a verified speak-as and the consents that make hub
 // facets the WALLET's facets (ADR-0024 F): hubkey consents to the wallet
-// for #renew with target: wallet, delegable — the root of every member
-// chain that reaches this hub. Grants the hub later issues name
+// for the beat facets with target: wallet, delegable — the root of
+// every member chain that reaches this hub. Grants the hub later issues name
 // target: wallet too, so they survive hubkey rotation.
 func (i *Issuer) hold(sa cert.Cert) error {
 	now := i.clock()
@@ -249,7 +266,7 @@ func (i *Issuer) hold(sa cert.Cert) error {
 		Can: cert.VerbInvoke,
 		Cav: cert.Caveats{
 			Target:    []cert.ActorID{sa.Iss},
-			Facet:     []string{actor.FacetRenew},
+			Facet:     slices.Clone(BeatFacets),
 			Delegable: true,
 		},
 		Iat: now,
@@ -313,19 +330,20 @@ func (i *Issuer) Serving() error {
 }
 
 // Kit is what a new member walks away with: its member cert, the
-// invoke grant to the Owner's #renew facet (target: wallet), and the
-// speak-as that resolves both certs' issuer. The member stores the
-// speak-as with its chain (actor.Grants) so the receiver can resolve
-// hubkey → wallet.
+// invoke grant to the Owner's beat facets #renew + #bundle (target:
+// wallet), and the speak-as that resolves both certs' issuer. The
+// member stores the speak-as with its chain (actor.Grants) so the
+// receiver can resolve hubkey → wallet. Everything else — the recipe's
+// grants, the blocklist — comes from the first #bundle.
 type Kit struct {
-	Member     cert.Cert
-	RenewGrant cert.Cert
-	SpeakAs    cert.Cert
+	Member    cert.Cert
+	BeatGrant cert.Cert
+	SpeakAs   cert.Cert
 }
 
 // Mint issues a member cert to node (an ed: id, the member's own
 // NodeId — never derived from anything the hub holds, ADR-0015) with
-// the durable name and groups, plus the #renew grant. groups must be
+// the durable name and groups, plus the beat grant. groups must be
 // within the speak-as caveat: the hub can only put a member in a group
 // the wallet delegated.
 func (i *Issuer) Mint(node cert.ActorID, name string, groups []string) (Kit, error) {
@@ -364,14 +382,14 @@ func (i *Issuer) Mint(node cert.ActorID, name string, groups []string) (Kit, err
 		Can: cert.VerbInvoke,
 		Cav: cert.Caveats{
 			Target:    []cert.ActorID{sa.Iss},
-			Facet:     []string{actor.FacetRenew},
+			Facet:     slices.Clone(BeatFacets),
 			Delegable: false,
 		},
 		Iat: now,
 		Exp: now + GrantTTL,
 	}, i.signer)
 	if err != nil {
-		return Kit{}, fmt.Errorf("issuer: signing renew grant: %w", err)
+		return Kit{}, fmt.Errorf("issuer: signing beat grant: %w", err)
 	}
-	return Kit{Member: member, RenewGrant: grant, SpeakAs: sa}, nil
+	return Kit{Member: member, BeatGrant: grant, SpeakAs: sa}, nil
 }

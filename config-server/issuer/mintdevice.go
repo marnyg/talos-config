@@ -51,9 +51,9 @@ type MintDeviceRequest struct {
 
 // wireKit is Kit on the wire: each cert in its JSON form.
 type wireKit struct {
-	Member     json.RawMessage `json:"member"`
-	RenewGrant json.RawMessage `json:"renew_grant"`
-	SpeakAs    json.RawMessage `json:"speak_as"`
+	Member    json.RawMessage `json:"member"`
+	BeatGrant json.RawMessage `json:"beat_grant"`
+	SpeakAs   json.RawMessage `json:"speak_as"`
 }
 
 // EncodeKit renders a Kit as JSON.
@@ -63,7 +63,7 @@ func EncodeKit(k Kit) ([]byte, error) {
 	if w.Member, err = cert.Encode(k.Member); err != nil {
 		return nil, err
 	}
-	if w.RenewGrant, err = cert.Encode(k.RenewGrant); err != nil {
+	if w.BeatGrant, err = cert.Encode(k.BeatGrant); err != nil {
 		return nil, err
 	}
 	if w.SpeakAs, err = cert.Encode(k.SpeakAs); err != nil {
@@ -83,13 +83,13 @@ func DecodeKit(b []byte) (Kit, error) {
 	if k.Member, err = cert.DecodeCert(w.Member); err != nil {
 		return Kit{}, fmt.Errorf("issuer: kit member: %w", err)
 	}
-	if k.RenewGrant, err = cert.DecodeCert(w.RenewGrant); err != nil {
-		return Kit{}, fmt.Errorf("issuer: kit renew grant: %w", err)
+	if k.BeatGrant, err = cert.DecodeCert(w.BeatGrant); err != nil {
+		return Kit{}, fmt.Errorf("issuer: kit beat grant: %w", err)
 	}
 	if k.SpeakAs, err = cert.DecodeCert(w.SpeakAs); err != nil {
 		return Kit{}, fmt.Errorf("issuer: kit speak-as: %w", err)
 	}
-	for _, c := range []cert.Cert{k.Member, k.RenewGrant, k.SpeakAs} {
+	for _, c := range []cert.Cert{k.Member, k.BeatGrant, k.SpeakAs} {
 		if err := cert.Verify(c); err != nil {
 			return Kit{}, fmt.Errorf("issuer: kit: %w", err)
 		}
