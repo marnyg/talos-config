@@ -1,0 +1,54 @@
+# Mesh v3 access policy — the Owner's recipe under ADR-0017 (+ the
+# 2026-09-18 amendment). Compiled by config-server/policy into `invoke`
+# grants that CALLERS carry; no receiver holds a copy of this table.
+#
+# Dual plane (359.8): this file lives beside talos/mesh-policy.yaml,
+# the frozen v2 (port-based) recipe that the nebula render still reads.
+# Phase 4 deletes v2. Nickel contract: verification/nickel/mesh-policy-v3.ncl.
+#
+# Rule shape: {facet, host|group}
+#   facet: a named entry point the receiver exposes — closed set per
+#          receiver kind, disjoint across kinds (glossary "Facet";
+#          kind ≡ facet vocabulary):
+#            node     apid | kube-api
+#            gateway  ingress-http | jellyfin
+#            hub      hub-http
+#          Never a port: ports live in the receiver's own accept table
+#          (facet → forward). Reachability is not a facet. The iroh
+#          relay is not a facet (transport; membership-implied access).
+#   host:  a member *name* — the grant's `aud` is that one member's
+#          key, resolved at #bundle time from the caller's member cert;
+#   group: a group name — the grant's `aud` is `group:<g>`.
+#   Exactly one of host/group per rule.
+#
+# Each rule compiles to one `invoke` grant {aud, cav: {target: ["*"],
+# facet: [<facet>]}, 7 d} (protocol ADR-0004: the wildcard target never
+# widens — a grant is honored at every receiver that consented to the
+# Owner for that facet). A kind with `inbound: []` is legal and means
+# "no grant names this receiver kind".
+node:
+  inbound:
+    # Owner devices: the machine's control surfaces. Same access v2
+    # gives admins with `port: any`, now spelled facet by facet.
+    - {facet: apid, group: admins}
+    - facet: kube-api
+      group: admins
+      # Deliberately absent: any `group: machines` rule — machines must
+      # not reach each other's control surfaces (nebmachine_test stance;
+      # a contract in mesh-policy-v3.ncl).
+      # Also absent: {facet: apid, host: hub} — hub → node apid stays
+      # on nebula until Phase 4 (359.11.2).
+gateway:
+  inbound:
+    # One class for every HTTP UI; per-app authorization stays at the
+    # app layer (SIWE→OIDC, ADR-0010).
+    - {facet: ingress-http, group: admins}
+    - {facet: ingress-http, group: media}
+    # Raw TCP for the shared-space appliances' Jellyfin apps.
+    - {facet: jellyfin, group: media}
+hub:
+  inbound:
+    # The hub's overlay HTTP surface (/config): both device groups, as
+    # v2's :80 rules; per-route gates decide who sees what.
+    - {facet: hub-http, group: admins}
+    - {facet: hub-http, group: media}

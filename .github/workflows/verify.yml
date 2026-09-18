@@ -10,7 +10,7 @@
 #                 (`check.sh verify`) — minutes long, so nightly +
 #                 manual only.
 #   nickel        verification/nickel/check.sh — the durable artifacts
-#                 (talos/mesh-policy.yaml, the v3 fixture) against their
+#                 (talos/mesh-policy.yaml, talos/mesh-policy-v3.yaml) against their
 #                 snapshot contracts, on every push/PR.
 #
 # Both check.sh headers name this workflow; keep them in sync.
@@ -32,8 +32,9 @@ jobs:
       matrix:
         module: [config-server, protocol]
     steps:
-      # Full checkout, not sparse: config-server's policy tests read the
-      # shipped ../talos/mesh-policy.yaml (see flake.nix config-server-bin).
+      # Full checkout, not sparse: config-server's mesh/ and policy/ tests
+      # read the shipped ../talos/mesh-policy{,-v3}.yaml and the Nickel
+      # contract (see flake.nix config-server-bin).
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v5
         with:

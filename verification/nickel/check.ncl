@@ -8,9 +8,9 @@
     (import "../../talos/mesh-policy.yaml")
       | (import "./mesh-policy.ncl").Policy,
 
-  # v3 part (a): the facet-class recipe shape (ADR-0017), against a
-  # spec fixture until 359.8.5 lands the schema in talos/.
+  # v3: the REAL talos/mesh-policy-v3.yaml (facet-class recipe,
+  # ADR-0017; compiled to grants by config-server/policy).
   mesh_policy_v3 =
-    (import "./fixtures/mesh-policy-v3.yaml")
+    (import "../../talos/mesh-policy-v3.yaml")
       | (import "./mesh-policy-v3.ncl").Policy,
 }

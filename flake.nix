@@ -61,10 +61,12 @@
             packages.config-server-bin = pkgs.buildGo126Module {
               pname = "config-server";
               version = "0.1.0";
-              # config-server plus the real talos/mesh-policy.yaml: the
-              # policy tests deliberately run against the shipped file
-              # (../talos/mesh-policy.yaml), so the sandbox must carry it
-              # — a fixture copy would un-guard the file (019ce97).
+              # config-server plus the real talos/mesh-policy*.yaml: the
+              # policy tests deliberately run against the shipped files
+              # (mesh/ reads v2, policy/ reads v3 and asserts its facet
+              # vocabulary against the Nickel contract), so the sandbox
+              # must carry them — a fixture copy would un-guard the file
+              # (019ce97).
               # go.mod `replace`s ../protocol (issuer/, 359.8.1), so the
               # protocol module's sources ride along like iroh-transport's.
               src = nixpkgs.lib.fileset.toSource {
@@ -72,6 +74,8 @@
                 fileset = nixpkgs.lib.fileset.unions [
                   ./config-server
                   ./talos/mesh-policy.yaml
+                  ./talos/mesh-policy-v3.yaml
+                  ./verification/nickel/mesh-policy-v3.ncl
                   ./protocol/go.mod
                   ./protocol/go.sum
                   (nixpkgs.lib.fileset.fileFilter (f: f.hasExt "go") ./protocol)
@@ -95,7 +99,7 @@
               #     34754508013: one job green from cache, another rebuilt the
               #     FOD and mismatched). After touching a replaced tree, check
               #     with `nix build .#<pkg>.goModules --rebuild`.
-              vendorHash = "sha256-FAiGoNTGMs2QTZsdbJJI8b6gpuz43DidsIbOK4CDvb0=";
+              vendorHash = "sha256-98oejwn2AhQT5YwtYe0tZ6Fg/WyKPEWol2PMxSRcj4Y=";
             };
 
             # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go

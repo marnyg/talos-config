@@ -6,12 +6,15 @@
 # nebula render is deleted in Phase 4. This file validates the
 # facet-class shape the recipe takes under ADR-0017, where the hub
 # compiles the recipe into `invoke` grants that callers carry and a
-# receiver holds nothing but its own accept table. Today it runs
-# against fixtures/mesh-policy-v3.yaml, a spec fixture no code consumes.
+# receiver holds nothing but its own accept table. It validates the
+# REAL talos/mesh-policy-v3.yaml, the input of config-server/policy
+# (359.8.5), whose Go loader enforces the same closed sets — the two
+# must agree (policy_test.go asserts the facet set against this file's
+# glossary source).
 #
-# Scope — part (a) only. The compiled artifacts (per-receiver accept
-# tables `facet → forward`, the name map) wait on 359.8.5's schema and
-# have no contract here yet.
+# Scope: the recipe only. Under the 2026-09-18 amendment the hub
+# renders no accept table and the name map waits on e8d, so there is
+# no compiled artifact to contract here.
 #
 # Sources of truth for what is enforced:
 #   - docs/desired-state/domain-model.md glossary: Facet (closed per
@@ -45,11 +48,14 @@ let groups = ["admins", "media", "machines"] in
 # Reachability (ICMP today) is deliberately absent: it is an
 # unauthenticated ping, not something a grant names. Adding a facet
 # here is a domain-model change (glossary + ADR-0017), not a policy
-# edit.
+# edit. The iroh relay is NOT a facet (2026-09-18 amendment): it is a
+# keyless transport child, no grant can be presented to it. The
+# Issuer's actor facets (#renew, mint-device) are granted by the Kit
+# and the enrollment flow, never by a recipe row.
 let facets = {
   node = ["apid", "kube-api"],
   gateway = ["ingress-http", "jellyfin"],
-  hub = ["hub-http", "relay"],
+  hub = ["hub-http"],
 }
 in
 

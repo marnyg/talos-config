@@ -9,15 +9,13 @@
 #                 closed groups, one-of host/group, node isolates
 #                 machines, device inbound ICMP-only.
 #                 == mesh-policy-v3 ==
-#                 fixtures/mesh-policy-v3.yaml (a SPEC fixture, no code
-#                 consumes it yet) against mesh-policy-v3.ncl: the
+#                 talos/mesh-policy-v3.yaml (the REAL v3 file, input of
+#                 config-server/policy) against mesh-policy-v3.ncl: the
 #                 facet-class recipe shape of ADR-0017 — closed
-#                 receiver kinds, closed facet set per kind, no ports
-#                 in a grant, one-of host/group, closed groups, node
-#                 facets never granted to `group: machines`.
-#                 Part (a) of 6z9 only: contracts for the compiled
-#                 accept tables and the name map wait on 359.8.5's
-#                 schema.
+#                 receiver kinds, closed facet set per kind (relay is
+#                 not a facet), no ports in a grant, one-of host/group,
+#                 closed groups, node facets never granted to
+#                 `group: machines`.
 #
 # nickel comes from the flake (`nix develop --impure`); it is not on
 # PATH otherwise.
@@ -40,6 +38,7 @@
 #     8. unknown receiver kind (`device`)         Policy (closed)
 #     9. `facet: apid` under gateway              Facet gateway
 #    10. `facet: icmp` under hub (reachability)   Facet hub
+#    10b. `facet: relay` under hub (transport)    Facet hub
 #    11. `facet: any` under node                  Facet node
 #    12. `port: "80"` on a rule                   RuleShape (closed)
 #    13. `proto: tcp` on a rule                   RuleShape (closed)
@@ -60,4 +59,4 @@ echo "ok: talos/mesh-policy.yaml satisfies mesh-policy.ncl"
 
 echo "== mesh-policy-v3 =="
 nickel export check.ncl --field mesh_policy_v3 --format json > /dev/null
-echo "ok: fixtures/mesh-policy-v3.yaml satisfies mesh-policy-v3.ncl (part (a); accept tables + name map pending 359.8.5)"
+echo "ok: talos/mesh-policy-v3.yaml satisfies mesh-policy-v3.ncl"
