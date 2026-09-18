@@ -62,9 +62,10 @@
   enforces. `talos/mesh-policy-v3.yaml` is the compiler's input
   (`config-server/policy`, protocol ADR-0004 built) and `Issuer#bundle`
   signs its output (same day), but **no caller receives its grants
-  yet** — the Issuer's transport is in-memory until `e8d` and no
-  member client exists (`359.8.3`/`359.8.4`), so a v3 edit changes
-  nothing at runtime until they land. Same for
+  yet** — ~~the Issuer's transport is in-memory until `e8d`~~ (landed
+  the same day: the hub answers over iroh) but no member client exists
+  (`359.8.3`/`359.8.4`), so a v3 edit changes nothing at runtime until
+  they land. Same for
   `talos/mesh-blocklist-v3.txt` (ed: ids; v2's `mesh-blocklist.txt`
   stays the one nebula enforces). Its
   closed sets live in three places kept in step by tests
@@ -421,4 +422,25 @@
   After touching `protocol/`, run
   `nix build .#config-server-bin.goModules --rebuild` and
   `nix build .#iroh-transport.goModules --rebuild`; the canonical
-  caveat list is on `config-server-bin` in `flake.nix`.
+  caveat list is on `config-server-bin` in `flake.nix`
+  (2026-09-18 later: moved to `config-server/nix/default.nix`, and the
+  replaces now include `iroh-transport/` and `iroh-go/iroh` too).
+- 2026-09-18 — **Hub deploys are `fly/deploy.sh`, not `fly deploy`**
+  (`e8d`): the image is nix-built (cgo hub), `fly.toml` has no
+  `[build]`, and a bare `fly deploy` fails on purpose. From the Mac:
+  `HUB_BUILDER=mar@nixos fly/deploy.sh` — builds in that box's nix
+  store (`--store ssh-ng://… --eval-store auto`; the darwin daemon runs
+  as root and cannot use your ssh key, so `--builders` does NOT work)
+  and pushes from there. The box's login shell is fish — anything you
+  `ssh` over must be wrapped in `sh -c`. Musl Rust artifacts are warm
+  there (`iroh-ffi-static`/`iroh-relay` for `x86_64-unknown-linux-musl`).
+  Fallback without the box: `hub-image.yml` builds on every push;
+  `workflow_dispatch` with `push=true` needs a `FLY_API_TOKEN` repo
+  secret (not set yet).
+- 2026-09-18 — **`go test ./...` in `config-server/` is still C-free**:
+  the iroh binding is behind build tag `iroh` (`hubiroh.go`, stub in
+  `hubiroh_stub.go`). To run the tagged suite by hand: `CGO_ENABLED=1
+  CGO_LDFLAGS=-L$(nix build .#iroh-ffi-static --print-out-paths)/lib
+  IROH_RELAY_BIN=$(nix build .#iroh-relay --print-out-paths)/bin/iroh-relay
+  go test -tags iroh .` — `nix build .#config-server-bin` does exactly
+  that. `--iroh-relay` on an untagged binary refuses at startup.

@@ -230,7 +230,20 @@ wg0 is deleted — hub code, udp/51820, and the node interface.
   retransmits against the mesh's 4 and came out *slower*, which is
   underlay noise rather than the overlay winning.
 
-## Hub on fly — _last verified 2026-07-30_
+## Hub on fly — _last verified 2026-07-30; identity plane 2026-09-18_
+
+- _2026-09-18_ (`e8d`): **image `registry.fly.io/marnyg-talos-config:2767808`**,
+  nix-built (`fly/image.nix`: static musl `config-server -tags iroh` +
+  static `iroh-relay` 1.1.0 + tracked `talos/` + busybox), deployed via
+  `fly/deploy.sh`. Unsealed both planes the same day: hubkey
+  `f855ca55…` speaks for `0xf568…9406` (speak-as until +119 d), relay
+  child on loopback `:3340` proxied on 443, the hub's own iroh endpoint
+  homed on it and advertised as `iroh:relay=https://marnyg-talos-config.fly.dev`;
+  `/.well-known/talos-hub/{speak-as,reach-me-at}` serve. Verified from
+  a laptop: an envelope to `Owner#bundle` at the hubkey over iroh
+  answered in 164 ms with a signed `unauthorized` (no kit). RSS 19 MB
+  sealed in the image smoke (256 MB VM). No member has a Kit yet
+  (`359.8.3`/`359.8.4`); nebula is still the mesh that carries traffic.
 
 - `fly secrets list` is **empty**. Everything derives from the wallet
   signature at unseal: the nebula mesh CA and all mesh identities, KMS

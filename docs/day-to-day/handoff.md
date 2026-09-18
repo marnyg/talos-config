@@ -5,59 +5,67 @@
 
 ## Last session
 
-2026-09-18 (third session) — **`Issuer#bundle` built** (`359.8.2.3`
-part 2; commit `cedf639`). The recipe reaches a caller for the first
-time.
+2026-09-18 (fourth session) — **`e8d` built and deployed: the hub binds
+its own iroh endpoint; hubkey = `EndpointId` for real.** Commits
+`4230731`, `fe8570b`, `2767808`; image `registry.fly.io/marnyg-talos-config:2767808`
+running, unsealed (hubkey `f855ca55…`). A stranger's `#bundle` from a
+laptop was answered **over iroh through fly's edge in 164 ms** with a
+hubkey-signed `unauthorized` — the first envelope the production Issuer
+ever received from outside its process.
 
-- **`config-server/issuer/bundle.go`**: `#bundle {member: <cert>}` →
-  `Bundle {grants[], blocklist[], speak_as}`. The Issuer verifies the
-  member cert itself (verb, sig, unexpired, `aud == From`, issuer =
-  this hubkey **or** a dead hubkey resolved via `cert.SpeaksFor` over
-  the proof's speak-as from *its* wallet), then `policy.Compile` for
-  `cav.name`/`cav.groups` and signs each grant with the hot key.
-  `PolicySource` / `FilePolicy(root)` reads recipe + blocklist from
-  the checkout on every beat; wired in `hubseal.go`.
-- **Blocklist on the beat** (`j0b`): `talos/mesh-blocklist-v3.txt`
-  (ed: ids; `policy.LoadBlocklist`, strict parse) rides every bundle;
-  a listed caller is refused at `#renew` **and** `#bundle`, so its
-  certs run out.
-- **Kit grant → `BeatGrant`** with `facet: [#renew, #bundle]` (wire key
-  `beat_grant`); the wallet consent widens the same way
-  (`issuer.BeatFacets`). Decision `1tg` records the `{}`→`{member}`
-  payload deviation from ADR-0024 (proof chains are invoke-only).
-- Tests: `bundle_test.go` (compile-for-member + admits at a node
-  receiver, refusals, wire, beat across an Issuer rotation over
-  `MemoryNetwork`); `policy.TestBlocklist`. All `config-server` green.
+- **`protocol/actor.Multi`**: one identity on N wires (Accept fans in,
+  Dial moves on only from `ErrUnreachable`). The Issuer serves Enroll
+  (in-memory) and members (iroh) from one inbox. No ADR: transport
+  plumbing, not authority.
+- **`iroh-transport` `Options.AdvertiseRelay`**: home on the relay
+  child at loopback, advertise the public URL; `TestAdvertiseRelay`
+  proves the relay forwards by `EndpointId` across names.
+- **`config-server`**: `--iroh-relay` (`IROH_RELAY_URL` in fly.toml);
+  `hubiroh.go` behind build tag `iroh`, stub keeps `go test ./...`
+  C-free. Hub publishes a relay-only `reach-me-at` (7 d, 6 h refresh)
+  and serves it at `/.well-known/talos-hub/reach-me-at`.
+  `TestHubBeatOverIroh` = member on real iroh runs `#renew`+`#bundle`
+  through a local relay (nix runs it).
+- **Build**: `config-server/nix` (cgo; static musl variant),
+  `fly/image.nix` (nix2container), `fly/deploy.sh`
+  (`HUB_BUILDER=mar@nixos` builds in the box's store, pushes from
+  there), `hub-image.yml` as CI fallback. `Dockerfile` deleted;
+  `fly.toml` has no `[build]`. **19 MB RSS** sealed in the image smoke.
+- Docs: README "Deploying the hub", domain-model Issuer row +
+  cold-cache, ADR-0024 amendment (endpoint as built).
 
 ## Loose threads
 
-- `359.8.2.3` stays **in_progress**: the **name map** half of `#bundle`
-  waits on `e8d` (the location cache needs real iroh endpoints); the
-  "hub-http shrink to /config" is spec-only — no hub-http stream facet
-  exists in code to shrink.
-- **Nobody calls `#bundle` yet**: no member client exists (`359.8.3`
-  cp1 agent, `359.8.4` irohup) and the Issuer's transport is in-memory
-  until `e8d`. A `mesh-policy-v3.yaml` edit still changes nothing at
-  runtime.
-- Docs proposals pending user confirmation (see this session's report):
-  domain-model Issuer row + Kit glossary drift, a **Bundle** glossary
-  disambiguation (connect-time bundle vs `#bundle` reply), a
-  **Blocklist (v3)** glossary line, an ADR-0024 amendment note.
-- The Issuer refusing `#renew` to a blocklisted key reads git inside
-  an inbound-call decision. Judged as the *compiler* declining output
-  (invariant 2 names receivers as the parties that never read git),
-  not surfaced as a violation — veto if wrong.
-- Carried: `tqr`, `kql` (blocked on `359.8.3`), no graceful shutdown in
-  `config-server`, `DefaultMailbox = 64` / renewal-beat fraction
-  unbeaded, w1 down (`0q0`, `kso`), `5gz` cold-cache trap.
+- **`e8d` still open** pending your closure; ADR-0024's remaining items
+  are the name map and Provisioner-as-actor — promote to Accepted after
+  those or rule them a follow-up ADR.
+- **Cold cache is two GETs** (`speak-as` + `reach-me-at`, one hostname);
+  ADR-0024's confirmation says "at most one `/.well-known` fetch" — the
+  amendment reads it as one hostname; veto if you want one document.
+- **Hub location TTL = `GrantTTL` (7 d)**, not ADR-0001's ≈ 1 h sketch.
+  Reasoned (hub doesn't roam, beats are days apart); not modelled.
+- **The Kit carries no hub location**: a member needs the relay URL
+  out-of-band (its own home relay) and fetches `reach-me-at` once;
+  `359.8.3`/`359.8.4` should decide whether `Kit.Location` is worth it.
+- **`Dockerfile.siweoidc` is broken** since the `../protocol` replace
+  (`go mod download` on a lone `config-server/`); now three replaces.
+  Surfaced, not fixed.
+- The remote nix builder path: the darwin daemon (root) cannot use my
+  ssh key, so `--builders` fails; `--store ssh-ng://mar@nixos
+  --eval-store auto` is what works (`fly/deploy.sh` does this).
+- Carried: `tqr` (flip `/sealed` on identity — now reasonable, a real
+  member beats at the hubkey next), `kql` (blocked on `359.8.3`), no
+  graceful shutdown in `config-server`, `DefaultMailbox = 64` /
+  renewal-beat fraction unbeaded, w1 down (`0q0`, `kso`), `5gz`.
 
 ## Suggested next steps
 
-- **`e8d`** — the hub binds its own iroh Endpoint (fly build change:
-  cgo + `libiroh_ffi`); then `Issuer.Listen` on iroh and the name map
-  half of `#bundle`.
-- **`359.8.3`** cp1 agent: consumes `policy.AcceptTable(KindNode)`,
-  runs the beat (`#renew` + `#bundle`), replaces its blocklist copy
-  from the bundle; `kql` tears the scratch relay down after.
-- Promote ADR-0024 toward Accepted once `e8d` lands (Provisioner as an
-  actor is the other outstanding item).
+- **`359.8.3`** cp1 agent: bind NodeId on iroh homed at the hub's relay,
+  fetch `/.well-known/talos-hub/{speak-as,reach-me-at}`, enroll (v2
+  message → Kit), beat `#renew`+`#bundle`, consume
+  `policy.AcceptTable(KindNode)`; then `kql` tears the scratch relay
+  down. Build via `talos/extensions/p0agent/build.sh` — the static musl
+  chain is warm on `mar@nixos`.
+- **Name map half of `#bundle`** (`359.8.2.3`): the Issuer's location
+  cache now fills from real members' piggybacked `reach-me-at`s.
+- `tqr`: make `/sealed` 503 on a sealed identity once one member beats.
