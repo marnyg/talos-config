@@ -187,7 +187,7 @@ classDiagram
 
 | Actor | Key / endpoint | Inbox | State (all volatile) |
 |---|---|---|---|
-| **Issuer** | `hubkey`; iroh (`e8d`, pending) + in-memory (built) | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{}` → grants for the caller's groups, blocklist, name map, current `speak-as`; pending `359.8.5`), `#mint-device` (from Enroll: `{node, name, group, fingerprint, nonce, signature}` — the Issuer rebuilds the **v2 enrollment message** and verifies the **wallet's** EIP-191 over it; built 2026-09-17), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal, swapped on the live actor via `actor.Hold`; location cache, `seq` HWM, `lw` (safe-to-lose); git checkout = compiler input. **No replay state** for `#mint-device` (decision `0t9`) |
+| **Issuer** | `hubkey`; iroh (`e8d`, pending) + in-memory (built) | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{member: <cert>}` → hubkey-signed grants `policy.Compile`d for the cert's name/groups, the v3 blocklist, current `speak-as`; the Issuer verifies the member cert itself — own signature, or a dead `hubkey` resolved via `cert.SpeaksFor` over the proof's `speak-as` from *its* wallet, `aud == From` — built 2026-09-18, decision `1tg`; the name map waits on `e8d`), `#mint-device` (from Enroll: `{node, name, group, fingerprint, nonce, signature}` — the Issuer rebuilds the **v2 enrollment message** and verifies the **wallet's** EIP-191 over it; built 2026-09-17), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal, swapped on the live actor via `actor.Hold`; location cache, `seq` HWM, `lw` (safe-to-lose); git checkout = compiler input. **No replay state** for `#mint-device` (decision `0t9`) |
 | **Enroll** | own key; in-memory only (built: `config-server/enroll`) | none (WAN HTTPS handlers: `/device/code`, `/token`, `/verify`, `/mesh/enroll/*`). Sends `#mint-device` when an enrollment named a `node`; refuses to start such a flow while the Issuer is not serving | device-flow store (minutes TTL) — its single-use nonce is the replay check |
 | **Provisioner** | own key; in-memory only | none (WAN HTTPS: `/config`, `/enroll/machine`, KMS) | seed (memory); boot-token seen-set |
 
@@ -618,12 +618,34 @@ provisioning or recovery path may depend on it.
   re-unseal from the nag window gets a fresh 120 d. The message the
   wallet signs is its RFC 8785 canonical JSON.
 - **Kit** — what `Issuer.Mint` hands a new member: its `member` cert
-  (90 d), the `invoke` grant to the Owner's `#renew` facet (7 d,
-  `target: wallet`), and the `speak-as` that resolves both certs'
-  hot-key issuer. The member's initial **Bundle**; from then on the
-  beat keeps it fresh. On the wire (`issuer.EncodeKit`): JSON
-  `{member, renew_grant, speak_as}`, each a cert in its JSON form; a
-  dual-plane enrollment returns `{config: <nebula yaml>, kit}`.
+  (90 d), the **beat grant** — one `invoke` grant to the Owner's
+  `#renew` + `#bundle` facets (7 d, `target: wallet`,
+  `issuer.BeatFacets`) — and the `speak-as` that resolves both certs'
+  hot-key issuer. Enough to run the first beat; everything else comes
+  from `#bundle`. On the wire (`issuer.EncodeKit`): JSON `{member,
+  beat_grant, speak_as}`, each a cert in its JSON form; a dual-plane
+  enrollment returns `{config: <nebula yaml>, kit}`.
+- **Bundle** — two related things, one word. (a) The *connect-time
+  bundle* a caller presents on every stream (`cert.Bundle {member,
+  grants[], speak-as[]}`), the input of `Authorize`. (b) The
+  *`#bundle` reply* (`issuer.Bundle {grants[], blocklist[],
+  speak_as}`): the recipe compiled for this member and signed by the
+  live `hubkey`, plus the blocklist and the `speak-as` that resolves
+  that key. A member assembles (a) from `Kit.Member` (or its `#renew`
+  successor), (b)'s grants, and every `speak-as` it holds — the one
+  that resolves the member cert's issuer and the one that resolves the
+  grants' (they differ across a `hubkey` rotation until `#renew`
+  re-signs the member cert). Grants are recompiled on every beat and
+  the Issuer keeps none (invariant 1, "the grant is the record").
+- **Blocklist (v3)** — `talos/mesh-blocklist-v3.txt`: blocked *member
+  keys* (`ed:` ids — a member cert's `aud`, the iroh `EndpointId`),
+  one per line; sibling of the frozen v2 `mesh-blocklist.txt` (nebula
+  fingerprints) until Phase 4. Git is the record; it reaches enforcers
+  two ways, both on the beat (`j0b`): every `#bundle` carries the
+  current list and receivers replace their copy wholesale (`Authorize`
+  step 3, a safe-to-lose cache); and the Issuer refuses `#renew` and
+  `#bundle` to a listed key, so its certs run out at the runway. A
+  malformed line fails the load (nothing silently unblocked).
 - **Enrollment** — wallet-authorized minting of a binding: the member
   submits its own pubkey, the approver (at whatever signature
   distance) ratifies role + group, one signature mints the cert.

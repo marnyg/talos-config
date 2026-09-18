@@ -5,7 +5,8 @@
   `vl4` mandated; promote when Phase 1.2 lands against it. Landed so
   far: Issuer `359.8.1`; relay child `359.8.2.2`; Enroll →
   `Issuer#mint-device` and `/.well-known` `359.8.2.3` part 1
-  (2026-09-17). Outstanding: `#bundle` (needs `359.8.5`), Provisioner
+  (2026-09-17); `Issuer#bundle` minus its name map, `359.8.2.3` part 2
+  (2026-09-18). Outstanding: the name map (needs `e8d`), Provisioner
   as an actor, the hub's iroh endpoint `e8d`.)_
 - Date: 2026-09-16
 - Refines: ADR-0018 (which named the actors and said "cut by state"
@@ -181,6 +182,27 @@ model §2 "Hub actors"):
   hubkey`: same process, same lifetime; rule F is for member-held
   grants. The Issuer Listens for the process's life and swaps its
   authority set through `actor.Hold` at each unseal.
+- **Amended 2026-09-18 (`359.8.2.3` part 2, decision `1tg`) —
+  `#bundle` as built.** Option I sketched `#bundle {}` with "the
+  caller's groups from the member cert in its own chain"; an envelope
+  proof chain is `invoke`-only (`VerifyChain` rule 1 fixes the chain's
+  verb at the root consent), so a `member` cert cannot ride in it. The
+  payload is therefore `{member: <cert>}`, and the Issuer verifies it
+  the way a receiver would, on the signing side: verb, signature,
+  unexpired, `aud == From`, and `iss` = this `hubkey` or a key the
+  wallet *this* hub speaks for vouches for through a live `speak-as` in
+  the proof (`cert.SpeaksFor` — the one rule `#renew` and `VerifyChain`
+  use). A member minted before a deploy bundles at the new process
+  without renewing first. Reply: `{grants[], blocklist[], speak_as}`,
+  every grant `policy.Compile`d and signed by the live `hubkey`; the
+  name map is deferred to `e8d`. One **beat grant** with `facet:
+  [#renew, #bundle]` replaces the `#renew`-only grant in the Kit
+  (`Kit.BeatGrant`, wire `beat_grant`), and the consent to the wallet
+  names the same two facets. The blocklist (`talos/mesh-blocklist-v3.txt`,
+  `ed:` ids) is enforced at both ends of the beat: it rides every
+  bundle (`j0b`) and the Issuer refuses `#renew`/`#bundle` to a listed
+  key — the compiler declining output, git being its declared input,
+  not a receiver reading git.
 
 ### Confirmation
 
