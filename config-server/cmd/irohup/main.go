@@ -32,21 +32,33 @@
 // with the node's hostname in the endpoint's SAN set — see
 // day-to-day/notes.md (2026-09-15).
 //
+// Desktop presentation (Phase 2.0, talos-config-359.9.6, decision fgr):
+//
+//	sudo irohup -tun -state /var/lib/talos-mesh/laptop.iroh   # utun + 198.18/15 + split DNS
+//
+// runs the same member as a daemon behind a utun: names under
+// mesh.internal that the name map knows resolve to fake IPs, and a TCP
+// flow to <fake IP>:<facet port> is one stream to that member. Started
+// as root by launchd, it creates the utun, assigns 198.18.0.1, routes
+// the /15 in, then drops to -user (_talosmesh) before anything touches
+// the network; DNS is /etc/resolver/mesh.internal → 198.18.0.2, which
+// nix-darwin declares statically. See tun.go.
+//
 // Cache (~/.config/talos-mesh/): <name>.key and <name>.yml are nebup's
 // two files (ADR-0012); <name>.iroh/ is the identity-plane state dir
 // with the same layout as a node's /var/lib/p0agent (nodeagent.State):
 // key, kit.json, bundle.json, hub.json, mark. The keys are the only
 // state; the rest is the member's own certs and safe-to-lose caches.
+// With -state DIR the nebula files sit beside DIR instead, so a daemon
+// with no home of its own is self-contained.
 package main
 
 import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -65,7 +77,6 @@ import (
 	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/config-server/walletsign"
 	"github.com/marnyg/talos-config/iroh-go/iroh"
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
@@ -83,9 +94,26 @@ func main() {
 		stateDir = flag.String("state", "", "identity-plane state dir (default ~/.config/talos-mesh/<name>.iroh)")
 		bindAddr = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 		beat     = flag.Duration("beat", nodeagent.DefaultBeat, "renewal beat interval")
+		tunMode  = flag.Bool("tun", false, "desktop presentation: utun + 198.18/15 fake IPs + split DNS instead of bridges (root at start; drops to -user)")
+		runAs    = flag.String("user", "_talosmesh", "with -tun: the user to drop to after the privileged setup")
+		dnsUp    = flag.String("dns-upstream", "", "with -tun: where mesh.internal names NOT in the name map go (nebula's DNS while it coexists); empty = NXDOMAIN")
 	)
 	flag.Var(&br, "bridge", "<member>/<facet>=<host:port> local TCP bridge; repeatable (facets: "+strings.Join(policy.Facets(policy.KindNode), ", ")+")")
 	flag.Parse()
+
+	// Privileged setup first, before anything else runs: it takes no
+	// input but the flags, and everything after it runs as -user
+	// (decision fgr). tunUp is nil without -tun.
+	var tunUp *tunSetup
+	if *tunMode {
+		if *stateDir == "" {
+			log.Fatal("-tun needs an explicit -state (HOME is root's at start and -user's after the drop)")
+		}
+		var err error
+		if tunUp, err = privilegedSetup(*stateDir, *runAs); err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	dev := nebderive.Normalize(*name)
 	if dev == "" {
@@ -94,7 +122,7 @@ func main() {
 	if *group != "admins" && *group != "media" {
 		log.Fatalf("-group must be 'admins' or 'media', got %q", *group)
 	}
-	if len(br) == 0 {
+	if len(br) == 0 && !*tunMode {
 		br = bridges{{Name: "cp1", Facet: "apid", Listen: "127.0.0.1:50000"}, {Name: "cp1", Facet: "kube-api", Listen: "127.0.0.1:6443"}}
 	}
 	for _, b := range br {
@@ -111,12 +139,9 @@ func main() {
 		}
 	}
 
-	keyPath, cfgPath, dir, err := cachePaths(dev)
+	keyPath, cfgPath, dir, err := cachePaths(dev, *stateDir)
 	if err != nil {
 		log.Fatal(err)
-	}
-	if *stateDir != "" {
-		dir = *stateDir
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		log.Fatal(err)
@@ -143,6 +168,11 @@ func main() {
 	if _, ok, err := state.Kit(); err != nil {
 		log.Fatalf("%s: %v (rerun with -reenroll)", filepath.Join(dir, nodeagent.KitFile), err)
 	} else if !ok {
+		if *tunMode {
+			// Enrollment is a user-session act (browser + wallet); the
+			// daemon has neither. Enroll as the service user once, headless.
+			log.Fatalf("not enrolled: run `sudo -u %s irohup -name %s -state %s -paste` once, then start the daemon", *runAs, dev, dir)
+		}
 		if err := enroll(strings.TrimRight(*hub, "/"), dev, *group, node, keyPath, cfgPath, state, *paste); err != nil {
 			log.Fatal(err)
 		}
@@ -164,29 +194,52 @@ func main() {
 			stop()
 		}
 	}()
+	pool := newConnPool(a, logger)
 	var wg sync.WaitGroup
 	for _, b := range br {
 		wg.Add(1)
-		go func() { defer wg.Done(); b.serve(ctx, a, logger) }()
+		go func() { defer wg.Done(); b.serve(ctx, pool, logger) }()
+	}
+	exit := 0
+	if tunUp != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := serveTun(ctx, tunUp, a, pool, *dnsUp, logger); err != nil && ctx.Err() == nil {
+				// The utun or its route is gone and we cannot re-add:
+				// exit non-zero so launchd restarts us as root.
+				logger.Printf("fatal: %v", err)
+				exit = 1
+				stop()
+			}
+		}()
 	}
 	<-ctx.Done()
 	wg.Wait()
 	_ = a.Close()
 	logger.Printf("stopped")
+	os.Exit(exit)
 }
 
 // cachePaths: nebup's (<name>.key, <name>.yml) and irohup's <name>.iroh/
-// under ~/.config/talos-mesh/.
-func cachePaths(name string) (keyPath, cfgPath, stateDir string, err error) {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", "", "", fmt.Errorf("resolving config dir: %w", err)
+// under ~/.config/talos-mesh/ — or, with an explicit state dir, the
+// nebula files beside it.
+func cachePaths(name, explicit string) (keyPath, cfgPath, stateDir string, err error) {
+	base := ""
+	if explicit != "" {
+		base = filepath.Dir(explicit)
+	} else {
+		dir, err := os.UserConfigDir()
+		if err != nil {
+			return "", "", "", fmt.Errorf("resolving config dir: %w", err)
+		}
+		base = filepath.Join(dir, "talos-mesh")
+		explicit = filepath.Join(base, name+".iroh")
 	}
-	base := filepath.Join(dir, "talos-mesh")
 	if err := os.MkdirAll(base, 0o700); err != nil {
 		return "", "", "", err
 	}
-	return filepath.Join(base, name+".key"), filepath.Join(base, name+".yml"), filepath.Join(base, name+".iroh"), nil
+	return filepath.Join(base, name+".key"), filepath.Join(base, name+".yml"), explicit, nil
 }
 
 // enroll runs the wallet-signed v2 enrollment and persists both
@@ -241,10 +294,10 @@ func firstLine(b []byte) string {
 	return s
 }
 
-// serve runs one bridge for the life of ctx. One connection to the
-// member is shared by every TCP client and redialed when it is gone;
-// each TCP connection is one forward stream on it.
-func (b bridge) serve(ctx context.Context, a *nodeagent.Agent, logger *log.Logger) {
+// serve runs one bridge for the life of ctx: each accepted TCP
+// connection is one forward stream on the pool's connection to the
+// member.
+func (b bridge) serve(ctx context.Context, pool *connPool, logger *log.Logger) {
 	ln, err := net.Listen("tcp", b.Listen)
 	if err != nil {
 		logger.Printf("bridge %s/%s: listen: %v", b.Name, b.Facet, err)
@@ -252,35 +305,6 @@ func (b bridge) serve(ctx context.Context, a *nodeagent.Agent, logger *log.Logge
 	}
 	go func() { <-ctx.Done(); _ = ln.Close() }()
 	logger.Printf("bridge %s/%s on %s", b.Name, b.Facet, b.Listen)
-
-	var mu sync.Mutex
-	var conn *irohtransport.Conn
-	get := func() (*irohtransport.Conn, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		if conn != nil && conn.Alive() {
-			return conn, nil
-		}
-		if conn != nil {
-			logger.Printf("bridge %s/%s: connection gone — redialing", b.Name, b.Facet)
-			_ = conn.Close()
-			conn = nil
-		}
-		c, err := b.dial(ctx, a)
-		if err != nil {
-			return nil, err
-		}
-		conn = c
-		return c, nil
-	}
-	drop := func(c *irohtransport.Conn) {
-		mu.Lock()
-		defer mu.Unlock()
-		if conn == c {
-			_ = conn.Close()
-			conn = nil
-		}
-	}
 	for {
 		tcp, err := ln.Accept()
 		if err != nil {
@@ -288,66 +312,14 @@ func (b bridge) serve(ctx context.Context, a *nodeagent.Agent, logger *log.Logge
 		}
 		go func() {
 			defer tcp.Close()
-			c, err := get()
+			raw, err := pool.open(ctx, b.Name, b.Facet)
 			if err != nil {
 				logger.Printf("bridge %s/%s: %v", b.Name, b.Facet, err)
 				return
-			}
-			raw, err := c.Open(ctx)
-			if err != nil {
-				// Stale connection (idle timeout, node rebooted between
-				// Alive and Open): drop it and try once more.
-				drop(c)
-				if c, err = get(); err == nil {
-					raw, err = c.Open(ctx)
-				}
-				if err != nil {
-					logger.Printf("bridge %s/%s: open: %v", b.Name, b.Facet, err)
-					return
-				}
 			}
 			t0 := time.Now()
 			in, out := pipe(raw, tcp.(*net.TCPConn))
 			logger.Printf("bridge %s/%s: stream done: %dB in, %dB out, %s", b.Name, b.Facet, in, out, time.Since(t0).Round(time.Millisecond))
 		}()
 	}
-}
-
-// dial waits out the first beat (the name map arrives with it) and
-// connects with the bundle; ErrNotBeaten is a wait, anything else is
-// the answer.
-func (b bridge) dial(ctx context.Context, a *nodeagent.Agent) (*irohtransport.Conn, error) {
-	deadline := time.Now().Add(90 * time.Second)
-	for {
-		t0 := time.Now()
-		c, err := a.Dial(ctx, b.Name, b.Facet)
-		if err == nil {
-			log.Printf("bridge %s/%s: connected to %s in %s", b.Name, b.Facet, c.Peer(), time.Since(t0).Round(time.Millisecond))
-			return c, nil
-		}
-		if !errors.Is(err, nodeagent.ErrNotBeaten) || time.Now().After(deadline) {
-			return nil, err
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(250 * time.Millisecond):
-		}
-	}
-}
-
-// pipe splices tcp ↔ raw until both directions are done; half-closes
-// propagate. Returns bytes from the peer and bytes sent to it.
-func pipe(raw *irohtransport.Raw, tcp *net.TCPConn) (in, out int64) {
-	defer raw.Close()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		out, _ = io.Copy(raw, tcp)
-		_ = raw.CloseWrite()
-	}()
-	in, _ = io.Copy(tcp, raw)
-	_ = tcp.CloseWrite()
-	<-done
-	return in, out
 }
