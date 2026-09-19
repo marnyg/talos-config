@@ -4,28 +4,24 @@
      The link between current work and a higher-order goal. -->
 
 **Now:** **Mesh v3 Phase 2 — consumers migrate one at a time**
-(`359.9`), each step reversible, nebula still installed. **P2.0 is
-live** (2026-09-19): the Mac runs `irohup -tun` as a launchd daemon —
-`*.mesh.internal` names the name map knows resolve to `198.18/15`
-fake IPs in a utun, one iroh stream per TCP flow. Next is `359.9.1`,
-the admin CLI paths *on that* — talosconfig/kubeconfig endpoints by
-name, the `/etc/hosts` workaround gone, `nix run .#apply` off the
-nebula address (blocked on `359.8.2.4`, hub-http).
-
-**Phase 1 closed 2026-09-19** (`359.8`): the identity plane exists
-beside nebula and carries real traffic. Its remainder,
-Provisioner-as-actor (`359.8.2`, ADR-0024), moved into Phase 2.
+(`359.9`), and since 2026-09-19 each migration **cuts its nebula path
+as it lands** (decision `d3z3`) — Phase 4 is whatever never moved.
+**P2.0 and P2.1 are live**: the Mac runs `irohup -tun` as a launchd
+daemon, and talosconfig / kubeconfig / `nix run .#apply` all go by
+name over it — hub included (`hub.mesh.internal`, hub-http facet).
+The overlay `/config` route is gone. Next is **P2.2** (`359.9.2`):
+hub→node dials (`/status`, bootstrap probes) onto identity streams,
+with w1's agent image (`qb5q`) as the fleet prerequisite.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
-members dialed by key, IP as device-local fiction. P2.0 is that
-fiction on the desktop; P2.1 is the first consumer living in it.
+members dialed by key, IP as device-local fiction, hub as actors
+(ADR-0024). The admin plane is now that fiction end to end.
 
 **Out of scope:**
-- Phase 3/4 (nebula removal) until every Phase 2 consumer has moved.
-- Linux desktop presentation (fakeip is portable; the privileged setup
-  and a systemd unit are not written) and mobile's adoption of
-  `fakeip` (`phz`).
-- The daemon's local control socket (`fgr` constraint) until a
-  consumer needs more than the log and `talos-mesh-enroll`.
-- Relay access gating (`5gz`); Parents'-TV deployment (`4te`); storage
-  work until w1 returns.
+- Phase 3/4 as a separate pass: nebula removal now rides each
+  consumer's migration; only never-migrated consumers remain for it.
+- Linux desktop presentation; mobile's adoption of `fakeip` (`phz`).
+- The daemon's local control socket (`fgr`) until a consumer needs
+  more than the log and `talos-mesh-enroll`.
+- cp1's hostname pin (`t7b2`) until the reinstall `bsj` prepares for.
+- Relay access gating (`5gz`); Parents'-TV deployment (`4te`).

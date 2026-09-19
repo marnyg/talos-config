@@ -94,3 +94,28 @@
   written on every beat (renewed certs), so root ownership forces a
   key/certs split across two dirs. The whole dir is `_talosmesh`'s —
   equally unreadable by the login user, which was the threat.
+
+## Mesh v3 P2.1 — admin CLI paths on the tun (2026-09-19)
+
+- 2026-09-19 — Considered `nodes: [cp1]` / `-n cp1.mesh.internal` /
+  `-n 127.0.0.1` for talosconfig. Ruled out from Talos source: apid on
+  a control plane dials every `-n` target as `<target>:50000` with SNI
+  (never local), so the target must be self-resolvable *and* a SAN —
+  only the hostname is. Considered pinning `hostname: cp1` live.
+  Ruled out: renames the k8s Node on the only control plane and
+  orphans Longhorn's single-replica volumes bound to `talos-wu6-eib`
+  (`t7b2` at reinstall). Landed on: the generated hostname, honestly.
+- 2026-09-19 — Considered leaving `nodes:` empty so the endpoint is
+  the node. Ruled out: talosctl refuses nearly every command without
+  nodes.
+- 2026-09-19 — Considered `apply` dialing each node by
+  `<name>.mesh.internal`. Ruled out: needs every node on the identity
+  plane (w1 is not). Landed on: the control plane's mesh name as the
+  endpoint, `-n <hostname>` proxied by apid via `resolveMemberNames`
+  — the talosconfig shape.
+- 2026-09-19 — Considered putting the hub in the name map so
+  `hub.mesh.internal` resolves like a member. Ruled out: the map is
+  witnessed member certs and the hub holds none; a synthetic entry
+  would make the Issuer a member of its own network. Landed on: the
+  daemon resolves `nodeagent.HubName` from the hub record it already
+  keeps for the beat.

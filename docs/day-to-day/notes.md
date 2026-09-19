@@ -539,11 +539,36 @@
   for the resolver itself. `route -n get 198.18.1.0` misreports `.0`
   hosts as the default route even while the /15 forwards; ask
   `route -n get -net 198.18.0.0/15` (that is what `RouteIntact` does).
-- 2026-09-19 — **`talosctl -e cp1.mesh.internal` works; `-n` must be
-  something cp1 resolves for itself** (apid resolves the node
-  selector on the node's resolver, `127.0.0.53`). Today that is the
-  nebula IP `10.42.218.125`; `-n cp1.mesh.internal` and `-n cp1`
-  fail, `-n 127.0.0.1` is not in the SAN set. P2.1 owns the fix.
+- 2026-09-19 — **`talosctl -n <node>` is dialed BY THE ENDPOINT, never
+  short-circuited**: on a control plane apid holds a client cert, so
+  `director.IsLocalTarget` is never consulted and every `-n X` becomes
+  a TLS dial to `X:50000` with SNI `X` from cp1. So `-n` must be a
+  name cp1 resolves *and* has in its apid SANs: its hostname (own
+  `/etc/hosts`), or any member hostname now that
+  `hostDNS.resolveMemberNames` is on. `-n cp1.mesh.internal` will
+  never work (cp1 has no resolver for the zone); `-n cp1` will not
+  until `t7b2` pins the hostname — today it is **`talos-wu6-eib`**
+  (`meta.yaml hostname:` carries it for `apply`).
+- 2026-09-19 — **Admin paths are nebula-free on the Mac.** talosconfig
+  `endpoints: [cp1.mesh.internal]`, `nix run .#kubeconfig`, `nix run
+  .#apply` (hub at `http://hub.mesh.internal` over the hub-http facet,
+  nodes via `-e cp1.mesh.internal -n <hostname>`). The overlay
+  `GET /config` is **gone** from the hub (decision `d3z3`); if you
+  are on nebula only (`mar@nixos`, no tun yet), you cannot apply. Test
+  the facet with `curl http://hub.mesh.internal/config?mac=<mac>`;
+  admitted/refused lines are in the hub's fly log as `hub-http:`.
+- 2026-09-19 — **`hub.mesh.internal` is not in the name map** — the
+  daemon answers it from `hub.json` (the beat's hub record), so it
+  resolves only after the first beat and goes with the hub record's
+  expiry. A media member is *admitted* on hub-http (recipe row) and
+  gets 403 on `/config`; that is the per-route gate, not a bug.
+- 2026-09-19 — **w1 runs the factory image (no `p0agent`)** — not on
+  the identity plane, no `w1.mesh.internal` on the tun. Reach it as
+  `-n w1` through cp1 (apid proxy). `qb5q` is the upgrade.
+- 2026-09-19 — **`fly/deploy.sh` runs the *linux* test suite** on the
+  builder, including `mesh/nebhttp_e2e_test.go` (`!race`, real nebula
+  sockets) that a Mac `go test -race` skips. Run `go test ./mesh` (no
+  `-race`) before a deploy to catch it locally.
 - 2026-09-19 — **`config-server-bin` vendorHash changes whenever
   `fakeip` (or anything) imports a new package from an already-required
   module** — the vendor dir is per-package. Recompute with a bogus

@@ -5,79 +5,66 @@
 
 ## Last session
 
-2026-09-19 (third session) — **P2.0 desktop presentation is live on
-the Mac** (`359.9.6` closed). `talosctl -e cp1.mesh.internal -n
-10.42.218.125 version` → cp1 `v1.12.6`, resolved by mDNSResponder via
-`/etc/resolver/mesh.internal`, into a utun, through gvisor, one iroh
-stream per flow, with the daemon running as `_talosmesh`. Commits
-`2f3e3cf` `5b8c4c4` `af727e7` `3077c1b`; nixos `f46d4ad`.
+2026-09-19 (fourth session) — **P2.1 closed and the hub is on the
+identity plane** (`359.9.1`, `359.8.2.4`). Every admin path runs over
+the irohup tun with nebula down on the Mac: talosconfig, kubeconfig,
+`nix run .#apply`. Commits `56292d2` `77f72f1` `ba0a9af` `f03acf5`;
+nixos bumped; hub redeployed (hubkey `8b723ff8…`, unsealed).
 
-- **Decision `8j3` superseded by `fgr`.** The session opened by
-  re-evaluating "single root daemon, not privsep". Its load-bearing
-  claim — Go's `Setuid` is thread-local on Darwin — is backwards:
-  Linux is the per-thread-credential outlier (`AllThreadsSyscall`);
-  XNU keeps creds on the proc. Tested (`/tmp/setuid-darwin`, 8 pinned
-  threads all lost root). Its premises 2/3 also contradicted each
-  other and misread invariant 2 (the durable key is the credential,
-  not "state in hostile storage"). Result: **root-launched,
-  privilege-dropped single daemon** — dominates both options `8j3`
-  weighed.
-- **`config-server/fakeip`**: the presentation layer extracted from
-  `iroh-go/mobile` with the link injected — `TunLink` (wireguard-go
-  `tun.Device` ↔ gvisor `channel`, portable replacement for linux-only
-  `fdbased`), a **map-gated** split-DNS `Resolver` (spike `eda`'s fix:
-  answers only names the agent's name map knows, forwards or NXDOMAINs
-  the rest, so nebula keeps `jackett.cp1` during coexistence), darwin
-  `Setup`/`RouteIntact`. 7 tests incl. a packet round-trip through a
-  fake device, race-clean.
-- **`irohup -tun`**: `privilegedSetup` (utun, `198.18.0.1`, route
-  `/15`, chown state dir, setgroups/setgid/setuid, asserts euid ≠ 0
-  and that root cannot be regained) → `serveTun`. Bridges and tun
-  share `connPool`. `-state` is self-contained (nebula files beside
-  it). `-enroll-only` is the daemon's enrollment handoff.
-  `policy.FacetPort` is the one table for a facet's natural port.
-- **nixos**: `modules/darwin/services/talos-mesh.nix` — launchd daemon,
-  `_talosmesh` (uid 560), `KeepAlive.PathState` on `kit.json` (no
-  crash-loop before enrollment, self-start after),
-  `/etc/resolver/mesh.internal → 198.18.0.2`, `talos-mesh-enroll`
-  (runs as the service user, opens the wallet URL as you). Flake input
-  `talos-config` with its own nixpkgs.
-- Spike `eda` closed: zone `mesh.internal` inherited, verified live.
+- **`-n` is the node's hostname.** apid on a control plane never
+  short-circuits to itself (`director.go`: with a client cert every
+  `-n X` is dialed as `X:50000`, SNI `X`), so `nodes:` must be a name
+  cp1 resolves for itself *and* carries in its apid SANs — its
+  hostname, via its own `/etc/hosts`. cp1's is the generated
+  `talos-wu6-eib` (its patch never pinned `hostname:`; w1's does);
+  the pin waits for the next reinstall (`t7b2`, blocked by `bsj` —
+  Longhorn replicas are bound to the node name). `talosconfig`:
+  `endpoints: [cp1.mesh.internal]`, `nodes: [talos-wu6-eib]`.
+- **hub-http facet** (`config-server/hubfacet.go`, untagged +
+  `hubiroh.go` adapter): the hub's wan endpoint binds the hub's stream
+  ALPNs; each connection runs `cert.Authorize` with hubkey as receiver
+  — a consent to the wallet for the hub's stream facets (target
+  hubkey, cached per speak-as), then the recipe's grant and the member
+  cert. Admitted streams are HTTP connections to `hubFacetMux`; the
+  facet admits by recipe (admins *and* media), `/config` gates
+  `admins` per route. C-free test `hubfacet_test.go`; e2e in
+  `TestNodeAgentEndToEnd`.
+- **`hub.mesh.internal`** resolves on the tun from the daemon's hub
+  record (`nodeagent.HubName`): the hub is a well-known actor, not a
+  member, so it is not in the name map. `:80` reads in the hub's
+  vocabulary (`FacetPort("hub-http") = 80`).
+- **Nebula `/config` route removed** (decision `d3z3`: a migrated
+  consumer cuts its nebula path; `/hosts`, `/policy` stay for the TV).
+- **`resolveMemberNames: true`** on both nodes → `-e cp1.mesh.internal
+  -n w1` fans out. `apply` = hub over hub-http + `-e <cp>.mesh.internal
+  -n <hostname>` (per-node names failed: w1 has no agent). `kso` done
+  on the way (w1 is on; `no_turbo=1`, NTP verified).
+- New `nix run .#kubeconfig` (server → `https://cp1.mesh.internal:6443`).
 
 ## Loose threads
 
-- **`-n` for talosctl is resolved on cp1's side.** `-n
-  cp1.mesh.internal` → cp1's apid asks `127.0.0.53` and fails; `-n
-  cp1` → zero addresses; the nebula IP works but dies at Phase 4. P2.1
-  (`359.9.1`, noted) must pick a node identifier cp1 knows itself by.
-- **Route-churn restart path unobserved** (`7c3`): the `/15` survived
-  a Wi-Fi toggle with ethernet primary (utun-scoped route, configd left
-  it alone). Primary loss and sleep/wake untested; the exit-1 →
-  KeepAlive-restart rule has never fired live.
-- **The Mac now has two irohup identities' worth of state**: the
-  daemon's `/var/lib/talos-mesh/marius-mac.iroh` (enrolled today,
-  NodeId `ed:14a8ca…`) and nothing under `~/.config/talos-mesh/` — so
-  the old foreground bridge mode is gone here. `mar@nixos` unchanged.
-- **Control socket not built.** `fgr` carries the constraint
-  (LOCAL_PEERCRED, written allow-list); the daemon has no local
-  surface yet — status is `/var/log/talos-mesh.log`, re-enroll is
-  `talos-mesh-enroll -reenroll`.
-- **Mobile still carries its own `netstack.go`/`dns.go`** with the
-  ungated `lookup()` (`phz`, P3): adopting `fakeip` drags
-  config-server's module graph into the gomobile build.
-- **`dig` does not honour `/etc/resolver`** (reads `resolv.conf`
-  directly). Probe with `dscacheutil -q host -a name …` or a real
-  client; `dig @198.18.0.2` for the resolver itself.
-- Root ADR-0024 still Proposed. No ADR yet for the desktop
-  presentation architecture (`4fm` + `fgr`) — offered this session.
-- Carried: w1 (`0q0`, `kso`), `5gz`, `4ps`, `DefaultMailbox`/beat
-  fraction.
+- **w1 is not on the identity plane** (`qb5q`): factory image, no
+  `p0agent`; reached only through cp1's apid proxy. Also carries
+  `0q0` (replicas: 2) — w1 counts as "a node landed" now?
+- **Fly hub image lags HEAD by one cosmetic change** (`GET /{$}` on
+  the overlay hello, `f03acf5`); redeploy with the next real change.
+- **Route-churn restart path still unobserved** (`7c3`).
+- **Control socket not built** (`fgr`); ADR-0024 and ADR-0025 still
+  Proposed. Mobile's own `netstack.go`/`dns.go` (`phz`).
+- **The hub reads its git blocklist at authorize time** for hub-http
+  (mirrors `Issuer.blocked` for `#renew`/`#bundle`). Invariant 2's
+  "verifier never reads git" is met by nodes (bundle copy); the hub is
+  the compiler — flagged for the next model review, not changed.
+- The apid comment in `nebmachine.go` and the meta.yaml `ip` comment
+  were rewritten; `ip` stays only because nebula config composes from
+  it.
 
 ## Suggested next steps
 
-- **P2.1 (`359.9.1`) on the tun, not the bridges**: talosconfig
-  `endpoints: [cp1.mesh.internal]` + a `nodes:` entry cp1 resolves for
-  itself; kubeconfig `server: https://cp1.mesh.internal:6443`; `nix
-  run .#apply` off the nebula address (needs `359.8.2.4`, hub-http).
-- Fire the churn path once deliberately (`7c3`): unplug ethernet with
-  Wi-Fi off, watch `/var/log/talos-mesh.log` for a second `tun up`.
+- **P2.2 (`359.9.2`)**: hub→node dials (`/status`, bootstrap probes)
+  onto identity streams; cut the `nebstack` dial path as it lands
+  (`d3z3`).
+- **`qb5q`**: point `alienware-x15.yaml` at the imager-built installer
+  and upgrade w1 — then `w1.mesh.internal` exists and `359.9.2`'s
+  probes cover both nodes.
+- Fire `7c3` once deliberately.
