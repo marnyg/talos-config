@@ -22,6 +22,12 @@ this scope.
   consented to the chain's sovereign for the facet; rule 4 unchanged;
   no other set caveat gets a sentinel. _Accepted 2026-09-18/19
   (`zeb`; Proposed 2026-09-18 from the `359.8.5` grill-design)._
+- [0005](0005-consumer-driven-runtime-additions.md) — the `actor`
+  runtime grows by consumer-driven additions (`Hold`, `Multi`,
+  `SeqBase`, `Observe`/`RestoreLowWater`) held to three tests: a real
+  consumer asks, runtime state only, invariant class preserved and
+  opt-in; the verifier's inputs are installed atomically and judged
+  from a snapshot. _Proposed 2026-09-19 (closes `t29`)._
 
 The protocol's **founding** decisions are root ADRs, referenced here,
 not copied:

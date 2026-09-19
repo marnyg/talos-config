@@ -421,7 +421,11 @@ whose deployment-free form differs from the talos wording. Source:
   child.
 - **`seq` (replay high-water mark)** — a per-sender monotonic counter;
   the receiver keeps a volatile high-water mark per correspondent and
-  drops replays. Lost on restart (window bounded by cert expiry).
+  drops replays. Lost on a receiver restart (window bounded by cert
+  expiry). The counter must also be monotonic across the **sender's**
+  restarts — the receiver's mark outlives them — so a sender seeds
+  its first seq to each receiver from its clock (`Actor.SeqBase`,
+  opt-in, 2026-09-19); stateless, and a rolled-back clock only denies.
   **Load-bearing, not defence in depth**: the envelope path does not
   bind signer to transport peer, so any observer of a valid envelope
   can resend it over its own connection. _(Ruled 2026-09-12, `0bc.2`.)_

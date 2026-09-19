@@ -209,9 +209,14 @@ Rules that fall out of the cut:
   `#frontdoor` are M3 (`0bc.3`), for actors that are not already
   talking to you.
 - **Boot token is Provisioner-local**: it mints at `/config` and
-  verifies at `/enroll/machine` (`54n` is its own choice), then asks
-  `Issuer#mint-machine`. A compromised Provisioner already hands blank
-  machines any config; requesting machine certs adds no new power.
+  verifies at `/mesh/enroll/node` (`54n` is its own choice), then
+  mints. _As built 2026-09-19 (`359.8.3`, decision `488`): there is no
+  Provisioner actor yet, so both ends live on the shell — the HTTP
+  handler verifies with the master `hubManager` holds and calls
+  `Issuer.Mint` directly; `Issuer#mint-machine` waits for the
+  Provisioner (ADR-0024 outstanding)._ A compromised Provisioner
+  already hands blank machines any config; requesting machine certs
+  adds no new power.
 - **Cold cache after a deploy:** a member lacks the new `hubkey`'s
   `speak-as` **and its `reach-me-at`** (a location record is valid only
   signed by the actor it locates, so the cached one names the dead
@@ -633,6 +638,23 @@ provisioning or recovery path may depend on it.
   per wallet, process-scoped, cleared on a successful unseal so a
   re-unseal from the nag window gets a fresh 120 d. The message the
   wallet signs is its RFC 8785 canonical JSON.
+- **Node agent** — the member runtime on a Talos node
+  (`config-server/nodeagent`, extension `p0agent`; cp1 since
+  2026-09-19). It **owns** one thing: the NodeId key (`/var/lib/p0agent/
+  key`, EPHEMERAL — survives reboot and upgrade, not a wipe). It
+  **holds** its Kit (the grant is the record) and three safe-to-lose
+  caches: the last `#bundle` (grants, blocklist, name map), the hub's
+  last `speak-as` + `reach-me-at`, and the clock mark. It **roots**
+  every caller chain in a consent grant it signs itself — `{aud:
+  wallet, can: invoke, cav: {target: [me], facet: <exactly the facets
+  it forwards>, delegable: true}}`, re-signed every beat attempt — so
+  a facet it does not serve is not consented, whatever the recipe
+  says. Its config (`{hub, relay, token}`) is an ExtensionServiceConfig
+  the hub injects at serve; the token is inert once a Kit is held.
+  Beat: `#bundle` every 6 h; `#renew` when a Kit cert is past half its
+  life or its issuer is no longer the current `hubkey`. Outbound to
+  the hub relay only; `seq` seeded from its clock (`actor.SeqBase`)
+  because the hub's high-water mark outlives the agent's restarts.
 - **Kit** — what `Issuer.Mint` hands a new member: its `member` cert
   (90 d), the **beat grant** — one `invoke` grant to the Owner's
   `#renew` + `#bundle` facets (7 d, `target: wallet`,
@@ -642,8 +664,13 @@ provisioning or recovery path may depend on it.
   beat_grant, speak_as}`, each a cert in its JSON form; a dual-plane
   enrollment returns `{config: <nebula yaml>, kit}`.
 - **Bundle** — two related things, one word. (a) The *connect-time
-  bundle* a caller presents on every stream (`cert.Bundle {member,
-  grants[], speak-as[]}`), the input of `Authorize`. (b) The
+  bundle* a caller presents **on connect** (`cert.Bundle {member,
+  grants[], speak-as[]}`, wire `cert.EncodeBundle`), the input of
+  `Authorize`: for a stream facet it rides the first bi-stream of the
+  connection and is checked once (the acceptor answers `ok` or
+  `refused: <reason>` before any forward is opened —
+  `iroh-transport/streamfacet.go`, 2026-09-19); an actor-facet
+  invocation carries the same certs as the envelope's proof instead. (b) The
   *`#bundle` reply* (`issuer.Bundle {grants[], blocklist[],
   speak_as}`): the recipe compiled for this member and signed by the
   live `hubkey`, plus the blocklist and the `speak-as` that resolves
