@@ -308,7 +308,8 @@ flowchart LR
     A["member boots\n(runner activates key)"] --> B["presents binding\nto lighthouse"]
     B --> C["registration:\nrole → endpoint (volatile)"]
     C --> D["lookup: peers resolve\nrole (hosts map, mesh DNS)"]
-    D --> E{"path selection"}
+    D --> P["presentation (v3, device-local):\nname map → fake IP, IP:port → (member, facet)"]
+    P --> E{"path selection"}
     E -->|"LAN, punchable"| F["direct peer path"]
     E -->|"remote (CGNAT etc.)"| G["relay via hub\n(ADR-0006: relay-by-default)"]
 ```
@@ -322,6 +323,14 @@ flowchart LR
   from the derived namespace; device roles resolve only while their
   tunnel is live (live-peers-only, ADR-0012); any name scoped under a
   member (`jellyfin.cp1.…`) resolves to that member.
+  **v3 (2026-09-19, P2.0):** the plane's names are bare (`cp1`); the
+  zone survives only as a **presentation** on each device — a
+  resolver inside the device's tun that answers `<name>.mesh.internal`
+  with a device-local **fake IP** *only for names in the member's name
+  map* and forwards or refuses the rest, so nebula and v3 can share the
+  zone one name at a time. A TCP flow to `<fake IP>:<natural port>` is
+  one stream to that (member, facet). Nothing in the plane has an
+  opinion about the zone or the addresses.
 - **Path selection** — the data plane is **peer-to-peer**: direct
   paths on the LAN (a stated goal — LAN traffic never hairpins
   through fly), relay through the hub for remote members, because
@@ -407,7 +416,11 @@ provisioning or recovery path may depend on it.
   QUIC-encrypted envelope, checked per message. The verifier takes
   `facet` as an input and never sees how the caller derived it.
   Ports exist only inside a facet definition (forward) and in the
-  device-local map (expose) — never in a grant. Reachability (ICMP
+  device-local map (expose) — never in a grant. A facet has one
+  **natural port** (`policy.FacetPort`: `apid` 50000, `kube-api`
+  6443), the port its service listens on at the receiver and the port
+  every presentation shows for it, so `cp1.mesh.internal:50000` reads
+  the same on a bridge, a tun, or the node itself _(2026-09-19)_. Reachability (ICMP
   today) is not a facet: an unauthenticated ping. Services are not
   actors; a service is a facet on some actor (the gateway for
   Kubernetes Services). _(Pinned 2026-09-03, spike `359.2`; stream vs
@@ -739,9 +752,21 @@ provisioning or recovery path may depend on it.
   reach is entirely the grants addressed to it. (`admins`, `media`,
   `machines`; today also what nebula firewall rules and per-route
   HTTP gates match on.) _(Redefined 2026-09-03, spike `359.2`.)_
-- **Mesh zone** — `*.mesh.internal`, served by the hub: declared
+- **Mesh zone** — `*.mesh.internal`. v2: served by the hub — declared
   roles from the derived namespace, device roles while their tunnel
-  is live.
+  is live. v3: inherited unchanged (spike `eda`: every certSAN already
+  carries it) but no longer a plane concept — a **presentation**
+  artifact each device serves for itself (see Lookup, §4).
+- **Presentation** — the device-local fiction that lets IP-speaking
+  clients reach members dialed by key: a tun, a resolver for the mesh
+  zone gated on the name map, **fake IPs** (`198.18.0.0/15`, one per
+  known name, stable for the process, minted first-seen from
+  `198.18.1.1`), and `<fake IP>:<natural port>` → (member, facet).
+  Same dialect on every device: Android (`iroh-go/mobile`, P0.2) and
+  the desktop daemon (`config-server/fakeip` + `irohup -tun`, P2.0,
+  ADR-0025). Where the model meets a web that assumes global names
+  (invariants, structural trade-offs) — expected to stay the fragile
+  part.
 - **KMS / disk encryption** — node STATE/EPHEMERAL keys derive from
   the **secrets seed** per (machine, partition); unlock rides WAN
   HTTPS, never the overlay (invariant 4). The seed also roots the age

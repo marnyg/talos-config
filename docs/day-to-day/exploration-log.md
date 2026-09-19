@@ -71,3 +71,26 @@
   10.244.x source — nebula routes 10.42.0.0/16, so it only worked
   while the pod ran on cp1. Rule: pods talk to Services; the mesh is
   for hosts and browsers.
+
+## Mesh v3 P2.0 — desktop presentation (2026-09-19)
+
+- 2026-09-19 — Considered loopback aliases (`127.x` per member,
+  facet-natural ports) as a root-free presentation. Ruled out: macOS
+  binds only `127.0.0.1` (host route on lo0), so every alias needs
+  root anyway, and `127/8` would be a second fake-IP dialect beside
+  mobile's `198.18/15` (decision `4fm`). Landed on: utun + `198.18/15`
+  + split DNS, same dialect on every device.
+- 2026-09-19 — Considered privilege separation (root helper creates
+  the utun, passes the fd over SCM_RIGHTS to an unprivileged agent)
+  vs a tailscaled-style root daemon. Decision `8j3` chose the root
+  daemon on the claim that Go's `Setuid` is thread-local on Darwin.
+  Ruled out that claim empirically: XNU credentials are per-process
+  (Linux is the outlier that needs `AllThreadsSyscall`). Landed on:
+  one binary, launched as root, drops to `_talosmesh` after the utun
+  is up — no IPC, no second launchd job, network code never runs as
+  root (decision `fgr`, supersedes `8j3`).
+- 2026-09-19 — Considered a root-owned state dir (key unreadable even
+  by the service user's compromise). Ruled out: `nodeagent.State` is
+  written on every beat (renewed certs), so root ownership forces a
+  key/certs split across two dirs. The whole dir is `_talosmesh`'s —
+  equally unreadable by the login user, which was the threat.

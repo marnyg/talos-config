@@ -523,3 +523,28 @@
   unreachable, and an exact-equality test flaked on it in the nix
   sandbox. The nag window is still judged on raw seconds, so
   "30 d left, NAG" is possible at the boundary and is not a bug.
+- 2026-09-19 — **The Mac's mesh member is a launchd daemon now**
+  (`org.nixos.talos-mesh`, `irohup -tun`, user `_talosmesh`, state
+  `/var/lib/talos-mesh/marius-mac.iroh` — unreadable as the login
+  user by design). Log: `/var/log/talos-mesh.log`. Re-enroll/rekey:
+  `talos-mesh-enroll -reenroll|-rekey` (browser wallet; `-paste` for
+  headless). Restart: `sudo launchctl kickstart -k
+  system/org.nixos.talos-mesh`. It only runs while `kit.json` exists.
+  Don't also run a foreground `irohup` with the same state dir — two
+  endpoints on one NodeId.
+- 2026-09-19 — **Probing mesh names on macOS**: `dig cp1.mesh.internal`
+  does NOT go through `/etc/resolver` (dig reads `resolv.conf`) and
+  will SERVFAIL; use `dscacheutil -q host -a name cp1.mesh.internal`
+  (what CGO clients like talosctl/kubectl see) or `dig @198.18.0.2`
+  for the resolver itself. `route -n get 198.18.1.0` misreports `.0`
+  hosts as the default route even while the /15 forwards; ask
+  `route -n get -net 198.18.0.0/15` (that is what `RouteIntact` does).
+- 2026-09-19 — **`talosctl -e cp1.mesh.internal` works; `-n` must be
+  something cp1 resolves for itself** (apid resolves the node
+  selector on the node's resolver, `127.0.0.53`). Today that is the
+  nebula IP `10.42.218.125`; `-n cp1.mesh.internal` and `-n cp1`
+  fail, `-n 127.0.0.1` is not in the SAN set. P2.1 owns the fix.
+- 2026-09-19 — **`config-server-bin` vendorHash changes whenever
+  `fakeip` (or anything) imports a new package from an already-required
+  module** — the vendor dir is per-package. Recompute with a bogus
+  hash; `go.sum` staying identical is not evidence it's unchanged.
