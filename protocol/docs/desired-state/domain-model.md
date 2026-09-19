@@ -433,7 +433,7 @@ whose deployment-free form differs from the talos wording. Source:
   reads as a replay. A clock seed is therefore seconds, milliseconds or
   microseconds — never nanoseconds. Verify refusing the range is what
   stops an out-of-range seq from parking a receiver's mark above every
-  honest sender's numbers. _(Found live 2026-09-19, ADR-0006.)_
+  honest sender's numbers. _(Found live 2026-09-19, decision `talos-config-jsq`, ADR-0006.)_
   **Load-bearing, not defence in depth**: the envelope path does not
   bind signer to transport peer, so any observer of a valid envelope
   can resend it over its own connection. _(Ruled 2026-09-12, `0bc.2`.)_
