@@ -12,7 +12,11 @@ package nodeagent
 //   - beats: learns the current hubkey from /.well-known (or its cache),
 //     renews its member cert and beat grant when due or when the hub
 //     rotated, fetches #bundle (grants, blocklist, name map), publishes
-//     its own reach-me-at, persists everything;
+//     its own reach-me-at, persists everything. The beat is periodic,
+//     and it is also the answer to evidence that the last one is stale:
+//     a Dial that cannot reach a name, or a name the map lacks, re-beats
+//     first (rate-limited) — a hub redeploy under a new key (ipt7), a
+//     member enrolled or re-keyed since, are all one beat away;
 //   - serves stream facets: a caller connects under policy.ALPN(facet),
 //     presents its bundle, and Authorize — rooted in this node's own
 //     consent grant to the Owner — decides; admitted connections are
@@ -56,12 +60,19 @@ import (
 // (hubseal.go's reasoning). ConsentTTL is the node's own root: refreshed
 // on every beat attempt, hub or no hub, so it never lapses while the
 // process runs.
+// DefaultMinRebeat bounds how often staleness evidence (Dial failures,
+// unknown names, Kick) may trigger a beat ahead of schedule; DefaultDialTimeout
+// bounds one candidate dial, since a dial to a key nobody holds any
+// more (the hub before a redeploy) otherwise hangs for iroh's idle
+// timeout instead of failing.
 const (
-	DefaultBeat = 6 * time.Hour
-	LocationTTL = issuer.GrantTTL
-	ConsentTTL  = int64(24 * 60 * 60)
-	minBackoff  = time.Minute
-	maxBackoff  = 30 * time.Minute
+	DefaultBeat        = 6 * time.Hour
+	LocationTTL        = issuer.GrantTTL
+	ConsentTTL         = int64(24 * 60 * 60)
+	DefaultMinRebeat   = time.Minute
+	DefaultDialTimeout = 15 * time.Second
+	minBackoff         = time.Minute
+	maxBackoff         = 30 * time.Minute
 )
 
 // Options configures Start.
@@ -83,6 +94,11 @@ type Options struct {
 	Log *log.Logger
 	// BeatEvery; 0 ⇒ DefaultBeat.
 	BeatEvery time.Duration
+	// DialTimeout bounds each candidate dial in Dial; 0 ⇒ DefaultDialTimeout.
+	DialTimeout time.Duration
+	// MinRebeat is the floor between beats triggered by staleness
+	// evidence (Dial, Kick); 0 ⇒ DefaultMinRebeat.
+	MinRebeat time.Duration
 	// Clock is the local clock (tests); nil ⇒ time.Now.
 	Clock func() int64
 }
@@ -98,6 +114,13 @@ type Agent struct {
 	facets []string          // sorted Forward keys
 
 	beats atomic.Int64 // successful beats this process
+
+	// One beat at a time: the loop's and any rebeat serialize on beatMu;
+	// lastBeat (unix nanos, wall clock) is when the last one was
+	// attempted, the reference for MinRebeat. kick wakes the loop.
+	beatMu   sync.Mutex
+	lastBeat atomic.Int64
+	kick     chan struct{}
 
 	mu     sync.Mutex
 	kit    *issuer.Kit
@@ -138,7 +161,7 @@ func Start(o Options) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &Agent{o: o, log: o.Log, http: o.HTTP, ep: ep, accept: accept, facets: facets}
+	a := &Agent{o: o, log: o.Log, http: o.HTTP, ep: ep, accept: accept, facets: facets, kick: make(chan struct{}, 1)}
 	if a.log == nil {
 		a.log = log.Default()
 	}
@@ -244,21 +267,69 @@ func (a *Agent) Run(ctx context.Context) error {
 		every = DefaultBeat
 	}
 	backoff = minBackoff
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	for {
-		wait := every
-		if err := a.Beat(ctx); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			a.log.Printf("beat: %v (retry in %s)", err, backoff)
-			wait, backoff = backoff, min(backoff*2, maxBackoff)
-		} else {
-			backoff = minBackoff
-		}
-		if !sleep(ctx, wait) {
+		select {
+		case <-ctx.Done():
 			return ctx.Err()
+		case <-timer.C:
+			wait := every
+			if err := a.Beat(ctx); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				a.log.Printf("beat: %v (retry in %s)", err, backoff)
+				wait, backoff = backoff, min(backoff*2, maxBackoff)
+			} else {
+				backoff = minBackoff
+			}
+			timer.Reset(wait)
+		case <-a.kick:
+			// Off-schedule; the timer keeps its date. A beat the loop
+			// then repeats early is cheap; a kick storm is not, so
+			// rebeat's rate limit decides.
+			a.rebeat(ctx)
 		}
 	}
+}
+
+// Kick asks the running loop to beat now — the asynchronous form of
+// staleness evidence, for callers that cannot wait (a DNS answer): the
+// next lookup sees the fresh map. Rate-limited to MinRebeat; a no-op
+// when a beat is that recent.
+func (a *Agent) Kick() {
+	if !a.rebeatDue() {
+		return
+	}
+	select {
+	case a.kick <- struct{}{}:
+	default:
+	}
+}
+
+func (a *Agent) rebeatDue() bool {
+	floor := a.o.MinRebeat
+	if floor <= 0 {
+		floor = DefaultMinRebeat
+	}
+	return time.Since(time.Unix(0, a.lastBeat.Load())) >= floor
+}
+
+// rebeat beats now unless one was attempted within MinRebeat, and
+// reports whether it did. The synchronous form: Dial retries on the
+// fresh directory once it returns. A failed rebeat is logged, not
+// returned — the caller's own error is the one that matters.
+func (a *Agent) rebeat(ctx context.Context) bool {
+	a.beatMu.Lock()
+	defer a.beatMu.Unlock()
+	if !a.rebeatDue() {
+		return false
+	}
+	if err := a.beat(ctx); err != nil && ctx.Err() == nil {
+		a.log.Printf("rebeat: %v", err)
+	}
+	return true
 }
 
 func sleep(ctx context.Context, d time.Duration) bool {
@@ -318,6 +389,13 @@ func (a *Agent) installAuthority() {
 
 // Beat is one renewal beat against the hub.
 func (a *Agent) Beat(ctx context.Context) error {
+	a.beatMu.Lock()
+	defer a.beatMu.Unlock()
+	return a.beat(ctx)
+}
+
+func (a *Agent) beat(ctx context.Context) error {
+	a.lastBeat.Store(time.Now().UnixNano())
 	a.installAuthority()
 	kit := a.Kit()
 	if kit == nil {

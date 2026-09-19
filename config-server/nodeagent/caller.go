@@ -20,6 +20,7 @@ import (
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/policy"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
+	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
@@ -103,7 +104,30 @@ func (a *Agent) Resolve(name string) ([]issuer.NameEntry, error) {
 // member's bundle. Candidates from Resolve are tried newest first; a
 // refusal or a transport failure on one moves to the next, and the
 // last error is returned when none admits.
+//
+// The directory Resolve reads is a beat old. A name it lacks, or a
+// candidate nobody answers at, is evidence it is stale — the hub
+// redeployed under a new key (ipt7), a member enrolled, re-keyed or
+// moved since — so Dial re-beats (rate-limited, MinRebeat) and tries
+// once more on the fresh copy before giving up. A refusal is the
+// receiver's answer, not staleness, and is returned as is.
 func (a *Agent) Dial(ctx context.Context, name, facet string) (*irohtransport.Conn, error) {
+	conn, err := a.dial(ctx, name, facet)
+	if err == nil || ctx.Err() != nil || !stale(err) {
+		return conn, err
+	}
+	if !a.rebeat(ctx) {
+		return nil, err
+	}
+	return a.dial(ctx, name, facet)
+}
+
+// stale: the failures a fresh beat may cure.
+func stale(err error) bool {
+	return errors.Is(err, ErrUnknownName) || errors.Is(err, actor.ErrUnreachable)
+}
+
+func (a *Agent) dial(ctx context.Context, name, facet string) (*irohtransport.Conn, error) {
 	pre, err := a.Present()
 	if err != nil {
 		return nil, err
@@ -117,11 +141,21 @@ func (a *Agent) Dial(ctx context.Context, name, facet string) (*irohtransport.Co
 		return nil, err
 	}
 	alpn := policy.ALPN(facet)
+	timeout := a.o.DialTimeout
+	if timeout <= 0 {
+		timeout = DefaultDialTimeout
+	}
 	for _, e := range entries {
 		id := cert.ActorID(e.Member.Aud)
-		conn, derr := a.ep.DialConn(ctx, id, e.Location.Cav.Endpoints, alpn, raw)
+		dctx, cancel := context.WithTimeout(ctx, timeout)
+		conn, derr := a.ep.DialConn(dctx, id, e.Location.Cav.Endpoints, alpn, raw)
+		timedOut := dctx.Err() != nil && ctx.Err() == nil
+		cancel()
 		if derr == nil {
 			return conn, nil
+		}
+		if timedOut {
+			derr = fmt.Errorf("%w: no answer in %s", actor.ErrUnreachable, timeout)
 		}
 		err = fmt.Errorf("%s (%s): %w", name, id, derr)
 		if ctx.Err() != nil {

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,7 +33,9 @@ import (
 // token; the agent enrolls with it, beats, lands in the name map, and
 // forwards an apid stream for an admin device presenting its bundle —
 // while a media device and a stranger are refused. Then it restarts
-// from its state dir with no token and beats again.
+// from its state dir with no token and beats again. Last, the hub is
+// redeployed under a new hubkey and a caller's next dial to it goes
+// through without a restart (ipt7).
 func TestNodeAgentEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -47,11 +50,16 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &server{root: m.root, store: deviceflow.NewStore(), sessions: newSessionStore(), adminAddrs: []string{wellKnownAddr}, hub: m}
-	ts := httptest.NewServer(s.mux())
+	// One public URL for the life of the test; what answers behind it
+	// is swapped at the redeploy below (fly: same hostname, new process).
+	var front atomic.Pointer[http.ServeMux]
+	front.Store(s.mux())
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { front.Load().ServeHTTP(w, r) }))
 	t.Cleanup(ts.Close)
 	m.publicURL = ts.URL
-	go m.listen(ctx)
-	go m.serveHTTPFacet(ctx, s.hubFacetMux())
+	hctx, hcancel := context.WithCancel(ctx)
+	go m.listen(hctx)
+	go m.serveHTTPFacet(hctx, s.hubFacetMux())
 	fetchCert(t, ctx, ts.URL+wellKnownReachMeAtPath) // published
 
 	// The served config carries the token; the agent's Relay is the
@@ -235,6 +243,7 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	dev, err := nodeagent.Start(nodeagent.Options{
 		Config: nodeagent.Config{Hub: cfg.Hub, Relay: public}, State: devState,
 		BindAddr: "127.0.0.1:0", Log: log.New(testWriter{t}, "desk: ", 0), BeatEvery: time.Hour,
+		DialTimeout: 3 * time.Second, MinRebeat: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -313,6 +322,88 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	_ = conn.Close()
 	if _, err := a.Dial(ctx, nodeagent.HubName, "hub-http"); !errors.As(err, &refused) {
 		t.Fatalf("node → hub-http: %v, want refused", err)
+	}
+
+	// Hub redeploy (ipt7): the old process is gone — its endpoint with
+	// it — and a new one, unsealed by the same wallet, holds a fresh
+	// hubkey behind the same URL. The desk's record still names the dead
+	// key; its next dial to "hub" must not wait for the 6 h beat: the
+	// unreachable dial re-beats (well-known → new key, renew at it) and
+	// the retry lands on the new hub.
+	oldHub := m.issuer.ID()
+	hcancel()
+	if err := m.wan.Close(); err != nil {
+		t.Fatal(err)
+	}
+	m2 := testHubManagerOn(t, []string{wellKnownAddr}, "", irohHubTransport(home, public, "127.0.0.1:0"))
+	if err := m2.unsealWithSignature(unsealSig(t)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m2.unsealIssuer(speakAsSig(t, m2, testKey(t))); err != nil {
+		t.Fatal(err)
+	}
+	if m2.issuer.ID() == oldHub {
+		t.Fatal("redeploy kept the hubkey; the scenario needs a rotation")
+	}
+	s2 := &server{root: m2.root, store: deviceflow.NewStore(), sessions: newSessionStore(), adminAddrs: []string{wellKnownAddr}, hub: m2}
+	m2.publicURL = ts.URL
+	go m2.listen(ctx)
+	go m2.serveHTTPFacet(ctx, s2.hubFacetMux())
+	front.Store(s2.mux())
+	waitFor(t, ctx, "new hub published", func() bool { return m2.issuer.Actor.CurrentLocation() != nil })
+
+	if e, _ := dev.Resolve(nodeagent.HubName); len(e) != 1 || cert.ActorID(e[0].Member.Aud) != oldHub {
+		t.Fatalf("desk should still hold the dead hubkey before dialing: %+v", e)
+	}
+	beats := dev.Beats()
+	conn, err = dev.Dial(ctx, nodeagent.HubName, "hub-http")
+	if err != nil {
+		t.Fatalf("desk → hub-http after redeploy: %v", err)
+	}
+	if conn.Peer() != m2.issuer.ID() {
+		t.Fatalf("dialed %s, want the new hub %s", conn.Peer(), m2.issuer.ID())
+	}
+	_ = conn.Close()
+	if dev.Beats() != beats+1 {
+		t.Fatalf("beats: %d, want one rebeat on top of %d", dev.Beats(), beats)
+	}
+	if e, _ := dev.Resolve(nodeagent.HubName); len(e) != 1 || cert.ActorID(e[0].Member.Aud) != m2.issuer.ID() {
+		t.Fatalf("hub record after the rebeat: %+v", e)
+	}
+	if k := dev.Kit(); k.Member.Iss != m2.issuer.ID() {
+		t.Fatalf("member cert not renewed at the new hubkey: issuer %s", k.Member.Iss)
+	}
+	// The rate limit holds at its default: for a member whose beat is
+	// seconds old, a staleness signal is absorbed, not turned into
+	// another beat.
+	dev2State := nodeagent.State{Dir: t.TempDir()}
+	dev2Priv, _, err := dev2State.Key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev2Kit, err := m2.issuer.Mint(cert.NewEdSigner(dev2Priv).ActorID(), "desk2", []string{"admins"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dev2State.SaveKit(dev2Kit); err != nil {
+		t.Fatal(err)
+	}
+	dev2, err := nodeagent.Start(nodeagent.Options{
+		Config: nodeagent.Config{Hub: cfg.Hub, Relay: public}, State: dev2State,
+		BindAddr: "127.0.0.1:0", Log: log.New(testWriter{t}, "desk2: ", 0), BeatEvery: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dev2.Close() })
+	if err := dev2.Beat(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dev2.Dial(ctx, "nobody", "apid"); !errors.Is(err, nodeagent.ErrUnknownName) {
+		t.Fatalf("dial unknown name: %v", err)
+	}
+	if dev2.Beats() != 1 {
+		t.Fatalf("a beat seconds old must absorb the staleness signal: %d beats", dev2.Beats())
 	}
 }
 

@@ -113,7 +113,10 @@ func chownTree(dir string, uid, gid int) error {
 // serveTun runs the netstack over the utun until ctx ends or the tun
 // path breaks. The Directory is the agent's name map: a name resolves
 // to a fake IP only while the map has a live entry for it, so a name
-// still owned by nebula (jackett.cp1) is forwarded, not shadowed.
+// still owned by nebula (jackett.cp1) is forwarded, not shadowed. A
+// name the map lacks kicks a beat (rate-limited): a member enrolled
+// since the last one resolves on the next query instead of the next
+// beat.
 func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *connPool, upstream string, logger *log.Logger) error {
 	if os.Geteuid() == 0 {
 		return errors.New("serveTun as root: privilegedSetup must run first")
@@ -121,6 +124,9 @@ func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *connPo
 	res, err := fakeip.NewResolver(fakeip.ResolverOptions{
 		Directory: fakeip.DirectoryFunc(func(name string) bool {
 			_, err := a.Resolve(name)
+			if errors.Is(err, nodeagent.ErrUnknownName) {
+				a.Kick()
+			}
 			return err == nil
 		}),
 		Upstreams: upstream,
