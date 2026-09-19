@@ -231,9 +231,13 @@
             # strip that state from a running machine. Everything is by
             # name on the irohup tun (359.8.2.4 / 359.9.1): the hub at
             # http://hub.mesh.internal (hub-http facet, admins only) and
-            # each machine at <name>.mesh.internal — so it needs the
-            # talos-mesh daemon up and this device enrolled as an admin;
-            # nebula is not involved. Override the hub with APPLY_HUB.
+            # the control plane at <cp>.mesh.internal, whose apid proxies
+            # to every member by hostname (hostDNS.resolveMemberNames) —
+            # the talosconfig shape, and it does not need each node on
+            # the identity plane (w1 runs the factory image without the
+            # agent). Needs the talos-mesh daemon up and this device
+            # enrolled as an admin; nebula is not involved. Override the
+            # hub with APPLY_HUB.
             apps.apply = {
               type = "app";
               meta.description = "talosctl apply-config the hub-composed config to every machine (or one MAC) over the identity plane (irohup tun)";
@@ -244,6 +248,17 @@
                 YQ="${pkgs.yq-go}/bin/yq"
                 HUB="''${APPLY_HUB:-http://hub.mesh.internal}"
                 FILTER="''${1:-}"
+
+                # The endpoint: the one machine whose meta.yaml points at
+                # the controlplane base.
+                cp=""
+                for m in machines/*/meta.yaml; do
+                  if [ "$($YQ '.config' "$m")" = "base/controlplane.yaml" ]; then
+                    cp=$($YQ '.name' "$m")
+                    break
+                  fi
+                done
+                [ -n "$cp" ] || { echo "no machines/*/meta.yaml with config: base/controlplane.yaml" >&2; exit 1; }
 
                 apply_machine() {
                   local mac_dir="$1"
@@ -265,7 +280,7 @@
                     return 0
                   fi
 
-                  echo "Applying to $mac ($name.mesh.internal, node $host) — hub-composed config from $HUB"
+                  echo "Applying to $mac (node $host via $cp.mesh.internal) — hub-composed config from $HUB"
 
                   if ! composed=$(${pkgs.curl}/bin/curl -fsS --connect-timeout 10 "$HUB/config?mac=$mac"); then
                     echo "ERROR: could not fetch hub-composed config for $mac from $HUB." >&2
@@ -275,7 +290,7 @@
                   fi
 
                   ${pkgs.talosctl}/bin/talosctl \
-                    -e "$name.mesh.internal" -n "$host" \
+                    -e "$cp.mesh.internal" -n "$host" \
                     --talosconfig talosconfig \
                     apply-config --file <(echo "$composed")
                 }
