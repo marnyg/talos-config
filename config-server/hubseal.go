@@ -406,7 +406,20 @@ func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 		_, _, meshErr = nm.State()
 	}
 
-	if sealed || meshErr != nil {
+	// Identity pages too, once this hub serves an identity plane
+	// (--iroh-relay set; talos-config-tqr, flipped 2026-09-19 when the
+	// first members beat at the hubkey): a sealed hubkey means no
+	// #renew, no #bundle, no enrollment, and the nag window is the
+	// runway running out. Without --iroh-relay there is no plane to
+	// page for — the dev-mode env master leaves identity sealed forever.
+	var identity string
+	var identityWarn bool
+	if s.hub != nil {
+		identity, identityWarn = s.hub.identityLine()
+		identityWarn = identityWarn && s.hub.publicURL != ""
+	}
+
+	if sealed || meshErr != nil || identityWarn {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
@@ -419,15 +432,8 @@ func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 	default:
 		fmt.Fprintln(w, "hub: unsealed")
 	}
-	// Identity is reported, not paged for: the status code follows the
-	// master + mesh only. The Issuer does listen now (in-process, for
-	// Enroll's #mint-device) and v2 enrollment depends on it, but the
-	// dev-mode env master leaves identity sealed forever, so a 503 here
-	// would page every dev run. Flipping it is talos-config-tqr, gated
-	// on the first member that beats at the hubkey (359.8.3/359.8.4).
 	if s.hub != nil {
-		line, _ := s.hub.identityLine()
-		fmt.Fprintln(w, "identity: "+line)
+		fmt.Fprintln(w, "identity: "+identity)
 	}
 
 	switch {

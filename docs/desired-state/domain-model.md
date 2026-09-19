@@ -630,8 +630,9 @@ provisioning or recovery path may depend on it.
   120 when every member must re-enroll), so a wallet act is due at
   least every 90 d even without a redeploy. _(Was: the signature over the frozen master
   message that recreates the HKDF master; that seed now roots secrets
-  only.)_ _As built (2026-09-18, `359.8.1`): `/sealed` reports the
-  identity plane but does not yet 503 on it — `tqr`._
+  only.)_ _As built: `/sealed` 503s on a sealed or nagging
+  identity plane whenever the hub serves one (`--iroh-relay`; `tqr`,
+  2026-09-19)._
 - **Proposal** — the unsigned `speak-as` the hub offers a wallet to
   sign at unseal: `iss` = that wallet, `aud` = this process's hubkey,
   `iat`/`exp` fixed on first render so a page can be signed later;

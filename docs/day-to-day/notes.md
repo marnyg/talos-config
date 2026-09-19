@@ -417,8 +417,10 @@
   over the exact `<pre>` text); a copy is useless against any other
   process. Headless: `curl -d signature=… -d speakas_signature=…
   /unseal`; either alone works, the second must be the same wallet.
-  Until `tqr`, `/sealed` only *reports* the identity plane — an
-  unsigned speak-as does not page.
+  Since 2026-09-19 (`tqr`) `/sealed` is **503 while the identity
+  plane is sealed or in the nag window** on a hub run with
+  `--iroh-relay` (members depend on the hubkey); a dev run without it
+  only reports.
 - 2026-09-18 — `config-server-bin` vendors `protocol/` via the go.mod
   `replace`, so its `vendorHash` (and `iroh-transport`'s) drifts on
   every `protocol/*.go` change and a cached FOD hides it locally.

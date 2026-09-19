@@ -405,9 +405,18 @@ func TestUnsealEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/sealed after unseal: got %d, want 200", rec.Code)
 	}
-	// Identity is reported (not paged for) while still sealed.
+	// Identity is reported (not paged for) while still sealed — this
+	// hub serves no identity plane (no --iroh-relay).
 	if !strings.Contains(rec.Body.String(), "identity: hubkey "+m.issuer.Fingerprint()+" — SEALED") {
 		t.Fatalf("/sealed body: %q", rec.Body.String())
+	}
+	// With an identity plane, a sealed hubkey pages (tqr): members
+	// depend on it for #renew/#bundle.
+	m.publicURL = "https://hub.example"
+	rec = httptest.NewRecorder()
+	s.handleSealed(rec, httptest.NewRequest("GET", "/sealed", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("/sealed with identity sealed on an identity-plane hub: got %d, want 503", rec.Code)
 	}
 
 	post := func(form url.Values) *httptest.ResponseRecorder {
@@ -431,8 +440,8 @@ func TestUnsealEndpoint(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	s.handleSealed(rec, httptest.NewRequest("GET", "/sealed", nil))
-	if !strings.Contains(rec.Body.String(), "identity: hubkey "+m.issuer.Fingerprint()+" speaks for "+wellKnownAddr) {
-		t.Fatalf("/sealed body: %q", rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "identity: hubkey "+m.issuer.Fingerprint()+" speaks for "+wellKnownAddr) {
+		t.Fatalf("/sealed after identity unseal: %d %q", rec.Code, rec.Body.String())
 	}
 }
 
