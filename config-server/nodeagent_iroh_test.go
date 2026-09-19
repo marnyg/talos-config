@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -50,6 +51,7 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	t.Cleanup(ts.Close)
 	m.publicURL = ts.URL
 	go m.listen(ctx)
+	go m.serveHTTPFacet(ctx, s.hubFacetMux())
 	fetchCert(t, ctx, ts.URL+wellKnownReachMeAtPath) // published
 
 	// The served config carries the token; the agent's Relay is the
@@ -277,6 +279,41 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	}
 	_ = raw.Close()
 	_ = conn.Close()
+
+	// The hub over its own facet (359.8.2.4): "hub" resolves from the
+	// hub record, not the name map; an admin's stream on hub-http is
+	// one HTTP connection to /config, and the node — machines, no
+	// hub-http grant — is refused at the preamble.
+	if e, err := dev.Resolve(nodeagent.HubName); err != nil || len(e) != 1 || cert.ActorID(e[0].Member.Aud) != m.issuer.ID() {
+		t.Fatalf("resolve hub: %+v %v", e, err)
+	}
+	conn, err = dev.Dial(ctx, nodeagent.HubName, "hub-http")
+	if err != nil {
+		t.Fatalf("desk → hub-http: %v", err)
+	}
+	raw, err = conn.Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("GET", "http://hub.mesh.internal/config?mac=aa-bb-cc-dd-ee-ff", nil)
+	req.Close = true
+	if err := req.Write(raw); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(raw), req)
+	if err != nil {
+		t.Fatalf("hub-http response: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "v1alpha1") {
+		t.Fatalf("/config over hub-http: %d %s", resp.StatusCode, body)
+	}
+	_ = raw.Close()
+	_ = conn.Close()
+	if _, err := a.Dial(ctx, nodeagent.HubName, "hub-http"); !errors.As(err, &refused) {
+		t.Fatalf("node → hub-http: %v, want refused", err)
+	}
 }
 
 func mustEncodeBundle(t *testing.T, b cert.Bundle) []byte {

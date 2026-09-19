@@ -9,8 +9,10 @@ package main
 // `go test ./...` in this module stays C-free (hubiroh_stub.go).
 
 import (
+	"context"
 	"crypto/ed25519"
 	"fmt"
+	"io"
 
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/actor"
@@ -23,16 +25,45 @@ import (
 // server (iroh-transport TestAdvertiseRelay). No UDP is reachable on
 // fly's shared address and QAD is off (ADR-0022), so this endpoint is
 // relay-only by construction.
+//
+// Besides the actor ALPN the endpoint takes the hub's stream facets
+// (hub-http, talos-config-359.8.2.4); the returned endpoint is a
+// facetAcceptor, and hubManager.serveHTTPFacet picks that up.
 func irohHubTransport(home, advertise, bindAddr string) hubTransport {
 	return func(priv ed25519.PrivateKey) (actor.Endpoint, error) {
 		ep, err := irohtransport.Bind(priv, irohtransport.Options{
 			BindAddr:       bindAddr,
 			Relay:          home,
 			AdvertiseRelay: advertise,
+			StreamALPNs:    hubFacetALPNs(),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("iroh: %w", err)
 		}
-		return ep, nil
+		return &irohWan{ep}, nil
 	}
+}
+
+// irohWan is the hub's endpoint as both wires: actor.Endpoint by
+// embedding, facetAcceptor over the stream ALPNs.
+type irohWan struct {
+	*irohtransport.Endpoint
+}
+
+func (w *irohWan) AcceptFacet(ctx context.Context) (facetConn, error) {
+	c, err := w.Endpoint.AcceptConn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return irohFacetConn{c}, nil
+}
+
+// irohFacetConn narrows Accept's *Raw to the io.ReadWriteCloser the
+// untagged side handles.
+type irohFacetConn struct {
+	*irohtransport.Conn
+}
+
+func (c irohFacetConn) Accept(ctx context.Context) (io.ReadWriteCloser, error) {
+	return c.Conn.Accept(ctx)
 }

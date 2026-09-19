@@ -81,7 +81,11 @@ type hubManager struct {
 	// wan is the Issuer's second wire (talos-config-e8d): the hub's own
 	// iroh endpoint, bound with the hubkey so hubkey == EndpointId
 	// (ADR-0024). nil ⇒ in-process only (tests, --iroh-relay unset).
+	// When it also implements facetAcceptor, the hub's stream facets
+	// (hub-http) are served on it (hubfacet.go).
 	wan actor.Endpoint
+	// stream is the cached hubkey consent for the stream facets.
+	stream streamConsent
 
 	// publicURL is the HTTPS base members and nodes reach this hub at
 	// (--iroh-relay: one hostname carries HTTPS and the relay, ADR-0022).

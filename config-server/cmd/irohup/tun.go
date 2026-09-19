@@ -139,7 +139,14 @@ func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *connPo
 			logger.Printf("tun: flow to %s: not a name we minted", dst)
 			return
 		}
-		facet := policy.FacetByPort(policy.KindNode, dst.Port())
+		// Which vocabulary a port is read in depends on who the name
+		// is: hub.<zone>:80 is hub-http; every member name is a node
+		// (the gateway kind has no presentation yet, 359.9.3).
+		kind := policy.KindNode
+		if name == nodeagent.HubName {
+			kind = policy.KindHub
+		}
+		facet := policy.FacetByPort(kind, dst.Port())
 		if facet == "" {
 			logger.Printf("tun: flow to %s (%s): port is not a facet", dst, name)
 			return

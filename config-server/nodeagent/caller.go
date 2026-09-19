@@ -50,15 +50,41 @@ func (a *Agent) Present() (cert.Bundle, error) {
 	return cert.Bundle{Member: kit.Member, Grants: slices.Clone(b.Grants), SpeakAs: speakAs}, nil
 }
 
+// HubName is the hub's bare name on the presentation (hub.<zone>). The
+// hub is a well-known actor, not a member: it holds no member cert and
+// is not in the name map, so Resolve answers this name from the hub
+// record the beat keeps (hubkey + reach-me-at). It shadows any member
+// the Owner might name "hub".
+const HubName = "hub"
+
 // Resolve finds name in the last name map: the candidate NodeIds with
 // a live reach-me-at, newest member cert first (two may coexist across
 // a re-key — decision 2fc: pick by iat or dial both; Dial does both).
+// HubName resolves to the hub itself (talos-config-359.8.2.4).
 func (a *Agent) Resolve(name string) ([]issuer.NameEntry, error) {
+	now := a.actor.Now()
+	if name == HubName {
+		a.mu.Lock()
+		h := a.hub
+		a.mu.Unlock()
+		if h == nil {
+			return nil, ErrNotBeaten
+		}
+		if h.ReachMeAt.Exp <= now || h.SpeakAs.Exp <= now {
+			return nil, fmt.Errorf("%w: hub record expired", ErrUnknownName)
+		}
+		// The entry's Member is a stand-in naming the hubkey: Dial reads
+		// only Aud and Iat from it, and the hub's authority is its
+		// speak-as, verified on the receiver's side of every stream.
+		return []issuer.NameEntry{{
+			Member:   cert.Cert{Aud: string(h.ID()), Iat: h.SpeakAs.Iat, Exp: h.SpeakAs.Exp},
+			Location: &h.ReachMeAt,
+		}}, nil
+	}
 	b := a.Bundle()
 	if b == nil {
 		return nil, ErrNotBeaten
 	}
-	now := a.actor.Now()
 	var out []issuer.NameEntry
 	for _, e := range issuer.Lookup(b.NameMap, name) {
 		if e.Location == nil || e.Location.Exp <= now || e.Member.Exp <= now {

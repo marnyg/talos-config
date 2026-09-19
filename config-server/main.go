@@ -213,13 +213,14 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	log.Printf("served config for %s", mac)
 }
 
-// handleTunnelConfig serves hub-composed configs over the overlay
-// listener for `nix run .#apply`. No bearer token: the route is only
-// reachable on the mesh (serveMeshHTTP, gated by derived admin device
-// addresses under the cert-group firewall), and membership is
-// wallet-rooted via enrollment. It does not consume device-flow tokens
-// or record fetches — the machine itself is not fetching.
-func (s *server) handleTunnelConfig(w http.ResponseWriter, r *http.Request) {
+// handleAdminConfig serves hub-composed configs to admins for `nix run
+// .#apply`. No bearer token: it is mounted only behind the hub-http
+// facet (hubFacetMux, requireGroup admins), where the caller was
+// admitted by its member cert and grants — membership is wallet-rooted
+// via enrollment. It does not consume device-flow tokens or record
+// fetches — the machine itself is not fetching. Left the nebula
+// overlay listener 2026-09-19 (359.8.2.4).
+func (s *server) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 	mac := r.URL.Query().Get("mac")
 	if mac == "" {
 		http.Error(w, "missing mac parameter", http.StatusBadRequest)
@@ -235,7 +236,7 @@ func (s *server) handleTunnelConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/x-yaml")
 	_, _ = w.Write(body)
-	log.Printf("served config for %s to admin peer %s over the tunnel", mac, r.RemoteAddr)
+	log.Printf("served config for %s to admin peer %s over hub-http", mac, r.RemoteAddr)
 }
 
 // mux wires all routes. Shared between main and the HTTP tests so the
@@ -417,9 +418,11 @@ func main() {
 		// The Issuer actor listens from the start (ADR-0024); Enroll's
 		// #mint-device calls land here once the wallet has unsealed.
 		go hub.listen(context.Background())
-		// The overlay /config route serves hub-composed configs to admin
-		// devices; wired here because the handler needs the full server.
-		hub.mesh.TunnelConfig = http.HandlerFunc(s.handleTunnelConfig)
+		// /config for admins over the identity plane (hub-http facet,
+		// talos-config-359.8.2.4): an admin on the irohup tun reaches
+		// http://hub.<zone>/config. Wired here because the handler needs
+		// the full server. No-op without a wan endpoint.
+		go hub.serveHTTPFacet(context.Background(), s.hubFacetMux())
 		if masterEnv != "" {
 			master, err := masterderive.MasterFromHex(masterEnv)
 			if err != nil {

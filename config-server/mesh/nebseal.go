@@ -23,7 +23,6 @@ import (
 	"log"
 	"maps"
 	"net"
-	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -56,10 +55,6 @@ type Manager struct {
 	// startMeshNebula; exported so tests can stub the socket away (the
 	// deviceflow.Store.Now pattern).
 	Start func(cfg []byte) (*nebstack.Service, error)
-
-	// TunnelConfig serves GET /config on the overlay listener to admin
-	// devices (set by main; nil disables the route).
-	TunnelConfig http.Handler
 
 	mu   sync.Mutex
 	svc  *nebstack.Service // nil until unsealed

@@ -1,12 +1,19 @@
-# Mesh overlay address (HKDF-derived from the MAC) — stable across
-# DHCP leases and reprovisions; the talosctl/apply dial target.
-# Phase 2 step 2: moved off the wg0 address (was 10.99.0.54).
+# Nebula overlay address (HKDF-derived from the MAC) — stable across
+# DHCP leases and reprovisions. No longer a dial target: talosconfig
+# and `nix run .#apply` go by name over the irohup tun (359.9.1); the
+# hub still composes it into the served config until Phase 4.
 ip: 10.42.218.125
-# Mesh DNS name: cp1.mesh.internal (served by the hub at 10.42.0.1:53).
+# Mesh DNS name: cp1.mesh.internal (nebula: served by the hub at
+# 10.42.0.1:53; identity plane: the name map, on the tun).
 # Services need no declaration here: <service>.cp1.mesh.internal
 # resolves to this machine automatically, and ingress-nginx routes by
 # Host header — exposing a service is purely an Ingress in k8s/apps.
 name: cp1
+# What the machine calls itself — apid's -n target and cert SAN. cp1's
+# patch never pinned machine.network.hostname (w1's does), so it runs
+# under Talos's generated stable hostname until the next reinstall
+# (talos-config-t7b2); drop this field when that lands.
+hostname: talos-wu6-eib
 uuid: 37a1f6ed-580e-054c-8392-98bd8090d21a
 diskEncryption: true
 config: base/controlplane.yaml

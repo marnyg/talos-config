@@ -42,9 +42,6 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 	tv := nebtest.DeviceWithGroups(t, master, subnet, "tv", lighthousePort, []string{GroupMedia})
 
 	m := NewManager(lighthousePort, subnet, nebtest.Loopback, "hub.example:4242", "", nebPolicyRoot(t))
-	m.TunnelConfig = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, "composed-config")
-	})
 	if err := m.serveMeshHTTP(hub, master); err != nil {
 		t.Fatal(err)
 	}
@@ -78,26 +75,15 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 		}
 	})
 
-	t.Run("admin device gets the config", func(t *testing.T) {
-		status, body, err := meshGet(admin, hub.OverlayAddr(), "/config?mac=aa-bb-cc-dd-ee-01")
+	// /config is gone from this listener (359.8.2.4): it lives on the
+	// hub-http facet, tested in hubfacet_test.go.
+	t.Run("config is not served on the overlay", func(t *testing.T) {
+		status, _, err := meshGet(admin, hub.OverlayAddr(), "/config?mac=aa-bb-cc-dd-ee-01")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if status != http.StatusOK {
-			t.Fatalf("status = %d, want 200", status)
-		}
-		if body != "composed-config" {
-			t.Errorf("body = %q, want %q", body, "composed-config")
-		}
-	})
-
-	t.Run("non-admin device is refused", func(t *testing.T) {
-		status, _, err := meshGet(tv, hub.OverlayAddr(), "/config?mac=aa-bb-cc-dd-ee-01")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if status != http.StatusForbidden {
-			t.Fatalf("status = %d, want 403 (media device must not read machine configs)", status)
+		if status != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", status)
 		}
 	})
 

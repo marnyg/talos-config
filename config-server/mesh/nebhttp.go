@@ -82,9 +82,10 @@ func (m *Manager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "hello from the mesh: %s\n", svc.OverlayAddr())
 	})
-	if m.TunnelConfig != nil {
-		mux.Handle("GET /config", requirePeerGroups(master, m.subnet, svc.Peers, m.TunnelConfig, GroupAdmins))
-	}
+	// GET /config left this listener 2026-09-19 (359.8.2.4): admins
+	// fetch composed configs over the hub-http facet on the identity
+	// plane. /hosts and /policy stay until their consumers move (the
+	// TV app, 359.9.4) and have no identity-plane successor (mdv).
 
 	// /hosts: the member list for any enrolled device. m.zone is nil
 	// when mesh DNS is off (and in tests that call serveMeshHTTP

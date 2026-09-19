@@ -81,6 +81,7 @@ var facets = map[Kind][]string{
 var facetPorts = map[string]uint16{
 	"apid":     50000,
 	"kube-api": 6443,
+	"hub-http": 80,
 }
 
 // FacetPort returns the natural port of facet, or 0 if it has none.

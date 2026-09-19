@@ -225,54 +225,57 @@
             };
 
             # nix run .#apply [-- <mac>] — fetch the hub-composed config
-            # over the mesh and apply it. Never composes locally: the hub
-            # injects overlay identity, certSANs, and disk encryption at
-            # serve time, so a locally composed config would strip that
-            # state from a running machine. Requires being on the mesh as
-            # an admin device (the hub's overlay /config route refuses
-            # others — nebup enrolls). Override the hub with APPLY_HUB
-            # (default http://10.42.0.1, the hub's mesh address).
+            # over the identity plane and apply it. Never composes locally:
+            # the hub injects overlay identity, certSANs, and disk
+            # encryption at serve time, so a locally composed config would
+            # strip that state from a running machine. Everything is by
+            # name on the irohup tun (359.8.2.4 / 359.9.1): the hub at
+            # http://hub.mesh.internal (hub-http facet, admins only) and
+            # each machine at <name>.mesh.internal — so it needs the
+            # talos-mesh daemon up and this device enrolled as an admin;
+            # nebula is not involved. Override the hub with APPLY_HUB.
             apps.apply = {
               type = "app";
-              meta.description = "talosctl apply-config the hub-composed config to every machine (or one MAC) over the mesh";
+              meta.description = "talosctl apply-config the hub-composed config to every machine (or one MAC) over the identity plane (irohup tun)";
               program = toString (pkgs.writeShellScript "apply" ''
                 set -euo pipefail
                 cd "$(git rev-parse --show-toplevel)/talos"
 
                 YQ="${pkgs.yq-go}/bin/yq"
-                HUB="''${APPLY_HUB:-http://10.42.0.1}"
+                HUB="''${APPLY_HUB:-http://hub.mesh.internal}"
                 FILTER="''${1:-}"
 
                 apply_machine() {
                   local mac_dir="$1"
-                  local mac ip composed
+                  local mac name host composed
 
                   mac=$(basename "$mac_dir")
-                  ip=$($YQ '.ip // ""' "$mac_dir/meta.yaml")
+                  name=$($YQ '.name // ""' "$mac_dir/meta.yaml")
+                  # The node identifier apid on the endpoint dials for -n:
+                  # on a control plane every -n is dialed as <target>:50000
+                  # with SNI <target> (never short-circuited to itself), so
+                  # it must be a name the machine resolves for itself and
+                  # carries in its apid cert SANs — its hostname. That is
+                  # the declared name unless meta.yaml says otherwise
+                  # (cp1's generated hostname until t7b2).
+                  host=$($YQ '.hostname // .name // ""' "$mac_dir/meta.yaml")
 
-                  # A machine declared but not yet installed has no known
-                  # mesh address (it is HKDF-derived hub-side, so it can
-                  # only be read off /status or mesh DNS after the first
-                  # serve). Skip it rather than let an empty -n abort the
-                  # run: machines/ is applied in directory order, so one
-                  # unaddressed newcomer would otherwise block every
-                  # machine sorting after it.
-                  if [ -z "$ip" ] || [ "$ip" = "null" ]; then
-                    echo "Skipping $mac — no ip in meta.yaml (not installed yet?)" >&2
+                  if [ -z "$name" ] || [ "$name" = "null" ]; then
+                    echo "Skipping $mac — no name in meta.yaml" >&2
                     return 0
                   fi
 
-                  echo "Applying to $mac ($ip) — hub-composed config from $HUB"
+                  echo "Applying to $mac ($name.mesh.internal, node $host) — hub-composed config from $HUB"
 
                   if ! composed=$(${pkgs.curl}/bin/curl -fsS --connect-timeout 10 "$HUB/config?mac=$mac"); then
                     echo "ERROR: could not fetch hub-composed config for $mac from $HUB." >&2
                     echo "Local composing is not a fallback: it would strip serve-time state (overlay identity, certSANs, disk encryption)." >&2
-                    echo "Check: are you on the mesh as an admin device (nebup)? Is the hub unsealed (/status)?" >&2
+                    echo "Check: is the talos-mesh daemon up and enrolled as an admin (dscacheutil -q host -a name hub.mesh.internal)? Is the hub unsealed (/status)?" >&2
                     exit 1
                   fi
 
                   ${pkgs.talosctl}/bin/talosctl \
-                    -n "$ip" -e "$ip" \
+                    -e "$name.mesh.internal" -n "$host" \
                     --talosconfig talosconfig \
                     apply-config --file <(echo "$composed")
                 }
@@ -281,9 +284,21 @@
                   mac_normalized=$(echo "$FILTER" | tr ':' '-')
                   apply_machine "machines/$mac_normalized"
                 else
+                  # One unreachable machine (declared but not installed,
+                  # powered off) must not stop the rest: report and go on,
+                  # fail at the end.
+                  failed=""
                   for d in machines/*/; do
-                    [ -f "$d/meta.yaml" ] && apply_machine "''${d%/}"
+                    [ -f "$d/meta.yaml" ] || continue
+                    if ! (apply_machine "''${d%/}"); then
+                      echo "FAILED: $(basename "$d")" >&2
+                      failed="$failed $(basename "$d")"
+                    fi
                   done
+                  if [ -n "$failed" ]; then
+                    echo "apply failed for:$failed" >&2
+                    exit 1
+                  fi
                 fi
               '');
             };
