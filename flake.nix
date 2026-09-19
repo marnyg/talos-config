@@ -234,8 +234,9 @@
             # the control plane at <cp>.mesh.internal, whose apid proxies
             # to every member by hostname (hostDNS.resolveMemberNames) —
             # the talosconfig shape, and it does not need each node on
-            # the identity plane (w1 runs the factory image without the
-            # agent). Needs the talos-mesh daemon up and this device
+            # the identity plane — which is why it survived w1 running
+            # the agentless factory image until qb5q (2026-09-19).
+            # Needs the talos-mesh daemon up and this device
             # enrolled as an admin; nebula is not involved. Override the
             # hub with APPLY_HUB.
             apps.apply = {

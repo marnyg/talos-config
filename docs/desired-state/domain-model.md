@@ -668,7 +668,7 @@ provisioning or recovery path may depend on it.
   wallet signs is its RFC 8785 canonical JSON.
 - **Member runtime** — one runtime serves both member kinds
   (`config-server/nodeagent`): with facets to forward it is the **node
-  agent** (extension `p0agent`; cp1 since 2026-09-19); with none it is
+  agent** (extension `p0agent`; both nodes since 2026-09-19); with none it is
   a **caller-only member** — `irohup` on the desktop (built
   2026-09-19, `359.8.4`), which enrolls by wallet signature instead of
   a boot token, beats identically, and presents its bundle on connect
@@ -679,8 +679,8 @@ provisioning or recovery path may depend on it.
   listener per (member, facet), one admitted connection shared by every
   TCP client, redialed when the peer reboots.
 - **Node agent** — the member runtime on a Talos node
-  (`config-server/nodeagent`, extension `p0agent`; cp1 since
-  2026-09-19). It **owns** one thing: the NodeId key (`/var/lib/p0agent/
+  (`config-server/nodeagent`, extension `p0agent`; cp1 and w1 since
+  2026-09-19 — one installer image for the fleet). It **owns** one thing: the NodeId key (`/var/lib/p0agent/
   key`, EPHEMERAL — survives reboot and upgrade, not a wipe). It
   **holds** its Kit (the grant is the record) and three safe-to-lose
   caches: the last `#bundle` (grants, blocklist, name map), the hub's

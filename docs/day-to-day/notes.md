@@ -455,11 +455,16 @@
   identity plane never notices (the agent redials its relay by key);
   `nix run .#apply` dials the *overlay* address and needs the laptop on
   nebula.
-- 2026-09-19 — **Talos does NOT restart an extension service when its
-  ExtensionServiceConfig document changes** (`apply-config` without
-  reboot registered `p0agent` v1 but the running container kept its old
-  mount namespace). `talosctl service ext-p0agent restart` picks the
-  file up. An upgrade/reboot starts it with the file present.
+- 2026-09-19 — **Talos restarts an extension service when its
+  ExtensionServiceConfig document is *updated*, but not when it is
+  first *created* under a running service.** Corrected on w1 (qb5q):
+  `apply-config` at 19:33:38 restarted `ext-p0agent` on its own (the
+  service log's `stopped` is exactly the apply's timestamp) — the
+  manual `talosctl service ext-p0agent restart` afterwards was
+  redundant. The original cp1 observation was the create case: the
+  service was already running with no file, and registering v1 left
+  the old mount namespace in place. So: after an apply that *adds*
+  the doc, restart by hand; after one that *changes* it, don't.
 - 2026-09-19 — **Re-serving a machine config without the mesh, one
   browser click**: `curl -X POST …/device/code -d client_id=talos-pxe
   -d mac=<mac> -d uuid=<uuid>` → open `/status?user_code=…`, approve
@@ -562,9 +567,24 @@
   resolves only after the first beat and goes with the hub record's
   expiry. A media member is *admitted* on hub-http (recipe row) and
   gets 403 on `/config`; that is the per-route gate, not a bug.
-- 2026-09-19 — **w1 runs the factory image (no `p0agent`)** — not on
-  the identity plane, no `w1.mesh.internal` on the tun. Reach it as
-  `-n w1` through cp1 (apid proxy). `qb5q` is the upgrade.
+- 2026-09-19 — **w1 is on the identity plane** (`qb5q` done):
+  `ed:40c9d1ca…`, member `w1`, group `machines`, `w1.mesh.internal`
+  on the tun; `-e w1.mesh.internal -n w1` dials it directly. Both
+  nodes now declare the same installer
+  (`v1.12.6-p0agent-0.1.2`) — change the two hardware yamls together.
+- 2026-09-19 — **A hub redeploy strands every running `irohup -tun`
+  daemon** (`ipt7`): the member learns the hubkey at beat, and the
+  beat is `DefaultBeat` = **6 h**, so until then `hub.mesh.internal`
+  streams dial the dead key and the name map is stale. The Mac's mesh
+  names went dark this way during this session's deploy. Workaround
+  until `ipt7`: `sudo launchctl kickstart -k system/org.nixos.talos-mesh`
+  right after the unseal.
+- 2026-09-19 — **Fake IPs are per-daemon-process, not stable.** The
+  table "only grows" within one run, but a restart re-mints from
+  `198.18.1.1` in first-lookup order — w1 was `.1.1` before this
+  session's restart and the hub took `.1.1` after. The 60 s answer TTL
+  bounds the staleness, so never hard-code a fake IP or cache one
+  across a daemon restart.
 - 2026-09-19 — **`fly/deploy.sh` runs the *linux* test suite** on the
   builder, including `mesh/nebhttp_e2e_test.go` (`!race`, real nebula
   sockets) that a Mac `go test -race` skips. Run `go test ./mesh` (no

@@ -5,66 +5,59 @@
 
 ## Last session
 
-2026-09-19 (fourth session) — **P2.1 closed and the hub is on the
-identity plane** (`359.9.1`, `359.8.2.4`). Every admin path runs over
-the irohup tun with nebula down on the Mac: talosconfig, kubeconfig,
-`nix run .#apply`. Commits `56292d2` `77f72f1` `ba0a9af` `f03acf5`;
-nixos bumped; hub redeployed (hubkey `8b723ff8…`, unsealed).
+2026-09-19 (fifth session) — **w1 is on the identity plane** (`qb5q`)
+and the hub runs HEAD. Commits `94d0afe` `7f8652f`; hub image
+`registry.fly.io/marnyg-talos-config:7f8652f`, unsealed (hubkey
+`abcf8087…`).
 
-- **`-n` is the node's hostname.** apid on a control plane never
-  short-circuits to itself (`director.go`: with a client cert every
-  `-n X` is dialed as `X:50000`, SNI `X`), so `nodes:` must be a name
-  cp1 resolves for itself *and* carries in its apid SANs — its
-  hostname, via its own `/etc/hosts`. cp1's is the generated
-  `talos-wu6-eib` (its patch never pinned `hostname:`; w1's does);
-  the pin waits for the next reinstall (`t7b2`, blocked by `bsj` —
-  Longhorn replicas are bound to the node name). `talosconfig`:
-  `endpoints: [cp1.mesh.internal]`, `nodes: [talos-wu6-eib]`.
-- **hub-http facet** (`config-server/hubfacet.go`, untagged +
-  `hubiroh.go` adapter): the hub's wan endpoint binds the hub's stream
-  ALPNs; each connection runs `cert.Authorize` with hubkey as receiver
-  — a consent to the wallet for the hub's stream facets (target
-  hubkey, cached per speak-as), then the recipe's grant and the member
-  cert. Admitted streams are HTTP connections to `hubFacetMux`; the
-  facet admits by recipe (admins *and* media), `/config` gates
-  `admins` per route. C-free test `hubfacet_test.go`; e2e in
-  `TestNodeAgentEndToEnd`.
-- **`hub.mesh.internal`** resolves on the tun from the daemon's hub
-  record (`nodeagent.HubName`): the hub is a well-known actor, not a
-  member, so it is not in the name map. `:80` reads in the hub's
-  vocabulary (`FacetPort("hub-http") = 80`).
-- **Nebula `/config` route removed** (decision `d3z3`: a migrated
-  consumer cuts its nebula path; `/hosts`, `/policy` stay for the TV).
-- **`resolveMemberNames: true`** on both nodes → `-e cp1.mesh.internal
-  -n w1` fans out. `apply` = hub over hub-http + `-e <cp>.mesh.internal
-  -n <hostname>` (per-node names failed: w1 has no agent). `kso` done
-  on the way (w1 is on; `no_turbo=1`, NTP verified).
-- New `nix run .#kubeconfig` (server → `https://cp1.mesh.internal:6443`).
+- **w1 upgraded in place** to the fleet installer
+  `v1.12.6-p0agent-0.1.2@sha256:71d4…` — the same image and digest cp1
+  runs; `talos/hardware/alienware-x15.yaml` declares it now, and the
+  two hardware yamls are meant to move together. `talosctl upgrade`
+  via cp1's apid proxy, ~7 min drain, clean boot, EPHEMERAL intact.
+- **The agent enrolled at first boot**, not after the apply: the
+  config the user applied at 21:14 was already on disk with a live
+  boot token (TTL 1 h), so `ext-p0agent` came up, minted
+  `ed:40c9d1ca…` and enrolled as member `w1` group `machines` (cert
+  to 2026-12-18). `w1.mesh.internal` → fake IP, `-e w1.mesh.internal
+  -n w1` dials apid directly. Both nodes `Ready`.
+- **Hub redeployed** so the served `install.image` for w1 matches git
+  (it had lagged — the fly image bakes `talos/`). This is what
+  stranded the Mac daemon mid-session: `ipt7`.
 
 ## Loose threads
 
-- **w1 is not on the identity plane** (`qb5q`): factory image, no
-  `p0agent`; reached only through cp1's apid proxy. Also carries
-  `0q0` (replicas: 2) — w1 counts as "a node landed" now?
-- **Fly hub image lags HEAD by one cosmetic change** (`GET /{$}` on
-  the overlay hello, `f03acf5`); redeploy with the next real change.
+- **`ipt7` (P1, new): a hub redeploy strands running `irohup -tun`
+  daemons** for up to `DefaultBeat` = 6 h — the member only learns the
+  new hubkey at beat or restart, so `hub.mesh.internal` dials a dead
+  key and the name map goes stale. Hit live this session; a daemon
+  restart fixes it. **Unexplained:** the user saw *general* network
+  loss, not just mesh names — a scoped `/15` route plus a
+  `mesh.internal`-scoped resolver should not do that. Worth pinning
+  down what exactly failed (all DNS? one app?) before assuming.
+- **Fake IPs are per-process** — re-minted in first-lookup order at
+  every daemon restart (w1 held `198.18.1.1` before, the hub after).
+  60 s TTL bounds it; never cache one.
+- **cp1 and w1 still carry the old hubkey** until their next beat (6 h
+  from their last restart) — harmless for apid (the Mac dials them by
+  key), visible as a stale `hub ed:8b723ff8…` in their agent logs.
+- **`0q0`** (longhorn-bulk `numberOfReplicas: 2`): w1 has landed now,
+  so the deviation from invariant 2's wipe corollary is closable —
+  the bead is still blocked, worth a look.
 - **Route-churn restart path still unobserved** (`7c3`).
-- **Control socket not built** (`fgr`). ADR-0024/0025 Accepted this
-  session. Mobile's own `netstack.go`/`dns.go` (`phz`).
+- **Control socket not built** (`fgr`); mobile's own `netstack.go` /
+  `dns.go` (`phz`).
 - **The hub reads its git blocklist at authorize time** for hub-http
   (mirrors `Issuer.blocked` for `#renew`/`#bundle`). Invariant 2's
   "verifier never reads git" is met by nodes (bundle copy); the hub is
   the compiler — flagged for the next model review, not changed.
-- The apid comment in `nebmachine.go` and the meta.yaml `ip` comment
-  were rewritten; `ip` stays only because nebula config composes from
-  it.
 
 ## Suggested next steps
 
 - **P2.2 (`359.9.2`)**: hub→node dials (`/status`, bootstrap probes)
   onto identity streams; cut the `nebstack` dial path as it lands
   (`d3z3`).
-- **`qb5q`**: point `alienware-x15.yaml` at the imager-built installer
-  and upgrade w1 — then `w1.mesh.internal` exists and `359.9.2`'s
-  probes cover both nodes.
+- **`ipt7`**: make the daemon re-learn the hubkey on stream failure
+  instead of waiting 6 h — and first establish what the user's
+  general network loss actually was.
 - Fire `7c3` once deliberately.

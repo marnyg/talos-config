@@ -9,9 +9,15 @@ as it lands** (decision `d3z3`) — Phase 4 is whatever never moved.
 **P2.0 and P2.1 are live**: the Mac runs `irohup -tun` as a launchd
 daemon, and talosconfig / kubeconfig / `nix run .#apply` all go by
 name over it — hub included (`hub.mesh.internal`, hub-http facet).
-The overlay `/config` route is gone. Next is **P2.2** (`359.9.2`):
-hub→node dials (`/status`, bootstrap probes) onto identity streams,
-with w1's agent image (`qb5q`) as the fleet prerequisite.
+The overlay `/config` route is gone. **The fleet prerequisite is
+done** (`qb5q`): both nodes run the same p0agent installer, so
+`w1.mesh.internal` and `cp1.mesh.internal` both dial directly. Next
+is **P2.2** (`359.9.2`): hub→node dials (`/status`, bootstrap probes)
+onto identity streams — now able to cover both nodes.
+
+**In the way:** `ipt7` — a hub redeploy strands running daemons for
+up to 6 h (stale hubkey). P2.2 puts the hub on the dialing side, so
+this gets worse before it gets better; worth fixing first.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
 members dialed by key, IP as device-local fiction, hub as actors
