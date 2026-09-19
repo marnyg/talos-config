@@ -5,67 +5,62 @@
 
 ## Last session
 
-2026-09-18 (fourth session) — **`e8d` built and deployed: the hub binds
-its own iroh endpoint; hubkey = `EndpointId` for real.** Commits
-`4230731`, `fe8570b`, `2767808`; image `registry.fly.io/marnyg-talos-config:2767808`
-running, unsealed (hubkey `f855ca55…`). A stranger's `#bundle` from a
-laptop was answered **over iroh through fly's edge in 164 ms** with a
-hubkey-signed `unauthorized` — the first envelope the production Issuer
-ever received from outside its process.
+2026-09-19 — **`#bundle` carries the name map; `359.8.2.3` closed.**
+Commits `f725938`, `859e4a7`, `5bec12b`. ADR-0024's outstanding list
+is down to Provisioner-as-actor.
 
-- **`protocol/actor.Multi`**: one identity on N wires (Accept fans in,
-  Dial moves on only from `ErrUnreachable`). The Issuer serves Enroll
-  (in-memory) and members (iroh) from one inbox. No ADR: transport
-  plumbing, not authority.
-- **`iroh-transport` `Options.AdvertiseRelay`**: home on the relay
-  child at loopback, advertise the public URL; `TestAdvertiseRelay`
-  proves the relay forwards by `EndpointId` across names.
-- **`config-server`**: `--iroh-relay` (`IROH_RELAY_URL` in fly.toml);
-  `hubiroh.go` behind build tag `iroh`, stub keeps `go test ./...`
-  C-free. Hub publishes a relay-only `reach-me-at` (7 d, 6 h refresh)
-  and serves it at `/.well-known/talos-hub/reach-me-at`.
-  `TestHubBeatOverIroh` = member on real iroh runs `#renew`+`#bundle`
-  through a local relay (nix runs it).
-- **Build**: `config-server/nix` (cgo; static musl variant),
-  `fly/image.nix` (nix2container), `fly/deploy.sh`
-  (`HUB_BUILDER=mar@nixos` builds in the box's store, pushes from
-  there), `hub-image.yml` as CI fallback. `Dockerfile` deleted;
-  `fly.toml` has no `[build]`. **19 MB RSS** sealed in the image smoke.
-- Docs: README "Deploying the hub", domain-model Issuer row +
-  cold-cache, ADR-0024 amendment (endpoint as built).
+- **Ruling (decision `2fc`)**: the name map is *not* a pure function
+  of git — that wording predates actor sovereignty. Git holds names,
+  members mint keys (ADR-0015), and invariant 1 forbids the hub a
+  registry. So name→NodeId is **witnessed**: each `#bundle` caller's
+  verified member cert is the proof of its own binding and ships
+  as-is (no second signed format). NodeId→endpoints is the member's
+  own piggybacked `reach-me-at`.
+- **`config-server/issuer/namemap.go`**: `Bundle.NameMap
+  []NameEntry{Member, Location?}`, wire `name_map`. `Issuer.members`
+  is a safe-to-lose witness cache: newest `iat` wins, expired evicted,
+  blocklisted filtered on the way out (unblock resolves again without
+  a re-beat). `Lookup(entries, name)` may return two NodeIds across a
+  re-key. `DecodeBundle` checks shape (verb `member` + sig; location =
+  verified `reach-me-at` issued by that member).
+- **`protocol/actor.Locations(ids...)`**: batch read of the location
+  cache under one lock/one clock; the name map joins through it.
+  `location.go` + protocol glossary: `exp ≈ 1 h` is ADR-0001's sketch
+  for a roaming actor, not a rule.
+- `TestHubBeatOverIroh` now publishes the member's location and
+  asserts the map. Both `vendorHash`es bumped (`config-server`,
+  `iroh-transport`); `nix build` green for both.
+- Docs: ADR-0024 amendment 2026-09-19, glossary "Name map", Issuer
+  row, ADR-0017 name-map line, `mesh-v3-iroh.md` §hub + invariants
+  table row 2.
 
 ## Loose threads
 
-- **`e8d` still open** pending your closure; ADR-0024's remaining items
-  are the name map and Provisioner-as-actor — promote to Accepted after
-  those or rule them a follow-up ADR.
-- **Cold cache is two GETs** (`speak-as` + `reach-me-at`, one hostname);
-  ADR-0024's confirmation says "at most one `/.well-known` fetch" — the
-  amendment reads it as one hostname; veto if you want one document.
-- **Hub location TTL = `GrantTTL` (7 d)**, not ADR-0001's ≈ 1 h sketch.
-  Reasoned (hub doesn't roam, beats are days apart); not modelled.
-- **The Kit carries no hub location**: a member needs the relay URL
-  out-of-band (its own home relay) and fetches `reach-me-at` once;
-  `359.8.3`/`359.8.4` should decide whether `Kit.Location` is worth it.
-- **`Dockerfile.siweoidc` is broken** since the `../protocol` replace
-  (`go mod download` on a lone `config-server/`); now three replaces.
-  Surfaced, not fixed.
-- The remote nix builder path: the darwin daemon (root) cannot use my
-  ssh key, so `--builders` fails; `--store ssh-ng://mar@nixos
-  --eval-store auto` is what works (`fly/deploy.sh` does this).
-- Carried: `tqr` (flip `/sealed` on identity — now reasonable, a real
-  member beats at the hubkey next), `kql` (blocked on `359.8.3`), no
-  graceful shutdown in `config-server`, `DefaultMailbox = 64` /
+- **Members must persist their last name map** — the hub's cache is
+  empty after every deploy until others beat (noted on `359.8.3` and
+  `359.8.4`). Whether the Kit should carry a hub location is still
+  theirs to decide.
+- **ADR-0024 stays Proposed** until Provisioner-as-actor lands or is
+  ruled a follow-up ADR. `359.8.2.3`'s "hub-http shrunk to `/config`"
+  was spec-only (no stream facet exists in code) — closed with that.
+- **Cold cache is two GETs** (`speak-as` + `reach-me-at`); ADR-0024
+  reads "one `/.well-known` fetch" as one hostname — veto if you want
+  one document.
+- `Dockerfile.siweoidc` is broken since the `../protocol` replace;
+  surfaced, not fixed. No graceful shutdown in `config-server`.
+- Carried: `tqr` (flip `/sealed` on identity once a member beats),
+  `kql` (blocked on `359.8.3`), `t29` (`Hold`/`Multi` ADR — a third
+  runtime addition makes the pattern), `DefaultMailbox = 64` /
   renewal-beat fraction unbeaded, w1 down (`0q0`, `kso`), `5gz`.
 
 ## Suggested next steps
 
-- **`359.8.3`** cp1 agent: bind NodeId on iroh homed at the hub's relay,
-  fetch `/.well-known/talos-hub/{speak-as,reach-me-at}`, enroll (v2
-  message → Kit), beat `#renew`+`#bundle`, consume
-  `policy.AcceptTable(KindNode)`; then `kql` tears the scratch relay
-  down. Build via `talos/extensions/p0agent/build.sh` — the static musl
-  chain is warm on `mar@nixos`.
-- **Name map half of `#bundle`** (`359.8.2.3`): the Issuer's location
-  cache now fills from real members' piggybacked `reach-me-at`s.
-- `tqr`: make `/sealed` 503 on a sealed identity once one member beats.
+- **`359.8.3`** cp1 agent — the first real member: NodeId on iroh
+  homed at the hub's relay, fetch `/.well-known/talos-hub/{speak-as,
+  reach-me-at}`, enroll (v2 message → Kit), beat `#renew`+`#bundle`,
+  persist Kit + name map, consume `policy.AcceptTable(KindNode)`.
+  Build via `talos/extensions/p0agent/build.sh` (musl chain warm on
+  `mar@nixos`); then `kql` tears the scratch relay down.
+- Deploy the hub (`HUB_BUILDER=mar@nixos fly/deploy.sh`) so the
+  production Issuer serves `name_map` before the agent lands.
+- `tqr` once one member beats.

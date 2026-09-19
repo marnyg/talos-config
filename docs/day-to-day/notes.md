@@ -52,8 +52,8 @@
 - 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed and
   partly built** (2026-09-17: Issuer listens in-process, Enroll →
   `#mint-device`, relay child, `/.well-known`; 2026-09-18: `#bundle`
-  minus its name map; Provisioner-as-actor and the iroh endpoint `e8d`
-  are not). Decision `itb` (hub
+  and the iroh endpoint `e8d`; 2026-09-19: the name map — only
+  Provisioner-as-actor is not). Decision `itb` (hub
   HTTP over a stream facet) is revised by `mdv`: `/hosts` and `/policy`
   will not exist over the mesh — don't build them; the beat is
   `#renew` + `#bundle`.
@@ -71,11 +71,14 @@
   closed sets live in three places kept in step by tests
   (`mesh-policy-v3.ncl` ← `TestVocabularyMatchesNickel`, `policy.Groups`
   ← `mesh.Groups()`); change the glossary first, then all three.
-- 2026-09-18 — **Touching `protocol/*.go` stales `config-server-bin`'s
-  `vendorHash`** (flake.nix caveat 3) and a cached FOD hides it — `nix
-  build` then fails with an "undefined: cert.X" that looks like a code
-  bug. Recompute with a bogus hash; CI job `vendor-hash` now catches
-  it on push.
+- 2026-09-18 — **Touching `protocol/*.go` stales TWO `vendorHash`es**
+  (`config-server/nix`, `iroh-transport/nix`) and a cached FOD hides
+  it — `nix build` then fails with an "undefined: actor.X" that looks
+  like a code bug (bitten again 2026-09-19). Recompute both:
+  `nix build .#config-server-bin.goModules --rebuild` and
+  `nix build .#iroh-transport.goModules` (plain — `--rebuild` errors
+  when the old output was never built locally); CI job `vendor-hash`
+  catches it on push.
 
 ## Mesh v3 spike infra (scratch)
 
