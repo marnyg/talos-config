@@ -54,10 +54,10 @@ Both dial **by name**, with the bundle on connect. Commits `a686396`
   separate process starts, so mid-connection roaming (address changes
   under a live QUIC connection) is still untested — that needs a
   physically roaming device, i.e. Phase 2 mobile.
-- **A second member is live on `mar@nixos`** (`irohup -name nixos`,
-  NodeId `ed:c02908be…`, bridging `cp1/apid` on its own loopback). It
-  beats every 6 h. Stop it with `pkill -f bin/irohup` there if unwanted;
-  its member cert simply expires in 90 d.
+- **The `mar@nixos` member is enrolled but stopped** (owner ruling
+  2026-09-19). Its state is intact at `~/.config/talos-mesh/nixos.iroh/`
+  (NodeId `ed:c02908be…`), so restarting `irohup` there needs no wallet
+  act; its certs renew on the next beat or expire in 90 d.
 - **Enrolling a headless member needs an ssh tunnel today** (the
   signing page binds loopback on the enrolling host). `irohup` has no
   device-flow mode, though the hub already accepts `node=` on
@@ -77,10 +77,11 @@ Both dial **by name**, with the bundle on connect. Commits `a686396`
 
 ## Suggested next steps
 
-- **Phase 1 is functionally done** — `359.8.3`/`.4`/`.5`/`.6` are
-  closed; `359.8` itself stays open only on `359.8.2`
-  (Provisioner-as-actor, ADR-0024). Decide whether that belongs to
-  Phase 1 or moves to Phase 2 before calling the phase.
+- **Phase 2 starts at `359.9.1`**: point the admin CLI paths at the
+  `irohup` bridges in anger — talosconfig/kubeconfig endpoints, and
+  whatever still assumes nebula (`nix run .#apply` dials the overlay
+  address). Phase 1 closed 2026-09-19; `359.8.2` (Provisioner-as-actor)
+  moved to Phase 2.
 
 - Then Phase 2 (`359.9`): admin CLI paths onto the bridges in anger
   (`359.9.1`), which is mostly "stop using nebula for talosctl".

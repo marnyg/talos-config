@@ -517,3 +517,9 @@
   `network_path=Relay(url)` is relayed. The hub is always `Relay`
   (relay-only by construction, ADR-0022). `bash -lc` is required for
   anything scripted over ssh to that box (login shell is fish).
+- 2026-09-19 — **`/status` and `/sealed` round runway to the nearest
+  day** (`issuer.RunwayDays`). Before this, a speak-as signed one second
+  ago read "119 d left" for a 120 d cert — the nominal value was
+  unreachable, and an exact-equality test flaked on it in the nix
+  sandbox. The nag window is still judged on raw seconds, so
+  "30 d left, NAG" is possible at the boundary and is not a bug.

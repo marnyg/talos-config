@@ -282,7 +282,7 @@ func (m *hubManager) unsealIssuer(sigHex string) (string, error) {
 		return "", err
 	}
 	addr := string(w)[len("eth:"):]
-	log.Printf("wallet %s unsealed hub identity %s (speak-as until +%dd)", addr, m.issuer.Fingerprint(), m.issuer.Runway()/issuer.Day)
+	log.Printf("wallet %s unsealed hub identity %s (speak-as until +%dd)", addr, m.issuer.Fingerprint(), issuer.RunwayDays(m.issuer.Runway()))
 	return addr, nil
 }
 
@@ -291,7 +291,7 @@ func (m *hubManager) unsealIssuer(sigHex string) (string, error) {
 func (m *hubManager) identityLine() (line string, warn bool) {
 	fp := m.issuer.Fingerprint()
 	wallet := strings.TrimPrefix(string(m.issuer.Wallet()), "eth:")
-	days := m.issuer.Runway() / issuer.Day
+	days := issuer.RunwayDays(m.issuer.Runway())
 	at := ""
 	if eps := m.endpoints(); eps != "" {
 		at = " · at " + eps

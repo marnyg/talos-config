@@ -315,6 +315,16 @@ func (i *Issuer) Wallet() cert.ActorID {
 	return ""
 }
 
+// RunwayDays renders a runway for humans: seconds → days, rounded to
+// nearest. Truncation would make the nominal TTL unreachable — a
+// speak-as signed one second ago has 119.99999 days left and would
+// read "119 d left" on the page that just minted it for 120 (the
+// proposal's iat is fixed before the unseal completes). Rounding keeps
+// a nearly-expired cert alarming (0.4 d → "0 d") and a fresh one
+// honest. The nag window is judged on raw seconds by Serving(), never
+// on this.
+func RunwayDays(runway int64) int64 { return (runway + Day/2) / Day }
+
 // Runway is the seconds left on the held speak-as (≤ 0 ⇒ sealed or
 // expired).
 func (i *Issuer) Runway() int64 {

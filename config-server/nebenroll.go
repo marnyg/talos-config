@@ -101,6 +101,13 @@ func (r enrollResult) bytes() ([]byte, string, error) {
 // enrollPayloadContentType tells a stored payload's shape apart when it
 // is redeemed later (device flow stashes bytes only). A YAML machine
 // config never starts with '{'.
+//
+// Sniffing rather than storing the type is deliberate dual-plane scope
+// (reviewed 2026-09-19): it exists only because v1 (bare nebula YAML)
+// and v2 ({config, kit}) payloads coexist. Phase 4 deletes v1 with
+// nebula, the payload becomes one shape, and this function goes with
+// it — do not "fix" it by threading a content type through the grant
+// store.
 func enrollPayloadContentType(b []byte) string {
 	if len(b) > 0 && b[0] == '{' {
 		return enrollKitContentType

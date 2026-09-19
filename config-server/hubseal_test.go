@@ -163,8 +163,12 @@ func TestUnsealIssuer(t *testing.T) {
 	if err != nil || addr != wellKnownAddr {
 		t.Fatalf("unsealIssuer: %v (%s)", err, addr)
 	}
-	if m.issuer.Wallet() != issuer.WalletID(wellKnownAddr) || m.issuer.Runway() != issuer.SpeakAsTTL {
-		t.Fatalf("held speak-as: wallet %s runway %d", m.issuer.Wallet(), m.issuer.Runway())
+	// Runway counts from the proposal's iat, which is fixed before the
+	// unseal completes, so it is SpeakAsTTL minus however long the
+	// ceremony took — never exactly SpeakAsTTL. A minute of slack keeps
+	// this honest without pinning the clock.
+	if r := m.issuer.Runway(); m.issuer.Wallet() != issuer.WalletID(wellKnownAddr) || r > issuer.SpeakAsTTL || r < issuer.SpeakAsTTL-60 {
+		t.Fatalf("held speak-as: wallet %s runway %d (want ~%d)", m.issuer.Wallet(), r, issuer.SpeakAsTTL)
 	}
 	if line, warn := m.identityLine(); warn || !strings.Contains(line, wellKnownAddr) || !strings.Contains(line, "120 d left") {
 		t.Fatalf("unsealed identity line: %q warn=%v", line, warn)

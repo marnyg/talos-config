@@ -43,6 +43,16 @@ import (
 // wastes the user's time.
 const nonceTTL = 5 * time.Minute
 
+// client is the HTTP client for the two hub calls. Its own, with a
+// timeout: http.DefaultClient has none, so a hub that accepts the
+// connection and then stalls (a sealed fly machine mid-deploy, a
+// half-open NAT path) hangs the enrolling process forever with no
+// output — on a headless member that is indistinguishable from a
+// crash. The budget covers a mint (the hub's own Issuer call is
+// bounded at 10 s), not the wallet ceremony: the human wait happens in
+// Sign, bounded separately by nonceTTL.
+var client = &http.Client{Timeout: 30 * time.Second}
+
 // Challenge is what /mesh/enroll/challenge returns: the canonical
 // message the wallet signs, plus the single-use nonce that binds it
 // and the fingerprint the hub computed from the submitted pubkey so
@@ -82,7 +92,7 @@ func FetchChallenge(endpoint, name, group, pubkeyHex, node string) (Challenge, e
 	if node != "" {
 		form.Set("node", node)
 	}
-	resp, err := http.PostForm(endpoint+"/challenge", form)
+	resp, err := client.PostForm(endpoint+"/challenge", form)
 	if err != nil {
 		return Challenge{}, fmt.Errorf("fetching enrollment challenge: %w", err)
 	}
@@ -125,7 +135,7 @@ func Redeem(endpoint string, ch Challenge, pubkeyHex, sig string) ([]byte, error
 	if ch.Node != "" {
 		form.Set("node", ch.Node)
 	}
-	resp, err := http.PostForm(endpoint, form)
+	resp, err := client.PostForm(endpoint, form)
 	if err != nil {
 		return nil, fmt.Errorf("submitting enrollment: %w", err)
 	}

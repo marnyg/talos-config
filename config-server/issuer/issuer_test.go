@@ -670,3 +670,27 @@ func TestRenewAcrossIssuerRotation(t *testing.T) {
 		t.Fatal("hub unsealed by another wallet renewed A's kit")
 	}
 }
+
+// TestRunwayDays: the page must be able to show the nominal TTL. A
+// speak-as signed a moment ago has slightly less than SpeakAsTTL left
+// (the proposal's iat predates the unseal), and truncation would make
+// "120 d left" unreachable — the flake that bit TestUnsealIssuer.
+func TestRunwayDays(t *testing.T) {
+	for _, c := range []struct {
+		runway int64
+		want   int64
+	}{
+		{SpeakAsTTL, 120},
+		{SpeakAsTTL - 1, 120},        // one second into the ceremony
+		{SpeakAsTTL - 12*60*60, 120}, // half a day: still "120"
+		{SpeakAsTTL - 13*60*60, 119},
+		{NagBefore, 30},
+		{Day / 2, 1},
+		{Day/2 - 1, 0}, // nearly gone reads as gone, not as a day
+		{0, 0},
+	} {
+		if got := RunwayDays(c.runway); got != c.want {
+			t.Errorf("RunwayDays(%d) = %d, want %d", c.runway, got, c.want)
+		}
+	}
+}
