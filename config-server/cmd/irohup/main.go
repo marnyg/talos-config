@@ -122,8 +122,13 @@ func main() {
 	if *group != "admins" && *group != "media" {
 		log.Fatalf("-group must be 'admins' or 'media', got %q", *group)
 	}
-	if len(br) == 0 && !*tunMode {
-		br = bridges{{Name: "cp1", Facet: "apid", Listen: "127.0.0.1:50000"}, {Name: "cp1", Facet: "kube-api", Listen: "127.0.0.1:6443"}}
+	switch {
+	case *tunMode && len(br) > 0:
+		log.Fatal("-tun and -bridge are two presentations of the same member; run one")
+	case !*tunMode && len(br) == 0:
+		for _, f := range policy.Facets(policy.KindNode) {
+			br = append(br, bridge{Name: "cp1", Facet: f, Listen: fmt.Sprintf("127.0.0.1:%d", policy.FacetPort(f))})
+		}
 	}
 	for _, b := range br {
 		if !slices.Contains(policy.Facets(policy.KindNode), b.Facet) {

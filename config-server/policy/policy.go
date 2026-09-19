@@ -73,6 +73,30 @@ var facets = map[Kind][]string{
 	KindHub:     {"hub-http"},
 }
 
+// facetPorts is the natural port of a facet: where its service listens
+// on the receiver, and therefore the port a presentation shows for it
+// (a bridge's default listener, the tun's <fake IP>:<port>). One table
+// so the node agent's forward, irohup's defaults and the tun cannot
+// drift. Facets without an entry have no natural port yet.
+var facetPorts = map[string]uint16{
+	"apid":     50000,
+	"kube-api": 6443,
+}
+
+// FacetPort returns the natural port of facet, or 0 if it has none.
+func FacetPort(facet string) uint16 { return facetPorts[facet] }
+
+// FacetByPort is the inverse: the facet of kind whose natural port is
+// port, or "" if none. Well-defined because natural ports are disjoint.
+func FacetByPort(k Kind, port uint16) string {
+	for _, f := range facets[k] {
+		if facetPorts[f] == port && port != 0 {
+			return f
+		}
+	}
+	return ""
+}
+
 // Groups is the closed group vocabulary. It mirrors mesh.Groups() (v2)
 // and the Issuer's speak-as caveat: a grant addressed to a group the
 // wallet never delegated would be a grant to nobody.

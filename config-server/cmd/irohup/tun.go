@@ -17,22 +17,15 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
+	"github.com/marnyg/talos-config/config-server/policy"
 	"golang.zx2c4.com/wireguard/tun"
 )
 
 // The desktop presentation (359.9.6, decision fgr): one process,
 // launched as root, that does its privileged work in privilegedSetup
-// and nothing else as root.
-//
-// Facet ports: the fiction is <fake IP>:<port> where the port is the
-// facet's natural one on the node, so talosconfig/kubeconfig endpoints
-// read as cp1.mesh.internal:50000 / :6443 with nothing renumbered. A
-// presentation concern, not a policy one — policy names facets, the
-// tun maps ports to them.
-var facetPorts = map[uint16]string{
-	50000: "apid",
-	6443:  "kube-api",
-}
+// and nothing else as root. The fiction is <fake IP>:<port> with the
+// facet's natural port (policy.FacetPort), so talosconfig/kubeconfig
+// endpoints read as cp1.mesh.internal:50000 / :6443, nothing renumbered.
 
 const (
 	tunMTU        = 1500
@@ -146,8 +139,8 @@ func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *connPo
 			logger.Printf("tun: flow to %s: not a name we minted", dst)
 			return
 		}
-		facet, ok := facetPorts[dst.Port()]
-		if !ok {
+		facet := policy.FacetByPort(policy.KindNode, dst.Port())
+		if facet == "" {
 			logger.Printf("tun: flow to %s (%s): port is not a facet", dst, name)
 			return
 		}

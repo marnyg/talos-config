@@ -57,7 +57,7 @@ func main() {
 	flag.Var(fwd, "forward", "facet=host:port loopback target for a node facet; repeatable (facets: "+strings.Join(policy.Facets(policy.KindNode), ", ")+")")
 	flag.Parse()
 	if len(fwd) == 0 {
-		fwd["apid"] = "127.0.0.1:50000"
+		fwd["apid"] = fmt.Sprintf("127.0.0.1:%d", policy.FacetPort("apid"))
 	}
 	if lvl := os.Getenv("P0_LOG"); lvl != "" { // trace|debug|info|warn
 		if l, ok := map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl]; ok {

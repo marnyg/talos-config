@@ -205,3 +205,26 @@ func TestBlocklist(t *testing.T) {
 		}
 	}
 }
+
+// Every node facet has a natural port (the presentations depend on it),
+// ports are disjoint, and FacetByPort inverts FacetPort.
+func TestFacetPorts(t *testing.T) {
+	seen := map[uint16]string{}
+	for _, f := range Facets(KindNode) {
+		p := FacetPort(f)
+		if p == 0 {
+			t.Errorf("node facet %q has no natural port", f)
+			continue
+		}
+		if other, dup := seen[p]; dup {
+			t.Errorf("port %d shared by %q and %q", p, other, f)
+		}
+		seen[p] = f
+		if got := FacetByPort(KindNode, p); got != f {
+			t.Errorf("FacetByPort(node, %d) = %q, want %q", p, got, f)
+		}
+	}
+	if FacetByPort(KindNode, 0) != "" || FacetByPort(KindNode, 1) != "" || FacetPort("nope") != 0 {
+		t.Error("unknown port/facet must map to zero values")
+	}
+}
