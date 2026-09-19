@@ -52,6 +52,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -97,7 +98,7 @@ func main() {
 		br = bridges{{Name: "cp1", Facet: "apid", Listen: "127.0.0.1:50000"}, {Name: "cp1", Facet: "kube-api", Listen: "127.0.0.1:6443"}}
 	}
 	for _, b := range br {
-		if !contains(policy.Facets(policy.KindNode), b.Facet) {
+		if !slices.Contains(policy.Facets(policy.KindNode), b.Facet) {
 			log.Fatalf("-bridge %s/%s: %q is not a node facet (%v)", b.Name, b.Facet, b.Facet, policy.Facets(policy.KindNode))
 		}
 	}
@@ -172,15 +173,6 @@ func main() {
 	wg.Wait()
 	_ = a.Close()
 	logger.Printf("stopped")
-}
-
-func contains(xs []string, x string) bool {
-	for _, y := range xs {
-		if y == x {
-			return true
-		}
-	}
-	return false
 }
 
 // cachePaths: nebup's (<name>.key, <name>.yml) and irohup's <name>.iroh/
