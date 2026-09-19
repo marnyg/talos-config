@@ -184,6 +184,46 @@
               '');
             };
 
+            # nix run .#kubeconfig — fetch the admin kubeconfig over the
+            # mesh and point it at the control plane's mesh name.
+            # `talosctl kubeconfig` writes cluster.controlPlane.endpoint
+            # (the nebula address 10.42.218.125) as the server; that is
+            # the kubelets' endpoint, not the admin's, and it is
+            # unreachable from a desktop that is on the irohup tun but
+            # not on nebula. The apiServer certSANs already carry the
+            # mesh name (talos/clusters/homelab/cluster.yaml).
+            apps.kubeconfig = {
+              type = "app";
+              meta.description = "Write $KUBECONFIG via talosctl, server rewritten to https://<cp>.mesh.internal:6443 (irohup tun; nebula not required)";
+              program = toString (pkgs.writeShellScript "kubeconfig" ''
+                set -euo pipefail
+                root="$(git rev-parse --show-toplevel)"
+                cd "$root/talos"
+                YQ="${pkgs.yq-go}/bin/yq"
+                KUBECONFIG="''${KUBECONFIG:-$root/kubeconfig}"
+                TALOSCONFIG="''${TALOSCONFIG:-$root/talos/talosconfig}"
+                export KUBECONFIG TALOSCONFIG
+
+                # The control plane's declared name — the one machine
+                # whose meta.yaml points at the controlplane base.
+                cp=""
+                for m in machines/*/meta.yaml; do
+                  if [ "$($YQ '.config' "$m")" = "base/controlplane.yaml" ]; then
+                    cp=$($YQ '.name' "$m")
+                    break
+                  fi
+                done
+                [ -n "$cp" ] || { echo "no machines/*/meta.yaml with config: base/controlplane.yaml" >&2; exit 1; }
+
+                cluster=$($YQ '.cluster.clusterName' clusters/*/cluster.yaml | head -1)
+
+                ${pkgs.talosctl}/bin/talosctl kubeconfig "$KUBECONFIG" --force
+                ${pkgs.kubectl}/bin/kubectl config set-cluster "$cluster" \
+                  --server "https://$cp.mesh.internal:6443" >/dev/null
+                echo "Wrote $KUBECONFIG (server https://$cp.mesh.internal:6443)"
+              '');
+            };
+
             # nix run .#apply [-- <mac>] — fetch the hub-composed config
             # over the mesh and apply it. Never composes locally: the hub
             # injects overlay identity, certSANs, and disk encryption at
