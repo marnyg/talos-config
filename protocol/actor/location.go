@@ -8,8 +8,10 @@ import (
 )
 
 // Location records (reach-me-at, ADR-0001): a cert {iss: P, aud: "*",
-// can: reach-me-at, cav.endpoints: [tagged strings], iat, exp ≈ 1 h}.
-// Distribution is by piggyback: every Envelope and Reply this actor
+// can: reach-me-at, cav.endpoints: [tagged strings], iat, exp}. The
+// lifetime is the issuer's choice, not a rule: ADR-0001 sketches ≈ 1 h
+// for a roaming actor; a non-roaming actor behind one relay (the talos
+// hub) publishes days. Distribution is by piggyback: every Envelope and Reply this actor
 // sends carries its current record (Send / signReply attach it); every
 // record received rides envelope.Verify / VerifyReply's one fail-closed
 // rule (bad loc rejects the whole message) and, when good, lands here
@@ -68,11 +70,33 @@ func (a *Actor) UpdateLocation(id cert.ActorID, loc *cert.Cert) error {
 func (a *Actor) GetLocation(id cert.ActorID) *cert.Cert {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.getLocationLocked(id, a.now())
+}
+
+// Locations is GetLocation over many ids under one lock and one clock
+// reading: id → record for every id that has a live one; ids without
+// are absent from the result. For callers projecting a directory
+// (a lighthouse view, the talos name map) rather than dialing one peer.
+func (a *Actor) Locations(ids ...cert.ActorID) map[cert.ActorID]cert.Cert {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	now := a.now()
+	out := make(map[cert.ActorID]cert.Cert, len(ids))
+	for _, id := range ids {
+		if loc := a.getLocationLocked(id, now); loc != nil {
+			out[id] = *loc
+		}
+	}
+	return out
+}
+
+// getLocationLocked is GetLocation's body; caller holds mu.
+func (a *Actor) getLocationLocked(id cert.ActorID, now int64) *cert.Cert {
 	loc, ok := a.locs[id]
 	if !ok {
 		return nil
 	}
-	if loc.Exp <= a.now() {
+	if loc.Exp <= now {
 		delete(a.locs, id)
 		return nil
 	}

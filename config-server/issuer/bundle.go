@@ -178,6 +178,11 @@ func (i *Issuer) blocked(id cert.ActorID) error {
 	if err != nil {
 		return fmt.Errorf("issuer: blocklist: %w", err)
 	}
+	return blockedIn(bl, id)
+}
+
+// blockedIn is the one blocklist rule, over an already-loaded list.
+func blockedIn(bl []cert.ActorID, id cert.ActorID) error {
 	if slices.Contains(bl, id) {
 		return fmt.Errorf("%w: %s", ErrBlocked, id)
 	}
@@ -199,8 +204,8 @@ func (i *Issuer) bundleHandler(_ context.Context, inv *actor.Invocation) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("issuer: bundle: %w", err)
 	}
-	if slices.Contains(bl, inv.From) {
-		return nil, fmt.Errorf("%w: %s", ErrBlocked, inv.From)
+	if err := blockedIn(bl, inv.From); err != nil {
+		return nil, err
 	}
 	var req BundleRequest
 	if err := json.Unmarshal(inv.Envelope.Payload, &req); err != nil {

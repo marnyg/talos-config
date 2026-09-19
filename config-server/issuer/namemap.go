@@ -74,8 +74,18 @@ func (i *Issuer) nameMap(now int64, blocklist []cert.ActorID) []NameEntry {
 		out = append(out, NameEntry{Member: m})
 	}
 	i.mu.Unlock()
+	// The Actor owns the location cache under its own lock; join after
+	// releasing ours (lock order: never Issuer.mu inside Actor.mu or
+	// vice versa — the two never nest).
+	ids := make([]cert.ActorID, len(out))
 	for k := range out {
-		out[k].Location = i.Actor.GetLocation(cert.ActorID(out[k].Member.Aud))
+		ids[k] = cert.ActorID(out[k].Member.Aud)
+	}
+	locs := i.Actor.Locations(ids...)
+	for k := range out {
+		if loc, ok := locs[ids[k]]; ok {
+			out[k].Location = &loc
+		}
 	}
 	slices.SortFunc(out, func(a, b NameEntry) int {
 		return cmp.Or(cmp.Compare(a.Member.Cav.Name, b.Member.Cav.Name), cmp.Compare(a.Member.Aud, b.Member.Aud))

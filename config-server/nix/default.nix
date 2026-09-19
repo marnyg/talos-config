@@ -67,7 +67,7 @@ let
       #     34754508013: one job green from cache, another rebuilt the
       #     FOD and mismatched). After touching a replaced tree, check
       #     with `nix build .#config-server-bin.goModules --rebuild`.
-      vendorHash = "sha256-uv8UxS64y/+Qjlqbtywe64Cr7kn18/PiO9SzuM73nS8=";
+      vendorHash = "sha256-7bQtt8TjBJBISD3nFraYniLIqrSKCNQqIdjT74fN0Dk=";
       tags = [ "iroh" ];
       env.CGO_ENABLED = 1;
       env.CGO_LDFLAGS = irohGo'.cgoLdflags;

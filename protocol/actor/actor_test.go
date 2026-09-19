@@ -721,12 +721,19 @@ func TestLocationCaching(t *testing.T) {
 		t.Fatalf("UpdateLocation accepted a foreign record: %v", err)
 	}
 
-	// Expiry under the effective clock evicts.
+	// Locations is the batch view: live ids present, unknown absent.
+	if got := b.Locations(A, c.ID(), d.ID()); len(got) != 1 || got[A].Iat != now+10 {
+		t.Fatalf("Locations = %+v", got)
+	}
+
+	// Expiry under the effective clock evicts — on both read paths.
 	w.clk.Advance(4000)
 	if b.GetLocation(A) != nil {
 		t.Fatal("expired record still served")
 	}
-	_ = c
+	if got := b.Locations(A); len(got) != 0 {
+		t.Fatalf("expired record in Locations: %+v", got)
+	}
 }
 
 // ---- 5. serial mailbox: handlers never overlap; bounded, drop on full ----
