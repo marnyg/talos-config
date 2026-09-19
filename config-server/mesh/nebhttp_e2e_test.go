@@ -15,7 +15,6 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"strings"
 	"testing"
 	"time"
 
@@ -79,14 +78,12 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 	// /config is gone from this listener (359.8.2.4): it lives on the
 	// hub-http facet, tested in hubfacet_test.go.
 	t.Run("config is not served on the overlay", func(t *testing.T) {
-		// The "GET /" hello is a catch-all, so the proof is the body:
-		// the admin gets the greeting, never a composed config.
-		status, body, err := meshGet(admin, hub.OverlayAddr(), "/config?mac=aa-bb-cc-dd-ee-01")
+		status, _, err := meshGet(admin, hub.OverlayAddr(), "/config?mac=aa-bb-cc-dd-ee-01")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if status != http.StatusOK || !strings.HasPrefix(body, "hello from the mesh") {
-			t.Fatalf("/config on the overlay: %d %q, want the catch-all hello", status, body)
+		if status != http.StatusNotFound {
+			t.Fatalf("/config on the overlay: %d, want 404", status)
 		}
 	})
 

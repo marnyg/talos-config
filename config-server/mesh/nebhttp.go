@@ -79,7 +79,9 @@ func isGroupPeer(master []byte, subnet netip.Prefix, peers []nebula.ControlHostI
 // the routes anywhere but on the mesh.
 func (m *Manager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, _ *http.Request) {
+	// Exact root only: a "GET /" catch-all answered every unknown
+	// path with 200, hiding a removed route behind a greeting.
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "hello from the mesh: %s\n", svc.OverlayAddr())
 	})
 	// GET /config left this listener 2026-09-19 (359.8.2.4): admins

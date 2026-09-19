@@ -72,10 +72,11 @@ const nebMachineCertValidity = 5 * 365 * 24 * time.Hour
 // nebula config plus the derived CA, cert and key, preceded by a
 // machine.certSANs merge adding the overlay address and mesh DNS name.
 //
-// The SANs exist because apid's node-address discovery does not pick
-// up nebula0: without them a TLS dial to the machine over the mesh
-// (talosconfig pointed at the overlay address, the hub's
-// auto-bootstrap) is rejected.
+// The SAN merge exists for the DNS name: apid's own cert SANs cover
+// every node address (nebula0's included — verified on cp1's CertSANs
+// resource, 2026-09-19) but never a mesh name, and <name>.mesh.internal
+// is what talosconfig and the tun dial by. The overlay address entry is
+// belt and braces from before that was checked.
 //
 // machines is the full machine set, not just this one, because the
 // overlay address comes from buildMeshZone — the same function that
