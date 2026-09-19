@@ -29,12 +29,16 @@ machine:
     # now that the device node is a measured fact. Takes effect at
     # install time only — repinning does not move an installed system.
     disk: /dev/nvme0n1
-    # Factory schematic 6a9acc… = stock v1.12.6 + siderolabs/nebula
-    # (1.10.3) + iscsi-tools + util-linux-tools. cp1 has moved on to the
-    # imager-built installer that adds our p0agent extension (see
-    # hardware/minipc.yaml); w1 has not, so it is not on the identity
-    # plane and is reached through cp1's apid proxy (talos-config-qb5q
-    # is the upgrade). Without nebula the node has no mesh identity, and
-    # the hub's serve-time cert injection has no extension service to
-    # configure; without the other two it cannot run Longhorn (ADR-0011).
-    image: factory.talos.dev/installer/6a9acceefb4231ee98d04df0a3172479299cf51a36cda05f7ff817ab6d0d4735:v1.12.6
+    # The same imager-built installer cp1 runs (hardware/minipc.yaml has
+    # the full account): stock v1.12.6 + the three official extensions of
+    # factory schematic 6a9acc… (nebula 1.10.3, iscsi-tools,
+    # util-linux-tools) + our p0agent extension, which puts the node on
+    # the identity plane (w1.mesh.internal; talos-config-qb5q). Without
+    # nebula the node has no overlay identity and the hub's serve-time
+    # cert injection has no extension service to configure; without the
+    # other two it cannot run Longhorn (ADR-0011). Keep the tag AND
+    # digest in step with minipc.yaml — one fleet image.
+    #
+    # Predecessor: factory 6a9acc… until 2026-09-19 (upgraded in place,
+    # `talosctl upgrade`; EPHEMERAL survives).
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.2@sha256:71d45214f7fbb6382138e59c0575d0146af3e72be02348e1d8e9995a73d04c31

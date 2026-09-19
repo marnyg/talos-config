@@ -30,7 +30,8 @@ machine:
     #
     # Predecessors: factory 011ccc… (nebula only) until 2026-07-31 when
     # Longhorn landed; factory 6a9acc… (the three official extensions)
-    # until 2026-09-15. w1 (alienware-x15.yaml) still declares 6a9acc….
+    # until 2026-09-15. w1 (alienware-x15.yaml) declares this same image
+    # since 2026-09-20 (qb5q) — change both together.
     #
     # Changing this image on a *running* node needs an upgrade, not a
     # reboot: `talosctl upgrade --image <the image below>`.
