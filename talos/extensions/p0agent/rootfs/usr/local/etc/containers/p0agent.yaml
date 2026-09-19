@@ -1,5 +1,7 @@
 # Extension service spec (talos.dev/v1.12/advanced/extension-services).
 # Registered as `ext-p0agent`; rootfs = /usr/local/lib/containers/p0agent.
+# The service name is what the hub's ExtensionServiceConfig document
+# binds to (config-server/nodeagent.Service): keep them equal.
 name: p0agent
 depends:
   # REQUIRED for any extension that mounts a path under /var: the upgrade
@@ -20,26 +22,32 @@ depends:
   # The agent logs wall clock + uptime at start so the ordering is on record.
   - time: true
 container:
-  entrypoint: ./p0agent
+  entrypoint: ./nodeagent
+  # Everything else — hub URL, relay URL, boot token — arrives in the
+  # hub-injected ExtensionServiceConfig file (nodeagent.ConfigPath,
+  # /usr/local/etc/p0agent/agent.yaml), mounted here by Talos. The
+  # forward table is the receiver's own (glossary "Facet": ports live
+  # in the facet definition, never in a grant): apid and, on a control
+  # plane, the API server.
   args:
-    - serve
-    - -relay
-    - https://marnyg-iroh-relay-spike.fly.dev
-    - -key
-    - /var/lib/p0agent/key
     - -forward
-    - mesh/apid/v1=127.0.0.1:50000
+    - apid=127.0.0.1:50000
+    - -forward
+    - kube-api=127.0.0.1:6443
   environment:
     - P0_LOG=info
   mounts:
-    # The persistent NodeId. /var is EPHEMERAL: survives reboot and
-    # upgrade, not a wipe — exactly the durability a node key needs
-    # (invariants.md 1: member keys are minted on the member).
+    # The state dir: NodeId key (minted by the P0.3 probe on 2026-09-15,
+    # kept), Kit, last bundle, hub record, clock mark. /var is
+    # EPHEMERAL: survives reboot and upgrade, not a wipe — exactly the
+    # durability a member needs (invariants.md 1: member keys are minted
+    # on the member; a wipe re-enrolls with the token in the re-served
+    # config, ADR-0015).
     - source: /var/lib/p0agent
       destination: /var/lib/p0agent
       type: bind
       options: [rbind, rshared, rw]
-    # The rootfs is scratch + one static binary; resolving the relay
+    # The rootfs is scratch + one static binary; resolving the hub
     # hostname needs the host resolver (127.0.0.53, host netns).
     - source: /etc/resolv.conf
       destination: /etc/resolv.conf

@@ -1,11 +1,14 @@
 version: v1alpha1
 metadata:
   name: p0agent
-  version: 0.0.3
+  version: 0.1.0
   author: marnyg
   description: |
-    Mesh v3 Phase 0 check P0.3 (talos-config-359.1.3): minimal iroh node
-    agent as a Talos system extension. SPIKE — not the production agent.
+    Mesh v3 node agent (talos-config-359.8.3): the node's NodeId on iroh,
+    boot-token enrollment (ADR-0015), renewal beat, and authorize() on
+    ALPN-gated stream facets forwarded to apid / kube-api. Binary:
+    config-server/cmd/nodeagent. The extension keeps the P0.3 probe's
+    name (p0agent) so cp1's state dir and NodeId carry over.
   compatibility:
     talos:
       version: ">= v1.12.0"

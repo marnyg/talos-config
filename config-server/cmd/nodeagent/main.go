@@ -69,9 +69,14 @@ func main() {
 	// with is on record beside the uptime.
 	logger.Printf("nodeagent start: wall %s uptime %s", time.Now().UTC().Format(time.RFC3339), uptime())
 
+	// The config is an ExtensionServiceConfig document the hub injects
+	// at config serve. A node upgraded to this binary before its config
+	// was re-served has none yet: wait for it rather than crash-loop.
 	cfg, err := nodeagent.Load(*cfgPath)
-	if err != nil {
-		logger.Fatalf("config: %v", err)
+	for err != nil {
+		logger.Printf("config: %v (waiting; re-serve the machine config with `nix run .#apply`)", err)
+		time.Sleep(30 * time.Second)
+		cfg, err = nodeagent.Load(*cfgPath)
 	}
 	a, err := nodeagent.Start(nodeagent.Options{
 		Config: cfg, State: nodeagent.State{Dir: *stateDir}, Forward: fwd,
