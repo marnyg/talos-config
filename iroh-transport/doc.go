@@ -28,6 +28,13 @@
 // All actor traffic uses one ALPN, ALPN ("sovereign-actor/v1"). The
 // facet is inside the encrypted envelope, not in the ClientHello.
 //
+// Stream facets (streamfacet.go) are the exception the domain model
+// names: an actor standing in front of a service that knows nothing of
+// actors advertises one extra ALPN class per facet (Options.StreamALPNs),
+// the caller presents its bundle on the first bi-stream, and the
+// connection — authorized once — carries raw forwards. Those connections
+// reach AcceptConn, never Accept.
+//
 // # Framing
 //
 // Ruling §6: one invocation = one QUIC bidirectional stream; the request

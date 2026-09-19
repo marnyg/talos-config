@@ -43,6 +43,10 @@ type Options struct {
 	AdvertiseRelay string
 	// MaxMsg bounds one message; 0 ⇒ DefaultMaxMsg.
 	MaxMsg uint32
+	// StreamALPNs are the stream-facet ALPN classes this endpoint also
+	// advertises (streamfacet.go). Connections under them are delivered
+	// whole to AcceptConn, never to Accept. ALPN itself is not allowed.
+	StreamALPNs []string
 }
 
 // Endpoint is an iroh Endpoint bound to one actor identity. It
@@ -53,11 +57,13 @@ type Endpoint struct {
 	relay     string
 	advertise string
 	maxMsg    uint32
+	streams   map[string]bool // StreamALPNs
 
-	accept chan accepted
-	closed chan struct{}
-	once   sync.Once
-	loops  sync.WaitGroup
+	accept     chan accepted
+	acceptConn chan *Conn
+	closed     chan struct{}
+	once       sync.Once
+	loops      sync.WaitGroup
 
 	mu    sync.Mutex
 	conns map[cert.ActorID]*iroh.Connection // dial-side pool, one per peer
@@ -100,6 +106,14 @@ func Bind(priv ed25519.PrivateKey, o Options) (*Endpoint, error) {
 	preset := iroh.PresetMinimal() // crypto provider only: no n0 DNS, pkarr, or relays
 	seed := priv.Seed()            // iroh's SecretKey is the 32-byte Ed25519 seed
 	alpns := [][]byte{[]byte(ALPN)}
+	streams := make(map[string]bool, len(o.StreamALPNs))
+	for _, a := range o.StreamALPNs {
+		if a == ALPN || a == "" || streams[a] {
+			return nil, fmt.Errorf("irohtransport: stream ALPN %q is empty, duplicate, or the actor ALPN", a)
+		}
+		streams[a] = true
+		alpns = append(alpns, []byte(a))
+	}
 	ep, err := iroh.EndpointBind(iroh.EndpointOptions{
 		Preset:    &preset,
 		BindAddr:  &bindAddr,
@@ -116,14 +130,16 @@ func Bind(priv ed25519.PrivateKey, o Options) (*Endpoint, error) {
 		return nil, fmt.Errorf("irohtransport: iroh id %s != actor id %s (%v)", got, id, err)
 	}
 	e := &Endpoint{
-		ep:        ep,
-		id:        id,
-		relay:     o.Relay,
-		advertise: o.AdvertiseRelay,
-		maxMsg:    maxMsg,
-		accept:    make(chan accepted),
-		closed:    make(chan struct{}),
-		conns:     make(map[cert.ActorID]*iroh.Connection),
+		ep:         ep,
+		id:         id,
+		relay:      o.Relay,
+		advertise:  o.AdvertiseRelay,
+		maxMsg:     maxMsg,
+		streams:    streams,
+		accept:     make(chan accepted),
+		acceptConn: make(chan *Conn),
+		closed:     make(chan struct{}),
+		conns:      make(map[cert.ActorID]*iroh.Connection),
 	}
 	e.loops.Add(1)
 	go e.acceptLoop()
@@ -312,7 +328,8 @@ func (e *Endpoint) acceptLoop() {
 }
 
 // serveConn finishes the handshake for one incoming connection and
-// feeds its bidirectional streams to Accept until it ends.
+// feeds its bidirectional streams to Accept until it ends — or, on a
+// stream-facet ALPN, hands the whole connection to AcceptConn.
 func (e *Endpoint) serveConn(inc *iroh.Incoming) {
 	defer e.loops.Done()
 	defer inc.Destroy()
@@ -321,18 +338,33 @@ func (e *Endpoint) serveConn(inc *iroh.Incoming) {
 		return
 	}
 	defer accepting.Destroy()
-	if alpn, err := accepting.Alpn(); err != nil || string(alpn) != ALPN {
+	alpnBytes, err := accepting.Alpn()
+	if err != nil {
+		return
+	}
+	alpn := string(alpnBytes)
+	if alpn != ALPN && !e.streams[alpn] {
 		return // not ours; dropping the Accepting aborts the handshake
 	}
 	conn, err := accepting.Connect()
 	if err != nil {
 		return
 	}
-	defer conn.Destroy()
 	peer, err := ActorIDOf(conn.RemoteId())
 	if err != nil {
+		conn.Destroy()
 		return
 	}
+	if alpn != ALPN {
+		c := newConn(conn, peer, alpn, e.maxMsg)
+		select {
+		case e.acceptConn <- c: // the consumer owns it from here
+		case <-e.closed:
+			c.close(0, "")
+		}
+		return
+	}
+	defer conn.Destroy()
 	for {
 		bi, err := conn.AcceptBi()
 		if err != nil {
