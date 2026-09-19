@@ -50,3 +50,7 @@
   `a.mu` (`HWM` and `Mark` self-guard; `Consents` is config).
 - 2026-09-12 — `protocol/` must not import `iroh-go` (doc.go, iroh-go
   README). The iroh `Transport` is its own module (`0bc.2.6`).
+- 2026-09-19 — `actor.SeqBase` is opt-in; tests that `Peek` the HWM
+  after a fresh actor's first send expect `1`. A consumer that seeds
+  from the clock must seed *before* its first `Send` (it is read on
+  the first send to each receiver, then ignored).

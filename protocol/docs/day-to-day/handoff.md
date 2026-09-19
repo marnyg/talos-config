@@ -5,42 +5,53 @@
 
 ## Last session
 
-2026-09-19 — **`actor.Locations(ids...)`** (`859e4a7`, driven by the
-talos hub's name map, `359.8.2.3`): `GetLocation` over many ids under
-one lock and one clock reading; expired records evicted the same way.
-A consumer projecting a directory (the talos `#bundle` name map; an
-M3 lighthouse view) reads through it instead of N `GetLocation`s.
-`location.go` and the glossary now say the `reach-me-at` lifetime is
-the issuer's choice (ADR-0001's ≈ 1 h is a roaming actor's default;
-the hub publishes 7 d). Read-only API addition, no ADR.
+2026-09-19 — **The first receiver outside the hub** (the talos node
+agent, `359.8.3`) drove three small runtime additions and one wire
+form, all in `f32474a` / `7c740ff`:
 
-Earlier (2026-09-18): `actor.Multi` (`4230731`, one identity on N
-wires, `Dial` routes on `ErrUnreachable`) and protocol ADR-0004
-Accepted + built (`c4f5389`, `cav.target` wildcard `"*"`; the talos
-policy compiler is its first consumer). Details in the ADR, the
-glossary and the commits.
+- **`Actor.SeqBase func() int64`** — a sender whose counterparties
+  outlive its restarts (a node rebooting against a hub that keeps its
+  `HWM`) restarted `seq` at 1 and was a replay until the *receiver*
+  forgot. Opt-in: first seq to a receiver this process =
+  `max(SeqBase(), 1)`; the agent seeds `UnixNano`. Stateless; a
+  rolled-back clock only denies (ADR-0019). Default unchanged (tests
+  pin 1). `TestSequenceValidation` covers the restart.
+- **`Actor.Observe(verified)` / `RestoreLowWater(lw)`** — a stream
+  facet's verifier runs `cert.Authorize` outside the inbox; it hands
+  `Result.Verified` to the mark and may seed the mark from a persisted
+  value (safe-to-lose, invariant 9).
+- **`cert.EncodeBundle` / `DecodeBundle`** — the connect-time bundle
+  `{member, grants[], speak_as[]}` as strict wire JSON (unknown key
+  anywhere ⇒ reject; member verb checked at decode).
+- **Stream-facet wire (iroh-transport, not protocol/)**: one extra ALPN
+  per facet; the first bi-stream carries the bundle and gets `ok` /
+  `refused: <reason>` back; later bi-streams are raw forwards. The
+  connection is the invocation, checked once — the 2026-09-12 ruling,
+  now with bytes.
 
 ## Loose threads
 
-- Decided in drafting, confirmed by landing, never discussed: mixed
-  target sets reject at decode (not "ignore the `*`"); a `*` consent
-  roots nothing rather than failing rule 4 later. Veto ⇒ reopen ADR-0004.
-- `actor.Hold` has no ADR — `t29` (draft ADR-0005 if the pattern
-  spreads). `actor.Multi` is in the same bucket: two consumer-driven
-  runtime additions now; a third makes the pattern.
-- The `reach-me-at` lifetime is now documented as the issuer's choice
-  (glossary, `location.go`); ADR-0001's text still reads ≈ 1 h — fold
-  it in the next time ADR-0001 is amended, not before.
-- The held `speak-as` stays out of `Result.Verified` (ADR-0003); no
-  facet→verb table yet; `DefaultMailbox = 64` and the renewal-beat
-  fraction remain unbeaded.
+- **`t29` has its third case.** `Hold` (unseal lifecycle), `Multi`
+  (two wires), now `SeqBase`/`Observe` (a receiver outside the inbox).
+  The pattern "consumer-driven runtime additions to `actor`" is real;
+  draft protocol ADR-0005 for the bucket, or decide it needs none.
+- The `seq` glossary line says "lost on restart" for the receiver; the
+  sender side (must be monotonic across *its* restarts too) is now
+  documented on `SeqBase` and proposed for the glossary.
+- The stream-facet preamble reply (`ok`/`refused: …`) is a transport
+  convention, not envelope-signed: it tells a caller *why* before it
+  spends a stream, and the caller is the untrusted party either way.
+  Veto ⇒ silent close.
+- Carried: ADR-0001's ≈ 1 h `reach-me-at` text; held `speak-as` out of
+  `Result.Verified` (ADR-0003); `DefaultMailbox = 64`; renewal-beat
+  fraction (the talos agent chose: renew past half-life or on issuer
+  rotation, bundle 6-hourly).
 
 ## Suggested next steps
 
-- No protocol change is queued by the talos consumer: the cp1 agent
-  (`359.8.3`) uses `cert`/`actor` as is. Watch for the consumer wanting
-  a persisted location cache (agent restarts) — that would be the
-  first "safe-to-lose but optionally persisted" cache to cross the
-  `protocol/` boundary.
-- M3 `0bc.3` (lighthouse actor, `#publish`/`#lookup`, PoW postage for
-  strangers) is the next protocol-side build when picked up.
+- Nothing queued by the consumer's next step (`359.8.4` irohup dials
+  with what exists). Watch for the caller side wanting a pooled
+  stream-facet `Conn` per (peer, facet) — that belongs in
+  iroh-transport, not here.
+- M3 `0bc.3` (lighthouse actor, `#publish`/`#lookup`, PoW postage) is
+  the next protocol-side build when picked up.

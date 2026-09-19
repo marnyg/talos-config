@@ -447,3 +447,35 @@
   IROH_RELAY_BIN=$(nix build .#iroh-relay --print-out-paths)/bin/iroh-relay
   go test -tags iroh .` — `nix build .#config-server-bin` does exactly
   that. `--iroh-relay` on an untagged binary refuses at startup.
+- 2026-09-19 — **cp1's LAN address changes on every reboot** (DHCP:
+  `.58 → .59 → .62` in one afternoon). Direct access, no mesh needed:
+  `talosctl -n <ip> -e <ip> --talosconfig talos/talosconfig …`. The
+  identity plane never notices (the agent redials its relay by key);
+  `nix run .#apply` dials the *overlay* address and needs the laptop on
+  nebula.
+- 2026-09-19 — **Talos does NOT restart an extension service when its
+  ExtensionServiceConfig document changes** (`apply-config` without
+  reboot registered `p0agent` v1 but the running container kept its old
+  mount namespace). `talosctl service ext-p0agent restart` picks the
+  file up. An upgrade/reboot starts it with the file present.
+- 2026-09-19 — **Re-serving a machine config without the mesh, one
+  browser click**: `curl -X POST …/device/code -d client_id=talos-pxe
+  -d mac=<mac> -d uuid=<uuid>` → open `/status?user_code=…`, approve
+  (one wallet signature) → poll `POST /token` with the `device_code`
+  → `GET /config?mac=…` with the bearer → `talosctl apply-config`.
+  The boot token inside is good for **1 h** from serve; the agent
+  enrolls within a second of seeing the file, so upgrade first, then
+  serve. Fully headless would need two CLI wallet signatures (SIWE
+  login + approval nonce).
+- 2026-09-19 — **`p0agent` extension chain now**: static agent from
+  `nix build --store ssh-ng://mar@nixos --eval-store auto
+  .#packages.x86_64-linux.config-server-static` (`bin/nodeagent`,
+  ~24 MB; `scp` it over — `file` is not on the box, fish shell), then
+  `gh auth token | docker login ghcr.io -u marnyg --password-stdin`
+  and `talos/extensions/p0agent/build.sh <bin> <ver>`; pin tag +
+  `crane digest` in `talos/hardware/minipc.yaml`. A scratch rootfs has
+  no CA bundle: Go's HTTPS client needs the `/etc/ssl/certs` bind the
+  0.1.1 spec adds (iroh's relay client carries webpki roots itself).
+- 2026-09-19 — `talosctl upgrade --wait` on cp1 takes ~11 min (drain
+  with w1 down) and this shell aborts long foreground commands;
+  background it (`> /tmp/cp1-upgrade.log &`) and poll `get extensions`.

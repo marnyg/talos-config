@@ -7,7 +7,12 @@
   `Issuer#mint-device` and `/.well-known` `359.8.2.3` part 1
   (2026-09-17); `Issuer#bundle` minus its name map, `359.8.2.3` part 2
   (2026-09-18); the hub's iroh endpoint `e8d` (2026-09-18); the name
-  map, `359.8.2.3` part 3 (2026-09-19, decision `2fc`). Outstanding:
+  map, `359.8.2.3` part 3 (2026-09-19, decision `2fc`); boot
+  enrollment for machines, `359.8.3` (2026-09-19) — **as an HTTP
+  handler on the shell, not `Issuer#mint-machine`**: `POST
+  /mesh/enroll/node` verifies the token with the master `hubManager`
+  holds and calls `Issuer.Mint` directly (decision `talos-config-488`;
+  the Provisioner's mint facet waits for the Provisioner). Outstanding:
   Provisioner as an actor.)_
 - Date: 2026-09-16
 - Refines: ADR-0018 (which named the actors and said "cut by state"

@@ -1,9 +1,12 @@
 # ADR-0015: Machine keys are minted on the machine; hardware selects configuration, not identity
 
-- Status: Proposed — implementation: `talos-config-359.8.3` (identity
-  plane, Mesh v3) or `talos-config-7ci` (nebula fallback if the Phase 0
-  gate fails); promote to Accepted when either lands. Design record:
-  spike `talos-config-px2` (closed 2026-09-04).
+- Status: Accepted _(2026-09-19 — landed on the identity plane,
+  `talos-config-359.8.3`: `config-server/boottoken` + `nodeagent`,
+  `POST /mesh/enroll/node`; cp1 enrolled with a boot token at 13:41Z.
+  The nebula plane still bakes `nebderive.MachineKey` into the served
+  config until Phase 4 (`359.11.2`) — the two planes coexist by design,
+  `359.8`. `talos-config-7ci` (nebula fallback) is moot.)_ Design
+  record: spike `talos-config-px2` (closed 2026-09-04).
 - Date: 2026-08-16
 - Amends: invariants 1 and 6 (see `desired-state/invariants.md`)
 - Related: ADR-0012 (device-born device keys), sketch `6a80633d`,
@@ -127,5 +130,13 @@ token redeemable once for a cert whose properties git dictates).
   `MachineKey`, inject token), new enrollment endpoint (shares the
   device verify+mint core), ext-nebula first-boot keygen + redeem,
   migration for cp1/w1/tv (re-key in place or at next reinstall).
-- Until implemented, the mesh runs in the old model; this ADR marks
-  the desired state, like ADR-0012 did during its in-flight window.
+- As built (2026-09-19): the token is `bt1.<payload>.<hmac>`, HMAC-SHA256
+  under `masterderive.BootTokenKey(master)` over `{mac, iat, nonce}`,
+  TTL 1 h, skew 2 min; the served config carries it in a `p0agent`
+  ExtensionServiceConfig `{hub, relay, token}`; the volatile seen-set
+  is `boottoken.Seen`, released when a mint fails and never consulted
+  while the Issuer is sealed (so a sealed hub cannot burn a token).
+  Verification is in the hub's HTTP handler with the master (decision
+  `talos-config-488`), not yet a Provisioner facet (ADR-0024).
+- Residual, not beaded: a node whose Kit lapsed (off > 90 d) holds a
+  long-dead token in its stored config and needs a fresh serve.

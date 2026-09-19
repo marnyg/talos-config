@@ -540,6 +540,44 @@ is random per process under an unseal-signed speak-as) and ADR-0023
   init, resolver `:53` only) are filed under Phase 2.4 (`359.9.4.1–3`),
   not here.
 
+### P1.3 Node agent on cp1 — data (2026-09-19)
+
+Bead `talos-config-359.8.3`, extension `p0agent` 0.1.1 (installer
+`v1.12.6-p0agent-0.1.1`), binary `config-server/cmd/nodeagent`, hub at
+`1d5baa8`. **cp1 is the first real member.**
+
+| check | result |
+|---|---|
+| enrolls with a boot token, no human act after approval | ADR-0015 as written: `/config` carries a `p0agent` ExtensionServiceConfig `{hub, relay, token}`; the agent posts `{node, token}` to `/mesh/enroll/node` and holds `member "cp1" groups [machines]` **370 ms after reading its config**. NodeId `ed:7dd90eb3…` is the P0.3 key file, unchanged. |
+| beats the hub over iroh | `#bundle` ok through the hub's own relay at uptime 10.9 s; the hub's name map witnesses `cp1` with its `reach-me-at`. The token is spent (`409` on reuse). |
+| authorize() on a stream facet | In-process (`TestNodeAgentEndToEnd`, local relay): admin device admitted on `talos-mesh/apid/v1`, echoed 36 KB through the splice; a `media` member and a self-signed stranger refused with a reason before spending a stream. **On the box: not yet** — no caller exists until `359.8.4`. |
+| restart from state, no token | In-process: same NodeId, Kit loaded, second beat ok. First beat after a restart was a **replay** until `actor.SeqBase` (sender seeds `seq` from its clock; the hub keeps its high-water mark). On the box: not yet exercised (`359.8.6`). |
+| upgrade path | `talosctl upgrade` × 2 (0.1.0 → 0.1.1), EPHEMERAL intact, `depends: service: cri` still the reason it does not hang. |
+
+Findings:
+
+- **Talos does not restart an extension service on an
+  ExtensionServiceConfig change.** `apply-config` (no reboot) registered
+  the document; the running container kept its mount namespace and
+  never saw the file. `talosctl service ext-p0agent restart` fixes it;
+  a reboot/upgrade starts it with the file present. The agent waits
+  for its file (30 s poll) rather than crash-loop, so upgrade-then-serve
+  is the safe order — the token lives 1 h from serve.
+- **A scratch rootfs has no CA bundle.** iroh's relay client carries
+  webpki roots; Go's `net/http` does not. 0.1.0's enroll failed with
+  `certificate signed by unknown authority`; 0.1.1 binds the host's
+  `/etc/ssl/certs` read-only beside `resolv.conf`.
+- **Stream facets have a wire now** (`iroh-transport/streamfacet.go`):
+  one extra ALPN per facet (`policy.ALPN`), the caller's `cert.Bundle`
+  on the first bi-stream, `ok` / `refused: <reason>` back, raw
+  forwards after. The receiver's consent grant to the wallet names
+  exactly the facets it forwards.
+- Two protocol runtime additions came out of the first non-hub
+  receiver (`SeqBase`, `Observe`) — `protocol/docs/day-to-day/`.
+- The public `/config` is device-flow gated; without the laptop on
+  nebula, one browser click at `/status` (`day-to-day/notes.md`)
+  re-serves a config. `nix run .#apply` still wants the mesh.
+
 ### Phase 2 — consumers migrate, one at a time (each step reversible)
 
 1. Admin CLI paths (talosctl/kubectl) onto bridges. Nebula still
