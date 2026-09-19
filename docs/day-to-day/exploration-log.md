@@ -90,6 +90,13 @@
   plane (w1 is not). Landed on: the control plane's mesh name as the
   endpoint, `-n <hostname>` proxied by apid via `resolveMemberNames`
   — the talosconfig shape.
+- 2026-09-19 (later, `qb5q`) — **The constraint behind the `apply`
+  ruling above has lifted**: w1 now runs the agent, so every node is
+  on the identity plane and per-node `<name>.mesh.internal` dialing is
+  viable. Not re-opened — the apid-proxy shape still has the smaller
+  blast radius (one endpoint, works for any future agentless node, and
+  matches talosconfig) — but the "ruled out" reason is no longer the
+  reason. Re-read this before assuming the option is closed.
 - 2026-09-19 — Considered putting the hub in the name map so
   `hub.mesh.internal` resolves like a member. Ruled out: the map is
   witnessed member certs and the hub holds none; a synthetic entry

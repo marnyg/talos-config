@@ -266,16 +266,17 @@
 
 ## Workloads / storage
 
-- **w1 is down** (since 2026-08-04; no LAN ping, no apid). <!-- stale? tracked by kso/0q0 --> Media
-  library offline — all `longhorn-bulk` volumes `faulted` (single
-  replica on w1). Needs physical attention; data presumed intact. Do
-  not start storage work until it returns (`talos-config-kso`,
-  `talos-config-0q0`). win2k25 system/ISO volumes are `degraded` (1 of
-  2 replicas) and heal unaided when w1 returns.
+- **w1 is back** (2026-09-18, `kso`; on the identity plane since
+  2026-09-19, `qb5q`). Its `longhorn-bulk` volumes are `attached` /
+  `healthy` again — the media library is online and the
+  2026-08-04→09-18 outage entry that used to sit here is retired.
+  Storage work is unblocked.
 - **Knowing deviation from invariant 2**: `longhorn-bulk` runs 1
   replica — the media library is neither git-derivable nor
-  replicated. Accepted only until the new nodes land
-  (`talos-config-0q0`). Wrong implementation, not a relaxed invariant.
+  replicated. Wrong implementation, not a relaxed invariant. The
+  condition it was accepted under ("until the new nodes land") is
+  **met as of 2026-09-19**, so `talos-config-0q0` (raise to 2) is now
+  actionable rather than waiting.
 - **Nothing app-level is replicated**: apps keep config on `emptyDir`;
   state dies on pod restart. "Longhorn is up" ≠ "state is safe".
 - **Pods must not dial `.mesh.internal` names** — nebula routes
