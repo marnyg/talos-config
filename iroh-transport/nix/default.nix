@@ -48,6 +48,13 @@ let
       env.CGO_ENABLED = 1;
       env.CGO_LDFLAGS = irohGo'.cgoLdflags;
       nativeBuildInputs = [ irohGo'.iroh-relay ];
+      # Keep iroh-ffi / iroh-relay out of the vendor FOD's inputs; see the
+      # matching note on config-server-bin. Lets the `vendor-hash` job
+      # gate this module without a cold Rust build.
+      overrideModAttrs = prev: {
+        env = (prev.env or { }) // { CGO_LDFLAGS = ""; };
+        nativeBuildInputs = lib.subtractLists [ irohGo'.iroh-relay ] (prev.nativeBuildInputs or [ ]);
+      };
       # -race needs glibc/libSystem; the musl build runs the suite plain.
       ldflags = [ "-s" "-w" ] ++ lib.optionals static [ "-linkmode" "external" "-extldflags" "-static" ];
       doCheck = true;

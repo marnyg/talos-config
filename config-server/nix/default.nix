@@ -78,6 +78,19 @@ let
       env.CGO_ENABLED = 1;
       env.CGO_LDFLAGS = irohGo'.cgoLdflags;
       nativeBuildInputs = [ irohGo'.iroh-relay ];
+      # Vendoring resolves the module graph; it never links or runs the
+      # relay, so keep iroh-ffi / iroh-relay out of the FOD's inputDrvs.
+      # Otherwise the `vendor-hash` CI job spends ~12min on a cold Rust
+      # build to reach a 7s check (run 35471088669). CGO_ENABLED stays 1:
+      # it gates which cgo-guarded files are considered, so flipping it
+      # would move the vendor content. CGO_LDFLAGS does not.
+      # Applied via overrideAttrs, so merge rather than assign: a plain
+      # `nativeBuildInputs = []` would also drop nixpkgs' own go /
+      # gitMinimal / cacert and the vendor step would lose its toolchain.
+      overrideModAttrs = prev: {
+        env = (prev.env or { }) // { CGO_LDFLAGS = ""; };
+        nativeBuildInputs = lib.subtractLists [ irohGo'.iroh-relay ] (prev.nativeBuildInputs or [ ]);
+      };
       # -race needs glibc/libSystem; the musl build runs the suite plain.
       ldflags = [ "-s" "-w" ] ++ lib.optionals static [ "-linkmode" "external" "-extldflags" "-static" ];
       checkFlags = [ "-count=1" ] ++ lib.optionals (!static) [ "-race" ];

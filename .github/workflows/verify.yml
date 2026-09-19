@@ -12,18 +12,16 @@
 #   nickel        verification/nickel/check.sh — the durable artifacts
 #                 against their snapshot contracts (the list lives in
 #                 that script's header), on every push/PR.
-#   vendor-hash   rebuilds config-server-bin's fixed-output vendor
-#                 derivation from scratch so a stale vendorHash fails
-#                 here, not on the next `nix build` (flake.nix caveat 3:
-#                 ../protocol is a local replace, so the hash moves with
-#                 protocol/*.go and a cached FOD hides the drift).
-#                 config-server only, deliberately: iroh-transport's
-#                 goModules pulls iroh-ffi + iroh-relay in as inputDrvs
-#                 (via env.CGO_LDFLAGS), so matrixing it here would drag
-#                 a cold Rust build into a job that runs on every push
-#                 and has no nix cache. It is gated in iroh-transport.yml
-#                 instead, which already has the cache and the right
-#                 path triggers.
+#   vendor-hash   rebuilds each module's fixed-output vendor derivation
+#                 from scratch so a stale vendorHash fails here, not on
+#                 the next `nix build` (flake.nix caveat 3: ../protocol is
+#                 a local replace, so the hash moves with protocol/*.go
+#                 and a cached FOD hides the drift). Cheap only because
+#                 both modules carry an `overrideModAttrs` that keeps
+#                 iroh-ffi / iroh-relay out of the vendor FOD's inputs —
+#                 without it this job spent ~12min on a cold Rust build
+#                 to reach a 7s check (run 35471088669). If you ever see
+#                 this job building Rust again, that override regressed.
 #
 # Both check.sh headers name this workflow; keep them in sync.
 name: verify
@@ -93,6 +91,10 @@ jobs:
         run: nix shell --inputs-from . nixpkgs#nickel -c verification/nickel/check.sh
   vendor-hash:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        attr: [config-server-bin, iroh-transport]
     steps:
       - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@v22
@@ -103,8 +105,9 @@ jobs:
       # So: realise the FOD first (substitution allowed — that is exactly
       # the stale-cache case we want to catch), then re-run the builder
       # and compare. Mismatch ⇒ "hash mismatch in fixed-output
-      # derivation" with the `got:` line to paste into flake.nix.
-      - name: goModules FOD realise
-        run: nix build .#config-server-bin.goModules --no-link
-      - name: goModules FOD rebuild + compare
-        run: nix build .#config-server-bin.goModules --rebuild --no-link
+      # derivation" with the `got:` line to paste into the module's
+      # nix/default.nix.
+      - name: ${{ matrix.attr }} goModules FOD realise
+        run: nix build .#${{ matrix.attr }}.goModules --no-link
+      - name: ${{ matrix.attr }} goModules FOD rebuild + compare
+        run: nix build .#${{ matrix.attr }}.goModules --rebuild --no-link
