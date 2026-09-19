@@ -32,6 +32,7 @@ const (
 	masterSigInfo  = "talos-config/wg/v1/master-from-sig"
 	kmsSealInfoPfx = "talos-config/kms/v1/seal-key/" // + lowercase node UUID
 	recoveryPfx    = "talos-config/kms/v1/recovery/" // + normalized MAC
+	bootTokenInfo  = "talos-config/boot-token/v1/mac-key"
 )
 
 // MasterMessage is the canonical text the admin wallet signs (EIP-191
@@ -113,6 +114,14 @@ func KMSSealKey(master []byte, uuid string) []byte {
 // derivation contract: Seal and Unseal must agree on the form.
 func NormalizeUUID(uuid string) string {
 	return strings.ToLower(strings.TrimSpace(uuid))
+}
+
+// BootTokenKey derives the HMAC key for ADR-0015 boot-enrollment
+// tokens (boottoken package). One key per master: verification is
+// stateless — any process holding the master verifies any token, so a
+// redeploy inside a token's TTL does not strand a booting machine.
+func BootTokenKey(master []byte) []byte {
+	return derive(master, bootTokenInfo, 32)
 }
 
 // RecoveryPassphrase derives the break-glass LUKS passphrase for the

@@ -33,6 +33,7 @@ import (
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nebderive"
+	"github.com/marnyg/talos-config/config-server/nodeagent"
 )
 
 // masterKeyEnv is the dev/testing escape hatch that auto-unseals the
@@ -94,6 +95,17 @@ func (s *server) serveTimePatches(mac string, m machines.Machine, byMAC map[stri
 			log.Printf("error building mesh patch for %s: %v", mac, err)
 			return nil, http.StatusInternalServerError, "internal error"
 		}
+		extra = append(extra, p)
+	}
+
+	// Identity plane (Mesh v3 Phase 1, ADR-0015): the agent's document
+	// with a boot token in place of a key. Empty without --iroh-relay.
+	p, err := s.hub.agentPatch(master, mac, time.Now())
+	if err != nil {
+		log.Printf("error building agent patch for %s: %v", mac, err)
+		return nil, http.StatusInternalServerError, "internal error"
+	}
+	if p != "" {
 		extra = append(extra, p)
 	}
 
@@ -242,6 +254,7 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("POST /mesh/enroll/device", s.handleMeshEnrollDevice)
 	mux.HandleFunc("POST /mesh/enroll/approve", s.handleMeshEnrollApprove)
 	mux.HandleFunc("GET /mesh/enroll/config", s.handleMeshEnrollConfig)
+	mux.HandleFunc("POST "+nodeagent.EnrollPath, s.handleNodeEnroll)
 	mux.HandleFunc("GET /sealed", s.handleSealed)
 	mux.HandleFunc("GET "+wellKnownSpeakAsPath, s.handleWellKnownSpeakAs)
 	mux.HandleFunc("GET "+wellKnownReachMeAtPath, s.handleWellKnownReachMeAt)
@@ -341,6 +354,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("hub: %v", err)
 		}
+		hub.publicURL = *irohRelay
 		if wan != nil {
 			log.Printf("hub identity %s on iroh, advertised at %s", hub.issuer.Fingerprint(), hub.endpoints())
 		}

@@ -35,6 +35,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/marnyg/talos-config/config-server/boottoken"
 	"github.com/marnyg/talos-config/config-server/enroll"
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/issuer"
@@ -81,6 +82,14 @@ type hubManager struct {
 	// iroh endpoint, bound with the hubkey so hubkey == EndpointId
 	// (ADR-0024). nil ⇒ in-process only (tests, --iroh-relay unset).
 	wan actor.Endpoint
+
+	// publicURL is the HTTPS base members and nodes reach this hub at
+	// (--iroh-relay: one hostname carries HTTPS and the relay, ADR-0022).
+	// "" ⇒ no identity plane: served configs carry no agent document.
+	publicURL string
+	// bootSeen is the volatile single-use guard for boot tokens
+	// (nodeenroll.go); safe to lose.
+	bootSeen boottoken.Seen
 
 	mu     sync.Mutex
 	master []byte // nil while sealed
