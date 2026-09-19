@@ -229,6 +229,21 @@ Rules that fall out of the cut:
   and the hub does not roam, so ADR-0001's ≈ 1 h sketch would put a
   WAN fetch in front of every beat. After one beat the reply's
   piggyback keeps it current.
+- **The hub as a caller** _(built 2026-09-21, P2.2 `359.9.2`; ruled
+  2026-09-18, `359.8.5`)_: auto-bootstrap's `apid` dials to the
+  control plane are stream-facet connections like any device's. The
+  Issuer mints a member cert for **its own key**, `{aud: hubkey, name:
+  hub, groups: []}`, and the recipe's one `host:` row (`{facet: apid,
+  host: hub}` under node) compiles to its grant, signed by the same hot
+  key under the same `speak-as`; the node's `Authorize` resolves both
+  through the wallet exactly as it resolves a laptop's. **No new
+  authorize rule.** The cert is never presented at `#bundle`, so it is
+  never witnessed and the name map never carries `hub`. The dial is
+  through the name map (decision `2fc`): a member the hub has not seen
+  beat since its own start is *unknown* (`node-unknown` on `/status`),
+  not unreachable — the gap decision `z2go` bounds to one `MinRebeat`
+  past the unseal. TLS verifies the node's `<name>.<zone>` certSAN,
+  the same name talosconfig uses.
 
 ### Policy: payload, not identity
 
@@ -698,9 +713,21 @@ provisioning or recovery path may depend on it.
   (serialized, ≤ 1/min) and retries once; the directory is a
   safe-to-lose cache and a miss is the signal to refresh it, so a hub
   redeploy costs one bounded dial (15 s) and one beat, not a restart
-  (built 2026-09-20, `ipt7`; decision `pu9q`). Outbound to
-  the hub relay only; `seq` seeded from its clock (`actor.SeqBase`)
-  because the hub's high-water mark outlives the agent's restarts.
+  (built 2026-09-20, `ipt7`; decision `pu9q`). A node that dials
+  nothing between beats has two more kinds of evidence (built
+  2026-09-21, decision `z2go`): **the pooled connection its last beat
+  left to the hub closing** — iroh keep-alives every connection, so
+  a dead hub process is observed ~30 s later without a dial — and
+  **an admitted caller whose rooted `speak-as` names a `hubkey`
+  issued at or after the one it holds**. Both schedule a beat at the
+  earliest `MinRebeat`; a beat the hub refuses as *sealed* retries
+  flat at `MinRebeat` (the hub is up and waiting for the wallet — the
+  one poll admitted, bounded to the sealed window), so **every live
+  member has beaten within one `MinRebeat` of the unseal** and the
+  hub's name map is complete again; never by short polling, never by
+  a hub push. Outbound to the hub relay only; `seq` seeded from its
+  clock (`actor.SeqBase`) because the hub's high-water mark outlives
+  the agent's restarts.
 - **Kit** — what `Issuer.Mint` hands a new member: its `member` cert
   (90 d), the **beat grant** — one `invoke` grant to the Owner's
   `#renew` + `#bundle` facets (7 d, `target: wallet`,
@@ -780,7 +807,10 @@ provisioning or recovery path may depend on it.
   **The hub's name resolves from the member's hub record** (hubkey +
   `reach-me-at`, kept for the beat), not the name map: the hub is a
   well-known actor, never a member, and holds no member cert
-  (`nodeagent.HubName`, 2026-09-19). Same dialect on every device: Android (`iroh-go/mobile`, P0.2) and
+  (`nodeagent.HubName`, 2026-09-19). The same name is what the hub's
+  self-minted member cert carries when the hub *calls* a member
+  (`HubMemberName`, P2.2): one actor, `hubkey`, under one name on
+  both sides — and still never in the name map. Same dialect on every device: Android (`iroh-go/mobile`, P0.2) and
   the desktop daemon (`config-server/fakeip` + `irohup -tun`, P2.0,
   ADR-0025). Where the model meets a web that assumes global names
   (invariants, structural trade-offs) — expected to stay the fragile

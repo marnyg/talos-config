@@ -125,8 +125,10 @@ func (s *Stream) Close() error {
 }
 
 // await runs f on its own goroutine (the binding's async calls block
-// the caller) and returns early on ctx or closed. The goroutine is
-// released when f returns; f's result is then dropped.
+// the caller) and returns early on ctx or closed. A result that lands
+// after the caller gave up is released (Destroy on the FFI handle — a
+// late connection or stream would otherwise live until the finalizer
+// runs, holding its peer's resources with it), never returned.
 func await[T any](ctx context.Context, closed <-chan struct{}, f func() (T, error)) (T, error) {
 	type res struct {
 		v   T
@@ -142,8 +144,19 @@ func await[T any](ctx context.Context, closed <-chan struct{}, f func() (T, erro
 	case r := <-done:
 		return r.v, r.err
 	case <-closed:
-		return zero, actor.ErrClosed
 	case <-ctx.Done():
+	}
+	go func() {
+		if r := <-done; r.err == nil {
+			if d, ok := any(r.v).(interface{ Destroy() }); ok {
+				d.Destroy()
+			}
+		}
+	}()
+	select {
+	case <-closed:
+		return zero, actor.ErrClosed
+	default:
 		return zero, ctx.Err()
 	}
 }

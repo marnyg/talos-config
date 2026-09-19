@@ -52,9 +52,11 @@ node:
   inbound:
     # Reachability checks from any member.
     - {port: any, proto: icmp, host: any}
-    # The hub dials the node: apid for auto-bootstrap and /status
-    # probes. Matched by cert *name*, which only the CA can issue —
-    # the hub holds no group.
+    # DEAD since 2026-09-21 (P2.2, 359.9.2): the hub's apid dials for
+    # auto-bootstrap ride the identity plane (mesh-policy-v3.yaml's
+    # `{facet: apid, host: hub}`). Kept only because removing a rule
+    # re-renders every node's nebula config; Phase 4 (359.11.2)
+    # deletes this file with the render.
     - {port: any, proto: any, host: hub}
     # Owner devices, unrestricted: this is the access wg0 already
     # granted them (allowed-ips, no firewall), so narrowing it here

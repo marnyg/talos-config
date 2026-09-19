@@ -33,6 +33,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,9 +47,9 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	"github.com/siderolabs/talos/pkg/machinery/role"
 
+	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/mesh"
-	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
 const (
@@ -315,14 +316,15 @@ func (b *bootstrapper) bootstrap(ctx context.Context, mac string, m machines.Mac
 	log.Printf("AUTO-BOOTSTRAP: Bootstrap accepted by %s — watching for etcd to come up", mac)
 }
 
-// zone is the mesh DNS zone machine certs carry as a SAN
-// (mesh.MachinePatch): the manager's when there is one, else the
-// default the hub was built with.
+// zone is the mesh DNS zone machine certs carry as a SAN. Today the
+// nebula render injects it (mesh.MachinePatch, the manager's zone);
+// Phase 4 (359.11.2) moves the SAN with the render, and the
+// presentation zone the identity plane already uses is the fallback.
 func (b *bootstrapper) zone() string {
 	if b.hub.mesh != nil {
 		return b.hub.mesh.DNSZone()
 	}
-	return nebderive.DNSZone
+	return strings.TrimSuffix(fakeip.Zone, ".")
 }
 
 // talosClient builds a machinery client whose every gRPC connection is

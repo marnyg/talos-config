@@ -186,6 +186,17 @@ func (m *hubManager) listen(ctx context.Context) {
 }
 
 func (m *hubManager) publishLocation(ctx context.Context) {
+	// Reach the relay before saying where we are: a record published
+	// first invites a dial the relay cannot yet forward (the e2e saw
+	// it; fly's loopback relay child makes it a few ms). Bounded — a
+	// relay outage must not keep the hub from publishing at all.
+	if o, ok := m.wan.(interface{ Online(context.Context) error }); ok {
+		octx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		if err := o.Online(octx); err != nil && ctx.Err() == nil {
+			log.Printf("issuer: relay not reached before the first reach-me-at: %v", err)
+		}
+		cancel()
+	}
 	t := time.NewTicker(locationRefresh)
 	defer t.Stop()
 	for {
