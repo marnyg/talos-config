@@ -48,9 +48,18 @@ container:
       type: bind
       options: [rbind, rshared, rw]
     # The rootfs is scratch + one static binary; resolving the hub
-    # hostname needs the host resolver (127.0.0.53, host netns).
+    # hostname needs the host resolver (127.0.0.53, host netns), and
+    # the HTTPS fetches (/.well-known, /mesh/enroll/node — web PKI is
+    # the hint channel, decision bjg) need the host's CA bundle. iroh
+    # carries its own webpki roots for the relay; Go's net/http does
+    # not (learned 2026-09-19, first 0.1.0 enroll: "certificate signed
+    # by unknown authority").
     - source: /etc/resolv.conf
       destination: /etc/resolv.conf
+      type: bind
+      options: [rbind, ro]
+    - source: /etc/ssl/certs
+      destination: /etc/ssl/certs
       type: bind
       options: [rbind, ro]
 restart: always
