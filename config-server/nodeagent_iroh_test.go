@@ -126,6 +126,43 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 		t.Fatalf("token reuse: %v", err)
 	}
 
+	// The hub as an ordinary caller (P2.2, 359.9.2): auto-bootstrap's
+	// apid dial is the hub's own bundle — a member cert for its key
+	// named "hub", the recipe's one host row compiled for it — on the
+	// node's apid facet, found through the name map the node's beat
+	// filled. A name nobody has beaten under is unknown, not
+	// unreachable: that is what auto-bootstrap shows until the beat.
+	hb, err := m.present()
+	if err != nil || hb.Member.Cav.Name != HubMemberName || hb.Member.Aud != string(m.issuer.ID()) || len(hb.Grants) != 1 || hb.Grants[0].Cav.Facet[0] != "apid" {
+		t.Fatalf("hub bundle: %+v %v", hb, err)
+	}
+	hc, err := m.dialMember(ctx, "aa-bb-cc-dd-ee-ff", "apid", 5*time.Second)
+	if err != nil {
+		t.Fatalf("hub → apid: %v", err)
+	}
+	if hc.Peer() != a.ID() {
+		t.Fatalf("hub dialed %s, want the node %s", hc.Peer(), a.ID())
+	}
+	hs, err := hc.Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hs.Write([]byte("from the hub")); err != nil {
+		t.Fatal(err)
+	}
+	_ = hs.(interface{ CloseWrite() error }).CloseWrite()
+	if got, err := io.ReadAll(hs); err != nil || string(got) != "from the hub" {
+		t.Fatalf("echo to the hub: %q, %v", got, err)
+	}
+	_ = hs.Close()
+	_ = hc.Close()
+	if _, err := m.dialMember(ctx, "cp9", "apid", time.Second); !errors.Is(err, errMemberUnknown) {
+		t.Fatalf("hub → unknown name: %v, want errMemberUnknown", err)
+	}
+	if e := issuer.Lookup(m.issuer.NameMap(), HubMemberName); len(e) != 0 {
+		t.Fatalf("the hub's own member cert must never enter the name map: %+v", e)
+	}
+
 	// Two devices beat the hub for their bundles: an admin (apid granted
 	// by the recipe) and a media member (no node facet at all).
 	device := func(name, group string) (*irohtransport.Endpoint, cert.Bundle) {

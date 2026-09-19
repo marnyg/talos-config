@@ -165,6 +165,12 @@ func decodeNameMap(w []wireNameEntry) ([]NameEntry, error) {
 	return out, nil
 }
 
+// SortNewest orders entries by member cert iat, newest first — the
+// dial order across a re-key (Lookup's "pick by iat or dial both").
+func SortNewest(entries []NameEntry) {
+	slices.SortStableFunc(entries, func(a, b NameEntry) int { return cmp.Compare(b.Member.Iat, a.Member.Iat) })
+}
+
 // Lookup finds the entries whose member cert carries name. Several
 // entries may share a name across a re-key (two NodeIds, both holding
 // unexpired certs for the same role until the old one lapses); the

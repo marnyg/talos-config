@@ -386,7 +386,7 @@ var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("
  {{if .Mesh}}<tr><th>mesh</th><td{{if .MeshWarn}} class="warn"{{end}}>{{.Mesh}}</td></tr>{{end}}
  {{if .Relay}}<tr><th>iroh relay</th><td{{if .RelayWarn}} class="warn"{{end}}>{{.Relay}}</td></tr>{{end}}
  {{with .Boot}}
- <tr><th>auto-bootstrap</th><td>{{.State}}{{if .Target}} — target {{.Target}} ({{.MeshIP}}){{end}}{{if .Done}} — cluster bootstrapped, idle{{else if .Attempted}} — Bootstrap called, watching etcd{{end}}{{if .LastErr}} — last error: {{.LastErr}}{{end}}</td></tr>
+ <tr><th>auto-bootstrap</th><td>{{.State}}{{if .Target}} — target {{.Target}} ({{.Name}}{{if .Peer}}, {{.Peer}}{{end}}){{end}}{{if .Done}} — cluster bootstrapped, idle{{else if .Attempted}} — Bootstrap called, watching etcd{{end}}{{if .LastErr}} — last error: {{.LastErr}}{{end}}</td></tr>
  {{else}}
  <tr><th>auto-bootstrap</th><td>disabled</td></tr>
  {{end}}
@@ -491,6 +491,16 @@ You decide the final name and group — the device only proposed them.</p>
 {{range .MeshRows}} <tr><td>{{.Name}}</td><td>{{.Group}}</td><td>{{.Addr}}</td><td>{{.Tunnel}}</td><td>{{.Endpoint}}</td><td>{{.Relays}}</td></tr>
 {{end}}</table>
 {{else}}<p>Membership appears after unseal.</p>{{end}}
+{{end}}
+{{if .Identity}}
+<h2>Members (identity plane)</h2>
+{{if .MemberRows}}
+<p>Every member that has beaten this hub process, as the name map ships it (decision 2fc: witnessed, never registered). A member missing here has not beaten since the last unseal.</p>
+<table>
+ <tr><th>name</th><th>groups</th><th>node id</th><th>member until</th><th>reach-me-at</th></tr>
+{{range .MemberRows}} <tr><td>{{.Name}}</td><td>{{.Groups}}</td><td><code>{{.NodeID}}</code></td><td>{{.Until}}</td><td>{{.Endpoints}}</td></tr>
+{{end}}</table>
+{{else}}<p>No member has beaten this hub process yet.</p>{{end}}
 {{end}}
 </div>
 <script>
@@ -620,6 +630,34 @@ type statusRow struct {
 	LastFetch          string
 }
 
+// memberRow is one identity-plane member as the name map knows it.
+type memberRow struct {
+	Name, Groups, NodeID, Until, Endpoints string
+}
+
+// memberRows projects the Issuer's name map for the page.
+func memberRows(entries []issuer.NameEntry) []memberRow {
+	rows := make([]memberRow, 0, len(entries))
+	for _, e := range entries {
+		r := memberRow{
+			Name:   e.Member.Cav.Name,
+			Groups: strings.Join(e.Member.Cav.Groups, " "),
+			NodeID: strings.TrimPrefix(e.Member.Aud, "ed:"),
+			Until:  time.Unix(e.Member.Exp, 0).UTC().Format("2006-01-02"),
+		}
+		if len(r.NodeID) > 16 {
+			r.NodeID = r.NodeID[:16] + "…"
+		}
+		if e.Location != nil {
+			r.Endpoints = strings.Join(e.Location.Cav.Endpoints, " ")
+		} else {
+			r.Endpoints = "(no live location)"
+		}
+		rows = append(rows, r)
+	}
+	return rows
+}
+
 type statusData struct {
 	Addr          string
 	Message       string
@@ -630,7 +668,8 @@ type statusData struct {
 	Mesh          string // mesh seal-state line ("" = mesh disabled)
 	MeshWarn      bool
 	MeshRows      []mesh.MemberRow
-	Relay         string // iroh relay child line ("" = no relay)
+	MemberRows    []memberRow // identity-plane name map (issuer.NameMap)
+	Relay         string      // iroh relay child line ("" = no relay)
 	RelayWarn     bool
 	Boot          *bootSnapshot
 	Pending       []verifyEntry
@@ -715,6 +754,7 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		if data.IdentitySealed {
 			data.Proposals, data.ProposalsJSON = s.proposalsFor(addr)
 		}
+		data.MemberRows = memberRows(s.hub.issuer.NameMap())
 	}
 	if nm := s.mesh(); nm != nil {
 		svc, _, meshErr := nm.State()

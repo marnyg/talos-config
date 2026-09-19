@@ -134,16 +134,17 @@ func TestStepSealed(t *testing.T) {
 	}
 }
 
-// TestStepMeshDown: an unsealed hub whose mesh never came up must
-// report mesh-down, not dial anything.
-func TestStepMeshDown(t *testing.T) {
+// TestStepNoIdentityPlane: an unsealed hub without a wan endpoint
+// (--iroh-relay unset) has nothing to dial through and must say so,
+// not dial anything.
+func TestStepNoIdentityPlane(t *testing.T) {
 	hub := testHubManager(t, nil, "")
 	if err := hub.unsealWithMaster([]byte("bootstrap-test-master-32-bytes!!")); err != nil {
 		t.Fatal(err)
 	}
 	b := newBootstrapper(t.TempDir(), hub)
 	b.step(t.Context())
-	if got := b.status().State; got != "mesh-down" {
-		t.Fatalf("state = %q, want mesh-down", got)
+	if got := b.status().State; got != "no-identity-plane" {
+		t.Fatalf("state = %q, want no-identity-plane", got)
 	}
 }

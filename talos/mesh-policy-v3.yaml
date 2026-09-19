@@ -36,8 +36,11 @@ node:
       # Deliberately absent: any `group: machines` rule — machines must
       # not reach each other's control surfaces (nebmachine_test stance;
       # a contract in mesh-policy-v3.ncl).
-      # Also absent: {facet: apid, host: hub} — hub → node apid stays
-      # on nebula until Phase 4 (359.11.2).
+    # The hub itself, an ordinary caller (P2.2, 359.9.2): auto-bootstrap
+    # probes and calls the control plane's apid presenting a member
+    # cert it mints for its own key under the name `hub` — the one
+    # `host:` row, compiled like any other (config-server/hubcaller.go).
+    - {facet: apid, host: hub}
 gateway:
   inbound:
     # One class for every HTTP UI; per-app authorization stays at the

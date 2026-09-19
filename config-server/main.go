@@ -466,8 +466,8 @@ func main() {
 	}
 
 	if *autoBoot {
-		if hub == nil {
-			log.Fatal("--auto-bootstrap requires --mesh-port (it dials nodes over the mesh)")
+		if hub == nil || hub.wan == nil {
+			log.Fatal("--auto-bootstrap requires --iroh-relay (it dials nodes over the identity plane)")
 		}
 		s.boot = newBootstrapper(*root, hub)
 		go s.boot.run(context.Background())

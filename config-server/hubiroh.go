@@ -16,6 +16,7 @@ import (
 
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/actor"
+	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // irohHubTransport binds the hubkey on iroh: homed on `home` (the relay
@@ -58,12 +59,26 @@ func (w *irohWan) AcceptFacet(ctx context.Context) (facetConn, error) {
 	return irohFacetConn{c}, nil
 }
 
-// irohFacetConn narrows Accept's *Raw to the io.ReadWriteCloser the
-// untagged side handles.
+// DialFacet is the outbound half (hubcaller.go): one stream-facet
+// connection to a member, the hub's bundle as preamble.
+func (w *irohWan) DialFacet(ctx context.Context, id cert.ActorID, hints []string, alpn string, preamble []byte) (facetClient, error) {
+	c, err := w.Endpoint.DialConn(ctx, id, hints, alpn, preamble)
+	if err != nil {
+		return nil, err
+	}
+	return irohFacetConn{c}, nil
+}
+
+// irohFacetConn narrows Accept's and Open's *Raw to the
+// io.ReadWriteCloser the untagged side handles.
 type irohFacetConn struct {
 	*irohtransport.Conn
 }
 
 func (c irohFacetConn) Accept(ctx context.Context) (io.ReadWriteCloser, error) {
 	return c.Conn.Accept(ctx)
+}
+
+func (c irohFacetConn) Open(ctx context.Context) (io.ReadWriteCloser, error) {
+	return c.Conn.Open(ctx)
 }

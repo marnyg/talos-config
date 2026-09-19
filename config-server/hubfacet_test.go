@@ -89,9 +89,9 @@ func (c *fakeFacetConn) open(ctx context.Context) (net.Conn, error) {
 	}
 }
 
-// facetClient is an http.Client whose every connection is one stream
+// facetHTTPClient is an http.Client whose every connection is one stream
 // on c.
-func facetClient(c *fakeFacetConn) *http.Client {
+func facetHTTPClient(c *fakeFacetConn) *http.Client {
 	return &http.Client{Transport: &http.Transport{
 		DialContext:       func(ctx context.Context, _, _ string) (net.Conn, error) { return c.open(ctx) },
 		DisableKeepAlives: true,
@@ -161,7 +161,7 @@ func TestHubHTTPFacet(t *testing.T) {
 	adminID, adminBundle := memberOf(t, m, "laptop", "admins")
 	admin := newFakeFacetConn(alpn, adminID, adminBundle)
 	go m.handleFacetConn(ctx, admin, ln)
-	resp, err := facetClient(admin).Get("http://hub.mesh.internal/config?mac=aa-bb-cc-dd-ee-ff")
+	resp, err := facetHTTPClient(admin).Get("http://hub.mesh.internal/config?mac=aa-bb-cc-dd-ee-ff")
 	if err != nil {
 		t.Fatalf("admin GET: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestHubHTTPFacet(t *testing.T) {
 		t.Fatalf("admin: admitted=%v refused=%q", adm, ref)
 	}
 	// A second stream on the same connection is a second HTTP connection.
-	resp, err = facetClient(admin).Get("http://hub.mesh.internal/config?mac=00-00-00-00-00-00")
+	resp, err = facetHTTPClient(admin).Get("http://hub.mesh.internal/config?mac=00-00-00-00-00-00")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestHubHTTPFacet(t *testing.T) {
 	mediaID, mediaBundle := memberOf(t, m, "tv", "media")
 	media := newFakeFacetConn(alpn, mediaID, mediaBundle)
 	go m.handleFacetConn(ctx, media, ln)
-	resp, err = facetClient(media).Get("http://hub.mesh.internal/config?mac=aa-bb-cc-dd-ee-ff")
+	resp, err = facetHTTPClient(media).Get("http://hub.mesh.internal/config?mac=aa-bb-cc-dd-ee-ff")
 	if err != nil {
 		t.Fatalf("media GET: %v", err)
 	}

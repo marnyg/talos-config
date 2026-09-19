@@ -86,6 +86,13 @@ type hubManager struct {
 	wan actor.Endpoint
 	// stream is the cached hubkey consent for the stream facets.
 	stream streamConsent
+	// caller is the cached bundle the hub presents when it dials a
+	// member's facet (hubcaller.go); when wan also implements
+	// facetDialer, auto-bootstrap's apid dials go this way.
+	caller struct {
+		mu sync.Mutex
+		b  callerBundle
+	}
 
 	// publicURL is the HTTPS base members and nodes reach this hub at
 	// (--iroh-relay: one hostname carries HTTPS and the relay, ADR-0022).

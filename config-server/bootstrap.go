@@ -1,11 +1,13 @@
 package main
 
-// Auto-bootstrap: the server watches the mesh for the approved
-// control-plane node and, when its etcd is waiting for bootstrap, calls
-// the machinery Bootstrap API over the overlay (phase 2 step 3 moved
-// the dial from wg0's netstack to the mesh's). No trust escalation: the
-// server already composes configs from the cluster secrets, so it holds
-// the OS CA and can mint its own short-lived os:admin client cert.
+// Auto-bootstrap: the server watches for the approved control-plane
+// node and, when its etcd is waiting for bootstrap, calls the machinery
+// Bootstrap API over the identity plane — a stream on the node's apid
+// facet, the hub presenting its own bundle as an ordinary caller
+// (hubcaller.go; Mesh v3 P2.2, talos-config-359.9.2; before that the
+// nebula netstack, before that wg0's). No trust escalation: the server
+// already composes configs from the cluster secrets, so it holds the OS
+// CA and can mint its own short-lived os:admin client cert.
 //
 // Bootstrap must run exactly once per cluster — calling it on a CP that
 // should *join* an existing etcd would split-brain the cluster. Guards,
@@ -19,13 +21,16 @@ package main
 //
 // All state is in-memory: a restart re-observes reality (an already
 // bootstrapped cluster reports etcd Running and the loop goes idle).
+// After a restart the node is "node-unknown" until it beats — one
+// MinRebeat past the unseal (decision z2go); the streak resets, so no
+// Bootstrap call can ride on a stale view.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"sync"
@@ -43,7 +48,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/mesh"
-	"github.com/marnyg/talos-config/config-server/nebstack"
+	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
 const (
@@ -58,14 +63,15 @@ const (
 type etcdObservation int
 
 const (
-	etcdUnreachable etcdObservation = iota // tunnel/apid not reachable
+	etcdUnreachable etcdObservation = iota // a dial was attempted and failed (stream or apid)
+	etcdUnknown                            // no member of the node's name has beaten this hub yet
 	etcdAbsent                             // apid up, no etcd service yet
 	etcdWaiting                            // etcd present, not Running (pre-bootstrap)
 	etcdRunning                            // etcd Running: cluster is bootstrapped
 )
 
 func (o etcdObservation) String() string {
-	return [...]string{"unreachable", "etcd-absent", "etcd-waiting", "etcd-running"}[o]
+	return [...]string{"unreachable", "node-unknown", "etcd-absent", "etcd-waiting", "etcd-running"}[o]
 }
 
 // bootAction is what the state machine decided after an observation.
@@ -121,9 +127,10 @@ func observeEtcd(services []*machineapi.ServiceInfo) etcdObservation {
 // the only bootstrapper state shared across goroutines.
 type bootSnapshot struct {
 	LastPoll  time.Time
-	State     string // sealed | mesh-down | no-control-plane | multi-cp-refused | <observation>
+	State     string // sealed | no-identity-plane | no-control-plane | multi-cp-refused | <observation>
 	Target    string // control-plane MAC
-	MeshIP    string // target's overlay address
+	Name      string // target's member name (the name map key and TLS SAN)
+	Peer      string // NodeId the last successful dial landed on, "" until one has
 	Done      bool   // cluster confirmed bootstrapped
 	Attempted bool   // a Bootstrap call succeeded this lifetime
 	LastErr   string // last RPC failure, "" when healthy
@@ -189,18 +196,11 @@ func (b *bootstrapper) step(ctx context.Context) {
 		b.setSnap(func(s *bootSnapshot) { s.State = "sealed" })
 		return // sealed: no master, nothing to derive or dial
 	}
-
-	// The control channel rides the mesh: an unsealed hub whose mesh
-	// failed to start has nothing to dial through. Kept distinct from
-	// "sealed" so /status says which of the two it is.
-	var svc *nebstack.Service
-	var meshSubnet netip.Prefix
-	if nm := b.hub.mesh; nm != nil {
-		svc, _, _ = nm.State()
-		meshSubnet = nm.Subnet()
-	}
-	if svc == nil {
-		b.setSnap(func(s *bootSnapshot) { s.State = "mesh-down" })
+	// The control channel is the identity plane: a hub without a wan
+	// endpoint has nothing to dial through. Distinct from "sealed" so
+	// /status says which of the two it is.
+	if _, ok := b.hub.wan.(facetDialer); !ok {
+		b.setSnap(func(s *bootSnapshot) { s.State = "no-identity-plane" })
 		return
 	}
 
@@ -228,69 +228,77 @@ func (b *bootstrapper) step(ctx context.Context) {
 		mac = m
 	}
 	m := cps[mac]
-	ip, err := mesh.MachineMeshIP(master, mac, m, meshSubnet)
-	if err != nil {
-		log.Printf("auto-bootstrap: mesh address for %s: %v", mac, err)
-		return
-	}
+	name := mesh.MachineDNSName(mac, m)
 
-	obs := b.observe(ctx, svc, m, ip)
+	obs, peer := b.observe(ctx, m, name)
 	if obs != b.lastObs || !b.obsLogged {
-		log.Printf("auto-bootstrap: %s (%s over mesh): %s", mac, ip, obs)
+		log.Printf("auto-bootstrap: %s (%s over the identity plane): %s", mac, name, obs)
 		b.lastObs, b.obsLogged = obs, true
 	}
 
 	action := b.st.next(obs)
 	b.setSnap(func(s *bootSnapshot) {
-		s.State, s.Target, s.MeshIP = obs.String(), mac, ip.String()
+		s.State, s.Target, s.Name = obs.String(), mac, name
+		if peer != "" {
+			s.Peer = peer
+		}
 		s.Done, s.Attempted, s.LastErr = b.st.done, b.st.attempted, b.lastFail
 	})
 
 	switch action {
 	case actBootstrap:
-		b.bootstrap(ctx, svc, mac, m, ip)
+		b.bootstrap(ctx, mac, m, name)
 	case actDone:
 		log.Printf("auto-bootstrap: cluster is bootstrapped (etcd running on %s); going idle", mac)
 	}
 }
 
-// observe dials the node over the mesh and inspects its services.
-func (b *bootstrapper) observe(ctx context.Context, svc *nebstack.Service, m machines.Machine, ip netip.Addr) etcdObservation {
+// observe dials the node's apid facet and inspects its services. The
+// second result is the NodeId the dial landed on ("" when none did).
+func (b *bootstrapper) observe(ctx context.Context, m machines.Machine, name string) (etcdObservation, string) {
 	ctx, cancel := context.WithTimeout(ctx, bootstrapDialTimeout)
 	defer cancel()
 
-	c, err := b.talosClient(ctx, svc, m, ip)
+	c, peer, err := b.talosClient(ctx, m, name)
 	if err != nil {
-		log.Printf("auto-bootstrap: building client: %v", err)
-		return etcdUnreachable
+		if errors.Is(err, errMemberUnknown) {
+			b.lastFail = ""
+			return etcdUnknown, ""
+		}
+		// "unreachable" alone hides whether the stream or TLS failed;
+		// log the underlying error whenever it changes.
+		b.fail("dial", err)
+		return etcdUnreachable, ""
 	}
 	defer c.Close() //nolint:errcheck
 
 	resp, err := c.ServiceList(ctx)
 	if err != nil {
-		// "unreachable" alone hides whether the overlay or TLS failed;
-		// log the underlying error whenever it changes.
-		if msg := err.Error(); msg != b.lastFail {
-			log.Printf("auto-bootstrap: service list via mesh failed: %v", err)
-			b.lastFail = msg
-		}
-		return etcdUnreachable
+		b.fail("service list", err)
+		return etcdUnreachable, peer
 	}
 	b.lastFail = ""
 	var services []*machineapi.ServiceInfo
 	for _, msg := range resp.GetMessages() {
 		services = append(services, msg.GetServices()...)
 	}
-	return observeEtcd(services)
+	return observeEtcd(services), peer
+}
+
+func (b *bootstrapper) fail(what string, err error) {
+	if msg := err.Error(); msg != b.lastFail {
+		log.Printf("auto-bootstrap: %s over the identity plane failed: %v", what, err)
+		b.lastFail = msg
+	}
 }
 
 // bootstrap performs the one-shot Bootstrap call.
-func (b *bootstrapper) bootstrap(ctx context.Context, svc *nebstack.Service, mac string, m machines.Machine, ip netip.Addr) {
-	log.Printf("AUTO-BOOTSTRAP: calling Bootstrap on %s (%s) — etcd waited %d consecutive polls", mac, ip, b.st.waitingStreak)
+func (b *bootstrapper) bootstrap(ctx context.Context, mac string, m machines.Machine, name string) {
+	log.Printf("AUTO-BOOTSTRAP: calling Bootstrap on %s (%s) — etcd waited %d consecutive polls", mac, name, b.st.waitingStreak)
 
 	ctx, cancel := context.WithTimeout(ctx, bootstrapDialTimeout)
 	defer cancel()
-	c, err := b.talosClient(ctx, svc, m, ip)
+	c, _, err := b.talosClient(ctx, m, name)
 	if err != nil {
 		log.Printf("auto-bootstrap: building client: %v", err)
 		return
@@ -307,26 +315,66 @@ func (b *bootstrapper) bootstrap(ctx context.Context, svc *nebstack.Service, mac
 	log.Printf("AUTO-BOOTSTRAP: Bootstrap accepted by %s — watching for etcd to come up", mac)
 }
 
-// talosClient builds a machinery client that dials through the mesh
-// netstack, authenticating with a short-lived os:admin cert minted from
-// the cluster's OS CA (extracted from the machine's composed config).
-// The TLS dial verifies against the machine's overlay-address certSAN,
-// which mesh.MachinePatch injects for exactly this reason.
-func (b *bootstrapper) talosClient(ctx context.Context, svc *nebstack.Service, m machines.Machine, ip netip.Addr) (*client.Client, error) {
+// zone is the mesh DNS zone machine certs carry as a SAN
+// (mesh.MachinePatch): the manager's when there is one, else the
+// default the hub was built with.
+func (b *bootstrapper) zone() string {
+	if b.hub.mesh != nil {
+		return b.hub.mesh.DNSZone()
+	}
+	return nebderive.DNSZone
+}
+
+// talosClient builds a machinery client whose every gRPC connection is
+// one forward stream on the node's apid facet (hubcaller.go dials it,
+// presenting the hub's bundle), authenticating with a short-lived
+// os:admin cert minted from the cluster's OS CA (extracted from the
+// machine's composed config). TLS verifies the node's <name>.<zone>
+// certSAN, which mesh.MachinePatch injects for exactly this reason —
+// the same name talosconfig uses over irohup. The facet connection is
+// closed with the client; a dial failure is returned as-is
+// (errMemberUnknown when the name map has nobody of that name).
+func (b *bootstrapper) talosClient(ctx context.Context, m machines.Machine, name string) (*bootClient, string, error) {
 	ca, err := b.issuingCA(m)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	admin, err := secrets.NewAdminCertificateAndKey(time.Now(), ca, role.MakeSet(role.Admin), time.Hour)
 	if err != nil {
-		return nil, fmt.Errorf("minting admin cert: %w", err)
+		return nil, "", fmt.Errorf("minting admin cert: %w", err)
 	}
-	cfg := clientconfig.NewConfig("auto-bootstrap", []string{ip.String()}, ca.Crt, admin)
-
-	dialer := grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-		return svc.DialContext(ctx, "tcp", addr)
+	fc, err := b.hub.dialMember(ctx, name, "apid", bootstrapDialTimeout)
+	if err != nil {
+		return nil, "", err
+	}
+	san := name + "." + b.zone()
+	cfg := clientconfig.NewConfig("auto-bootstrap", []string{san}, ca.Crt, admin)
+	dialer := grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+		raw, err := fc.Open(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &facetStreamConn{ReadWriteCloser: raw, peer: fc.Peer()}, nil
 	})
-	return client.New(ctx, client.WithConfig(cfg), client.WithGRPCDialOptions(dialer))
+	c, err := client.New(ctx, client.WithConfig(cfg), client.WithGRPCDialOptions(dialer))
+	if err != nil {
+		_ = fc.Close()
+		return nil, "", err
+	}
+	return &bootClient{Client: c, fc: fc}, string(fc.Peer()), nil
+}
+
+// bootClient is a machinery client over one facet connection; Close
+// releases both.
+type bootClient struct {
+	*client.Client
+	fc facetClient
+}
+
+func (c *bootClient) Close() error {
+	err := c.Client.Close()
+	_ = c.fc.Close()
+	return err
 }
 
 // issuingCA extracts the Talos OS CA (cert + key) from the machine's
