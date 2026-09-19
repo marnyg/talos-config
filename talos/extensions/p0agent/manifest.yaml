@@ -1,7 +1,7 @@
 version: v1alpha1
 metadata:
   name: p0agent
-  version: 0.1.1
+  version: 0.1.2
   author: marnyg
   description: |
     Mesh v3 node agent (talos-config-359.8.3): the node's NodeId on iroh,

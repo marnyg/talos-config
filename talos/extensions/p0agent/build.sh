@@ -37,6 +37,12 @@ official=(
 ext=ghcr.io/marnyg/p0agent:$ver
 installer=ghcr.io/marnyg/talos-installer:$talos-p0agent-$ver
 
+# manifest.yaml is what `talosctl get extensions` reports: stamp it from
+# the version we tag with, and commit the result (0.1.2 shipped with the
+# manifest still saying 0.1.1 — the nodes report that until 0.1.3).
+sed -i.bak "s/^  version: .*/  version: $ver/" manifest.yaml && rm -f manifest.yaml.bak
+grep -q "^  version: $ver\$" manifest.yaml || { echo "manifest.yaml: version not stamped"; exit 1; }
+
 cp "$bin" ./nodeagent
 file ./nodeagent | grep -q "statically linked" || { echo "not static"; exit 1; }
 docker build --platform linux/amd64 -t "$ext" .

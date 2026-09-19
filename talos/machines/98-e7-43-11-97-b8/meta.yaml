@@ -1,9 +1,13 @@
-# Mesh overlay address (HKDF-derived from the MAC by the hub) — stable
-# across DHCP leases and reprovisions; the talosctl/apply dial target.
-# Only computable with the master key, so it was read back after the
-# first serve (`dig w1.mesh.internal @10.42.0.1`), not predicted.
+# Nebula overlay address (HKDF-derived from the MAC) — stable across
+# DHCP leases and reprovisions. No longer a dial target: talosctl and
+# `nix run .#apply` go by name over the irohup tun (359.9.1, and w1
+# runs the agent since qb5q); the hub still composes it into the
+# served config until Phase 4.
 ip: 10.42.227.66
-# Mesh DNS name: w1.mesh.internal (served by the hub at 10.42.0.1:53).
+# Mesh DNS name: w1.mesh.internal (nebula: served by the hub at
+# 10.42.0.1:53; identity plane: the name map, on the tun). Also the
+# hostname (patch.yaml pins it), so it is apid's -n
+# target and cert SAN as-is — no `hostname:` override needed.
 name: w1
 # SMBIOS UUID, read from the hub's device-flow log before the first
 # approval (service tag 324S9K3). Recorded up front on purpose: it is

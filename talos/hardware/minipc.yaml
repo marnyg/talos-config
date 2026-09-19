@@ -26,7 +26,9 @@ machine:
     #                 0.1.2 carries the seq fix (envelope.MaxSeq: a
     #                 UnixNano-seeded seq is not exact under RFC 8785, so
     #                 renew + bundle in one beat collapsed onto one seq)
-    #                 and the name-map merge across a hub deploy.
+    #                 and the name-map merge across a hub deploy. Its
+    #                 manifest was not bumped, so `get extensions` says
+    #                 0.1.1 on both nodes; build.sh stamps it since.
     #
     # Predecessors: factory 011ccc… (nebula only) until 2026-07-31 when
     # Longhorn landed; factory 6a9acc… (the three official extensions)
