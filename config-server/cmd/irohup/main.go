@@ -27,6 +27,7 @@
 //	irohup -reenroll                         # discard the Kit and the nebula artifact, re-sign; keep both keys
 //	irohup -rekey                            # discard the keys too: a new NodeId and nebula identity
 //	irohup -paste                            # headless: paste the signature instead
+//	irohup -enroll-only                      # enroll (browser or -paste) and exit
 //
 // talosctl through the bridge: `talosctl -e 127.0.0.1:50000 -n <node>`
 // with the node's hostname in the endpoint's SAN set — see
@@ -91,6 +92,7 @@ func main() {
 		reenroll = flag.Bool("reenroll", false, "discard the Kit and the nebula artifact and re-sign with the SAME keys")
 		rekey    = flag.Bool("rekey", false, "discard the keys too: brand-new NodeId and nebula identity")
 		paste    = flag.Bool("paste", false, "paste a signature instead of signing in the browser (headless)")
+		enrollOn = flag.Bool("enroll-only", false, "enroll if needed, then exit (the daemon's handoff: run as its user, sign as yourself)")
 		stateDir = flag.String("state", "", "identity-plane state dir (default ~/.config/talos-mesh/<name>.iroh)")
 		bindAddr = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 		beat     = flag.Duration("beat", nodeagent.DefaultBeat, "renewal beat interval")
@@ -176,11 +178,16 @@ func main() {
 		if *tunMode {
 			// Enrollment is a user-session act (browser + wallet); the
 			// daemon has neither. Enroll as the service user once, headless.
-			log.Fatalf("not enrolled: run `sudo -u %s irohup -name %s -state %s -paste` once, then start the daemon", *runAs, dev, dir)
+			log.Fatalf("not enrolled: run `sudo -u %s irohup -name %s -state %s -enroll-only` once (sign in the browser, or add -paste), then start the daemon", *runAs, dev, dir)
 		}
 		if err := enroll(strings.TrimRight(*hub, "/"), dev, *group, node, keyPath, cfgPath, state, *paste); err != nil {
 			log.Fatal(err)
 		}
+	} else if *enrollOn {
+		log.Printf("already enrolled (%s)", filepath.Join(dir, nodeagent.KitFile))
+	}
+	if *enrollOn {
+		return
 	}
 
 	logger := log.New(os.Stderr, "", log.Ltime)
