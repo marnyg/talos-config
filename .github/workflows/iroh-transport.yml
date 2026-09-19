@@ -50,6 +50,13 @@ jobs:
           use-flakehub: false # no FlakeHub account; silences the per-job auth ##[error]
       - name: nix build .#iroh-transport (checkPhase = handshake direct + relay, -race)
         run: nix build .#iroh-transport -L
+      # The build above realises the vendor FOD, but a cached path whose
+      # content no longer matches protocol/ or iroh-go/ is reused without
+      # complaint (flake.nix vendorHash caveat 2/3). Re-run the builder
+      # and compare so the drift fails here. Must come *after* the build:
+      # `--rebuild` implies `--check`, which needs an already-valid path.
+      - name: goModules FOD rebuild + compare
+        run: nix build .#iroh-transport.goModules --rebuild --no-link
       - name: what was linked
         run: cat ./result/TESTED
   static:

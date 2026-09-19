@@ -66,7 +66,13 @@ let
       #     changes — and a cached FOD output hides the drift (CI run
       #     34754508013: one job green from cache, another rebuilt the
       #     FOD and mismatched). After touching a replaced tree, check
-      #     with `nix build .#config-server-bin.goModules --rebuild`.
+      #     with two commands, in this order:
+      #       nix build .#config-server-bin.goModules --no-link
+      #       nix build .#config-server-bin.goModules --rebuild --no-link
+      #     `--rebuild` implies `--check`, which only compares against an
+      #     already-realised path; run alone against a cold store it
+      #     aborts ("outputs ... are not valid, so checking is not
+      #     possible") rather than checking anything.
       vendorHash = "sha256-cT9M6RiX6TaufUUrdxKl9IxBWF2EBM1tAG94RZ1sqPk=";
       tags = [ "iroh" ];
       env.CGO_ENABLED = 1;

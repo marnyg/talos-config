@@ -17,6 +17,13 @@
 #                 here, not on the next `nix build` (flake.nix caveat 3:
 #                 ../protocol is a local replace, so the hash moves with
 #                 protocol/*.go and a cached FOD hides the drift).
+#                 config-server only, deliberately: iroh-transport's
+#                 goModules pulls iroh-ffi + iroh-relay in as inputDrvs
+#                 (via env.CGO_LDFLAGS), so matrixing it here would drag
+#                 a cold Rust build into a job that runs on every push
+#                 and has no nix cache. It is gated in iroh-transport.yml
+#                 instead, which already has the cache and the right
+#                 path triggers.
 #
 # Both check.sh headers name this workflow; keep them in sync.
 name: verify
@@ -41,7 +48,7 @@ jobs:
       # read the shipped ../talos/mesh-policy{,-v3}.yaml and the Nickel
       # contract (see flake.nix config-server-bin).
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache-dependency-path: ${{ matrix.module }}/go.mod
@@ -89,9 +96,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@v22
-      # --rebuild forces the FOD even if a matching store path exists;
-      # a fresh runner has none anyway. Mismatch ⇒ "hash mismatch in
-      # fixed-output derivation" with the `got:` line to paste into
-      # flake.nix.
-      - name: goModules FOD rebuild
+      # Two steps, and the order matters: `--rebuild` implies `--check`,
+      # which only compares against an *already valid* store path. Run
+      # alone on a fresh runner it aborts with "some outputs ... are not
+      # valid, so checking is not possible" instead of checking anything.
+      # So: realise the FOD first (substitution allowed — that is exactly
+      # the stale-cache case we want to catch), then re-run the builder
+      # and compare. Mismatch ⇒ "hash mismatch in fixed-output
+      # derivation" with the `got:` line to paste into flake.nix.
+      - name: goModules FOD realise
+        run: nix build .#config-server-bin.goModules --no-link
+      - name: goModules FOD rebuild + compare
         run: nix build .#config-server-bin.goModules --rebuild --no-link
