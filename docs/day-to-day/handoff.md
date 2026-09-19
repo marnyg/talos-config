@@ -41,9 +41,19 @@ and the hub runs HEAD. Commits `94d0afe` `7f8652f`; hub image
 - **cp1 and w1 still carry the old hubkey** until their next beat (6 h
   from their last restart) — harmless for apid (the Mac dials them by
   key), visible as a stale `hub ed:8b723ff8…` in their agent logs.
-- **`0q0`** (longhorn-bulk `numberOfReplicas: 2`): w1 has landed now,
-  so the deviation from invariant 2's wipe corollary is closable —
-  the bead is still blocked, worth a look.
+- **`0q0` stays blocked** — and its blocker is **capacity, not w1's
+  liveness**. The bulk PVCs are ~450G on w1; cp1 has ~256G free and
+  anti-affinity forces the second replica onto the other node, so
+  `numberOfReplicas: 2` cannot schedule. Needs new hardware (ADR-0011
+  notes Longhorn's minimum is 3 nodes). **Open question below.**
+- **Docs disagree on whether `0q0` should ever be done.** ADR-0011
+  and `k8s/apps/storage/storageclass.yaml` treat 1 replica for bulk as
+  *correct by design* ("the library is disposable, so it does not earn
+  a 2x"); `notes.md` calls the same thing a "knowing deviation from
+  invariant 2 — wrong implementation, not a relaxed invariant". Both
+  cannot hold. Needs a ruling: either invariant 2's corollary grows a
+  third category (owner-declared disposable) or ADR-0011 is a standing
+  violation and `0q0` is its fix.
 - **Route-churn restart path still unobserved** (`7c3`).
 - **Control socket not built** (`fgr`); mobile's own `netstack.go` /
   `dns.go` (`phz`).

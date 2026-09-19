@@ -273,10 +273,15 @@
   Storage work is unblocked.
 - **Knowing deviation from invariant 2**: `longhorn-bulk` runs 1
   replica — the media library is neither git-derivable nor
-  replicated. Wrong implementation, not a relaxed invariant. The
-  condition it was accepted under ("until the new nodes land") is
-  **met as of 2026-09-19**, so `talos-config-0q0` (raise to 2) is now
-  actionable rather than waiting.
+  replicated. Wrong implementation, not a relaxed invariant.
+  **`talos-config-0q0` is NOT unblocked by w1's return** (asserted in
+  error 2026-09-19, corrected same day): w1 was always one of the two
+  nodes in the storage class's "~1073GB raw across two nodes", so
+  coming back from an outage adds no capacity. The bulk PVCs are
+  ~450G provisioned on w1 and cp1 has ~256G free; replica anti-affinity
+  puts the second copy on the *other* node, so replicas: 2 cannot
+  schedule. "Once the new nodes land" means new hardware with disk —
+  and ADR-0011 notes Longhorn's own minimum is **3 nodes**.
 - **Nothing app-level is replicated**: apps keep config on `emptyDir`;
   state dies on pod restart. "Longhorn is up" ≠ "state is safe".
 - **Pods must not dial `.mesh.internal` names** — nebula routes
