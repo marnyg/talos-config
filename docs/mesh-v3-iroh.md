@@ -626,9 +626,21 @@ Findings:
 ### Phase 2 — consumers migrate, one at a time (each step reversible)
 
 1. Admin CLI paths (talosctl/kubectl) onto bridges. Nebula still
-   carries everything else.
+   carries everything else. _Live 2026-09-19/20 (`irohup -tun`,
+   `qb5q`, `ipt7`)._
 2. Hub→node dials (/status, bootstrap probes) onto identity streams;
    delete the hub's netstack dial path (keep code until phase 4).
+   _Built 2026-09-21 (`4814be3`, `49a7bdb`), deploy pending. The hub
+   is an ordinary caller: a self-minted member cert named `hub` and
+   the recipe's one host row, on the node's `apid` facet
+   (`config-server/hubcaller.go`). Prerequisite settled first —
+   decision `z2go`: after its own restart the hub knows nobody until
+   members beat, and members re-beat on the death of the pooled
+   connection their last beat left (iroh keep-alives it; 32 s after
+   SIGKILL) or on an admitted caller's newer `speak-as`, polling a
+   sealed hub flat, so the name map is complete one `MinRebeat` after
+   the unseal. `iroh-ffi`'s relay watcher was the first idea and is
+   broken twice over (exploration log)._
 3. In-cluster gateway deployed; one low-stakes UI (e.g. Jackett)
    exposed through it end-to-end with the per-request identity
    header; then the rest of ingress (ADR-0009 revision).

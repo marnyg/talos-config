@@ -14,6 +14,16 @@
 
 ## Read first
 
+- 2026-09-21 — **`--auto-bootstrap` now needs `--iroh-relay`** (P2.2,
+  `49a7bdb`): the hub dials the control plane's `apid` over the
+  identity plane, so a hub without a wan endpoint reports
+  `no-identity-plane` and `main` refuses the flag combination. fly's
+  entrypoint sets both from `IROH_RELAY_URL` (fly.toml) — keep that
+  env when touching the deploy. Until both nodes run `p0agent` ≥ 0.1.3
+  (the `z2go` agent), a hub redeploy shows `node-unknown` on `/status`
+  for up to the old agents' 6 h beat; that is the old code, not a
+  regression.
+
 - 2026-09-03 — **Read `desired-state/domain-model.md` §"The three
   layers" before any authority/identity discussion.** A design session
   lost an hour to "sovereign" applied to members and an invented

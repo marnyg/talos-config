@@ -5,59 +5,60 @@
 
 ## Last session
 
-2026-09-20 (sixth session) — **`ipt7` fixed and verified live**: a hub
-redeploy no longer strands a running `irohup -tun` daemon. Commit
-`5c6e506`; hub image `registry.fly.io/marnyg-talos-config:5c6e506`,
-unsealed (hubkey `a2fdf950…`); Mac daemon `kdhgj9…` (nixos flake input
-`talos-config` bumped to `5c6e506`).
+2026-09-21 (seventh session) — **P2.2 built, not deployed.** Two
+commits, both green under `-race` with the relay e2e:
 
-- **Beat on staleness evidence** (`config-server/nodeagent/{agent,
-  caller}.go`): `Agent.Dial` treats `ErrUnreachable` / `ErrUnknownName`
-  as "the directory is a beat old", re-beats (serialized, rate-limited
-  to `MinRebeat` = 1 min) and retries once on the fresh record; a
-  refusal is returned as-is. Each candidate dial is bounded by
-  `DialTimeout` = 15 s instead of hanging for iroh's idle timeout. The
-  tun resolver `Kick()`s the loop on an unknown in-zone name, so a
-  member that enrolled since the last beat resolves on the next query.
-  The beat loop is a timer + kick channel; `Beat()` and rebeats share
-  one mutex.
-- **Live acceptance** (01:07, daemon *not* restarted): first
-  `hub.mesh.internal` flow after the redeploy = 15 s dial timeout on
-  the dead key → `renewed … at ed:a2fdf950…` → `beat ok` → served;
-  every later flow ~30 ms; cp1/apid unaffected. e2e test
-  (`nodeagent_iroh_test.go`) now ends with a hub redeploy under a new
-  hubkey behind the same URL.
-- **The 09-19 "general network loss" is explained and is not the
-  daemon**: system log shows router DNS on `en7` dead 21:40:02–21:40:58
-  (413 queries, ~20 answers), self-healed a minute *before* the daemon
-  restart at 21:42:06; no route/resolver/interface change in the
-  window. This session's deploy: zero ping loss, WAN DNS and tun DNS
-  answering on every 2 s probe. Two overlapping events looked like one.
+- `4814be3` — **the mirror of `ipt7`** (decision `z2go`): after a hub
+  redeploy the hub knows nobody until members beat, and a Talos node
+  dials nothing between beats. Evidence it *does* see: (A) the pooled
+  QUIC connection its last beat left to the hub closes — iroh
+  keep-alives every connection at 5 s, so a dead hub is `Closed()`
+  32 s after SIGKILL (measured, relay up or down); `iroh-transport`
+  evicts on `Closed()` and reports `Options.OnConnLost`. (B) an
+  admitted caller's rooted `speak-as` names a hubkey issued at/after
+  ours. Both `Kick()`; `Kick` now *schedules* at the earliest
+  `MinRebeat` instead of dropping. A beat refused as `ErrHubSealed`
+  retries flat at `MinRebeat` (no cache fallback to the dead key) —
+  **every live member has beaten within one `MinRebeat` of the
+  unseal.** Beat `Send`s are bounded by `DialTimeout`.
+- `49a7bdb` — **the hub as an ordinary caller** (`hubcaller.go`):
+  self-minted member cert `{aud: hubkey, name: hub}` + the recipe's
+  one host row `{facet: apid, host: hub}` compiled for it, presented
+  on the node's `apid` facet via the name map. `bootstrap.go` no
+  longer imports `nebstack`; new observation `node-unknown`;
+  `mesh-down` → `no-identity-plane`; `--auto-bootstrap` requires
+  `--iroh-relay`. `/status` gains a "Members (identity plane)" table
+  from `issuer.NameMap()`.
 
 ## Loose threads
 
-- **First flow after a redeploy still waits on the pooled dead
-  connection** (`cmd/irohup/pool.go`): `Conn.Open` on a QUIC connection
-  whose peer vanished only fails at the idle timeout; the pool learns
-  it is dead then. Later flows recover in ≤ 15 s + one beat. Bound
-  `Open` if it bites.
-- **`await` leaks a late success** (`iroh-transport/stream.go:130`): a
-  dial that completes after its ctx timed out is never `Destroy`ed.
-  Harmless at one dial per 15 s; a broken window, not a bug in play.
-- **Nodes (cp1/w1) still learn the new hubkey only at their beat** —
-  harmless today (nothing dials the hub between beats on a node), but
-  P2.2 puts the hub on the dialing side and the hub's location table
-  is empty after a deploy until members beat (≤ 6 h). Same shape as
-  `ipt7`, other direction; the `Kick`/rebeat primitives are there.
-- `0q0` blocked on capacity; ADR-0011 vs invariant 2 ruling still open
-  (see previous handoff's note — unchanged).
+- **Nothing is deployed.** The hub image needs a `fly deploy`; the
+  nodes need `p0agent` 0.1.3 (static `nodeagent` via the nixos
+  builder, `build.sh`, pin in `talos/hardware/minipc.yaml`,
+  `talosctl upgrade` ~11 min each); the Mac's `irohup` needs the
+  nixos flake input bump. Until the nodes are upgraded, a hub deploy
+  shows `node-unknown` for up to the old agents' 6 h beat.
+- **Live acceptance to run after deploy:** redeploy the hub, unseal,
+  watch `/status` → auto-bootstrap `etcd-running (cp1, <NodeId>)`
+  within ~1 min; the node logs `connection to hub … lost; beating`
+  then `hub sealed (retry in 1m)` then `beat ok`.
+- `iroh-ffi` 1.1.0 `WatchHomeRelay` is unusable (sync fn spawning
+  outside tokio; drops `is_connected()`) — noted on `z2go`; not
+  needed now.
+- `hubseal.go publishLocation` publishes before the wan endpoint is
+  `Online()` (the e2e had to wait explicitly; fly's loopback relay
+  hides it).
+- `iroh-transport/stream.go await` still leaks a late success after a
+  ctx timeout; exercised more now that beat `Send`s are bounded.
+- `talos/mesh-policy.yaml` (v2) still carries the hub→node apid
+  firewall row; dead since `49a7bdb`, Phase 4 deletes it with the
+  render.
+- `0q0` blocked on capacity; ADR-0011 vs invariant 2 ruling still open.
 - Route-churn restart path unobserved (`7c3`); control socket (`fgr`);
   mobile `fakeip` (`phz`); cp1 hostname pin (`t7b2`).
 
 ## Suggested next steps
 
-- **P2.2 (`359.9.2`)**: hub→node dials onto identity streams; decide
-  first how the hub re-learns node locations after its own restart
-  (nodes re-beat on a hub-side signal? short first beat after deploy?).
-- Close `ipt7` after living with one more routine redeploy.
-- Fire `7c3` once deliberately.
+- Deploy P2.2 (hub → nodes → Mac, in that order) and run the live
+  acceptance above; then close `359.9.2` and `ipt7`.
+- P2.3 (`359.9.3`): the in-cluster gateway pod.

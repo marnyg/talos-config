@@ -72,6 +72,27 @@
   while the pod ran on cp1. Rule: pods talk to Services; the mesh is
   for hosts and browsers.
 
+## Mesh v3 P2.2 — hub re-learning members after its own restart (2026-09-21)
+
+- 2026-09-21 — Considered the node watching its **home-relay
+  connection** (`iroh-ffi` `WatchHomeRelay`) as the "hub died" signal:
+  the relay is the hub process's child, so a redeploy restarts it.
+  Ruled out by spike: the 1.1.0 binding's `watch_*` methods are sync
+  fns that `spawn` outside the tokio runtime (panic: "no reactor
+  running", `watch.rs:85`) *and* map `RelayStatus` to `url()` only,
+  dropping `is_connected()`; `Addr().RelayUrl()` never blinks across a
+  relay restart either. Fixing needs a nix patch + Go regen. Landed
+  on: the pooled QUIC connection the beat leaves — iroh keep-alives
+  it (5 s), `Closed()` fires 32 s after the hub is SIGKILLed (child-
+  process probe, relay up or down). Decision `z2go`.
+- 2026-09-21 — Considered persisting the hub's witnessed-member cache
+  on a fly volume, a shorter `DefaultBeat`, and the relay access hook
+  (`5gz`) reporting connected NodeIds. Ruled out: fungibility (`gar`)
+  / brute force / ids-not-names respectively. `pu9q`'s rejections
+  (short `/.well-known` polling, hub push channel) carry over; the one
+  poll admitted is against a *sealed* hub, bounded to the sealed
+  window.
+
 ## Mesh v3 P2.1 — admin CLI paths on the tun (2026-09-19)
 
 - 2026-09-19 — Considered `nodes: [cp1]` / `-n cp1.mesh.internal` /

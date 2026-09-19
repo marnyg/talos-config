@@ -8,19 +8,16 @@
 as it lands** (decision `d3z3`) — Phase 4 is whatever never moved.
 **P2.0 and P2.1 are live**: the Mac runs `irohup -tun` as a launchd
 daemon, and talosconfig / kubeconfig / `nix run .#apply` all go by
-name over it — hub included (`hub.mesh.internal`, hub-http facet).
-The overlay `/config` route is gone. **The fleet prerequisite is
-done** (`qb5q`): both nodes run the same p0agent installer, so
-`w1.mesh.internal` and `cp1.mesh.internal` both dial directly. Next
-is **P2.2** (`359.9.2`): hub→node dials (`/status`, bootstrap probes)
-onto identity streams — now able to cover both nodes.
-
-**Cleared 2026-09-20:** `ipt7` — members now re-beat on staleness
-evidence (unreachable name, unknown name), so a hub redeploy costs one
-bounded dial (15 s) and one beat, not a restart. P2.2 inherits the
-mirror-image question: the hub's location table is empty after its
-own restart until members beat — settle how nodes learn to re-beat
-before the hub depends on dialing them.
+name over it — hub included. **P2.2 is built, awaiting deploy**
+(`359.9.2`, commits `4814be3` + `49a7bdb`): auto-bootstrap dials the
+control plane's `apid` facet as an ordinary caller; the hub's
+netstack dial path is gone from `bootstrap.go`. Its prerequisite —
+how the hub re-learns members after its own restart — is settled by
+decision `z2go`: members re-beat on transport evidence (their pooled
+connection to the hub dying; a caller carrying a newer `speak-as`),
+and poll a *sealed* hub flat, so the hub's name map is complete one
+`MinRebeat` after the unseal. Deploy order: hub, then `p0agent` 0.1.3
+on both nodes, then the Mac. Then **P2.3** (`359.9.3`), the gateway.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
 members dialed by key, IP as device-local fiction, hub as actors
