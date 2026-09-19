@@ -506,3 +506,14 @@
   or nagging** on the deployed hub (`tqr`). A local dev run without
   `--iroh-relay` still reports only — don't read a local 200 as proof
   the check is off in production.
+- 2026-09-19 — **Enrolling a headless member**: `irohup` serves its
+  signing page on loopback of the machine being enrolled, so from the
+  Mac run it over ssh, read the `http://127.0.0.1:PORT/TOKEN` line out
+  of its log, then `ssh -N -L PORT:127.0.0.1:PORT mar@nixos` and open
+  that URL locally. The NodeId is minted on the box and never travels.
+  `mar@nixos` is a member now (`nixos`, `ed:c02908be…`).
+- 2026-09-19 — **Reading iroh paths**: `P0_LOG=debug` and grep
+  `path::selected` — `network_path=Ip(a->b)` is direct,
+  `network_path=Relay(url)` is relayed. The hub is always `Relay`
+  (relay-only by construction, ADR-0022). `bash -lc` is required for
+  anything scripted over ssh to that box (login shell is fish).

@@ -566,10 +566,11 @@ redeployed twice (`09b05700…` is the third hubkey of the day).
 | first real caller on a stream facet | `talosctl version` through `cp1/apid` at 14:01:47Z: connect 26 ms, round trip 42 ms. `kubectl get nodes` through `cp1/kube-api`: 164 KB in 158 ms. Both dialed **by name** off the name map, bundle on connect, one `authorize()` per connection. |
 | the plane carries its own upgrade | cp1 upgraded 0.1.1 → 0.1.2 **through the bridge** (14:42–14:48Z); the bridge saw the connection drop and redialed in 96 ms once the node was back. |
 | exit check 2 — hub re-seal | Two deploys + unseals. The data path never noticed (QUIC does not traverse the hub; the relay reconnects). Both members renewed their Kit at the new `hubkey` through the old `speak-as` and resumed — cp1 did `#renew` + `#bundle` **in one beat**, three times. |
+| exit check 3 — paths | From `mar@nixos` (10.0.0.11), a second member enrolled the same way (`ed:c02908be…`, minted on the box; the signing page tunnelled over ssh so no key travelled). LAN candidate present → `path::selected network_path=Ip(10.0.0.11->10.0.0.64:43637)`, apid TLS handshake **8–10 ms**, no relay in the data path. Bound to loopback only (the "cellular" leg) → `network_path=Relay(…fly.dev)`, **47–51 ms**, the bridge kept working. LAN candidate restored → direct again. The path to the *hub* is always `Relay` — relay-only by construction (ADR-0022). |
 
 Findings:
 
-- **`seq` was not exact on the wire** (protocol ADR-0006). JCS numbers
+- **`seq` was not exact on the wire** (protocol ADR-0006, Accepted). JCS numbers
   are IEEE-754 doubles; the `UnixNano` seed `SeqBase` shipped with
   `359.8.3` exceeds 2^53, so `#renew` + `#bundle` in one beat — which a
   hubkey rotation forces — collapsed onto one canonical seq and the
@@ -585,6 +586,18 @@ Findings:
   blocklist, not by the hub forgetting it. Caveat seen live: the
   *persisted* map is whatever the last writer saved, so a process
   running an older binary can still narrow it.
+- **The owner laptop cannot measure any of this** (Cisco socket filter,
+  notes 2026-09-13 — every path from it is relay). Check 3 needed a
+  second host, and enrolling one headless is a real flow: `irohup`
+  mints the NodeId on the box and serves its signing page on loopback,
+  so `ssh -L <port>:127.0.0.1:<port>` puts the wallet in the owner's
+  browser without the key ever moving. A device-flow `irohup` (the hub
+  already accepts `node=` on `/mesh/enroll/device`) would remove the
+  tunnel step.
+- **Check 3's legs are separate process starts**, so what is verified is
+  both path modes plus direct re-establishment — *not* live
+  mid-connection migration. A truly roaming device (Phase 2 mobile) is
+  the only way to test that.
 - **apid's SANs do not name `127.0.0.1`**, so a TCP bridge needs the
   node's hostname in `/etc/hosts` (`kube-api`'s cert does carry
   `localhost`). Fake-IP presentation is Phase 2's answer.

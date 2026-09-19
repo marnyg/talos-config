@@ -1,6 +1,6 @@
 # ADR-0006: `seq` is an I-JSON integer, refused out of range on both sides
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-19
 
 ## Context and Problem Statement

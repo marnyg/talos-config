@@ -15,10 +15,12 @@ plane carries real traffic**: `irohup` (`359.8.4`) enrolls with one
 wallet signature, beats, and bridges `talosctl`/`kubectl` onto cp1's
 `apid`/`kube-api` facets, dialing by name with its bundle on connect.
 `kql` (scratch relay) and `tqr` (`/sealed` 503s on identity) are done.
-**Now: the last exit check** — `359.8.6`'s roaming case (LAN →
-cellular → LAN), which needs a host that is not this laptop (its
-socket filter makes every path relay-only). Reboot and hub-re-seal
-checks passed 2026-09-19.
+**All three exit checks
+passed 2026-09-19** (`359.8.6`): reboot unaided in 52 s, hub re-seal
+reconverges, and from `mar@nixos` the LAN path is direct (8–10 ms)
+while a member with no LAN candidate rides the relay (47–51 ms) and
+re-punches direct when one returns. **Phase 1 is done; Phase 2
+(`359.9`) is next.**
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016)
 and **Sovereign-actor protocol at the center** — the node is the

@@ -24,7 +24,7 @@ on stream-facet connections and beats the hub; it asked for
 addition (`t29`). **2026-09-19 (later): the first consumer-driven
 regression** — `SeqBase` seeded from `UnixNano` broke exactness under
 JCS; `seq` is now an I-JSON integer refused out of range on both sides
-(ADR-0006, Proposed).
+(ADR-0006, Accepted).
 
 **Toward goal:** `desired-state/goals.md` — *One primitive* (one
 verifier for every verb), *Offline, receiver-rooted authorization*,

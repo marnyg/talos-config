@@ -27,8 +27,8 @@ onto one canonical `seq` and the second was refused as a replay.
 
 ## Loose threads
 
-- **ADR-0006 is Proposed.** It changes the envelope contract (a range
-  refusal), so it wants the same review pass ADR-0001–0004 got.
+- ADR-0006 **Accepted** 2026-09-19 (owner). The envelope contract now
+  carries a range refusal; `MaxSeq` is part of the wire law.
 - The Quint models do not model `seq` width. `authorize.qnt` is about
   the chain; the replay counter is Go-only. If the models ever grow a
   replay channel, the exactness law belongs there first.
@@ -43,7 +43,6 @@ onto one canonical `seq` and the second was refused as a replay.
 
 ## Suggested next steps
 
-- Review ADR-0006 → Accepted (or push back on the range check placement).
 - Still nothing else queued by the consumer: `irohup` dials with what
   exists. Watch for a pooled stream-facet `Conn` per (peer, facet) —
   that belongs in `iroh-transport`, not here.

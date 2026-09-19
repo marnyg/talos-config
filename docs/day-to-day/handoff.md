@@ -37,25 +37,37 @@ Both dial **by name**, with the bundle on connect. Commits `a686396`
   serves an identity plane (`--iroh-relay`); a dev run without it only
   reports. **`kql` done**: `marnyg-iroh-relay-spike` destroyed,
   `fly/relay-spike/` removed.
-- **Exit checks (`359.8.6`) 1 and 2 pass.** Reboot: cp1 back and
+- **Exit checks (`359.8.6`) all three pass.** Reboot: cp1 back and
   re-admitted in 52 s, unaided. Hub re-seal: two deploys + unseals; cp1
   and irohup both renewed at the rotated hubkey and resumed — cp1 did
   renew + `#bundle` in one beat three times, the exact case that broke.
+  Check 3 from `mar@nixos` (this laptop is relay-only): a second member
+  enrolled there, LAN-direct `Ip(10.0.0.11->10.0.0.64)` at 8–10 ms;
+  loopback-bound it falls to the relay at 47–51 ms and the bridge keeps
+  working; restored, it is direct again.
 - cp1 upgraded **through the bridge** to `p0agent` 0.1.2 (the plane
   carried its own upgrade); `minipc.yaml` pins the new digest.
 
 ## Loose threads
 
-- **Exit check 3 (roaming) is not done** and cannot be measured from
-  this laptop: the Cisco socket filter makes it relay-only (notes
-  2026-09-13), so "LAN path re-punches direct" needs the NixOS box or
-  another host. `359.8.6` stays open on that alone.
+- **Check 3 verified path modes, not live migration**: its two legs are
+  separate process starts, so mid-connection roaming (address changes
+  under a live QUIC connection) is still untested — that needs a
+  physically roaming device, i.e. Phase 2 mobile.
+- **A second member is live on `mar@nixos`** (`irohup -name nixos`,
+  NodeId `ed:c02908be…`, bridging `cp1/apid` on its own loopback). It
+  beats every 6 h. Stop it with `pkill -f bin/irohup` there if unwanted;
+  its member cert simply expires in 90 d.
+- **Enrolling a headless member needs an ssh tunnel today** (the
+  signing page binds loopback on the enrolling host). `irohup` has no
+  device-flow mode, though the hub already accepts `node=` on
+  `/mesh/enroll/device` — filed as `talos-config-4ps`.
 - **A pre-merge binary can still narrow a peer's map**: the merge only
   protects the process that runs it, and the *persisted* map is
   whatever the last writer saved. Seen live — an old irohup process
   beat at 16:55 and saved a 1-name map that the new one then had
   nothing to merge from. Recovery is one forced beat per side.
-- Protocol **ADR-0006 is Proposed**; root ADR-0024 still Proposed.
+- Protocol **ADR-0006 Accepted** 2026-09-19; root ADR-0024 still Proposed.
 - `irohup` is running in the foreground on the laptop (bridges on
   `127.0.0.1:50000` / `:6443`); `talosctl` needs
   `127.0.0.1 talos-wu6-eib` in `/etc/hosts` (added this session).
@@ -65,8 +77,10 @@ Both dial **by name**, with the bundle on connect. Commits `a686396`
 
 ## Suggested next steps
 
-- **Exit check 3** from `mar@nixos` (or any non-filtered host): enroll
-  a second member, bridge it, move it LAN → cellular → LAN.
-- Review protocol **ADR-0006** → Accepted.
+- **Phase 1 is functionally done** — `359.8.3`/`.4`/`.5`/`.6` are
+  closed; `359.8` itself stays open only on `359.8.2`
+  (Provisioner-as-actor, ADR-0024). Decide whether that belongs to
+  Phase 1 or moves to Phase 2 before calling the phase.
+
 - Then Phase 2 (`359.9`): admin CLI paths onto the bridges in anger
   (`359.9.1`), which is mostly "stop using nebula for talosctl".
