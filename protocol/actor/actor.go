@@ -137,9 +137,13 @@ type Actor struct {
 	// max(SeqBase(), 1), later ones count up from it. seq must be
 	// monotonic per (sender, receiver) across the SENDER's restarts too —
 	// the receiver's high-water mark outlives them — so a sender whose
-	// counterparties run longer than it does seeds from its clock
-	// (time.Now().UnixNano()): stateless, and a rolled-back clock only
-	// denies, like every other clock fault (ADR-0019). nil ⇒ start at 1.
+	// counterparties run longer than it does seeds from its clock:
+	// stateless, and a rolled-back clock only denies, like every other
+	// clock fault (ADR-0019). Use time.Now().UnixMicro() (or coarser),
+	// NOT UnixNano: seq must stay ≤ envelope.MaxSeq (2^53−1) to be
+	// exact on the wire, and Send fails with envelope.ErrSeqRange past
+	// it (found live 2026-09-19: a nanosecond base made renew + bundle
+	// in one beat collapse onto one seq). nil ⇒ start at 1.
 	SeqBase func() int64
 
 	hwm  *envelope.HWM

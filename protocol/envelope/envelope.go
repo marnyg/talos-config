@@ -64,7 +64,12 @@ type Address struct {
 //
 //   - From is the signing actor (set by Sign).
 //   - Seq is the sender's monotone counter towards To.Target; starts at
-//     1 (the receiver's high-water mark starts at 0).
+//     1 (the receiver's high-water mark starts at 0) and never exceeds
+//     MaxSeq: the canonical form is RFC 8785, whose numbers are IEEE-754
+//     doubles, so an integer above 2^53 is not exact on the wire (two
+//     consecutive seqs would collapse into one and the second is a
+//     "replay"). Sign refuses it; a clock-seeded seq must be seconds,
+//     milliseconds or microseconds, never nanoseconds.
 //   - Proof is the caller-carried chain: delegation links plus any
 //     speak-as certs needed to resolve their signers. Verify splits them
 //     by verb (can: speak-as → speakAs, everything else → chain, order
@@ -133,7 +138,13 @@ type Result struct {
 	Loc      *cert.Cert
 }
 
+// MaxSeq is the largest seq an envelope may carry: the I-JSON integer
+// range (RFC 7493 §2.2), exact under RFC 8785 canonicalization.
+const MaxSeq = int64(1)<<53 - 1
+
 var (
+	// ErrSeqRange marks a seq outside [1, MaxSeq].
+	ErrSeqRange = errors.New("envelope: seq outside [1, 2^53-1]")
 	// ErrSig marks an envelope or reply whose sig does not verify under from.
 	ErrSig = errors.New("envelope: signature does not verify under from")
 	// ErrWrongTarget marks an envelope addressed to another actor.
@@ -402,6 +413,9 @@ func DecodeReply(data []byte) (Reply, error) {
 // Sign sets e.From to the signer's actor id, canonicalizes, and returns
 // the signed envelope. Any canonicalization error fails closed.
 func Sign(e Envelope, s cert.Signer) (Envelope, error) {
+	if e.Seq < 1 || e.Seq > MaxSeq {
+		return Envelope{}, fmt.Errorf("%w: %d", ErrSeqRange, e.Seq)
+	}
 	e.From = s.ActorID()
 	canon, err := CanonicalBytes(e)
 	if err != nil {
@@ -509,7 +523,12 @@ func SplitProof(proof []cert.Cert) (chain, speakAs []cert.Cert) {
 //
 //  1. signature under e.From
 //  2. e.To.Target == r.ID
-//  3. seq above the (e.From, r.ID) high-water mark — advances it
+//  3. seq in [1, MaxSeq] and above the (e.From, r.ID) high-water mark
+//     — advances it. The range check is the receiver's half of the law
+//     Sign enforces: a seq past MaxSeq is not exact under RFC 8785, so
+//     accepting one would park the mark at a value no honest sender can
+//     ever overtake (found live 2026-09-19: a nanosecond-seeded seq
+//     locked a member out of its own beat until the hub restarted).
 //  4. loc, if present (sig / verb / issuer / expiry)
 //  5. proof chain via r.Chain with signer = e.From, facet = e.To.Facet
 //
@@ -531,6 +550,9 @@ func Verify(e Envelope, r Receiver, now int64) (Result, error) {
 	}
 	if e.To.Target != r.ID {
 		return Result{}, fmt.Errorf("%w: %s", ErrWrongTarget, e.To.Target)
+	}
+	if e.Seq < 1 || e.Seq > MaxSeq {
+		return Result{}, fmt.Errorf("%w: %d", ErrSeqRange, e.Seq)
 	}
 	if r.HWM == nil || !r.HWM.Check(e.From, r.ID, e.Seq) {
 		return Result{}, fmt.Errorf("%w: seq=%d", ErrReplay, e.Seq)

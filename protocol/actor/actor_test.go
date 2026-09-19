@@ -586,8 +586,9 @@ func TestSequenceValidation(t *testing.T) {
 		}
 		return e
 	}
-	// Replay of a spent number, at and below the mark.
-	for _, seq := range []int64{3, 2, 0, -1} {
+	// Replay of a spent number, at and below the mark (0 and below
+	// never sign: envelope.ErrSeqRange, TestSeqExactOnTheWire).
+	for _, seq := range []int64{3, 2} {
 		if st, _ := rawSend(t, w.ctx, aep, mk(seq)); st.Code != StatusReplay {
 			t.Fatalf("seq %d: want replay, got %s", seq, st.Code)
 		}

@@ -150,8 +150,10 @@ func Start(o Options) (*Agent, error) {
 	a.actor.RestoreLowWater(o.State.Mark())
 	// The hub outlives the agent's restarts (reboot, upgrade) and keeps
 	// its seq high-water mark for this node; seed from the clock so the
-	// first beat after a restart is not a replay.
-	a.actor.SeqBase = func() int64 { return time.Now().UnixNano() }
+	// first beat after a restart is not a replay. Microseconds, not
+	// nanoseconds: seq must stay exact under the wire's RFC 8785
+	// doubles (envelope.MaxSeq).
+	a.actor.SeqBase = func() int64 { return time.Now().UnixMicro() }
 	a.log.Printf("member %s (key %s) relay %s facets %v", a.ID(), map[bool]string{true: "minted", false: "loaded"}[minted], o.Config.Relay, facets)
 
 	if kit, ok, err := o.State.Kit(); err != nil {
@@ -356,6 +358,7 @@ func (a *Agent) Beat(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	b.NameMap = a.mergeNames(b)
 	if err := a.o.State.SaveBundle(b); err != nil {
 		return err
 	}
@@ -451,6 +454,18 @@ func (a *Agent) renew(ctx context.Context, kit *issuer.Kit, hub HubRecord) (*iss
 	a.mu.Unlock()
 	a.log.Printf("renewed: member until %s at %s", time.Unix(renewed.Member.Exp, 0).UTC().Format(time.RFC3339), renewed.Member.Iss)
 	return &renewed, nil
+}
+
+// mergeNames folds the member's own last name map into the one the hub
+// just sent (mergeNameMaps).
+func (a *Agent) mergeNames(fresh issuer.Bundle) []issuer.NameEntry {
+	a.mu.Lock()
+	prev := a.bundle
+	a.mu.Unlock()
+	if prev == nil {
+		return fresh.NameMap
+	}
+	return mergeNameMaps(prev.NameMap, fresh, a.actor.Now())
 }
 
 // blocklist is the receiver-side copy from the last bundle.

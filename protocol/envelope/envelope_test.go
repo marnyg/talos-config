@@ -380,7 +380,10 @@ func TestSequenceValidation(t *testing.T) {
 	if _, err := Verify(w.envelope(t, 3, "m"), w.recv, now); !errors.Is(err, ErrReplay) {
 		t.Fatalf("seq == hwm must reject")
 	}
-	if _, err := Verify(w.envelope(t, 0, "m"), w.recv, now); !errors.Is(err, ErrReplay) {
+	// seq 0 never signs (ErrSeqRange); a hand-built one still replays.
+	zero := w.envelope(t, 1, "m")
+	zero.Seq = 0
+	if _, err := Verify(zero, w.recv, now); err == nil {
 		t.Fatalf("seq 0 must reject")
 	}
 	// Gaps are fine (at-most-once, best-effort): 4 → 10.
@@ -569,4 +572,56 @@ func Example_handshake() {
 	// seq 2: err=<nil> verified=2
 	// replay: true (chain calls +0)
 	// reply ok=true hwm=3
+}
+
+// TestSeqExactOnTheWire pins the reason for MaxSeq: RFC 8785 renders
+// numbers as IEEE-754 doubles, so a seq above 2^53 is not round-trip
+// exact — two consecutive seqs would collapse onto one canonical form
+// and the second would be a replay (found live 2026-09-19 with a
+// nanosecond-clock SeqBase). Sign refuses the range; at MaxSeq itself
+// consecutive values stay distinct.
+func TestSeqExactOnTheWire(t *testing.T) {
+	w := newWorld(t, edSigner(t), edSigner(t), edSigner(t))
+	for _, bad := range []int64{0, -1, MaxSeq + 1, 1789827445163589000} {
+		if _, err := Sign(Envelope{To: Address{Target: w.b.ActorID(), Facet: "api"}, Seq: bad, Proof: w.proof}, w.a); !errors.Is(err, ErrSeqRange) {
+			t.Fatalf("seq %d signed: %v", bad, err)
+		}
+	}
+	// The receiver refuses the same range, so a nanosecond-seq sender
+	// cannot park the mark beyond every honest seq.
+	big := Envelope{From: w.a.ActorID(), To: Address{Target: w.b.ActorID(), Facet: "api"}, Seq: MaxSeq + 1, Payload: []byte("m"), Proof: w.proof}
+	canon, err := CanonicalBytes(big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if big.Sig, err = w.a.Sign(canon); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(big, w.recv, now); !errors.Is(err, ErrSeqRange) {
+		t.Fatalf("receiver accepted seq past MaxSeq: %v", err)
+	}
+	if got := w.recv.HWM.Peek(w.a.ActorID(), w.b.ActorID()); got != 0 {
+		t.Fatalf("out-of-range seq moved the mark to %d", got)
+	}
+
+	e1, e2 := w.envelope(t, MaxSeq-1, "m"), w.envelope(t, MaxSeq, "m")
+	for _, e := range []Envelope{e1, e2} {
+		wire, err := Encode(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		back, err := Decode(wire)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if back.Seq != e.Seq {
+			t.Fatalf("seq %d became %d on the wire", e.Seq, back.Seq)
+		}
+	}
+	if _, err := Verify(e1, w.recv, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(e2, w.recv, now); err != nil {
+		t.Fatalf("MaxSeq after MaxSeq-1 must not be a replay: %v", err)
+	}
 }

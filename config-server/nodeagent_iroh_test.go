@@ -247,6 +247,12 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 		}
 	}()
 	waitFor(t, ctx, "desk beat", func() bool { return dev.Beats() == 1 })
+	// A second Send in the same process (renew + bundle in one beat is
+	// the live case): the seq must count up from its clock-seeded base
+	// and survive the wire (JCS numbers are doubles — 2^53 is the cap).
+	if err := dev.Beat(ctx); err != nil {
+		t.Fatalf("second beat: %v", err)
+	}
 	presented, err := dev.Present()
 	if err != nil || len(presented.Grants) == 0 || presented.Member.Cav.Name != "desk" {
 		t.Fatalf("present: %+v %v", presented, err)
