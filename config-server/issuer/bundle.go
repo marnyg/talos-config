@@ -5,8 +5,8 @@ package issuer
 // already holds; #bundle is where the Owner's recipe reaches a caller
 // for the first time: the Issuer compiles talos/mesh-policy-v3.yaml for
 // the member's identity, signs the grants with the hot key, and returns
-// them with the current blocklist and speak-as. The Reply signature
-// covers everything — no second signed-document format.
+// them with the current blocklist, speak-as and name map. The Reply
+// signature covers everything — no second signed-document format.
 //
 // Identity comes from the member cert the caller presents in the
 // request, never from anything else it claims: the Issuer verifies the
@@ -90,18 +90,21 @@ func EncodeBundleRequest(member cert.Cert) ([]byte, error) {
 // Bundle is the #bundle reply: the invoke grants the recipe compiles for
 // the caller (hubkey-signed, recipe order), the blocklist the receiver
 // replaces its copy with (decision j0b), and the speak-as that resolves
-// this hubkey — the same one #renew's output needs. The name map waits
-// on the hub's own iroh endpoint (talos-config-e8d).
+// this hubkey — the same one #renew's output needs — and the name map:
+// every member this hub has witnessed on the beat, with its location
+// when known (namemap.go; the caller's own entry included).
 type Bundle struct {
 	Grants    []cert.Cert
 	Blocklist []cert.ActorID
 	SpeakAs   cert.Cert
+	NameMap   []NameEntry
 }
 
 type wireBundle struct {
 	Grants    []json.RawMessage `json:"grants"`
 	Blocklist []cert.ActorID    `json:"blocklist"`
 	SpeakAs   json.RawMessage   `json:"speak_as"`
+	NameMap   []wireNameEntry   `json:"name_map"`
 }
 
 // EncodeBundle renders a Bundle as JSON.
@@ -119,6 +122,9 @@ func EncodeBundle(b Bundle) ([]byte, error) {
 	}
 	var err error
 	if w.SpeakAs, err = cert.Encode(b.SpeakAs); err != nil {
+		return nil, err
+	}
+	if w.NameMap, err = encodeNameMap(b.NameMap); err != nil {
 		return nil, err
 	}
 	return json.Marshal(w)
@@ -155,6 +161,9 @@ func DecodeBundle(raw []byte) (Bundle, error) {
 		return Bundle{}, fmt.Errorf("issuer: bundle speak-as: %w", err)
 	}
 	b.SpeakAs = sa
+	if b.NameMap, err = decodeNameMap(w.NameMap); err != nil {
+		return Bundle{}, err
+	}
 	return b, nil
 }
 
@@ -203,8 +212,9 @@ func (i *Issuer) bundleHandler(_ context.Context, inv *actor.Invocation) ([]byte
 	if err != nil {
 		return nil, err
 	}
+	i.witness(m)
 	caller := policy.Caller{Key: inv.From, Name: m.Cav.Name, Groups: m.Cav.Groups}
-	out := Bundle{Blocklist: bl, SpeakAs: *i.SpeakAs()}
+	out := Bundle{Blocklist: bl, SpeakAs: *i.SpeakAs(), NameMap: i.nameMap(now, bl)}
 	for _, g := range policy.Compile(recipe, caller, now) {
 		signed, err := cert.Sign(g, i.signer)
 		if err != nil {

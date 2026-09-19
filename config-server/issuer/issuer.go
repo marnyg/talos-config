@@ -115,6 +115,7 @@ type Issuer struct {
 	proposals map[cert.ActorID]cert.Cert // per wallet: the unsigned speak-as offered for signing
 	speakAs   *cert.Cert                 // nil while sealed
 	admitted  []cert.ActorID             // in-process siblings consented to for #mint-device
+	members   map[cert.ActorID]cert.Cert // name map: member certs witnessed on the beat (safe-to-lose)
 }
 
 // New returns a sealed Issuer over a fresh random hubkey. groups is the
@@ -142,6 +143,7 @@ func NewWithKey(priv ed25519.PrivateKey, groups []string, t actor.Transport, clo
 		groups:    slices.Sorted(slices.Values(slices.Clone(groups))),
 		Actor:     a,
 		proposals: make(map[cert.ActorID]cert.Cert),
+		members:   make(map[cert.ActorID]cert.Cert),
 	}
 	// #renew serves only while unsealed, outside the nag window and to
 	// a caller off the blocklist (a listed member's certs run out, j0b);

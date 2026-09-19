@@ -98,8 +98,9 @@ _(Was: HKDF master → issuer key; replaced 2026-09-06 by ADR-0018.)_
   HTTPS 443 carries the relay protocol; QUIC direct on the existing
   UDP port). No n0 infra anywhere: default discovery disabled, hub
   relay pinned as home relay in every member config. Hub also serves
-  the signed name→NodeId map (successor of the DNS zone; pure
-  function of git).
+  the name→NodeId map on the beat (successor of the DNS zone) — as
+  built 2026-09-19 it is *witnessed* from member certs, not a pure
+  function of git (ADR-0024 amendment, decision `2fc`).
 - **Nodes**: a Talos system extension we build — a small agent
   holding the node's NodeId, accepting ALPN-gated streams and
   forwarding to loopback targets per policy (apid :50001,
@@ -161,7 +162,7 @@ _(Was: HKDF master → issuer key; replaced 2026-09-06 by ADR-0018.)_
 | # | Verdict |
 |---|---|
 | 1 stateless identity/membership | Holds, same shape as today: keys minted on members, membership = wallet-derived-issuer cert, set bounded by wallet-signed acts, re-derivable minus member private keys |
-| 2 git single source of truth | Holds: name→NodeId map, policy, static LAN IPs all git-derived; hub remembers nothing |
+| 2 git single source of truth | Holds: policy, static LAN IPs git-derived; the name→NodeId map is a safe-to-lose witness of member certs (keys are not in git, ADR-0015; `2fc`); hub remembers nothing durable |
 | 3 owner-held roots | Unchanged |
 | 4 mesh is post-bootstrap | **Strengthened**: k8s membership no longer depends on the lighthouse/relay; provisioning stays HTTPS + device flow |
 | 5 single public entrypoint | Holds: hub HTTPS (now also relay protocol) + existing UDP port for QUIC |

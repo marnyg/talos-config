@@ -6,8 +6,9 @@
   far: Issuer `359.8.1`; relay child `359.8.2.2`; Enroll →
   `Issuer#mint-device` and `/.well-known` `359.8.2.3` part 1
   (2026-09-17); `Issuer#bundle` minus its name map, `359.8.2.3` part 2
-  (2026-09-18). Outstanding: the name map (needs `e8d`), Provisioner
-  as an actor, the hub's iroh endpoint `e8d`.)_
+  (2026-09-18); the hub's iroh endpoint `e8d` (2026-09-18); the name
+  map, `359.8.2.3` part 3 (2026-09-19, decision `2fc`). Outstanding:
+  Provisioner as an actor.)_
 - Date: 2026-09-16
 - Refines: ADR-0018 (which named the actors and said "cut by state"
   without saying how many keys), ADR-0015 (where the boot token is
@@ -220,6 +221,34 @@ model §2 "Hub actors"):
   spirit (two GETs, one hostname, before the first beat). The hub's
   record lives `GrantTTL` (7 d), not ADR-0001's ≈ 1 h: a beat is days
   apart and the hub does not roam.
+
+- **Amended 2026-09-19 (`359.8.2.3` part 3, decision `2fc`) — the name
+  map is witnessed, not compiled.** Earlier text (ADR-0016/0017,
+  `mesh-v3-iroh.md`) called name→NodeId "a pure function of git"; that
+  predates actor sovereignty (`5w1`). Git holds names
+  (`talos/machines/<mac>/meta.yaml`, the approver-set device name);
+  keys are minted on members (ADR-0015); and invariant 1 forbids the
+  hub an authoritative registry of who holds what (the grant is the
+  record). What the Issuer *does* see is every member cert presented at
+  `#bundle` — hubkey-signed `{aud: NodeId, cav.name, cav.groups}`,
+  already verified by `verifyMember` — and that cert **is** the proof
+  of the binding. So the reply is `{grants[], blocklist[], speak_as,
+  name_map[]}` where each `name_map` entry is `{member: <cert>,
+  location?: <reach-me-at>}`: the member cert as presented (a receiver
+  resolves its issuer through the bundled `speak-as` exactly as it does
+  for its own — no second signed-document format, per I) and, when the
+  member's last envelope piggybacked a still-live record, the member's
+  **own** `reach-me-at` (the hub relays, never issues — `xwz`). The
+  witness cache (`Issuer.members`, newest `iat` wins; blocklisted keys
+  are filtered on the way out, so a listed name stops resolving on the
+  beat its certs stop renewing, `j0b`) is safe-to-lose in ADR-0019's
+  sense: it fills as members beat, dies with the process, and losing it
+  degrades to "name unknown", never to a wrong answer. A re-key shows
+  both NodeIds under one name until the old cert lapses; the caller
+  picks by `iat` or dials both. Consequence for members (`359.8.3`,
+  `359.8.4`): keep the last map locally — after a deploy the hub's is
+  empty until the others have beaten. Rejected: writing NodeIds back
+  into git at enrollment (a registry; "the grant is the record").
 
 ### Confirmation
 

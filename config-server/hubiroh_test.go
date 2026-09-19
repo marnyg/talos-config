@@ -97,6 +97,11 @@ func TestHubBeatOverIroh(t *testing.T) {
 	for _, f := range issuer.BeatFacets {
 		n.Grant(m.issuer.ID(), f, kit.BeatGrant, kit.SpeakAs)
 	}
+	// A member publishes its own reach-me-at (relay tag from its iroh
+	// endpoint) so the beat piggybacks it into the hub's name map.
+	if _, err := n.PublishLocation(3600); err != nil {
+		t.Fatal(err)
+	}
 
 	req, err := issuer.EncodeBundleRequest(kit.Member)
 	if err != nil {
@@ -117,6 +122,11 @@ func TestHubBeatOverIroh(t *testing.T) {
 		if g.Iss != m.issuer.ID() || cert.Verify(g) != nil {
 			t.Fatalf("grant not hub-signed: %+v", g)
 		}
+	}
+	// The name map witnessed this beat: the member's own cert, located
+	// by the reach-me-at its envelope piggybacked over iroh.
+	if e := issuer.Lookup(b.NameMap, kit.Member.Cav.Name); len(e) != 1 || e[0].Location == nil || e[0].Location.Iss != n.ID() {
+		t.Fatalf("name map after the beat: %+v", b.NameMap)
 	}
 	// The reply piggybacked the hub's location; the member's cache is
 	// current without the WAN fetch from here on.

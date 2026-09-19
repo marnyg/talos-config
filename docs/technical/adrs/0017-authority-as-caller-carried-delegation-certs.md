@@ -130,9 +130,11 @@ domain-model glossary):
   reaches the gateway header; found by `authorize.qnt`, `3cx`,
   2026-09-05). Gateway caps stream lifetime at ≤ 1 h. Blocklist stays
   the plain git list in v0.
-- **Name map**: name→NodeId is the Owner's namespace (git);
-  NodeId→{port: facet} is the producer's advertisement; a dialing
-  directory, never an authorization input.
+- **Name map**: name→NodeId is the Owner's namespace — witnessed by
+  the member certs the hub sees on the beat, not compiled from git
+  (git holds names, members mint keys; ADR-0024 amendment 2026-09-19,
+  decision `2fc`); NodeId→endpoints is the producer's own
+  `reach-me-at`; a dialing directory, never an authorization input.
 
 ### Amendment 2026-09-18 (`359.8.5` grill-design)
 

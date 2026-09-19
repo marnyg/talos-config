@@ -187,7 +187,7 @@ classDiagram
 
 | Actor | Key / endpoint | Inbox | State (all volatile) |
 |---|---|---|---|
-| **Issuer** | `hubkey`; one inbox on two wires via `actor.Multi` — in-memory (Enroll) + the hub's own iroh endpoint, homed on the relay child over loopback and advertised as `iroh:relay=https://marnyg-talos-config.fly.dev` (built 2026-09-18, `e8d`; relay-only by construction, ADR-0022) | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{member: <cert>}` → hubkey-signed grants `policy.Compile`d for the cert's name/groups, the v3 blocklist, current `speak-as`; the Issuer verifies the member cert itself — own signature, or a dead `hubkey` resolved via `cert.SpeaksFor` over the proof's `speak-as` from *its* wallet, `aud == From` — built 2026-09-18, decision `1tg`; the name map is next — `359.8.2.3`, unblocked by `e8d`), `#mint-device` (from Enroll: `{node, name, group, fingerprint, nonce, signature}` — the Issuer rebuilds the **v2 enrollment message** and verifies the **wallet's** EIP-191 over it; built 2026-09-17), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal, swapped on the live actor via `actor.Hold`; location cache, `seq` HWM, `lw` (safe-to-lose); git checkout = compiler input. **No replay state** for `#mint-device` (decision `0t9`) |
+| **Issuer** | `hubkey`; one inbox on two wires via `actor.Multi` — in-memory (Enroll) + the hub's own iroh endpoint, homed on the relay child over loopback and advertised as `iroh:relay=https://marnyg-talos-config.fly.dev` (built 2026-09-18, `e8d`; relay-only by construction, ADR-0022) | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{member: <cert>}` → hubkey-signed grants `policy.Compile`d for the cert's name/groups, the v3 blocklist, current `speak-as`; the Issuer verifies the member cert itself — own signature, or a dead `hubkey` resolved via `cert.SpeaksFor` over the proof's `speak-as` from *its* wallet, `aud == From` — built 2026-09-18, decision `1tg`; plus the name map: every member witnessed on the beat, with its piggybacked `reach-me-at` when live — built 2026-09-19, decision `2fc`), `#mint-device` (from Enroll: `{node, name, group, fingerprint, nonce, signature}` — the Issuer rebuilds the **v2 enrollment message** and verifies the **wallet's** EIP-191 over it; built 2026-09-17), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal, swapped on the live actor via `actor.Hold`; location cache, name-map witness cache (member certs seen at `#bundle`), `seq` HWM, `lw` (all safe-to-lose); git checkout = compiler input. **No replay state** for `#mint-device` (decision `0t9`) |
 | **Enroll** | own key; in-memory only (built: `config-server/enroll`) | none (WAN HTTPS handlers: `/device/code`, `/token`, `/verify`, `/mesh/enroll/*`). Sends `#mint-device` when an enrollment named a `node`; refuses to start such a flow while the Issuer is not serving | device-flow store (minutes TTL) — its single-use nonce is the replay check |
 | **Provisioner** | own key; in-memory only | none (WAN HTTPS: `/config`, `/enroll/machine`, KMS) | seed (memory); boot-token seen-set |
 
@@ -204,7 +204,8 @@ Rules that fall out of the cut:
   Reply signature covers the bundle.
 - **Lighthouse = view over the Issuer's location cache.** Every inbound
   envelope piggybacks the sender's `reach-me-at`; `#bundle`'s
-  `NodeId → {port: facet}` half reads that cache. `#publish`/`#lookup`/
+  `NodeId → endpoints` half reads that cache, joined to the member
+  certs it has witnessed (`2fc`). `#publish`/`#lookup`/
   `#frontdoor` are M3 (`0bc.3`), for actors that are not already
   talking to you.
 - **Boot token is Provisioner-local**: it mints at `/config` and
@@ -406,16 +407,24 @@ provisioning or recovery path may depend on it.
   actors; a service is a facet on some actor (the gateway for
   Kubernetes Services). _(Pinned 2026-09-03, spike `359.2`; stream vs
   actor facet ruled 2026-09-12, `0bc.2` grill-design.)_
-- **Name map** — the signed directory members receive on the renewal
-  beat. Two halves with different owners: **name → NodeId** is the
-  Owner's namespace (authoritative, derived from git, invariant 1);
-  **NodeId → {port: facet}** is the producer's advertisement — the
-  actor's own `reach-me-at` record, **self-issued by every actor,
-  machines included**; the hub relays and caches, it never issues
-  one on an actor's behalf (a hub-issued 1 h record would make nodes
-  unreachable after one sealed hour — `runway.qnt`, ruled
-  2026-09-05, `xwz`). A dialing convenience, never an authorization
-  input. Replaces the mesh DNS server under Mesh v3.
+- **Name map** — the directory members receive on the renewal beat
+  (`#bundle`'s `name_map`, built 2026-09-19). Two halves with different
+  owners, **neither minted by the hub**: **name → NodeId** is the
+  Owner's namespace, *witnessed* by the member certs the Issuer sees on
+  the beat — git supplies the names, members mint the keys (ADR-0015),
+  and the hub keeps no registry (invariant 1: the grant is the record),
+  so each entry ships the hubkey-signed member cert itself as the proof
+  of the binding (decision `2fc`; supersedes "pure function of git",
+  which predates actor sovereignty); **NodeId → endpoints** is the
+  producer's advertisement — the actor's own `reach-me-at` record,
+  **self-issued by every actor, machines included**, piggybacked on its
+  envelopes; the hub relays and caches, it never issues one on an
+  actor's behalf (a hub-issued 1 h record would make nodes unreachable
+  after one sealed hour — `runway.qnt`, ruled 2026-09-05, `xwz`). The
+  witness cache is safe-to-lose (ADR-0019): empty after a deploy until
+  members beat, so members keep their last map. A dialing convenience,
+  never an authorization input. Replaces the mesh DNS server under
+  Mesh v3.
 - **Cert classes and lifetimes** _(pinned 2026-09-03, spike
   `359.2`)_ — consent grant: bound to the accepted config, re-minted
   at boot/apply, delegable. `member`: 90 d, renewed at ⅔ life **or on
