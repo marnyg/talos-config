@@ -41,7 +41,11 @@
 // is the whole send side until FIN, the reply the whole return side
 // until FIN. SendMsg is WriteAll+Finish, RecvMsg is ReadToEnd. Streams
 // of one dial→peer pair share a QUIC connection (pooled per peer on the
-// dial side; the accept side loops AcceptBi per connection).
+// dial side; the accept side loops AcceptBi per connection). iroh
+// keep-alives every connection (5 s), so a pooled connection stays up
+// between streams and its closing is evidence the peer is gone (~30 s
+// idle timeout after a peer process dies): the pool evicts it at once
+// and Options.OnConnLost tells the caller (decision talos-config-z2go).
 //
 // # Endpoint tags
 //

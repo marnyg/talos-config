@@ -93,6 +93,18 @@ func (i *Issuer) nameMap(now int64, blocklist []cert.ActorID) []NameEntry {
 	return out
 }
 
+// NameMap is the hub's current directory as a beat would ship it: the
+// witnessed members, off the blocklist, with their cached locations.
+// For /status and tests; a dialing convenience, never an authorization
+// input (this file's header). Blocklist unavailable ⇒ unfiltered.
+func (i *Issuer) NameMap() []NameEntry {
+	var bl []cert.ActorID
+	if i.Policy != nil {
+		_, bl, _ = i.Policy()
+	}
+	return i.nameMap(i.now(), bl)
+}
+
 type wireNameEntry struct {
 	Member   json.RawMessage `json:"member"`
 	Location json.RawMessage `json:"location,omitempty"`

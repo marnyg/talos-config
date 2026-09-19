@@ -47,6 +47,13 @@ type Options struct {
 	// advertises (streamfacet.go). Connections under them are delivered
 	// whole to AcceptConn, never to Accept. ALPN itself is not allowed.
 	StreamALPNs []string
+	// OnConnLost, when set, is called once each time a pooled dial-side
+	// connection to peer ends for any reason but this endpoint's own
+	// Close: the peer closed it, or it idled out — iroh keep-alives every
+	// connection (5 s), so a pooled connection outlives its streams and
+	// its loss is evidence that the peer is gone (~30 s after a peer
+	// process dies). Called from the watcher goroutine; must not block.
+	OnConnLost func(peer cert.ActorID)
 }
 
 // Endpoint is an iroh Endpoint bound to one actor identity. It
@@ -58,6 +65,7 @@ type Endpoint struct {
 	advertise string
 	maxMsg    uint32
 	streams   map[string]bool // StreamALPNs
+	onLost    func(cert.ActorID)
 
 	accept     chan accepted
 	acceptConn chan *Conn
@@ -136,6 +144,7 @@ func Bind(priv ed25519.PrivateKey, o Options) (*Endpoint, error) {
 		advertise:  o.AdvertiseRelay,
 		maxMsg:     maxMsg,
 		streams:    streams,
+		onLost:     o.OnConnLost,
 		accept:     make(chan accepted),
 		acceptConn: make(chan *Conn),
 		closed:     make(chan struct{}),
@@ -202,7 +211,8 @@ func dialable(s string) bool {
 
 // Dial opens a stream to actor id. iroh tags among the hints become the
 // EndpointAddr; other tags are ignored. Streams to one peer share a
-// pooled QUIC connection; a dead pooled connection is replaced once.
+// pooled QUIC connection, evicted as soon as it closes (watchConn); a
+// pooled connection found dead on open is replaced once.
 func (e *Endpoint) Dial(ctx context.Context, id cert.ActorID, hints []string) (actor.Stream, error) {
 	select {
 	case <-e.closed:
@@ -286,10 +296,31 @@ func (e *Endpoint) pooled(id cert.ActorID) *iroh.Connection {
 
 func (e *Endpoint) pool(id cert.ActorID, c *iroh.Connection) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	// A concurrent Dial may have raced us; the loser's connection stays
 	// alive while its streams do and is dropped by the finalizer.
 	e.conns[id] = c
+	e.mu.Unlock()
+	e.loops.Add(1)
+	go e.watchConn(id, c)
+}
+
+// watchConn evicts c from the pool the moment it closes — peer's close,
+// idle timeout after the peer vanished, or our own Close — and, unless
+// the endpoint itself is closing, reports the loss to OnConnLost. The
+// next Dial to id then redials instead of finding the corpse at
+// OpenBi; the caller learns a peer is gone without dialing at all.
+func (e *Endpoint) watchConn(id cert.ActorID, c *iroh.Connection) {
+	defer e.loops.Done()
+	c.Closed()
+	e.evict(id, c)
+	select {
+	case <-e.closed:
+		return
+	default:
+	}
+	if e.onLost != nil {
+		e.onLost(id)
+	}
 }
 
 func (e *Endpoint) evict(id cert.ActorID, c *iroh.Connection) {

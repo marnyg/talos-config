@@ -16,7 +16,12 @@ package nodeagent
 //     and it is also the answer to evidence that the last one is stale:
 //     a Dial that cannot reach a name, or a name the map lacks, re-beats
 //     first (rate-limited) — a hub redeploy under a new key (ipt7), a
-//     member enrolled or re-keyed since, are all one beat away;
+//     member enrolled or re-keyed since, are all one beat away. A node
+//     that dials nothing between beats has two more kinds of evidence
+//     (decision z2go): the pooled connection its last beat left to the
+//     hub closing (iroh keep-alives it; ~30 s after the hub process
+//     dies), and an admitted caller whose verified speak-as names a
+//     hubkey newer than the one it beat against;
 //   - serves stream facets: a caller connects under policy.ALPN(facet),
 //     presents its bundle, and Authorize — rooted in this node's own
 //     consent grant to the Owner — decides; admitted connections are
@@ -61,7 +66,10 @@ import (
 // on every beat attempt, hub or no hub, so it never lapses while the
 // process runs.
 // DefaultMinRebeat bounds how often staleness evidence (Dial failures,
-// unknown names, Kick) may trigger a beat ahead of schedule; DefaultDialTimeout
+// unknown names, Kick) may trigger a beat ahead of schedule, and is the
+// flat retry against a sealed hub — up and waiting for the wallet, not
+// broken, so the first beat after the unseal lands within one MinRebeat
+// rather than at the tail of an exponential backoff; DefaultDialTimeout
 // bounds one candidate dial, since a dial to a key nobody holds any
 // more (the hub before a redeploy) otherwise hangs for iroh's idle
 // timeout instead of failing.
@@ -113,7 +121,8 @@ type Agent struct {
 	accept map[string]string // ALPN → facet, restricted to Forward
 	facets []string          // sorted Forward keys
 
-	beats atomic.Int64 // successful beats this process
+	beats    atomic.Int64 // successful beats this process
+	attempts atomic.Int64 // beats attempted this process (tests: a refused beat is still evidence acted on)
 
 	// One beat at a time: the loop's and any rebeat serialize on beatMu;
 	// lastBeat (unix nanos, wall clock) is when the last one was
@@ -157,11 +166,12 @@ func Start(o Options) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: o.BindAddr, Relay: o.Config.Relay, StreamALPNs: alpns})
+	a := &Agent{o: o, log: o.Log, http: o.HTTP, accept: accept, facets: facets, kick: make(chan struct{}, 1)}
+	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: o.BindAddr, Relay: o.Config.Relay, StreamALPNs: alpns, OnConnLost: a.connLost})
 	if err != nil {
 		return nil, err
 	}
-	a := &Agent{o: o, log: o.Log, http: o.HTTP, ep: ep, accept: accept, facets: facets, kick: make(chan struct{}, 1)}
+	a.ep = ep
 	if a.log == nil {
 		a.log = log.Default()
 	}
@@ -229,6 +239,9 @@ func (a *Agent) Bundle() *issuer.Bundle {
 // Beats counts successful beats since Start.
 func (a *Agent) Beats() int64 { return a.beats.Load() }
 
+// BeatAttempts counts beats attempted since Start, successful or not.
+func (a *Agent) BeatAttempts() int64 { return a.attempts.Load() }
+
 // Close releases the endpoint.
 func (a *Agent) Close() error { return a.ep.Close() }
 
@@ -255,11 +268,16 @@ func (a *Agent) Run(ctx context.Context) error {
 		if errors.Is(err, ErrTokenDead) {
 			return err
 		}
-		a.log.Printf("enroll: %v (retry in %s)", err, backoff)
-		if !sleep(ctx, backoff) {
+		wait := backoff
+		if errors.Is(err, ErrHubSealed) {
+			wait = a.minRebeat() // same as the beat: a sealed hub is polled flat
+		} else {
+			backoff = min(backoff*2, maxBackoff)
+		}
+		a.log.Printf("enroll: %v (retry in %s)", err, wait)
+		if !sleep(ctx, wait) {
 			return ctx.Err()
 		}
-		backoff = min(backoff*2, maxBackoff)
 	}
 
 	every := a.o.BeatEvery
@@ -279,41 +297,97 @@ func (a *Agent) Run(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				a.log.Printf("beat: %v (retry in %s)", err, backoff)
-				wait, backoff = backoff, min(backoff*2, maxBackoff)
+				if errors.Is(err, ErrHubSealed) {
+					// Not an outage: the hub is up and waiting for the
+					// wallet. Poll it flat so the unseal is one MinRebeat
+					// from every member's beat; the backoff is untouched.
+					wait = a.minRebeat()
+				} else {
+					wait, backoff = backoff, min(backoff*2, maxBackoff)
+				}
+				a.log.Printf("beat: %v (retry in %s)", err, wait)
 			} else {
 				backoff = minBackoff
 			}
 			timer.Reset(wait)
 		case <-a.kick:
-			// Off-schedule; the timer keeps its date. A beat the loop
-			// then repeats early is cheap; a kick storm is not, so
-			// rebeat's rate limit decides.
-			a.rebeat(ctx)
+			// Off-schedule: pull the timer in to the earliest moment the
+			// rate limit allows (now, when the last attempt is MinRebeat
+			// old). Never later than its date; a kick storm collapses
+			// into one beat per MinRebeat.
+			timer.Reset(a.untilRebeat())
 		}
 	}
 }
 
-// Kick asks the running loop to beat now — the asynchronous form of
-// staleness evidence, for callers that cannot wait (a DNS answer): the
-// next lookup sees the fresh map. Rate-limited to MinRebeat; a no-op
-// when a beat is that recent.
+// Kick asks the running loop to beat as soon as the rate limit allows —
+// the asynchronous form of staleness evidence, for callers that cannot
+// wait (a DNS answer, a lost connection, a newer speak-as on an admitted
+// stream): the next lookup sees the fresh map. The beat is scheduled,
+// not dropped, when one is more recent than MinRebeat.
 func (a *Agent) Kick() {
-	if !a.rebeatDue() {
-		return
-	}
 	select {
 	case a.kick <- struct{}{}:
 	default:
 	}
 }
 
-func (a *Agent) rebeatDue() bool {
-	floor := a.o.MinRebeat
-	if floor <= 0 {
-		floor = DefaultMinRebeat
+func (a *Agent) minRebeat() time.Duration {
+	if a.o.MinRebeat > 0 {
+		return a.o.MinRebeat
 	}
-	return time.Since(time.Unix(0, a.lastBeat.Load())) >= floor
+	return DefaultMinRebeat
+}
+
+// untilRebeat is how long the rate limit still holds: zero when the
+// last attempt is MinRebeat old or older.
+func (a *Agent) untilRebeat() time.Duration {
+	return max(0, a.minRebeat()-time.Since(time.Unix(0, a.lastBeat.Load())))
+}
+
+func (a *Agent) rebeatDue() bool { return a.untilRebeat() == 0 }
+
+// connLost is the transport's word that a pooled connection ended
+// (irohtransport.Options.OnConnLost). When the peer is the hub, the
+// process this member beat against is gone — a redeploy, most likely,
+// under a key that will differ — and this is the only evidence a node
+// that dials nothing between beats ever sees (decision z2go).
+func (a *Agent) connLost(peer cert.ActorID) {
+	a.mu.Lock()
+	h := a.hub
+	a.mu.Unlock()
+	if h == nil || h.ID() != peer {
+		return
+	}
+	a.log.Printf("connection to hub %s lost; beating", peer)
+	a.Kick()
+}
+
+// noticeRotation is the receiver-side evidence (decision z2go): an
+// admitted caller carried a wallet-signed speak-as for a hubkey this
+// member has not beaten against, issued after the one it holds — the
+// caller has seen a newer hub. Only rooted certs are consulted
+// (Result.Verified: signature provenance to this node's own consent),
+// and only on admission: a refused stranger schedules nothing (5qt).
+func (a *Agent) noticeRotation(res cert.Result) {
+	if !res.OK {
+		return
+	}
+	a.mu.Lock()
+	h, kit := a.hub, a.kit
+	a.mu.Unlock()
+	if h == nil || kit == nil {
+		return
+	}
+	for _, c := range res.Verified {
+		// >= not >: two unseals within one second are a rotation too, and
+		// what the comparison must exclude is a caller with an OLDER hub.
+		if c.Can == cert.VerbSpeakAs && c.Iss == kit.SpeakAs.Iss && cert.ActorID(c.Aud) != h.ID() && c.Iat >= h.SpeakAs.Iat {
+			a.log.Printf("caller presented hub %s (speak-as iat %d > ours %d); beating", c.Aud, c.Iat, h.SpeakAs.Iat)
+			a.Kick()
+			return
+		}
+	}
 }
 
 // rebeat beats now unless one was attempted within MinRebeat, and
@@ -396,6 +470,7 @@ func (a *Agent) Beat(ctx context.Context) error {
 
 func (a *Agent) beat(ctx context.Context) error {
 	a.lastBeat.Store(time.Now().UnixNano())
+	a.attempts.Add(1)
 	a.installAuthority()
 	kit := a.Kit()
 	if kit == nil {
@@ -428,7 +503,7 @@ func (a *Agent) beat(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	rep, err := a.actor.Send(ctx, hub.ID(), issuer.FacetBundle, req)
+	rep, err := a.send(ctx, hub.ID(), issuer.FacetBundle, req)
 	if err != nil {
 		return fmt.Errorf("nodeagent: #bundle: %w", err)
 	}
@@ -451,11 +526,39 @@ func (a *Agent) beat(ctx context.Context) error {
 	return nil
 }
 
+// dialTimeout bounds one dial: DialTimeout or its default.
+func (a *Agent) dialTimeout() time.Duration {
+	if a.o.DialTimeout > 0 {
+		return a.o.DialTimeout
+	}
+	return DefaultDialTimeout
+}
+
+// send is one beat invocation, bounded by DialTimeout like every
+// candidate dial in Dial: a hub record that names a dead key (the
+// well-known answered before the URL moved) otherwise holds the beat —
+// and beatMu with it — for iroh's own connect timeout.
+func (a *Agent) send(ctx context.Context, to cert.ActorID, facet string, payload []byte) (*actor.Reply, error) {
+	sctx, cancel := context.WithTimeout(ctx, a.dialTimeout())
+	defer cancel()
+	rep, err := a.actor.Send(sctx, to, facet, payload)
+	if err != nil && sctx.Err() != nil && ctx.Err() == nil {
+		err = fmt.Errorf("%w: no answer in %s", actor.ErrUnreachable, a.dialTimeout())
+	}
+	return rep, err
+}
+
 // locateHub fetches the hub's current speak-as + reach-me-at, pinned to
 // the wallet the Kit names; on a WAN failure the cached record serves
 // while its certs are live.
 func (a *Agent) locateHub(ctx context.Context, kit *issuer.Kit) (HubRecord, error) {
 	h, err := FetchHub(ctx, a.http, a.o.Config.Hub, kit.SpeakAs.Iss)
+	if errors.Is(err, ErrHubSealed) {
+		// The hub answered: it holds no speak-as yet. Whatever the
+		// cache names is a dead key or a sealed one; dialing it only
+		// turns "sealed" into a 15 s "unreachable".
+		return HubRecord{}, err
+	}
 	if err == nil {
 		if err := a.o.State.SaveHub(h); err != nil {
 			a.log.Printf("persisting hub record: %v", err)
@@ -509,7 +612,7 @@ func (a *Agent) renew(ctx context.Context, kit *issuer.Kit, hub HubRecord) (*iss
 	if err != nil {
 		return nil, err
 	}
-	rep, err := a.actor.Send(ctx, hub.ID(), actor.FacetRenew, req)
+	rep, err := a.send(ctx, hub.ID(), actor.FacetRenew, req)
 	if err != nil {
 		return nil, err
 	}
@@ -606,6 +709,7 @@ func (a *Agent) handleConn(ctx context.Context, c *irohtransport.Conn) {
 		_ = c.Refuse(ctx, "not authorized")
 		return
 	}
+	a.noticeRotation(res)
 	facet := a.accept[c.ALPN()]
 	target := a.o.Forward[facet]
 	if err := c.Admit(ctx); err != nil {

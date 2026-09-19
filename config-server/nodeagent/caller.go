@@ -141,10 +141,7 @@ func (a *Agent) dial(ctx context.Context, name, facet string) (*irohtransport.Co
 		return nil, err
 	}
 	alpn := policy.ALPN(facet)
-	timeout := a.o.DialTimeout
-	if timeout <= 0 {
-		timeout = DefaultDialTimeout
-	}
+	timeout := a.dialTimeout()
 	for _, e := range entries {
 		id := cert.ActorID(e.Member.Aud)
 		dctx, cancel := context.WithTimeout(ctx, timeout)

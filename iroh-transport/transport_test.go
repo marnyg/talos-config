@@ -230,6 +230,78 @@ func TestConcurrentStreamsOnePeer(t *testing.T) {
 	}
 }
 
+// TestConnLost: a pooled connection whose peer goes away is evicted
+// and reported through OnConnLost without anyone dialing (decision
+// talos-config-z2go: a member learns its hub died from the connection
+// its last beat left in the pool). Closing our own endpoint reports
+// nothing.
+func TestConnLost(t *testing.T) {
+	ctx := testCtx(t)
+	lost := make(chan cert.ActorID, 4)
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex, err := Bind(priv, Options{BindAddr: "127.0.0.1:0", OnConnLost: func(id cert.ActorID) { lost <- id }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ex.Close() })
+	ey, _ := bindLoopback(t, "")
+	go func() {
+		for {
+			s, _, err := ey.Accept(ctx)
+			if err != nil {
+				return
+			}
+			_ = s.Close()
+		}
+	}()
+	s, err := ex.Dial(ctx, ey.ID(), ey.Endpoints())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	if ex.pooled(ey.ID()) == nil {
+		t.Fatal("no pooled connection after Dial")
+	}
+
+	_ = ey.Close() // the peer's process is gone
+	select {
+	case id := <-lost:
+		if id != ey.ID() {
+			t.Fatalf("lost %s, want %s", id, ey.ID())
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("OnConnLost never fired")
+	}
+	if ex.pooled(ey.ID()) != nil {
+		t.Fatal("dead connection still pooled")
+	}
+
+	// Our own Close: the pool drains silently.
+	ez, _ := bindLoopback(t, "")
+	go func() {
+		for {
+			s, _, err := ez.Accept(ctx)
+			if err != nil {
+				return
+			}
+			_ = s.Close()
+		}
+	}()
+	if s, err = ex.Dial(ctx, ez.ID(), ez.Endpoints()); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	_ = ex.Close()
+	select {
+	case id := <-lost:
+		t.Fatalf("OnConnLost(%s) on our own Close", id)
+	case <-time.After(2 * time.Second):
+	}
+}
+
 // TestAdvertiseRelay: the hub's shape (talos-config-e8d). The receiver
 // homes on the relay at one name (loopback, as the hub does with its
 // relay child) and advertises another (the public hostname); the

@@ -33,11 +33,15 @@ import (
 // token; the agent enrolls with it, beats, lands in the name map, and
 // forwards an apid stream for an admin device presenting its bundle —
 // while a media device and a stranger are refused. Then it restarts
-// from its state dir with no token and beats again. Last, the hub is
-// redeployed under a new hubkey and a caller's next dial to it goes
-// through without a restart (ipt7).
+// from its state dir with no token and beats again. Then the hub is
+// redeployed under a new hubkey: the node, which dials nothing on its
+// own, beats when its pooled connection to the dead process closes and
+// again the moment the new one is unsealed (decision z2go); a caller's
+// next dial to the hub goes through without a restart (ipt7). Last, a
+// rolling redeploy leaves the old process alive: only an admitted
+// caller's newer speak-as tells the node the hub moved (z2go, B).
 func TestNodeAgentEndToEnd(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	home := startRelay(t)
 	public := strings.Replace(home, "127.0.0.1", "localhost", 1)
@@ -93,7 +97,7 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	start := func(cfg nodeagent.Config) (*nodeagent.Agent, context.CancelFunc) {
 		a, err := nodeagent.Start(nodeagent.Options{
 			Config: cfg, State: state, Forward: map[string]string{"apid": ln.Addr().String()},
-			BindAddr: "127.0.0.1:0", Log: logger, BeatEvery: time.Hour,
+			BindAddr: "127.0.0.1:0", Log: logger, BeatEvery: time.Hour, MinRebeat: 2 * time.Second,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -324,18 +328,33 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 		t.Fatalf("node → hub-http: %v, want refused", err)
 	}
 
-	// Hub redeploy (ipt7): the old process is gone — its endpoint with
-	// it — and a new one, unsealed by the same wallet, holds a fresh
-	// hubkey behind the same URL. The desk's record still names the dead
-	// key; its next dial to "hub" must not wait for the 6 h beat: the
-	// unreachable dial re-beats (well-known → new key, renew at it) and
-	// the retry lands on the new hub.
+	// Hub redeploy (ipt7, z2go): the old process is gone — its endpoint
+	// with it — and the new one behind the same URL is SEALED until the
+	// wallet acts, then holds a fresh hubkey. The node dials nothing
+	// between beats; its evidence is the pooled connection its last beat
+	// left, which the dead process takes with it. That beat meets the
+	// sealed hub (503) and is retried flat at MinRebeat, not backed off,
+	// so the unseal is one MinRebeat from the node's beat — and the hub's
+	// name map, empty since the restart, has the node again.
 	oldHub := m.issuer.ID()
+	nodeBeats, nodeAttempts := a.Beats(), a.BeatAttempts()
 	hcancel()
 	if err := m.wan.Close(); err != nil {
 		t.Fatal(err)
 	}
 	m2 := testHubManagerOn(t, []string{wellKnownAddr}, "", irohHubTransport(home, public, "127.0.0.1:0"))
+	s2 := &server{root: m2.root, store: deviceflow.NewStore(), sessions: newSessionStore(), adminAddrs: []string{wellKnownAddr}, hub: m2}
+	m2.publicURL = ts.URL
+	go m2.listen(ctx)
+	front.Store(s2.mux())
+	waitFor(t, ctx, "node to beat on losing the hub", func() bool { return a.BeatAttempts() > nodeAttempts })
+	if a.Beats() != nodeBeats {
+		t.Fatalf("node beat a sealed hub: %d beats", a.Beats())
+	}
+	if e, _ := a.Resolve(nodeagent.HubName); len(e) != 1 || cert.ActorID(e[0].Member.Aud) != oldHub {
+		t.Fatalf("node's hub record while the hub is sealed: %+v", e)
+	}
+
 	if err := m2.unsealWithSignature(unsealSig(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -345,21 +364,38 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	if m2.issuer.ID() == oldHub {
 		t.Fatal("redeploy kept the hubkey; the scenario needs a rotation")
 	}
-	s2 := &server{root: m2.root, store: deviceflow.NewStore(), sessions: newSessionStore(), adminAddrs: []string{wellKnownAddr}, hub: m2}
-	m2.publicURL = ts.URL
-	go m2.listen(ctx)
 	go m2.serveHTTPFacet(ctx, s2.hubFacetMux())
-	front.Store(s2.mux())
 	waitFor(t, ctx, "new hub published", func() bool { return m2.issuer.Actor.CurrentLocation() != nil })
+	if err := m2.wan.(*irohWan).Online(ctx); err != nil { // at the relay, as fly's loopback relay child is at once
+		t.Fatal(err)
+	}
+	unsealed := time.Now()
+	waitFor(t, ctx, "node beat at the unsealed hub", func() bool { return a.Beats() > nodeBeats })
+	if since := time.Since(unsealed); since > 4*time.Second {
+		t.Fatalf("node beat %s after the unseal; want within ~MinRebeat", since)
+	}
+	if k := a.Kit(); k.Member.Iss != m2.issuer.ID() {
+		t.Fatalf("node's member cert not renewed at the new hubkey: issuer %s", k.Member.Iss)
+	}
+	if e := m2.issuer.NameMap(); len(issuer.Lookup(e, "aa-bb-cc-dd-ee-ff")) != 1 || issuer.Lookup(e, "aa-bb-cc-dd-ee-ff")[0].Location == nil {
+		t.Fatalf("the redeployed hub does not know the node: %+v", e)
+	}
+
+	// The desk's record still names the dead key; its next dial to "hub"
+	// must not wait for the 6 h beat: the unreachable dial re-beats
+	// (well-known → new key, renew at it) and the retry lands on the
+	// new hub.
 
 	if e, _ := dev.Resolve(nodeagent.HubName); len(e) != 1 || cert.ActorID(e[0].Member.Aud) != oldHub {
 		t.Fatalf("desk should still hold the dead hubkey before dialing: %+v", e)
 	}
 	beats := dev.Beats()
+	dialStart := time.Now()
 	conn, err = dev.Dial(ctx, nodeagent.HubName, "hub-http")
 	if err != nil {
 		t.Fatalf("desk → hub-http after redeploy: %v", err)
 	}
+	t.Logf("desk → hub after redeploy took %s", time.Since(dialStart))
 	if conn.Peer() != m2.issuer.ID() {
 		t.Fatalf("dialed %s, want the new hub %s", conn.Peer(), m2.issuer.ID())
 	}
@@ -373,6 +409,51 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	if k := dev.Kit(); k.Member.Iss != m2.issuer.ID() {
 		t.Fatalf("member cert not renewed at the new hubkey: issuer %s", k.Member.Iss)
 	}
+
+	// Rolling redeploy (z2go, B): the new process takes the URL while
+	// the old one lingers, so the node's pooled connection stays healthy
+	// and nothing on the node side moves. The desk beats (well-known →
+	// third hubkey) and dials the node's apid with grants under it: the
+	// admitted bundle's speak-as is wallet-signed and newer than the one
+	// the node holds — the node beats at the hub it just learned of.
+	m3 := testHubManagerOn(t, []string{wellKnownAddr}, "", irohHubTransport(home, public, "127.0.0.1:0"))
+	if err := m3.unsealWithSignature(unsealSig(t)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m3.unsealIssuer(speakAsSig(t, m3, testKey(t))); err != nil {
+		t.Fatal(err)
+	}
+	s3 := &server{root: m3.root, store: deviceflow.NewStore(), sessions: newSessionStore(), adminAddrs: []string{wellKnownAddr}, hub: m3}
+	m3.publicURL = ts.URL
+	go m3.listen(ctx)
+	front.Store(s3.mux())
+	waitFor(t, ctx, "third hub published", func() bool { return m3.issuer.Actor.CurrentLocation() != nil })
+	if err := m3.wan.(*irohWan).Online(ctx); err != nil {
+		t.Fatal(err)
+	}
+	nodeBeats = a.Beats()
+	if err := dev.Beat(ctx); err != nil {
+		t.Fatalf("desk beat at the third hub: %v", err)
+	}
+	if k := dev.Kit(); k.Member.Iss != m3.issuer.ID() {
+		t.Fatalf("desk not renewed at the third hubkey: issuer %s", k.Member.Iss)
+	}
+	if a.Beats() != nodeBeats {
+		t.Fatalf("node beat with its hub connection intact: %d", a.Beats())
+	}
+	conn, err = dev.Dial(ctx, "aa-bb-cc-dd-ee-ff", "apid")
+	if err != nil {
+		t.Fatalf("desk → apid under the third hub: %v", err)
+	}
+	_ = conn.Close()
+	waitFor(t, ctx, "node to beat on the caller's newer speak-as", func() bool { return a.Beats() > nodeBeats })
+	if k := a.Kit(); k.Member.Iss != m3.issuer.ID() {
+		t.Fatalf("node not renewed at the third hubkey: issuer %s", k.Member.Iss)
+	}
+	if e := m3.issuer.NameMap(); len(issuer.Lookup(e, "aa-bb-cc-dd-ee-ff")) != 1 {
+		t.Fatalf("the third hub does not know the node: %+v", e)
+	}
+
 	// The rate limit holds at its default: for a member whose beat is
 	// seconds old, a staleness signal is absorbed, not turned into
 	// another beat.
@@ -381,7 +462,7 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dev2Kit, err := m2.issuer.Mint(cert.NewEdSigner(dev2Priv).ActorID(), "desk2", []string{"admins"})
+	dev2Kit, err := m3.issuer.Mint(cert.NewEdSigner(dev2Priv).ActorID(), "desk2", []string{"admins"})
 	if err != nil {
 		t.Fatal(err)
 	}
