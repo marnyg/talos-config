@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	filippo.io/age v1.3.1
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
+	github.com/marnyg/talos-config/iroh-go v0.0.0
 	github.com/marnyg/talos-config/iroh-transport v0.0.0
 	github.com/siderolabs/crypto v0.6.5
 	github.com/siderolabs/kms-client v0.2.0
@@ -21,10 +22,7 @@ require (
 	pgregory.net/rapid v1.3.0
 )
 
-require (
-	github.com/gowebpki/jcs v1.0.1 // indirect
-	github.com/marnyg/talos-config/iroh-go v0.0.0 // indirect
-)
+require github.com/gowebpki/jcs v1.0.1 // indirect
 
 require (
 	cel.dev/expr v0.25.1 // indirect

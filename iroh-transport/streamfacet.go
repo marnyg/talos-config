@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/marnyg/talos-config/iroh-go/iroh"
@@ -61,8 +62,9 @@ type Conn struct {
 	pre     *Stream // the preamble stream (first bi-stream)
 	preErr  error
 
-	closed chan struct{}
-	once   sync.Once
+	refusing atomic.Bool // Refuse owns the close; Close is a no-op after it
+	closed   chan struct{}
+	once     sync.Once
 }
 
 func newConn(c *iroh.Connection, peer cert.ActorID, alpn string, maxMsg uint32) *Conn {
@@ -129,6 +131,9 @@ func (c *Conn) Refuse(ctx context.Context, reason string) error {
 	if c.pre == nil {
 		return errors.New("irohtransport: Refuse before Preamble")
 	}
+	if !c.refusing.CompareAndSwap(false, true) {
+		return errors.New("irohtransport: Refuse twice")
+	}
 	err := c.pre.SendMsg(ctx, []byte(preambleRefused+reason))
 	_ = c.pre.Close()
 	go func() {
@@ -137,7 +142,6 @@ func (c *Conn) Refuse(ctx context.Context, reason string) error {
 		select {
 		case <-done:
 		case <-time.After(refuseGrace):
-		case <-c.closed:
 		}
 		c.close(1, reason)
 	}()
@@ -163,8 +167,12 @@ func (c *Conn) Open(ctx context.Context) (*Raw, error) {
 	return newRaw(bi), nil
 }
 
-// Close closes the connection; open forwards fail.
+// Close closes the connection; open forwards fail. After Refuse it is
+// a no-op: the refusal closes once the peer has read it.
 func (c *Conn) Close() error {
+	if c.refusing.Load() {
+		return nil
+	}
 	c.close(0, "")
 	return nil
 }

@@ -615,6 +615,25 @@ func TestSequenceValidation(t *testing.T) {
 	if got := b.HWM().Peek(c.ID(), B); got != 1 {
 		t.Fatalf("hwm(c) = %d", got)
 	}
+
+	// A sender that restarts (fresh Actor, same key) while B keeps its
+	// mark: with SeqBase seeded from a clock the first send lands above
+	// the mark; without it the restart is a replay until B forgets.
+	c2 := New(c.Signer, c.Transport)
+	c2.Clock, c2.Grants = c.Clock, c.Grants
+	_, err = c2.Send(w.ctx, B, "echo", nil)
+	wantRemote(t, err, StatusReplay)
+	c3 := New(c.Signer, c.Transport)
+	c3.Clock, c3.Grants = c.Clock, c.Grants
+	c3.SeqBase = func() int64 { return 1_000 }
+	for i := int64(0); i < 2; i++ {
+		if _, err := c3.Send(w.ctx, B, "echo", nil); err != nil {
+			t.Fatalf("seeded send %d: %v", i, err)
+		}
+		if got := b.HWM().Peek(c.ID(), B); got != 1_000+i {
+			t.Fatalf("hwm after seeded send %d = %d", i, got)
+		}
+	}
 }
 
 // ---- 4. location piggyback + cache ----------------------------------------

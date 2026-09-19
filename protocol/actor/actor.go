@@ -132,6 +132,15 @@ type Actor struct {
 	// RenewTTL is the lifetime of a re-issued cert in seconds; 0 ⇒ the
 	// original cert's own lifetime (exp − iat).
 	RenewTTL int64
+	// SeqBase, when set, seeds the outbound seq to a receiver this actor
+	// has not sent to yet IN THIS PROCESS: the first seq is
+	// max(SeqBase(), 1), later ones count up from it. seq must be
+	// monotonic per (sender, receiver) across the SENDER's restarts too —
+	// the receiver's high-water mark outlives them — so a sender whose
+	// counterparties run longer than it does seeds from its clock
+	// (time.Now().UnixNano()): stateless, and a rolled-back clock only
+	// denies, like every other clock fault (ADR-0019). nil ⇒ start at 1.
+	SeqBase func() int64
 
 	hwm  *envelope.HWM
 	mail chan *inbound
@@ -215,6 +224,18 @@ func (a *Actor) Dropped() int64 { return a.dropped.Load() }
 
 // LowWater reports the clock low-water mark.
 func (a *Actor) LowWater() int64 { return a.mark.LowWater() }
+
+// RestoreLowWater seeds the mark from a persisted value (a safe-to-lose
+// cache, ADR-0019): the mark only ever rises, so a stale value is
+// harmless and a lost one degrades to the local clock.
+func (a *Actor) RestoreLowWater(lw int64) { a.mark.Restore(lw) }
+
+// Observe feeds certs this actor verified OUTSIDE its inbox into the
+// mark — a stream facet's authorize (the connection is the invocation,
+// checked by the consumer with cert.Authorize) passes Result.Verified
+// here so the low-water mark advances on every rooted path, exactly as
+// the inbox does for envelopes.
+func (a *Actor) Observe(verified []cert.Cert) { a.mark.ObserveAll(verified) }
 
 func (a *Actor) local() int64 {
 	if a.Clock != nil {
@@ -525,6 +546,9 @@ func (a *Actor) Send(ctx context.Context, to cert.ActorID, facet string, payload
 	defer edge.Unlock()
 
 	a.mu.Lock()
+	if a.seqOut[to] == 0 && a.SeqBase != nil {
+		a.seqOut[to] = max(a.SeqBase()-1, 0)
+	}
 	a.seqOut[to]++
 	seq := a.seqOut[to]
 	loc := a.loc
