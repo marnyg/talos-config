@@ -49,8 +49,8 @@ nixos bumped; hub redeployed (hubkey `8b723ff8…`, unsealed).
 - **Fly hub image lags HEAD by one cosmetic change** (`GET /{$}` on
   the overlay hello, `f03acf5`); redeploy with the next real change.
 - **Route-churn restart path still unobserved** (`7c3`).
-- **Control socket not built** (`fgr`); ADR-0024 and ADR-0025 still
-  Proposed. Mobile's own `netstack.go`/`dns.go` (`phz`).
+- **Control socket not built** (`fgr`). ADR-0024/0025 Accepted this
+  session. Mobile's own `netstack.go`/`dns.go` (`phz`).
 - **The hub reads its git blocklist at authorize time** for hub-http
   (mirrors `Issuer.blocked` for `#renew`/`#bundle`). Invariant 2's
   "verifier never reads git" is met by nodes (bundle copy); the hub is

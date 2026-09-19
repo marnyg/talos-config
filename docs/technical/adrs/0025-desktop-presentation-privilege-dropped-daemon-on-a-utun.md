@@ -1,6 +1,6 @@
 # ADR-0025: Desktop presentation is a root-launched, privilege-dropped daemon on a utun with fake IPs and split DNS
 
-- Status: Proposed
+- Status: Accepted _(2026-09-19, same day: P2.1 ran every admin path over it — talosconfig, kubeconfig, apply incl. the hub)_
 - Date: 2026-09-19
 - Records: decisions `talos-config-4fm`, `talos-config-fgr` (supersedes `talos-config-8j3`); spike `talos-config-eda`
 

@@ -187,7 +187,7 @@ classDiagram
 
 | Actor | Key / endpoint | Inbox | State (all volatile) |
 |---|---|---|---|
-| **Issuer** | `hubkey`; one inbox on two wires via `actor.Multi` — in-memory (Enroll) + the hub's own iroh endpoint, homed on the relay child over loopback and advertised as `iroh:relay=https://marnyg-talos-config.fly.dev` (built 2026-09-18, `e8d`; relay-only by construction, ADR-0022) | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{member: <cert>}` → hubkey-signed grants `policy.Compile`d for the cert's name/groups, the v3 blocklist, current `speak-as`; the Issuer verifies the member cert itself — own signature, or a dead `hubkey` resolved via `cert.SpeaksFor` over the proof's `speak-as` from *its* wallet, `aud == From` — built 2026-09-18, decision `1tg`; plus the name map: every member witnessed on the beat, with its piggybacked `reach-me-at` when live — built 2026-09-19, decision `2fc`), `#mint-device` (from Enroll: `{node, name, group, fingerprint, nonce, signature}` — the Issuer rebuilds the **v2 enrollment message** and verifies the **wallet's** EIP-191 over it; built 2026-09-17), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` | `speak-as` from unseal, swapped on the live actor via `actor.Hold`; location cache, name-map witness cache (member certs seen at `#bundle`), `seq` HWM, `lw` (all safe-to-lose); git checkout = compiler input. **No replay state** for `#mint-device` (decision `0t9`) |
+| **Issuer** | `hubkey`; one inbox on two wires via `actor.Multi` — in-memory (Enroll) + the hub's own iroh endpoint, homed on the relay child over loopback and advertised as `iroh:relay=https://marnyg-talos-config.fly.dev` (built 2026-09-18, `e8d`; relay-only by construction, ADR-0022) | `#renew` (protocol-generic; resolves dead `hubkey`s via own `speak-as` set), `#bundle` (`{member: <cert>}` → hubkey-signed grants `policy.Compile`d for the cert's name/groups, the v3 blocklist, current `speak-as`; the Issuer verifies the member cert itself — own signature, or a dead `hubkey` resolved via `cert.SpeaksFor` over the proof's `speak-as` from *its* wallet, `aud == From` — built 2026-09-18, decision `1tg`; plus the name map: every member witnessed on the beat, with its piggybacked `reach-me-at` when live — built 2026-09-19, decision `2fc`), `#mint-device` (from Enroll: `{node, name, group, fingerprint, nonce, signature}` — the Issuer rebuilds the **v2 enrollment message** and verifies the **wallet's** EIP-191 over it; built 2026-09-17), `#mint-machine` (from Provisioner; name/groups from git), stream `hub-http` → `/config` (built 2026-09-19, `359.8.2.4`: the wan endpoint takes the hub's stream ALPNs; hubkey's consent to the wallet for the stream facets targets hubkey, like a node's consent targets the node, so the same compiled grant attenuates onto either receiver; admitted streams are HTTP connections in-process, no forward table) | `speak-as` from unseal, swapped on the live actor via `actor.Hold`; location cache, name-map witness cache (member certs seen at `#bundle`), `seq` HWM, `lw` (all safe-to-lose); git checkout = compiler input. **No replay state** for `#mint-device` (decision `0t9`) |
 | **Enroll** | own key; in-memory only (built: `config-server/enroll`) | none (WAN HTTPS handlers: `/device/code`, `/token`, `/verify`, `/mesh/enroll/*`). Sends `#mint-device` when an enrollment named a `node`; refuses to start such a flow while the Issuer is not serving | device-flow store (minutes TTL) — its single-use nonce is the replay check |
 | **Provisioner** | own key; in-memory only | none (WAN HTTPS: `/config`, `/enroll/machine`, KMS) | seed (memory); boot-token seen-set |
 
@@ -418,9 +418,16 @@ provisioning or recovery path may depend on it.
   Ports exist only inside a facet definition (forward) and in the
   device-local map (expose) — never in a grant. A facet has one
   **natural port** (`policy.FacetPort`: `apid` 50000, `kube-api`
-  6443), the port its service listens on at the receiver and the port
-  every presentation shows for it, so `cp1.mesh.internal:50000` reads
-  the same on a bridge, a tun, or the node itself _(2026-09-19)_. Reachability (ICMP
+  6443, `hub-http` 80), the port its service listens on at the
+  receiver and the port every presentation shows for it, so
+  `cp1.mesh.internal:50000` reads the same on a bridge, a tun, or the
+  node itself; a port is read in the vocabulary of the name's kind
+  (`hub.mesh.internal:80` is `hub-http`) _(2026-09-19)_. **A facet
+  admits by the recipe; a route gates by group**: `hub-http` admits
+  admins and media alike (two recipe rows), and `/config` answers
+  admins only — the per-route gate is where capability discipline
+  ends at the actor that terminates the stream (structural trade-offs)
+  _(built 2026-09-19, `359.8.2.4`)_. Reachability (ICMP
   today) is not a facet: an unauthenticated ping. Services are not
   actors; a service is a facet on some actor (the gateway for
   Kubernetes Services). _(Pinned 2026-09-03, spike `359.2`; stream vs
@@ -754,7 +761,9 @@ provisioning or recovery path may depend on it.
   HTTP gates match on.) _(Redefined 2026-09-03, spike `359.2`.)_
 - **Mesh zone** — `*.mesh.internal`. v2: served by the hub — declared
   roles from the derived namespace, device roles while their tunnel
-  is live. v3: inherited unchanged (spike `eda`: every certSAN already
+  is live; the hub's overlay HTTP is `/hosts` and `/policy` only
+  (`/config` moved to the `hub-http` facet 2026-09-19, decision
+  `d3z3`: a migrated consumer cuts its nebula path). v3: inherited unchanged (spike `eda`: every certSAN already
   carries it) but no longer a plane concept — a **presentation**
   artifact each device serves for itself (see Lookup, §4).
 - **Presentation** — the device-local fiction that lets IP-speaking
@@ -762,7 +771,10 @@ provisioning or recovery path may depend on it.
   zone gated on the name map, **fake IPs** (`198.18.0.0/15`, one per
   known name, stable for the process, minted first-seen from
   `198.18.1.1`), and `<fake IP>:<natural port>` → (member, facet).
-  Same dialect on every device: Android (`iroh-go/mobile`, P0.2) and
+  **The hub's name resolves from the member's hub record** (hubkey +
+  `reach-me-at`, kept for the beat), not the name map: the hub is a
+  well-known actor, never a member, and holds no member cert
+  (`nodeagent.HubName`, 2026-09-19). Same dialect on every device: Android (`iroh-go/mobile`, P0.2) and
   the desktop daemon (`config-server/fakeip` + `irohup -tun`, P2.0,
   ADR-0025). Where the model meets a web that assumes global names
   (invariants, structural trade-offs) — expected to stay the fragile

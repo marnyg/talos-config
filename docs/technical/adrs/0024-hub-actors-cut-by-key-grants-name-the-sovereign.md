@@ -1,9 +1,8 @@
 # ADR-0024: The hub is several actors cut by key; grants to hub facets name the sovereign; the beat is actor-native
 
-- Status: Proposed _(2026-09-16, grill-design on `talos-config-359.8.2.1`
-  — the "define inbox message set + owned state first" task decision
-  `vl4` mandated; promote when Phase 1.2 lands against it. Landed so
-  far: Issuer `359.8.1`; relay child `359.8.2.2`; Enroll →
+- Status: Accepted _(2026-09-19; Proposed 2026-09-16, grill-design on
+  `talos-config-359.8.2.1` — the "define inbox message set + owned
+  state first" task decision `vl4` mandated. Landed: Issuer `359.8.1`; relay child `359.8.2.2`; Enroll →
   `Issuer#mint-device` and `/.well-known` `359.8.2.3` part 1
   (2026-09-17); `Issuer#bundle` minus its name map, `359.8.2.3` part 2
   (2026-09-18); the hub's iroh endpoint `e8d` (2026-09-18); the name
@@ -12,8 +11,10 @@
   handler on the shell, not `Issuer#mint-machine`**: `POST
   /mesh/enroll/node` verifies the token with the master `hubManager`
   holds and calls `Issuer.Mint` directly (decision `talos-config-488`;
-  the Provisioner's mint facet waits for the Provisioner). Outstanding:
-  Provisioner as an actor.)_
+  the Provisioner's mint facet waits for the Provisioner); the
+  `hub-http` stream facet serving `/config`, `359.8.2.4` (2026-09-19),
+  with the overlay route cut (decision `d3z3`). Outstanding:
+  Provisioner as an actor — accepted with that as the known remainder.)_
 - Date: 2026-09-16
 - Refines: ADR-0018 (which named the actors and said "cut by state"
   without saying how many keys), ADR-0015 (where the boot token is
