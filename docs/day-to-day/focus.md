@@ -15,9 +15,12 @@ done** (`qb5q`): both nodes run the same p0agent installer, so
 is **P2.2** (`359.9.2`): hub→node dials (`/status`, bootstrap probes)
 onto identity streams — now able to cover both nodes.
 
-**In the way:** `ipt7` — a hub redeploy strands running daemons for
-up to 6 h (stale hubkey). P2.2 puts the hub on the dialing side, so
-this gets worse before it gets better; worth fixing first.
+**Cleared 2026-09-20:** `ipt7` — members now re-beat on staleness
+evidence (unreachable name, unknown name), so a hub redeploy costs one
+bounded dial (15 s) and one beat, not a restart. P2.2 inherits the
+mirror-image question: the hub's location table is empty after its
+own restart until members beat — settle how nodes learn to re-beat
+before the hub depends on dialing them.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
 members dialed by key, IP as device-local fiction, hub as actors

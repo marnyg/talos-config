@@ -582,9 +582,34 @@
   daemon** (`ipt7`): the member learns the hubkey at beat, and the
   beat is `DefaultBeat` = **6 h**, so until then `hub.mesh.internal`
   streams dial the dead key and the name map is stale. The Mac's mesh
-  names went dark this way during this session's deploy. Workaround
-  until `ipt7`: `sudo launchctl kickstart -k system/org.nixos.talos-mesh`
-  right after the unseal.
+  names went dark this way during this session's deploy. **Fixed
+  2026-09-20** (`5c6e506`): the member re-beats on staleness evidence;
+  no restart needed — see the 09-20 entry.
+- 2026-09-20 — **After a hub redeploy + unseal, the first mesh flow to
+  the hub takes ~15 s** (`DialTimeout` on the dead hubkey, then a
+  rebeat: `renewed … at ed:<new>` + `beat ok` in
+  `/var/log/talos-mesh.log`), every later flow is instant. If the first
+  flow rides a *pooled* connection to the dead hub it can wait for
+  QUIC's idle timeout instead; the second flow recovers. Rebeats are
+  rate-limited to one per minute per daemon — hammering a down hub
+  will not beat faster. A `dig @198.18.0.2 <unknown>.mesh.internal`
+  also kicks a beat (same limit): expect `beat ok` lines in the daemon
+  log after typos.
+- 2026-09-20 — **The 09-19 "network dropped during the redeploy" was
+  the home router's DNS**, not the daemon: `sudo log show` for
+  21:36–21:43 shows mDNSResponder's queries to `10.0.0.1` via `en7`
+  unanswered 21:40:02–21:40:58 (ICMP/route/resolver config untouched),
+  recovering a minute before the daemon restart. A deploy watched with
+  `ping 1.1.1.1` + `dig @10.0.0.1` + `dig @198.18.0.2` on 09-20 showed
+  no loss at all. When "everything is down" during a deploy, check WAN
+  DNS separately from mesh names before blaming the tun.
+- 2026-09-20 — **The Mac daemon is built from the nixos flake's
+  `talos-config` input** (`github:marnyg/talos-config`, pinned in
+  `~/git/nixos/flake.lock`): a talos-config commit reaches the daemon
+  only after `git push` **and** `nix flake update talos-config
+  --refresh && darwin-rebuild switch` there. Verify with the store
+  path in `/Library/LaunchDaemons/org.nixos.talos-mesh.plist` — an
+  unchanged path after a rebuild means the input did not move.
 - 2026-09-19 — **Fake IPs are per-daemon-process, not stable.** The
   table "only grows" within one run, but a restart re-mints from
   `198.18.1.1` in first-lookup order — w1 was `.1.1` before this
