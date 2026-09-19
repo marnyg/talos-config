@@ -212,6 +212,65 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 		t.Fatalf("admin → apid after restart: %v", err)
 	}
 	_ = conn.Close()
+
+	// irohup's shape (359.8.4): the same runtime as a caller-only
+	// member — a Kit handed to it (a device's enrollment is wallet-
+	// signed, not a boot token), no facets forwarded, beats for its
+	// grants and the name map, and dials the node BY NAME with its
+	// bundle on connect.
+	devState := nodeagent.State{Dir: t.TempDir()}
+	if _, _, err := devState.Key(); err != nil {
+		t.Fatal(err)
+	}
+	devPriv, _, _ := devState.Key()
+	devKit, err := m.issuer.Mint(cert.NewEdSigner(devPriv).ActorID(), "desk", []string{"admins"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := devState.SaveKit(devKit); err != nil {
+		t.Fatal(err)
+	}
+	dev, err := nodeagent.Start(nodeagent.Options{
+		Config: nodeagent.Config{Hub: cfg.Hub, Relay: public}, State: devState,
+		BindAddr: "127.0.0.1:0", Log: log.New(testWriter{t}, "desk: ", 0), BeatEvery: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = dev.Close() })
+	if _, err := dev.Dial(ctx, "aa-bb-cc-dd-ee-ff", "apid"); !errors.Is(err, nodeagent.ErrNotBeaten) {
+		t.Fatalf("dial before the first beat: %v", err)
+	}
+	go func() {
+		if err := dev.Run(ctx); err != nil && ctx.Err() == nil {
+			t.Errorf("desk run: %v", err)
+		}
+	}()
+	waitFor(t, ctx, "desk beat", func() bool { return dev.Beats() == 1 })
+	presented, err := dev.Present()
+	if err != nil || len(presented.Grants) == 0 || presented.Member.Cav.Name != "desk" {
+		t.Fatalf("present: %+v %v", presented, err)
+	}
+	if _, err := dev.Dial(ctx, "nobody", "apid"); !errors.Is(err, nodeagent.ErrUnknownName) {
+		t.Fatalf("dial unknown name: %v", err)
+	}
+	conn, err = dev.Dial(ctx, "aa-bb-cc-dd-ee-ff", "apid")
+	if err != nil {
+		t.Fatalf("desk → apid by name: %v", err)
+	}
+	raw, err = conn.Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Write([]byte("by name")); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.CloseWrite()
+	if got, err := io.ReadAll(raw); err != nil || string(got) != "by name" {
+		t.Fatalf("echo by name: %q, %v", got, err)
+	}
+	_ = raw.Close()
+	_ = conn.Close()
 }
 
 func mustEncodeBundle(t *testing.T, b cert.Bundle) []byte {

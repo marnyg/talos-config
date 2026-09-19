@@ -13,6 +13,11 @@
 // Under ADR-0012 the caller has already generated an X25519 keypair
 // locally; only the pubkey travels here, and the private key never
 // leaves the caller's disk.
+//
+// Dual plane (Mesh v3 Phase 1, enrollmsg v2): a caller that also names
+// its NodeId (`node`, an ed: actor id) signs the v2 message and the
+// hub answers JSON {config, kit} instead of the bare YAML config — one
+// wallet act, both planes. Node "" is the v1 flow, byte for byte.
 package walletsign
 
 import (
@@ -45,6 +50,7 @@ const nonceTTL = 5 * time.Minute
 type Challenge struct {
 	Name        string `json:"name"`
 	Group       string `json:"group"`
+	Node        string `json:"node"`
 	Nonce       string `json:"nonce"`
 	Fingerprint string `json:"fingerprint"`
 	Message     string `json:"message"`
@@ -52,11 +58,12 @@ type Challenge struct {
 
 // MeshEnroll runs the whole enrollment exchange against endpoint
 // (typically "<hub>/mesh/enroll") for a device that has already
-// generated its keypair locally. Returns the config body the hub
-// rendered; the caller is responsible for splicing in its own private
-// key before running nebula.
-func MeshEnroll(endpoint, name, group, pubkeyHex, tool string, paste bool) ([]byte, error) {
-	ch, err := FetchChallenge(endpoint, name, group, pubkeyHex)
+// generated its keypair locally. Returns the body the hub rendered:
+// the YAML config (node ""), which the caller completes by splicing
+// in its own private key before running nebula, or the v2 JSON
+// envelope {config, kit} when node names the device's actor id.
+func MeshEnroll(endpoint, name, group, pubkeyHex, node, tool string, paste bool) ([]byte, error) {
+	ch, err := FetchChallenge(endpoint, name, group, pubkeyHex, node)
 	if err != nil {
 		return nil, err
 	}
@@ -68,12 +75,14 @@ func MeshEnroll(endpoint, name, group, pubkeyHex, tool string, paste bool) ([]by
 }
 
 // FetchChallenge asks endpoint's /challenge subpath for a challenge
-// binding (name, group, pubkey). The hub echoes back the canonical v1
-// message it expects signed.
-func FetchChallenge(endpoint, name, group, pubkeyHex string) (Challenge, error) {
-	resp, err := http.PostForm(endpoint+"/challenge", url.Values{
-		"name": {name}, "group": {group}, "pubkey": {pubkeyHex},
-	})
+// binding (name, group, pubkey[, node]). The hub echoes back the
+// canonical message it expects signed (v1, or v2 when node is set).
+func FetchChallenge(endpoint, name, group, pubkeyHex, node string) (Challenge, error) {
+	form := url.Values{"name": {name}, "group": {group}, "pubkey": {pubkeyHex}}
+	if node != "" {
+		form.Set("node", node)
+	}
+	resp, err := http.PostForm(endpoint+"/challenge", form)
 	if err != nil {
 		return Challenge{}, fmt.Errorf("fetching enrollment challenge: %w", err)
 	}
@@ -85,6 +94,11 @@ func FetchChallenge(endpoint, name, group, pubkeyHex string) (Challenge, error) 
 	var ch Challenge
 	if err := json.Unmarshal(body, &ch); err != nil {
 		return Challenge{}, fmt.Errorf("parsing challenge: %w", err)
+	}
+	if ch.Node != node {
+		// The hub echoes what it will mint for; a mismatch means the
+		// signature would bind a NodeId this device does not hold.
+		return Challenge{}, fmt.Errorf("challenge names node %q, asked for %q", ch.Node, node)
 	}
 	return ch, nil
 }
@@ -98,15 +112,20 @@ func Sign(ch Challenge, tool string, paste bool) (string, error) {
 }
 
 // Redeem posts the signed challenge and returns the hub's response
-// body — the rendered device config, minus its private key.
+// body — the rendered device config, minus its private key (v1), or
+// the {config, kit} envelope (v2, ch.Node set).
 func Redeem(endpoint string, ch Challenge, pubkeyHex, sig string) ([]byte, error) {
-	resp, err := http.PostForm(endpoint, url.Values{
+	form := url.Values{
 		"name":      {ch.Name},
 		"group":     {ch.Group},
 		"pubkey":    {pubkeyHex},
 		"nonce":     {ch.Nonce},
 		"signature": {sig},
-	})
+	}
+	if ch.Node != "" {
+		form.Set("node", ch.Node)
+	}
+	resp, err := http.PostForm(endpoint, form)
 	if err != nil {
 		return nil, fmt.Errorf("submitting enrollment: %w", err)
 	}

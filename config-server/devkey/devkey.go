@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strings"
 
 	"golang.org/x/crypto/curve25519"
@@ -40,6 +41,28 @@ func ParsePrivHex(s string) (priv, pub [32]byte, err error) {
 	copy(priv[:], raw)
 	curve25519.ScalarBaseMult(&pub, &priv)
 	return priv, pub, nil
+}
+
+// LoadOrCreate reads path if it exists, otherwise generates a fresh
+// keypair and writes the private key (raw 32 bytes hex) to path at
+// 0600. Returns (priv, pub, created). Shared by nebup and irohup: the
+// two clients keep one nebula identity per device name, so an irohup
+// enrollment (v2, both planes) refreshes the same key's cert.
+func LoadOrCreate(path string) (priv, pub [32]byte, created bool, err error) {
+	if b, ferr := os.ReadFile(path); ferr == nil {
+		priv, pub, err = ParsePrivHex(string(b))
+		if err != nil {
+			return priv, pub, false, fmt.Errorf("%s is not a 32-byte hex X25519 private key (rerun with -rekey to regenerate)", path)
+		}
+		return priv, pub, false, nil
+	}
+	if priv, pub, err = Generate(); err != nil {
+		return priv, pub, false, err
+	}
+	if err := os.WriteFile(path, []byte(hex.EncodeToString(priv[:])+"\n"), 0o600); err != nil {
+		return priv, pub, false, fmt.Errorf("writing %s: %w", path, err)
+	}
+	return priv, pub, true, nil
 }
 
 // SpliceKeyInline replaces the empty pki.key placeholder with the

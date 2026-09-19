@@ -22,6 +22,13 @@ package nodeagent
 // service to authorize (invariant 2, "git is compiler input, never
 // verifier input"). The blocklist it applies is the one #bundle handed
 // it; the consent it roots chains in is one it signed itself.
+//
+// The same runtime, with no facets to forward, is a caller-only member
+// (irohup, talos-config-359.8.4): it enrolls (the caller hands it a
+// Kit — a device's enrollment is wallet-signed, not a boot token),
+// beats identically, and Dials other members by name with its bundle
+// on connect (caller.go). Members and machines are one runtime; what
+// differs is the accept table.
 
 import (
 	"context"
@@ -65,6 +72,8 @@ type Options struct {
 	// (glossary "Facet": ports exist only inside a facet definition).
 	// Keys must be policy.Facets(policy.KindNode); only these ALPNs are
 	// advertised, and the node consents to the Owner for exactly them.
+	// Empty ⇒ a caller-only member: no ALPN advertised, no consent
+	// signed, nothing accepted.
 	Forward map[string]string
 	// BindAddr is the UDP socket; "" ⇒ all interfaces, ephemeral port.
 	BindAddr string
@@ -101,9 +110,6 @@ type Agent struct {
 func Start(o Options) (*Agent, error) {
 	if err := o.Config.Validate(); err != nil {
 		return nil, err
-	}
-	if len(o.Forward) == 0 {
-		return nil, errors.New("nodeagent: no facets to forward")
 	}
 	known := policy.Facets(policy.KindNode)
 	facets := make([]string, 0, len(o.Forward))
@@ -146,7 +152,7 @@ func Start(o Options) (*Agent, error) {
 	// its seq high-water mark for this node; seed from the clock so the
 	// first beat after a restart is not a replay.
 	a.actor.SeqBase = func() int64 { return time.Now().UnixNano() }
-	a.log.Printf("node %s (key %s) relay %s facets %v", a.ID(), map[bool]string{true: "minted", false: "loaded"}[minted], o.Config.Relay, facets)
+	a.log.Printf("member %s (key %s) relay %s facets %v", a.ID(), map[bool]string{true: "minted", false: "loaded"}[minted], o.Config.Relay, facets)
 
 	if kit, ok, err := o.State.Kit(); err != nil {
 		a.log.Printf("ignoring %s: %v", KitFile, err)
@@ -201,16 +207,19 @@ func (a *Agent) Beats() int64 { return a.beats.Load() }
 // Close releases the endpoint.
 func (a *Agent) Close() error { return a.ep.Close() }
 
-// Run serves until ctx ends: the actor inbox, the stream facets, and
-// the enroll-then-beat loop. It returns ErrTokenDead when the node
-// cannot enroll and no fresh config will arrive by itself.
+// Run serves until ctx ends: the actor inbox, the stream facets (when
+// any are forwarded), and the enroll-then-beat loop. It returns
+// ErrTokenDead when the node cannot enroll and no fresh config will
+// arrive by itself.
 func (a *Agent) Run(ctx context.Context) error {
 	go func() {
 		if err := a.actor.Listen(ctx); err != nil && ctx.Err() == nil {
 			a.log.Printf("actor inbox: %v", err)
 		}
 	}()
-	go a.serveConns(ctx)
+	if len(a.facets) > 0 {
+		go a.serveConns(ctx)
+	}
 
 	backoff := minBackoff
 	for a.Kit() == nil {
@@ -282,10 +291,11 @@ func (a *Agent) enroll(ctx context.Context) error {
 // installAuthority (re)signs the node's consent grant to the Owner — the
 // root every caller chain must reach — for exactly the forwarded facets,
 // and installs it as the actor's authority. Before enrollment there is
-// no Owner to consent to and the inbox refuses everything.
+// no Owner to consent to, and a caller-only member serves nothing: in
+// both cases the inbox refuses everything.
 func (a *Agent) installAuthority() {
 	kit := a.Kit()
-	if kit == nil {
+	if kit == nil || len(a.facets) == 0 {
 		a.actor.Hold(nil, nil)
 		return
 	}

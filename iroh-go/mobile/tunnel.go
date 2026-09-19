@@ -218,7 +218,7 @@ func (t *Tunnel) StatsJSON() string {
 }
 
 // getConn returns the live connection to the peer, redialing when the
-// previous one is gone (p0agent bridge's pattern). Id + relay URL only:
+// previous one is gone (irohup's bridge pattern). Id + relay URL only:
 // no direct addresses, so the first packets traverse the relay and any
 // direct path afterwards is hole-punching.
 func (t *Tunnel) getConn() (*iroh.Connection, error) {

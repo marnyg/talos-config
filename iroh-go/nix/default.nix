@@ -211,8 +211,9 @@ let
 
   # Smoke binary + `go test` gate (the test runs the same code in-process
   # and also the relay path with the iroh-relay binary from this flake).
-  # Also ships cmd/p0relay (the two-machine probe for Mesh v3 P0.1) and
-  # cmd/p0agent (the Talos-extension agent probe for P0.3).
+  # Also ships cmd/p0relay (the two-machine probe for Mesh v3 P0.1).
+  # cmd/p0agent (the P0.3 probe) is gone: config-server/cmd/nodeagent
+  # is its serve half, config-server/cmd/irohup its bridge half.
   smoke = pkgs.buildGo126Module {
     pname = "iroh-go-smoke";
     version = "0.1.0";
@@ -221,7 +222,7 @@ let
       fileset = lib.fileset.unions [ ../go.mod ../iroh ../cmd ];
     };
     vendorHash = null; # stdlib only
-    subPackages = [ "cmd/smoke" "cmd/p0relay" "cmd/p0agent" ];
+    subPackages = [ "cmd/smoke" "cmd/p0relay" ];
     env.CGO_ENABLED = 1;
     env.CGO_LDFLAGS = cgoLdflags;
     nativeBuildInputs = [ iroh-relay ];

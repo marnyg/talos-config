@@ -107,14 +107,17 @@ func main() {
 	}
 
 	if _, err := os.Stat(cfgPath); err != nil {
-		priv, pub, err := loadOrCreateDeviceKey(keyPath)
+		// The .key persists across -reenroll on purpose: renewals reuse
+		// the same identity, so a device's address stays stable across
+		// ceremony repeats.
+		priv, pub, _, err := devkey.LoadOrCreate(keyPath)
 		if err != nil {
 			log.Fatal(err)
 		}
 		pubHex := hex.EncodeToString(pub[:])
 
 		endpoint := strings.TrimRight(*hub, "/") + "/mesh/enroll"
-		cfg, err := walletsign.MeshEnroll(endpoint, dev, *group, pubHex, "nebup", *paste)
+		cfg, err := walletsign.MeshEnroll(endpoint, dev, *group, pubHex, "", "nebup", *paste)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -149,34 +152,11 @@ func main() {
 	}
 }
 
-// loadOrCreateDeviceKey reads keyPath if it exists, otherwise generates
-// a fresh X25519 keypair and writes the private key (raw 32 bytes hex)
-// to keyPath at 0600. Returns (priv, pub).
-//
-// Persisting the .key across -reenroll is the whole point of the two
-// file cache: renewals reuse the same identity, so a device's address
-// stays stable across ceremony repeats.
-func loadOrCreateDeviceKey(keyPath string) (priv, pub [32]byte, err error) {
-	if b, ferr := os.ReadFile(keyPath); ferr == nil {
-		priv, pub, err = devkey.ParsePrivHex(string(b))
-		if err != nil {
-			return priv, pub, fmt.Errorf("%s is not a 32-byte hex X25519 private key (rerun with -rekey to regenerate)", keyPath)
-		}
-		return priv, pub, nil
-	}
-	if priv, pub, err = devkey.Generate(); err != nil {
-		return priv, pub, err
-	}
-	if err := os.WriteFile(keyPath, []byte(hex.EncodeToString(priv[:])+"\n"), 0o600); err != nil {
-		return priv, pub, fmt.Errorf("writing %s: %w", keyPath, err)
-	}
-	return priv, pub, nil
-}
-
 // cachePaths returns the two-file device cache paths:
 // (<name>.key, <name>.yml) under ~/.config/talos-mesh/. The .key is
 // device-born and persists across -reenroll; the .yml is hub-rendered
-// and disposable.
+// and disposable. irohup shares the directory and both files (its own
+// identity-plane state sits beside them in <name>.iroh/).
 func cachePaths(name string) (keyPath, cfgPath string, err error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
