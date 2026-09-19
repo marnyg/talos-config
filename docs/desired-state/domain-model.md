@@ -427,8 +427,15 @@ provisioning or recovery path may depend on it.
   actor's behalf (a hub-issued 1 h record would make nodes unreachable
   after one sealed hour — `runway.qnt`, ruled 2026-09-05, `xwz`). The
   witness cache is safe-to-lose (ADR-0019): empty after a deploy until
-  members beat, so members keep their last map. A dialing convenience,
-  never an authorization input. Replaces the mesh DNS server under
+  members beat, so members keep their last map — **built 2026-09-19**
+  (`nodeagent.mergeNameMaps`): a beat's map is the hub's entries plus
+  the member's own unexpired, unblocked entries the hub did not
+  mention, hub wins per NodeId. Consequence worth naming: a member
+  leaves a peer's directory only by **expiry or blocklist** (j0b, on
+  the same beat), not by the hub merely forgetting it. That costs
+  nothing in authority — every entry is the Owner-signed member cert
+  itself and the receiver still authorizes the bundle presented to it —
+  it is a dialing convenience, never an authorization input. Replaces the mesh DNS server under
   Mesh v3.
 - **Cert classes and lifetimes** _(pinned 2026-09-03, spike
   `359.2`)_ — consent grant: bound to the accepted config, re-minted
@@ -639,6 +646,18 @@ provisioning or recovery path may depend on it.
   per wallet, process-scoped, cleared on a successful unseal so a
   re-unseal from the nag window gets a fresh 120 d. The message the
   wallet signs is its RFC 8785 canonical JSON.
+- **Member runtime** — one runtime serves both member kinds
+  (`config-server/nodeagent`): with facets to forward it is the **node
+  agent** (extension `p0agent`; cp1 since 2026-09-19); with none it is
+  a **caller-only member** — `irohup` on the desktop (built
+  2026-09-19, `359.8.4`), which enrolls by wallet signature instead of
+  a boot token, beats identically, and presents its bundle on connect
+  (`Present`/`Resolve`/`Dial`: name map → NodeId + `reach-me-at`,
+  newest member cert first across a re-key). A caller-only member
+  advertises no ALPN and signs no consent, so nothing can be dialed on
+  it. `irohup` also carries the desktop's TCP bridges: one local
+  listener per (member, facet), one admitted connection shared by every
+  TCP client, redialed when the peer reboots.
 - **Node agent** — the member runtime on a Talos node
   (`config-server/nodeagent`, extension `p0agent`; cp1 since
   2026-09-19). It **owns** one thing: the NodeId key (`/var/lib/p0agent/

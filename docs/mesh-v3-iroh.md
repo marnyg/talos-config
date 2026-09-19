@@ -550,12 +550,44 @@ Bead `talos-config-359.8.3`, extension `p0agent` 0.1.1 (installer
 |---|---|
 | enrolls with a boot token, no human act after approval | ADR-0015 as written: `/config` carries a `p0agent` ExtensionServiceConfig `{hub, relay, token}`; the agent posts `{node, token}` to `/mesh/enroll/node` and holds `member "cp1" groups [machines]` **370 ms after reading its config**. NodeId `ed:7dd90eb3…` is the P0.3 key file, unchanged. |
 | beats the hub over iroh | `#bundle` ok through the hub's own relay at uptime 10.9 s; the hub's name map witnesses `cp1` with its `reach-me-at`. The token is spent (`409` on reuse). |
-| authorize() on a stream facet | In-process (`TestNodeAgentEndToEnd`, local relay): admin device admitted on `talos-mesh/apid/v1`, echoed 36 KB through the splice; a `media` member and a self-signed stranger refused with a reason before spending a stream. **On the box: not yet** — no caller exists until `359.8.4`. |
-| restart from state, no token | In-process: same NodeId, Kit loaded, second beat ok. First beat after a restart was a **replay** until `actor.SeqBase` (sender seeds `seq` from its clock; the hub keeps its high-water mark). On the box: not yet exercised (`359.8.6`). |
+| authorize() on a stream facet | In-process (`TestNodeAgentEndToEnd`, local relay): admin device admitted on `talos-mesh/apid/v1`, echoed 36 KB through the splice; a `media` member and a self-signed stranger refused with a reason before spending a stream. **On the box 2026-09-19 14:01:47Z** — `irohup` admitted as `"laptop" [admins]` on `apid`, `talosctl version` end to end (see P1.4 below). |
+| restart from state, no token | In-process: same NodeId, Kit loaded, second beat ok. First beat after a restart was a **replay** until `actor.SeqBase` (sender seeds `seq` from its clock; the hub keeps its high-water mark). **On the box 2026-09-19** (`359.8.6` check 1): `talosctl reboot` 14:11:27Z → agent up 14:12:16Z with key + Kit from EPHEMERAL, beat ok 0.3 s later, caller re-admitted 14:12:19Z. 52 s door to door, no human act. |
 | upgrade path | `talosctl upgrade` × 2 (0.1.0 → 0.1.1), EPHEMERAL intact, `depends: service: cri` still the reason it does not hang. |
+
+### P1.4 irohup + exit checks 1–2 — data (2026-09-19)
+
+Bead `talos-config-359.8.4`, binary `config-server/cmd/irohup`, hub
+redeployed twice (`09b05700…` is the third hubkey of the day).
+**The plane carries real traffic.**
+
+| check | result |
+|---|---|
+| one wallet act, both planes | `enrollmsg` v2 (`node=ed:1e9a5988…`): the hub answered `{config, kit}`, nebula artifact cached where nebup expects it, Kit in `~/.config/talos-mesh/laptop.iroh/`. Member `"laptop" [admins]`, first beat 4 grants / 2 names. |
+| first real caller on a stream facet | `talosctl version` through `cp1/apid` at 14:01:47Z: connect 26 ms, round trip 42 ms. `kubectl get nodes` through `cp1/kube-api`: 164 KB in 158 ms. Both dialed **by name** off the name map, bundle on connect, one `authorize()` per connection. |
+| the plane carries its own upgrade | cp1 upgraded 0.1.1 → 0.1.2 **through the bridge** (14:42–14:48Z); the bridge saw the connection drop and redialed in 96 ms once the node was back. |
+| exit check 2 — hub re-seal | Two deploys + unseals. The data path never noticed (QUIC does not traverse the hub; the relay reconnects). Both members renewed their Kit at the new `hubkey` through the old `speak-as` and resumed — cp1 did `#renew` + `#bundle` **in one beat**, three times. |
 
 Findings:
 
+- **`seq` was not exact on the wire** (protocol ADR-0006). JCS numbers
+  are IEEE-754 doubles; the `UnixNano` seed `SeqBase` shipped with
+  `359.8.3` exceeds 2^53, so `#renew` + `#bundle` in one beat — which a
+  hubkey rotation forces — collapsed onto one canonical seq and the
+  second was refused as a replay. Worse, the first one **parked the
+  hub's high-water mark at ~1.79e18**, which no correctly-scaled sender
+  can pass: a 40-minute lockout that only a hub redeploy cleared.
+  `envelope.MaxSeq` now bounds it on both sides; agents seed `UnixMicro`.
+  This is why cp1 needed 0.1.2 the same day.
+- **After a deploy the hub's name map is empty** until each member
+  beats (≤ 6 h), so the first member to beat lost every peer.
+  `nodeagent.mergeNameMaps` keeps the member's own unexpired, unblocked
+  entries; a member now leaves a peer's directory by expiry or
+  blocklist, not by the hub forgetting it. Caveat seen live: the
+  *persisted* map is whatever the last writer saved, so a process
+  running an older binary can still narrow it.
+- **apid's SANs do not name `127.0.0.1`**, so a TCP bridge needs the
+  node's hostname in `/etc/hosts` (`kube-api`'s cert does carry
+  `localhost`). Fake-IP presentation is Phase 2's answer.
 - **Talos does not restart an extension service on an
   ExtensionServiceConfig change.** `apply-config` (no reboot) registered
   the document; the running container kept its mount namespace and

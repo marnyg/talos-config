@@ -5,70 +5,68 @@
 
 ## Last session
 
-2026-09-19 — **cp1 is the first real member of the identity plane**
-(`359.8.3` closed). At 13:41:40Z, uptime 10.7 s, extension 0.1.1:
-`key loaded` (the P0.3 NodeId `ed:7dd90eb3…` kept) → `enrolled: member
-"cp1" groups [machines]` → `beat ok … 1 names`. Hub deployed at
-`1d5baa8`, unsealed twice. Commits `7c740ff` `1284e40` `f32474a`
-`6050d87` `1d5baa8` `8f8c797` `5b53ea0`.
+2026-09-19 (second session) — **the identity plane carries real
+traffic.** `irohup` (`359.8.4`) enrolled the laptop with one wallet
+signature, beat the hub, and at **14:01:47Z** `talosctl version` ran
+through cp1's `apid` facet — the first real caller on the plane —
+followed by `kubectl get nodes` through `kube-api` (164 KB, 158 ms).
+Both dial **by name**, with the bundle on connect. Commits `a686396`
+`f0ce86e` `0cd3f2a` `464e286`.
 
-- **Stream facets on the wire** (`iroh-transport/streamfacet.go`):
-  `Options.StreamALPNs`, `AcceptConn`/`DialConn`; the caller's
-  `cert.Bundle` rides the first bi-stream (`cert.EncodeBundle`), the
-  acceptor answers `ok` / `refused: <reason>`, every later bi-stream is
-  a `Raw` forward. The connection is the invocation, checked once.
-- **ADR-0015 boot enrollment built** (`config-server/boottoken`,
-  `nodeagent`, `nodeenroll.go`): `/config` injects a `p0agent`
-  ExtensionServiceConfig `{hub, relay, token}` when `--iroh-relay` is
-  set; `POST /mesh/enroll/node {node, token}` → Kit, name from
-  `meta.yaml`, group `machines`. Token: HMAC of
-  `masterderive.BootTokenKey`, 1 h TTL, nonce, volatile `Seen`
-  (released if the mint fails; a sealed Issuer never burns it).
-  Verification lives in the HTTP handler with the master (decision
-  `488`), not a Provisioner facet.
-- **`config-server/nodeagent` + `cmd/nodeagent`**: enroll-or-load Kit,
-  beat (`#renew` past half-life or on hub rotation, `#bundle` 6-hourly),
-  persists `kit.json` `bundle.json` `hub.json` `mark` beside `key`,
-  self-signed consent to the wallet for exactly the forwarded facets,
-  `cert.Authorize` on accept, splice to `apid`/`kube-api`. E2E test
-  `TestNodeAgentEndToEnd` (enroll → beat → name map → admin admitted,
-  media + stranger refused → restart from state).
-- **Two protocol findings** (`protocol/actor`): a restarted sender's
-  `seq` restarted at 1 against the hub's surviving high-water mark →
-  `Actor.SeqBase` (agent seeds `UnixNano`); stream-facet verifiers sit
-  outside the inbox → `Actor.Observe` / `RestoreLowWater`.
-- Ops learned: Talos does **not** restart an extension service on an
-  ExtensionServiceConfig change (`talosctl service ext-p0agent
-  restart`); a scratch rootfs needs `/etc/ssl/certs` bound for Go HTTPS
-  (0.1.0 → 0.1.1); the device flow works with one browser click
-  (`notes.md`).
+- **`config-server/cmd/irohup`**: v2 enrollment (`enrollmsg` v2 → hub
+  answers `{config, kit}`; nebula key and artifact stay nebup's, so one
+  signature enrolls both planes), state dir `~/.config/talos-mesh/
+  <name>.iroh/` with the node's layout, and TCP bridges
+  `<member>/<facet>=<listen>`. `walletsign` learned the `node` field;
+  `devkey.LoadOrCreate` is shared with nebup.
+- **`nodeagent` is now the member runtime**: empty `Forward` ⇒
+  caller-only (no ALPN, no consent), `caller.go` adds
+  `Present`/`Resolve`/`Dial`. `iroh-go/cmd/p0agent` deleted — both its
+  halves are superseded.
+- **Two bugs found by running it**, both fixed and pinned:
+  (a) **`seq` exactness** — JCS numbers are IEEE-754 doubles, so a
+  `UnixNano` seed collapsed `#renew` + `#bundle` in one beat onto one
+  seq, *and* parked the hub's high-water mark beyond every honest seq
+  (40 min lockout, cleared only by redeploy). `envelope.MaxSeq`
+  (2^53−1) is now refused on both sides; agents seed `UnixMicro`
+  (protocol ADR-0006, Proposed).
+  (b) **name-map reconvergence** — the hub's witness cache is empty
+  after a deploy, so the first member to beat lost its peers;
+  `nodeagent.mergeNameMaps` keeps its own unexpired, unblocked entries.
+- **`tqr` done**: `/sealed` 503s on identity sealed/nag when the hub
+  serves an identity plane (`--iroh-relay`); a dev run without it only
+  reports. **`kql` done**: `marnyg-iroh-relay-spike` destroyed,
+  `fly/relay-spike/` removed.
+- **Exit checks (`359.8.6`) 1 and 2 pass.** Reboot: cp1 back and
+  re-admitted in 52 s, unaided. Hub re-seal: two deploys + unseals; cp1
+  and irohup both renewed at the rotated hubkey and resumed — cp1 did
+  renew + `#bundle` in one beat three times, the exact case that broke.
+- cp1 upgraded **through the bridge** to `p0agent` 0.1.2 (the plane
+  carried its own upgrade); `minipc.yaml` pins the new digest.
 
 ## Loose threads
 
-- **ADR-0015 promoted to Accepted** this session; **ADR-0024** still
-  Proposed (Provisioner-as-actor). `nebderive.MachineKey` is now dead
-  on the identity plane but still feeds the nebula patch until Phase 4
-  (`359.11.2`).
-- No real caller has hit cp1's `apid` facet yet — `359.8.4` (irohup)
-  is that; `nodeagent_iroh_test.go`'s `device()` is its script.
-- A node re-enrolling after its Kit expired (off > 90 d) needs a fresh
-  config serve — the token in the stored config is long dead. Not
-  beaded; surfaces only with a long outage.
-- `hub.publicURL = --iroh-relay` assumes one hostname for HTTPS and the
-  relay (true on fly). `p0agent`'s `serve` half is superseded by
-  `cmd/nodeagent`; delete with `359.8.4`. `Dockerfile.siweoidc` still
-  broken. Protocol: `t29` now has its third consumer-driven runtime
-  addition (`Hold`, `Multi`, `SeqBase`/`Observe`).
-- Carried: `tqr` (flip `/sealed` on identity — a member has beaten now),
-  `kql` (scratch relay teardown — unblocked), w1 down (`0q0`, `kso`),
-  `5gz`, `DefaultMailbox`/beat fraction unbeaded.
+- **Exit check 3 (roaming) is not done** and cannot be measured from
+  this laptop: the Cisco socket filter makes it relay-only (notes
+  2026-09-13), so "LAN path re-punches direct" needs the NixOS box or
+  another host. `359.8.6` stays open on that alone.
+- **A pre-merge binary can still narrow a peer's map**: the merge only
+  protects the process that runs it, and the *persisted* map is
+  whatever the last writer saved. Seen live — an old irohup process
+  beat at 16:55 and saved a 1-name map that the new one then had
+  nothing to merge from. Recovery is one forced beat per side.
+- Protocol **ADR-0006 is Proposed**; root ADR-0024 still Proposed.
+- `irohup` is running in the foreground on the laptop (bridges on
+  `127.0.0.1:50000` / `:6443`); `talosctl` needs
+  `127.0.0.1 talos-wu6-eib` in `/etc/hosts` (added this session).
+- cp1's DHCP address moved twice more (`.62 → .64`). The plane never
+  noticed; only direct LAN access does.
+- Carried: w1 (`0q0`, `kso`), `5gz`, `DefaultMailbox`/beat fraction.
 
 ## Suggested next steps
 
-- **`359.8.4`** irohup: enrollment → Kit, beat, `DialConn(nodeID,
-  hints, policy.ALPN("apid"), EncodeBundle(bundle))` → TCP bridge;
-  `talosctl` through it is the first real stream-facet call. Name map
-  from `#bundle` gives `cp1`'s NodeId + reach-me-at.
-- **`kql`** tear down the scratch relay; **`tqr`** flip `/sealed`.
-- **`359.8.6`** exit checks: reboot cp1 and watch `ext-p0agent` beat
-  unaided (the restart path is tested in-process, not yet on the box).
+- **Exit check 3** from `mar@nixos` (or any non-filtered host): enroll
+  a second member, bridge it, move it LAN → cellular → LAN.
+- Review protocol **ADR-0006** → Accepted.
+- Then Phase 2 (`359.9`): admin CLI paths onto the bridges in anger
+  (`359.9.1`), which is mostly "stop using nebula for talosctl".

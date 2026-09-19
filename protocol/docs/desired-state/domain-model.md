@@ -426,6 +426,14 @@ whose deployment-free form differs from the talos wording. Source:
   restarts — the receiver's mark outlives them — so a sender seeds
   its first seq to each receiver from its clock (`Actor.SeqBase`,
   opt-in, 2026-09-19); stateless, and a rolled-back clock only denies.
+  **`seq` is an I-JSON integer: `1 ≤ seq ≤ 2^53−1`** (`envelope.MaxSeq`),
+  refused by both `Sign` and `Verify`. The canonical form is RFC 8785,
+  whose numbers are IEEE-754 doubles, so a larger integer is not exact
+  on the wire: two consecutive seqs collapse into one and the second
+  reads as a replay. A clock seed is therefore seconds, milliseconds or
+  microseconds — never nanoseconds. Verify refusing the range is what
+  stops an out-of-range seq from parking a receiver's mark above every
+  honest sender's numbers. _(Found live 2026-09-19, ADR-0006.)_
   **Load-bearing, not defence in depth**: the envelope path does not
   bind signer to transport peer, so any observer of a valid envelope
   can resend it over its own connection. _(Ruled 2026-09-12, `0bc.2`.)_

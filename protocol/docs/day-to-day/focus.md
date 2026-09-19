@@ -21,7 +21,10 @@ location cache (root ADR-0024). **2026-09-19: the first receiver
 outside the hub is live** — the talos node agent runs `cert.Authorize`
 on stream-facet connections and beats the hub; it asked for
 `Actor.SeqBase` and `Actor.Observe`, the third consumer-driven runtime
-addition (`t29`).
+addition (`t29`). **2026-09-19 (later): the first consumer-driven
+regression** — `SeqBase` seeded from `UnixNano` broke exactness under
+JCS; `seq` is now an I-JSON integer refused out of range on both sides
+(ADR-0006, Proposed).
 
 **Toward goal:** `desired-state/goals.md` — *One primitive* (one
 verifier for every verb), *Offline, receiver-rooted authorization*,

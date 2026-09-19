@@ -481,3 +481,28 @@
 - 2026-09-19 — `talosctl upgrade --wait` on cp1 takes ~11 min (drain
   with w1 down) and this shell aborts long foreground commands;
   background it (`> /tmp/cp1-upgrade.log &`) and poll `get extensions`.
+
+- 2026-09-19 — **`talosctl`/`kubectl` over the identity plane**: run
+  `irohup` (bridges default to `cp1/apid=127.0.0.1:50000` and
+  `cp1/kube-api=127.0.0.1:6443`), then
+  `talosctl --talosconfig talos/talosconfig -e talos-wu6-eib:50000 -n
+  talos-wu6-eib …` with `127.0.0.1 talos-wu6-eib` in `/etc/hosts` —
+  apid's SANs name the node, never `127.0.0.1`. For kubectl:
+  `kubectl --kubeconfig <kc> --server https://localhost:6443` (the
+  API server cert does carry `localhost`). Enrollment state lives in
+  `~/.config/talos-mesh/<name>.iroh/` beside nebup's two files; one
+  wallet signature enrolls both planes.
+- 2026-09-19 — **A hub redeploy is the only way to clear a poisoned
+  `seq` high-water mark** (the mark is volatile, per hub process, and
+  there is no admin endpoint). Relevant only to members built before
+  `envelope.MaxSeq`; both cp1 (`p0agent` 0.1.2) and irohup carry the
+  fix now, and the hub refuses out-of-range seq since this deploy.
+- 2026-09-19 — **After a hub deploy the name map is empty until each
+  member beats** (up to 6 h). Members merge their own last map now, so
+  bridges keep working; to reconverge *now*, force a beat on both
+  sides: `talosctl service ext-p0agent restart` on the node, restart
+  `irohup` on the desktop.
+- 2026-09-19 — **`/sealed` now 503s while the identity plane is sealed
+  or nagging** on the deployed hub (`tqr`). A local dev run without
+  `--iroh-relay` still reports only — don't read a local 200 as proof
+  the check is off in production.

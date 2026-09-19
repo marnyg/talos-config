@@ -54,3 +54,10 @@
   after a fresh actor's first send expect `1`. A consumer that seeds
   from the clock must seed *before* its first `Send` (it is read on
   the first send to each receiver, then ignored).
+- 2026-09-19 — **JCS numbers are doubles: any envelope/cert field that
+  is a large integer is a hazard.** `seq` is now capped at
+  `envelope.MaxSeq` (2^53−1) and refused out of range on both sides
+  (ADR-0006). `iat`/`exp` are Unix *seconds* (~1.8e9) and safe; the
+  same is not true of anything nanosecond-scaled. When adding a numeric
+  field, round-trip it through `Encode`/`Decode` in a test, not just
+  through the struct.

@@ -10,12 +10,15 @@ key (hubkey = iroh `EndpointId`, `e8d`), `#bundle` is complete with a
 witnessed name map (`2fc`), and **since 2026-09-19 cp1 is a real
 member** (`359.8.3`): boot-token enrollment (ADR-0015, now Accepted),
 a renewal beat every 6 h, `authorize()` on ALPN-gated stream facets
-(`apid`, `kube-api`) rooted in the node's own consent. **Now: the
-first real caller.** `359.8.4` (irohup) enrolls a device, beats, and
-dials `cp1`'s `apid` facet with its bundle on connect — `talosctl`
-through the identity plane is the test that closes the loop. Then
-`kql` tears the scratch relay down, `tqr` flips `/sealed`, and the
-exit checks (`359.8.6`) are event-based.
+(`apid`, `kube-api`) rooted in the node's own consent. **Since 2026-09-19 the
+plane carries real traffic**: `irohup` (`359.8.4`) enrolls with one
+wallet signature, beats, and bridges `talosctl`/`kubectl` onto cp1's
+`apid`/`kube-api` facets, dialing by name with its bundle on connect.
+`kql` (scratch relay) and `tqr` (`/sealed` 503s on identity) are done.
+**Now: the last exit check** — `359.8.6`'s roaming case (LAN →
+cellular → LAN), which needs a host that is not this laptop (its
+socket filter makes every path relay-only). Reboot and hub-re-seal
+checks passed 2026-09-19.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016)
 and **Sovereign-actor protocol at the center** — the node is the
