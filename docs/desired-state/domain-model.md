@@ -692,7 +692,13 @@ provisioning or recovery path may depend on it.
   says. Its config (`{hub, relay, token}`) is an ExtensionServiceConfig
   the hub injects at serve; the token is inert once a Kit is held.
   Beat: `#bundle` every 6 h; `#renew` when a Kit cert is past half its
-  life or its issuer is no longer the current `hubkey`. Outbound to
+  life or its issuer is no longer the current `hubkey` — and **on
+  staleness evidence**: a `Dial` to a name that is unreachable or not
+  in the map, or an unknown in-zone DNS query, re-beats first
+  (serialized, ≤ 1/min) and retries once; the directory is a
+  safe-to-lose cache and a miss is the signal to refresh it, so a hub
+  redeploy costs one bounded dial (15 s) and one beat, not a restart
+  (built 2026-09-20, `ipt7`; decision `pu9q`). Outbound to
   the hub relay only; `seq` seeded from its clock (`actor.SeqBase`)
   because the hub's high-water mark outlives the agent's restarts.
 - **Kit** — what `Issuer.Mint` hands a new member: its `member` cert
