@@ -20,8 +20,8 @@
 // app may map them (oauth2-proxy can), none is required to trust them
 // for a session. Past this process the identity is ambient: the
 // headers are only as good as the path they arrived on (talos-config-1gv:
-// ingress-nginx honours them from the pod network alone until it
-// leaves hostNetwork).
+// ingress-nginx is a ClusterIP Service this gateway alone dials, so
+// nothing off the pod network can supply them).
 package gateway
 
 import (

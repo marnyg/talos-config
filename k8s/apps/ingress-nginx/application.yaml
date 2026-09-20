@@ -4,25 +4,19 @@
 # Host intact, so exposure is Ingress-only. Replaces the
 # tailscale operator/ingressClass — access control moves to SIWE SSO
 # (sketch 162c630d), transport is the identity stream the gateway
-# terminates (nebula for the TV until P2.4), and no hosted account sits
-# in the access path (invariant 3).
+# terminates, and no hosted account sits in the access path
+# (invariant 3).
 #
-# hostNetwork on the single node: the controller owns :80 on every
-# interface (mesh + LAN), so service names need no NodePort. Plain HTTP
-# by design — the QUIC stream (and nebula, while it lasts) encrypts the
-# wire; HTTPS arrives with the wallet-derived CA (task refs 162c630d,
-# deferred).
-#
-# Mesh v3 (P2.3, talos-config-359.9.3): the identity plane reaches this
-# controller through the gateway pod (k8s/apps/gateway) — the node-local
-# controller by host address while hostNetwork lasts; a ClusterIP hop
-# to the other node is masqueraded to the node IP — Host untouched,
-# with the caller's verified identity in X-Mesh-Node/Name/Groups. Until hostNetwork goes (the
-# rest of ingress off nebula), any LAN device can hit :80 directly and
-# write those headers itself (talos-config-1gv) — so nginx honours them
-# only from the pod network (the gateway's side) and blanks them from
-# everywhere else: geo on the real peer address, proxy-set-headers from
-# the mapped variables (mesh-identity-headers ConfigMap).
+# Reachable only through the gateway (Mesh v3 P2.3,
+# talos-config-359.9.3): a plain ClusterIP Service, no hostNetwork, no
+# NodePort, no LoadBalancer — the gateway dials it by Service name and
+# is the only thing that does. That is what makes X-Mesh-Node/Name/
+# Groups trustworthy past the gateway: nothing on the LAN can reach
+# this controller to forge them (talos-config-1gv closed for good with
+# xnat; the geo/map gate that blanked the headers from non-pod sources
+# while hostNetwork lasted went with it). Plain HTTP by design — the
+# QUIC stream encrypts the wire; HTTPS arrives with the wallet-derived
+# CA (task refs 162c630d, deferred).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -37,20 +31,8 @@ spec:
     helm:
       valuesObject:
         controller:
-          kind: DaemonSet
-          hostNetwork: true
-          dnsPolicy: ClusterFirstWithHostNet
           service:
-            enabled: false
-          publishService:
-            enabled: false
-          config:
-            http-snippet: |
-              geo $remote_addr $mesh_from_pod { default 0; 10.244.0.0/16 1; }
-              map $mesh_from_pod $mesh_node   { 1 $http_x_mesh_node;   default ""; }
-              map $mesh_from_pod $mesh_name   { 1 $http_x_mesh_name;   default ""; }
-              map $mesh_from_pod $mesh_groups { 1 $http_x_mesh_groups; default ""; }
-            proxy-set-headers: ingress-nginx/mesh-identity-headers
+            type: ClusterIP
           ingressClassResource:
             default: true
   destination:
@@ -62,8 +44,10 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-    # Talos enforces the baseline PSS on workload namespaces; hostNetwork
-    # needs privileged. Scoped to this namespace only.
+    # Back to Talos's default level: the controller binds :80 as uid
+    # 101 with NET_BIND_SERVICE, which baseline permits. Set explicitly
+    # rather than dropped so ArgoCD downgrades the label it once raised
+    # to privileged for hostNetwork.
     managedNamespaceMetadata:
       labels:
-        pod-security.kubernetes.io/enforce: privileged
+        pod-security.kubernetes.io/enforce: baseline
