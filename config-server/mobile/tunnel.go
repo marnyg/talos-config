@@ -184,16 +184,17 @@ func (t *Tunnel) SetUpstreams(upstreamDNS string) {
 }
 
 // NetworkChanged is the app's word that the underlay moved (wifi ↔
-// cellular, a new link): the new addresses are advertised and a beat
-// is kicked so the member's reach-me-at and its view of the plane are
-// fresh. iroh-ffi's own network monitor is dead inside an Android app
-// (P2.4 finding .2: no ndk_context), so this is the redial trigger.
+// cellular, a new link): the new addresses are advertised, the hub
+// HTTPS pool is dropped, and a beat is kicked so the member's
+// reach-me-at and its view of the plane are fresh. iroh-ffi's own
+// network monitor is dead inside an Android app (P2.4 finding .2: no
+// ndk_context), so this is the redial trigger for both planes.
 func (t *Tunnel) NetworkChanged(localAddrs string) {
 	if t.closed.Load() {
 		return
 	}
 	advertiseLocal(t.agent, localAddrs, t.log)
-	t.agent.Kick()
+	t.agent.NetworkChanged()
 }
 
 // Stop tears the tunnel down. Idempotent. Kotlin calls it from

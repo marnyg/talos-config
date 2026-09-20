@@ -54,8 +54,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/net/http2"
-
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/policy"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
@@ -263,21 +261,6 @@ func Start(o Options) (*Agent, error) {
 // ID is the NodeId.
 func (a *Agent) ID() cert.ActorID { return a.actor.ID() }
 
-// hubTransport is the default transport for hub HTTPS: the stock one
-// plus HTTP/2 liveness pings. Without ReadIdleTimeout a pooled h2
-// connection whose underlay vanished without a RST (a phone leaving
-// Wi-Fi, 2026-09-20) is reused for every request and each one runs
-// the client's full 30 s timeout; with it the dead connection is
-// noticed within ~2× the interval and the next request dials fresh.
-func hubTransport() http.RoundTripper {
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	if h2, err := http2.ConfigureTransports(tr); err == nil {
-		h2.ReadIdleTimeout = 15 * time.Second
-		h2.PingTimeout = 10 * time.Second
-	}
-	return tr
-}
-
 // Actor exposes the protocol actor (tests, diagnostics).
 func (a *Agent) Actor() *actor.Actor { return a.actor }
 
@@ -392,6 +375,21 @@ func (a *Agent) Kick() {
 	case a.kick <- struct{}{}:
 	default:
 	}
+}
+
+// NetworkChanged is the caller's word that the underlay moved (a phone
+// going Wi-Fi ↔ cellular): the hub HTTPS pool is dropped so the kicked
+// beat dials on the new network instead of reusing a connection whose
+// path is gone. A pooled h2 connection survives the old network's
+// disappearance silently — no RST when Wi-Fi is switched off — and
+// every request on it runs to the client timeout (2026-09-20, ~3.5 min
+// to the first beat ok on cellular). CloseIdleConnections reaches the
+// x/net h2 transport hubTransport installs (net/http issue 22891); a
+// request already in flight is not idle and is instead bounded by the
+// transport's liveness pings.
+func (a *Agent) NetworkChanged() {
+	a.http.CloseIdleConnections()
+	a.Kick()
 }
 
 func (a *Agent) minRebeat() time.Duration {
