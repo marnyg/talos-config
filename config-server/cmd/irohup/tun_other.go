@@ -21,6 +21,6 @@ func privilegedSetup(string, string) (*tunSetup, error) {
 	return nil, errors.New("-tun: desktop presentation is not implemented on this OS yet (macOS first)")
 }
 
-func serveTun(context.Context, *tunSetup, *nodeagent.Agent, *meshtun.Pool, string, *log.Logger) error {
+func serveTun(context.Context, *tunSetup, *nodeagent.Agent, *meshtun.Pool, *log.Logger) error {
 	return errors.New("unreachable")
 }
