@@ -24,12 +24,6 @@ import (
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
-// ErrNotBeaten: no bundle yet, so nothing to present and no name map.
-var ErrNotBeaten = errors.New("nodeagent: no bundle yet (first beat pending)")
-
-// ErrUnknownName: the name map has no live entry for the name.
-var ErrUnknownName = errors.New("nodeagent: name not in the name map")
-
 // Present is the bundle this member shows on connect. The speak-as
 // list carries the Kit's (resolving the member cert's issuer) and the
 // bundle's (resolving the grants' issuer) — one cert when the hub has
@@ -50,13 +44,6 @@ func (a *Agent) Present() (cert.Bundle, error) {
 	}
 	return cert.Bundle{Member: kit.Member, Grants: slices.Clone(b.Grants), SpeakAs: speakAs}, nil
 }
-
-// HubName is the hub's bare name on the presentation (hub.<zone>). The
-// hub is a well-known actor, not a member: it holds no member cert and
-// is not in the name map, so Resolve answers this name from the hub
-// record the beat keeps (hubkey + reach-me-at). It shadows any member
-// the Owner might name "hub".
-const HubName = "hub"
 
 // Resolve finds name in the last name map: the candidate NodeIds with
 // a live reach-me-at, newest member cert first (two may coexist across
@@ -98,6 +85,17 @@ func (a *Agent) Resolve(name string) ([]issuer.NameEntry, error) {
 	}
 	slices.SortFunc(out, func(x, y issuer.NameEntry) int { return int(y.Member.Iat - x.Member.Iat) })
 	return out, nil
+}
+
+// Zone reads a presentation name by the zone rule (zone.go) over this
+// member's directory.
+func (a *Agent) Zone(name string) (member string, kind policy.Kind, err error) {
+	return zone(name, a.Resolve)
+}
+
+// Target is what a flow to <name>:<port> means, as (member, facet).
+func (a *Agent) Target(name string, port uint16) (member, facet string, err error) {
+	return target(name, port, a.Resolve)
 }
 
 // Dial connects to the member called name under facet, presenting this

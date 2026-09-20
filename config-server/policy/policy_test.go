@@ -206,12 +206,13 @@ func TestBlocklist(t *testing.T) {
 	}
 }
 
-// Every node and hub facet has a natural port (the presentations depend
-// on it), ports are disjoint across kinds, and FacetByPort inverts
-// FacetPort within a kind.
+// Every facet of every kind has a natural port (the presentations
+// depend on it), ports are disjoint within a kind (a port is read in
+// the vocabulary of the name's kind, so hub-http and ingress-http may
+// both be 80), and FacetByPort inverts FacetPort within a kind.
 func TestFacetPorts(t *testing.T) {
-	seen := map[uint16]string{}
-	for _, k := range []Kind{KindNode, KindHub} {
+	for _, k := range Kinds {
+		seen := map[uint16]string{}
 		for _, f := range Facets(k) {
 			p := FacetPort(f)
 			if p == 0 {
@@ -227,8 +228,11 @@ func TestFacetPorts(t *testing.T) {
 			}
 		}
 	}
-	if FacetByPort(KindNode, FacetPort("hub-http")) != "" {
-		t.Error("a hub port must not resolve to a node facet")
+	if FacetByPort(KindNode, FacetPort("hub-http")) != "" || FacetByPort(KindNode, FacetPort("ingress-http")) != "" {
+		t.Error("a hub or gateway port must not resolve to a node facet")
+	}
+	if FacetByPort(KindGateway, 80) != "ingress-http" || FacetByPort(KindHub, 80) != "hub-http" {
+		t.Error("port 80 is read in the vocabulary of the kind")
 	}
 	if FacetByPort(KindNode, 0) != "" || FacetByPort(KindNode, 1) != "" || FacetPort("nope") != 0 {
 		t.Error("unknown port/facet must map to zero values")

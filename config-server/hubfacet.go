@@ -19,7 +19,8 @@ package main
 //
 // The iroh side (accepting connections, the Raw stream type) lives in
 // hubiroh.go behind the `iroh` tag; this file only sees the facetConn
-// interface so the decision and the HTTP plumbing test C-free.
+// interface so the decision tests C-free. The HTTP-over-streams
+// plumbing is facethttp, shared with the gateway (P2.3).
 
 import (
 	"context"
@@ -31,8 +32,8 @@ import (
 	"net/http"
 	"slices"
 	"sync"
-	"time"
 
+	"github.com/marnyg/talos-config/config-server/facethttp"
 	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
@@ -144,7 +145,7 @@ func (m *hubManager) authorizeStream(alpn string, peer cert.ActorID, b cert.Bund
 // handleFacetConn decides one connection and, when admitted, hands
 // each of its streams to ln as an HTTP connection attributed to the
 // caller's identity.
-func (m *hubManager) handleFacetConn(ctx context.Context, c facetConn, ln *streamListener) {
+func (m *hubManager) handleFacetConn(ctx context.Context, c facetConn, ln *facethttp.Listener) {
 	defer c.Close()
 	pre, err := c.Preamble(ctx)
 	if err != nil {
@@ -171,7 +172,7 @@ func (m *hubManager) handleFacetConn(ctx context.Context, c facetConn, ln *strea
 		if err != nil {
 			return
 		}
-		if !ln.push(ctx, &streamNetConn{ReadWriteCloser: raw, identity: res.Identity, peer: c.Peer()}) {
+		if !ln.Push(ctx, raw, res.Identity, c.Peer()) {
 			_ = raw.Close()
 			return
 		}
@@ -180,7 +181,7 @@ func (m *hubManager) handleFacetConn(ctx context.Context, c facetConn, ln *strea
 
 // acceptFacets runs the accept loop for the life of ctx: every
 // connection on a hub stream ALPN goes through handleFacetConn.
-func (m *hubManager) acceptFacets(ctx context.Context, acc facetAcceptor, ln *streamListener) {
+func (m *hubManager) acceptFacets(ctx context.Context, acc facetAcceptor, ln *facethttp.Listener) {
 	for {
 		c, err := acc.AcceptFacet(ctx)
 		if err != nil {
@@ -198,7 +199,7 @@ func (m *hubManager) serveHTTPFacet(ctx context.Context, h http.Handler) {
 	if !ok {
 		return
 	}
-	srv, ln := facetServer(h)
+	srv, ln := facethttp.Server("hub-http", h)
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
@@ -211,36 +212,6 @@ func (m *hubManager) serveHTTPFacet(ctx context.Context, h http.Handler) {
 	}
 }
 
-// facetServer is the HTTP server over admitted streams: each
-// connection's request context carries the identity the facet
-// attributed to it.
-func facetServer(h http.Handler) (*http.Server, *streamListener) {
-	ln := newStreamListener()
-	srv := &http.Server{
-		Handler:           h,
-		ReadHeaderTimeout: 10 * time.Second,
-		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-			if sc, ok := c.(*streamNetConn); ok {
-				return context.WithValue(ctx, identityKey{}, sc.identity)
-			}
-			return ctx
-		},
-	}
-	return srv, ln
-}
-
-// identityKey carries the admitted caller's cert.Identity in a
-// request context (facetServer's ConnContext).
-type identityKey struct{}
-
-// identityFrom returns the caller identity the facet attributed to
-// this request's connection, or false off the facet (the nebula
-// listener, tests).
-func identityFrom(ctx context.Context) (cert.Identity, bool) {
-	id, ok := ctx.Value(identityKey{}).(cert.Identity)
-	return id, ok
-}
-
 // requireGroup is the per-route gate over the facet's admission: the
 // request must arrive over the facet AND its identity must carry
 // group. Nothing off the facet passes — the handler behind it is
@@ -248,7 +219,7 @@ func identityFrom(ctx context.Context) (cert.Identity, bool) {
 // confuse with.
 func requireGroup(group string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, ok := identityFrom(r.Context())
+		id, ok := facethttp.IdentityFrom(r.Context())
 		if !ok || !slices.Contains(id.Groups, group) {
 			http.Error(w, "forbidden: "+group+" only", http.StatusForbidden)
 			return
@@ -265,64 +236,3 @@ func (s *server) hubFacetMux() http.Handler {
 	mux.Handle("GET /config", requireGroup("admins", http.HandlerFunc(s.handleAdminConfig)))
 	return mux
 }
-
-// streamListener is a net.Listener fed by admitted streams, so one
-// http.Server serves every facet connection's streams.
-type streamListener struct {
-	conns  chan net.Conn
-	closed chan struct{}
-	once   sync.Once
-}
-
-func newStreamListener() *streamListener {
-	return &streamListener{conns: make(chan net.Conn), closed: make(chan struct{})}
-}
-
-func (l *streamListener) push(ctx context.Context, c net.Conn) bool {
-	select {
-	case l.conns <- c:
-		return true
-	case <-l.closed:
-		return false
-	case <-ctx.Done():
-		return false
-	}
-}
-
-func (l *streamListener) Accept() (net.Conn, error) {
-	select {
-	case c := <-l.conns:
-		return c, nil
-	case <-l.closed:
-		return nil, net.ErrClosed
-	}
-}
-
-func (l *streamListener) Close() error {
-	l.once.Do(func() { close(l.closed) })
-	return nil
-}
-
-func (l *streamListener) Addr() net.Addr { return facetAddr("hub-http") }
-
-// streamNetConn adapts one admitted stream to net.Conn for http.Server.
-// Deadlines are accepted and ignored: the server's ReadHeaderTimeout
-// sets one per request, and a QUIC stream has no socket to arm; the
-// facet connection's lifetime bounds the stream's instead.
-type streamNetConn struct {
-	io.ReadWriteCloser
-	identity cert.Identity
-	peer     cert.ActorID
-}
-
-func (c *streamNetConn) LocalAddr() net.Addr              { return facetAddr("hub-http") }
-func (c *streamNetConn) RemoteAddr() net.Addr             { return facetAddr(string(c.peer)) }
-func (c *streamNetConn) SetDeadline(time.Time) error      { return nil }
-func (c *streamNetConn) SetReadDeadline(time.Time) error  { return nil }
-func (c *streamNetConn) SetWriteDeadline(time.Time) error { return nil }
-
-// facetAddr is the net.Addr of a stream endpoint: a name, no port.
-type facetAddr string
-
-func (a facetAddr) Network() string { return "talos-mesh" }
-func (a facetAddr) String() string  { return string(a) }

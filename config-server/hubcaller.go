@@ -31,6 +31,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/marnyg/talos-config/config-server/facethttp"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/actor"
@@ -162,8 +163,8 @@ type facetStreamConn struct {
 	peer cert.ActorID
 }
 
-func (c *facetStreamConn) LocalAddr() net.Addr              { return facetAddr(HubMemberName) }
-func (c *facetStreamConn) RemoteAddr() net.Addr             { return facetAddr(string(c.peer)) }
+func (c *facetStreamConn) LocalAddr() net.Addr              { return facethttp.Addr(HubMemberName) }
+func (c *facetStreamConn) RemoteAddr() net.Addr             { return facethttp.Addr(string(c.peer)) }
 func (c *facetStreamConn) SetDeadline(time.Time) error      { return nil }
 func (c *facetStreamConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *facetStreamConn) SetWriteDeadline(time.Time) error { return nil }

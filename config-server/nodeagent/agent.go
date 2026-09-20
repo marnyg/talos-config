@@ -36,8 +36,10 @@ package nodeagent
 // (irohup, talos-config-359.8.4): it enrolls (the caller hands it a
 // Kit — a device's enrollment is wallet-signed, not a boot token),
 // beats identically, and Dials other members by name with its bundle
-// on connect (caller.go). Members and machines are one runtime; what
-// differs is the accept table.
+// on connect (caller.go). The same runtime again, under Kind gateway
+// with ingress-http served in-process, is the in-cluster gateway
+// (config-server/gateway, talos-config-359.9.3). Members, machines and
+// the gateway are one runtime; what differs is the accept table.
 
 import (
 	"context"
@@ -87,13 +89,22 @@ const (
 type Options struct {
 	Config Config
 	State  State
+	// Kind is the receiver kind whose facet vocabulary Forward and Serve
+	// draw from (policy.Facets); "" ⇒ policy.KindNode.
+	Kind policy.Kind
 	// Forward is the accept table's other half: facet → loopback target
 	// (glossary "Facet": ports exist only inside a facet definition).
-	// Keys must be policy.Facets(policy.KindNode); only these ALPNs are
-	// advertised, and the node consents to the Owner for exactly them.
-	// Empty ⇒ a caller-only member: no ALPN advertised, no consent
-	// signed, nothing accepted.
+	// Keys must be policy.Facets(Kind); only these ALPNs are
+	// advertised, and the member consents to the Owner for exactly
+	// them (with Serve's). Empty, with Serve empty ⇒ a caller-only
+	// member: no ALPN advertised, no consent signed, nothing accepted.
 	Forward map[string]string
+	// Serve is the accept table's in-process half: facet → handler for
+	// facets the member terminates itself instead of splicing (the
+	// gateway's ingress-http: an HTTP server that injects the caller's
+	// identity, facethttp). Same vocabulary and consent as Forward; a
+	// facet in both is an error.
+	Serve map[string]StreamHandler
 	// BindAddr is the UDP socket; "" ⇒ all interfaces, ephemeral port.
 	BindAddr string
 	// HTTP is the client for the hub's WAN endpoints; nil ⇒ 30 s timeout.
@@ -109,6 +120,17 @@ type Options struct {
 	MinRebeat time.Duration
 	// Clock is the local clock (tests); nil ⇒ time.Now.
 	Clock func() int64
+	// Enroll is how this member gets its Kit when it holds none; nil ⇒
+	// redeem the boot token in Config (a machine, ADR-0015). A headless
+	// device passes EnrollDevice (the gateway). Run retries a failure
+	// with backoff (a sealed hub flat), and gives up on ErrTokenDead
+	// and ErrEnrollDenied.
+	Enroll func(ctx context.Context, node cert.ActorID) (issuer.Kit, error)
+	// ConnMaxAge bounds an admitted facet connection: past it the
+	// connection is closed and the caller redials, so Authorize runs
+	// again and a cert's expiry has a ceiling on live access (domain
+	// model: the gateway bounds stream lifetime, ≤ 1 h). 0 ⇒ unbounded.
+	ConnMaxAge time.Duration
 }
 
 // Agent is a running node agent.
@@ -118,8 +140,8 @@ type Agent struct {
 	http   *http.Client
 	ep     *irohtransport.Endpoint
 	actor  *actor.Actor
-	accept map[string]string // ALPN → facet, restricted to Forward
-	facets []string          // sorted Forward keys
+	accept map[string]string // ALPN → facet, restricted to Forward ∪ Serve
+	facets []string          // sorted Forward ∪ Serve keys
 
 	beats    atomic.Int64 // successful beats this process
 	attempts atomic.Int64 // beats attempted this process (tests: a refused beat is still evidence acted on)
@@ -143,14 +165,33 @@ func Start(o Options) (*Agent, error) {
 	if err := o.Config.Validate(); err != nil {
 		return nil, err
 	}
-	known := policy.Facets(policy.KindNode)
-	facets := make([]string, 0, len(o.Forward))
+	kind := o.Kind
+	if kind == "" {
+		kind = policy.KindNode
+	}
+	known := policy.Facets(kind)
+	if known == nil {
+		return nil, fmt.Errorf("nodeagent: unknown receiver kind %q", kind)
+	}
+	facets := make([]string, 0, len(o.Forward)+len(o.Serve))
 	for f, target := range o.Forward {
 		if !slices.Contains(known, f) {
-			return nil, fmt.Errorf("nodeagent: %q is not a node facet (%v)", f, known)
+			return nil, fmt.Errorf("nodeagent: %q is not a %s facet (%v)", f, kind, known)
 		}
 		if _, _, err := net.SplitHostPort(target); err != nil {
 			return nil, fmt.Errorf("nodeagent: forward %s=%q: %w", f, target, err)
+		}
+		if _, dup := o.Serve[f]; dup {
+			return nil, fmt.Errorf("nodeagent: %q is both forwarded and served", f)
+		}
+		facets = append(facets, f)
+	}
+	for f, h := range o.Serve {
+		if !slices.Contains(known, f) {
+			return nil, fmt.Errorf("nodeagent: %q is not a %s facet (%v)", f, kind, known)
+		}
+		if h == nil {
+			return nil, fmt.Errorf("nodeagent: serve %s: nil handler", f)
 		}
 		facets = append(facets, f)
 	}
@@ -180,6 +221,10 @@ func Start(o Options) (*Agent, error) {
 	}
 	a.actor = actor.New(cert.NewEdSigner(priv), ep)
 	a.actor.Clock = o.Clock
+	// The reach-me-at advertises the facets served, so a presentation
+	// reads this member's kind from the plane (Zone) — an advertisement,
+	// never authority: the consent below is what admits.
+	a.actor.Serves = slices.Clone(facets)
 	a.actor.RestoreLowWater(o.State.Mark())
 	// The hub outlives the agent's restarts (reboot, upgrade) and keeps
 	// its seq high-water mark for this node; seed from the clock so the
@@ -248,7 +293,7 @@ func (a *Agent) Close() error { return a.ep.Close() }
 // Run serves until ctx ends: the actor inbox, the stream facets (when
 // any are forwarded), and the enroll-then-beat loop. It returns
 // ErrTokenDead when the node cannot enroll and no fresh config will
-// arrive by itself.
+// arrive by itself, ErrEnrollDenied when the Owner said no.
 func (a *Agent) Run(ctx context.Context) error {
 	go func() {
 		if err := a.actor.Listen(ctx); err != nil && ctx.Err() == nil {
@@ -265,7 +310,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		if err == nil {
 			break
 		}
-		if errors.Is(err, ErrTokenDead) {
+		if errors.Is(err, ErrTokenDead) || errors.Is(err, ErrEnrollDenied) {
 			return err
 		}
 		wait := backoff
@@ -415,12 +460,17 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// enroll redeems the boot token.
+// enroll obtains the Kit: Options.Enroll, or the boot token.
 func (a *Agent) enroll(ctx context.Context) error {
-	if a.o.Config.Token == "" {
+	var kit issuer.Kit
+	var err error
+	if a.o.Enroll != nil {
+		kit, err = a.o.Enroll(ctx, a.ID())
+	} else if a.o.Config.Token == "" {
 		return fmt.Errorf("%w: no kit and no token in config", ErrTokenDead)
+	} else {
+		kit, err = Enroll(ctx, a.http, a.o.Config.Hub, a.ID(), a.o.Config.Token)
 	}
-	kit, err := Enroll(ctx, a.http, a.o.Config.Hub, a.ID(), a.o.Config.Token)
 	if err != nil {
 		return err
 	}
@@ -712,16 +762,30 @@ func (a *Agent) handleConn(ctx context.Context, c *irohtransport.Conn) {
 	a.noticeRotation(res)
 	facet := a.accept[c.ALPN()]
 	target := a.o.Forward[facet]
+	handler := a.o.Serve[facet]
 	if err := c.Admit(ctx); err != nil {
 		return
 	}
-	a.log.Printf("admitted %q %v (%s) → %s %s", res.Identity.Name, res.Identity.Groups, c.Peer(), facet, target)
+	if handler != nil {
+		a.log.Printf("admitted %q %v (%s) → %s", res.Identity.Name, res.Identity.Groups, c.Peer(), facet)
+	} else {
+		a.log.Printf("admitted %q %v (%s) → %s %s", res.Identity.Name, res.Identity.Groups, c.Peer(), facet, target)
+	}
+	if a.o.ConnMaxAge > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, a.o.ConnMaxAge)
+		defer cancel()
+	}
 	for {
 		raw, err := c.Accept(ctx)
 		if err != nil {
 			return
 		}
-		go splice(raw, target)
+		if handler != nil {
+			go handler(ctx, raw, res.Identity, c.Peer())
+		} else {
+			go splice(raw, target)
+		}
 	}
 }
 

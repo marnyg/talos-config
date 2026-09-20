@@ -145,6 +145,13 @@ type Actor struct {
 	// it (found live 2026-09-19: a nanosecond base made renew + bundle
 	// in one beat collapse onto one seq). nil ⇒ start at 1.
 	SeqBase func() int64
+	// Serves lists the stream facets this actor accepts, advertised in
+	// its reach-me-at as cav.facet beside the endpoints: "where to reach
+	// me" and "on what" are one claim, so a presentation can read a
+	// name's kind from the plane instead of assuming it. An
+	// advertisement only — it authorizes nothing; the receiver's own
+	// consent and accept table decide at admission. nil ⇒ absent (∅).
+	Serves []string
 
 	hwm  *envelope.HWM
 	mail chan *inbound

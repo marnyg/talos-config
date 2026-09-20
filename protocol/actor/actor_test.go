@@ -655,6 +655,7 @@ func TestLocationCaching(t *testing.T) {
 	if _, err := a.PublishLocation(3600); err != nil {
 		t.Fatal(err)
 	}
+	b.Serves = []string{"echo"} // advertised beside the endpoints, verified like the rest of the record
 	if _, err := b.PublishLocation(3600); err != nil {
 		t.Fatal(err)
 	}
@@ -676,6 +677,12 @@ func TestLocationCaching(t *testing.T) {
 	}
 	if loc := a.GetLocation(B); loc == nil || loc.Cav.Endpoints[0] != "mem:b" || rep.Loc == nil {
 		t.Fatalf("A did not cache B's location: %+v", loc)
+	}
+	if loc := a.GetLocation(B); len(loc.Cav.Facet) != 1 || loc.Cav.Facet[0] != "echo" {
+		t.Fatalf("B's record should advertise Serves: %+v", loc.Cav)
+	}
+	if loc := b.GetLocation(A); len(loc.Cav.Facet) != 0 {
+		t.Fatalf("A serves nothing; its record should advertise nothing: %+v", loc.Cav)
 	}
 	aLoc := *b.GetLocation(A)
 

@@ -79,9 +79,11 @@ var facets = map[Kind][]string{
 // so the node agent's forward, irohup's defaults and the tun cannot
 // drift. Facets without an entry have no natural port yet.
 var facetPorts = map[string]uint16{
-	"apid":     50000,
-	"kube-api": 6443,
-	"hub-http": 80,
+	"apid":         50000,
+	"kube-api":     6443,
+	"hub-http":     80,
+	"ingress-http": 80,
+	"jellyfin":     8096,
 }
 
 // FacetPort returns the natural port of facet, or 0 if it has none.

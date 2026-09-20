@@ -142,7 +142,7 @@ func (a *Actor) SetLocation(loc cert.Cert) error {
 // PublishLocation mints and installs a fresh reach-me-at record with
 // lifetime ttl seconds over the given endpoints. With no endpoints
 // given, the Transport's Endpoints() are used when it is an Endpoint.
-// It does not push the record anywhere: piggyback does that on the
+// The record also carries a.Serves as cav.facet (nil ⇒ absent). It does not push the record anywhere: piggyback does that on the
 // next message; lighthouses (#publish) are out of scope here.
 func (a *Actor) PublishLocation(ttl int64, endpoints ...string) (cert.Cert, error) {
 	if len(endpoints) == 0 {
@@ -156,7 +156,7 @@ func (a *Actor) PublishLocation(ttl int64, endpoints ...string) (cert.Cert, erro
 	loc, err := cert.Sign(cert.Cert{
 		Aud: cert.AudAny,
 		Can: cert.VerbReachMeAt,
-		Cav: cert.Caveats{Endpoints: append([]string(nil), endpoints...)},
+		Cav: cert.Caveats{Endpoints: append([]string(nil), endpoints...), Facet: append([]string(nil), a.Serves...)},
 		Iat: now,
 		Exp: now + ttl,
 	}, a.Signer)

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/facethttp"
 	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
@@ -132,7 +133,7 @@ func TestHubHTTPFacet(t *testing.T) {
 	defer cancel()
 	m := testHubManager(t, []string{wellKnownAddr}, "")
 	s := &server{root: m.root, store: deviceflow.NewStore(), sessions: newSessionStore(), adminAddrs: []string{wellKnownAddr}, hub: m}
-	srv, ln := facetServer(s.hubFacetMux())
+	srv, ln := facethttp.Server("hub-http", s.hubFacetMux())
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close(); _ = ln.Close() })
 	alpn := policy.ALPN("hub-http")

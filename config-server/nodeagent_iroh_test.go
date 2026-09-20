@@ -14,12 +14,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/deviceflow"
+	"github.com/marnyg/talos-config/config-server/gateway"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/config-server/policy"
@@ -363,6 +366,113 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	_ = conn.Close()
 	if _, err := a.Dial(ctx, nodeagent.HubName, "hub-http"); !errors.As(err, &refused) {
 		t.Fatalf("node → hub-http: %v, want refused", err)
+	}
+
+	// The in-cluster gateway (P2.3, 359.9.3): the same runtime under
+	// Kind gateway, ingress-http terminated in-process. Its reach-me-at
+	// advertises the facets it serves, so the desk reads `jackett.gw`
+	// as (gw, ingress-http) by the zone rule while `sonarr.<node>` stays
+	// unknown to the presentation (nebula's, during the dual plane).
+	// Over the stream: one HTTP request whose forged identity headers
+	// are dropped and replaced by the admitted identity, Host intact;
+	// the node (machines) has no ingress-http grant and is refused.
+	var seen atomic.Pointer[http.Header]
+	var seenHost atomic.Pointer[string]
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := r.Header.Clone()
+		host := r.Host
+		seen.Store(&h)
+		seenHost.Store(&host)
+		_, _ = io.WriteString(w, "jackett says hi")
+	}))
+	t.Cleanup(upstream.Close)
+	upstreamURL, _ := url.Parse(upstream.URL)
+	gwState := nodeagent.State{Dir: t.TempDir()}
+	gwPriv, _, err := gwState.Key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gwKit, err := m.issuer.Mint(cert.NewEdSigner(gwPriv).ActorID(), "gw", []string{"media"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gwState.SaveKit(gwKit); err != nil {
+		t.Fatal(err)
+	}
+	proxyHandler, stopProxy := gateway.HTTPFacet("ingress-http", gateway.Proxy(upstreamURL), nil)
+	t.Cleanup(stopProxy)
+	gw, err := nodeagent.Start(nodeagent.Options{
+		Config: nodeagent.Config{Hub: cfg.Hub, Relay: public}, State: gwState, Kind: policy.KindGateway,
+		Serve:    map[string]nodeagent.StreamHandler{"ingress-http": proxyHandler},
+		BindAddr: "127.0.0.1:0", Log: log.New(testWriter{t}, "gw: ", 0), BeatEvery: time.Hour,
+		ConnMaxAge: 3 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = gw.Close() })
+	go func() {
+		if err := gw.Run(ctx); err != nil && ctx.Err() == nil {
+			t.Errorf("gw run: %v", err)
+		}
+	}()
+	waitFor(t, ctx, "gw beat", func() bool { return gw.Beats() == 1 })
+	if err := dev.Beat(ctx); err != nil { // pick up gw in the name map
+		t.Fatal(err)
+	}
+	if e := issuer.Lookup(dev.Bundle().NameMap, "gw"); len(e) != 1 || e[0].Location == nil || !slices.Equal(e[0].Location.Cav.Facet, []string{"ingress-http"}) {
+		t.Fatalf("gw's reach-me-at should advertise ingress-http: %+v", e)
+	}
+	if member, facet, err := dev.Target("jackett.gw", 80); err != nil || member != "gw" || facet != "ingress-http" {
+		t.Fatalf("jackett.gw:80 → %s/%s %v", member, facet, err)
+	}
+	if _, _, err := dev.Zone("sonarr.aa-bb-cc-dd-ee-ff"); !errors.Is(err, nodeagent.ErrNotThatKind) {
+		t.Fatalf("a service name under a node must not resolve: %v", err)
+	}
+	if member, facet, err := dev.Target("aa-bb-cc-dd-ee-ff", 50000); err != nil || member != "aa-bb-cc-dd-ee-ff" || facet != "apid" {
+		t.Fatalf("node:50000 → %s/%s %v", member, facet, err)
+	}
+	conn, err = dev.Dial(ctx, "gw", "ingress-http")
+	if err != nil {
+		t.Fatalf("desk → gw/ingress-http: %v", err)
+	}
+	raw, err = conn.Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ = http.NewRequest("GET", "http://jackett.gw.mesh.internal/api/v2.0/indexers", nil)
+	req.Header.Set(gateway.HeaderNode, "ed:forged")
+	req.Header.Set(gateway.HeaderGroups, "root")
+	req.Close = true
+	if err := req.Write(raw); err != nil {
+		t.Fatal(err)
+	}
+	resp, err = http.ReadResponse(bufio.NewReader(raw), req)
+	if err != nil {
+		t.Fatalf("ingress-http response: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	_ = raw.Close()
+	if resp.StatusCode != http.StatusOK || string(body) != "jackett says hi" {
+		t.Fatalf("over ingress-http: %d %s", resp.StatusCode, body)
+	}
+	if h, host := seen.Load(), seenHost.Load(); h == nil || *host != "jackett.gw.mesh.internal" ||
+		h.Get(gateway.HeaderNode) != string(dev.ID()) || h.Get(gateway.HeaderName) != "desk" || h.Get(gateway.HeaderGroups) != "admins" {
+		t.Fatalf("upstream saw host %v headers %v", seenHost.Load(), seen.Load())
+	}
+	// The connection is bounded: past ConnMaxAge the gateway closes it
+	// and the caller redials — Authorize runs again.
+	waitFor(t, ctx, "gw to close the aged connection", func() bool {
+		r, err := conn.Open(ctx)
+		if err == nil {
+			_ = r.Close()
+		}
+		return err != nil
+	})
+	_ = conn.Close()
+	if _, err := a.Dial(ctx, "gw", "ingress-http"); !errors.As(err, &refused) {
+		t.Fatalf("node → ingress-http: %v, want refused", err)
 	}
 
 	// Hub redeploy (ipt7, z2go): the old process is gone — its endpoint
