@@ -12,9 +12,10 @@
 # wallet-derived CA (task refs 162c630d, deferred).
 #
 # Mesh v3 (P2.3, talos-config-359.9.3): the identity plane reaches this
-# controller through the gateway pod (k8s/apps/gateway) over the
-# ClusterIP Service below, Host untouched, with the caller's verified
-# identity in X-Mesh-Node/Name/Groups. Until hostNetwork goes (the
+# controller through the gateway pod (k8s/apps/gateway) — the node-local
+# controller by host address while hostNetwork lasts; a ClusterIP hop
+# to the other node is masqueraded to the node IP — Host untouched,
+# with the caller's verified identity in X-Mesh-Node/Name/Groups. Until hostNetwork goes (the
 # rest of ingress off nebula), any LAN device can hit :80 directly and
 # write those headers itself (talos-config-1gv) — so nginx honours them
 # only from the pod network (the gateway's side) and blanks them from
@@ -38,8 +39,7 @@ spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
           service:
-            enabled: true
-            type: ClusterIP
+            enabled: false
           publishService:
             enabled: false
           config:

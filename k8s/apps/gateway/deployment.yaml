@@ -66,11 +66,21 @@ spec:
             - -state=/var/lib/gateway
             - -name=gw
             - -group=media
-            - -ingress=http://ingress-nginx-controller.ingress-nginx.svc.cluster.local
+            # The node-local controller (hostNetwork DaemonSet), by the
+            # node's address: a local destination is never masqueraded,
+            # so nginx sees this pod's IP and honours X-Mesh-* (1gv gate).
+            # Through a ClusterIP the other node's controller sees the
+            # node IP instead (flannel ip-masq). Becomes the controller's
+            # Service once it leaves hostNetwork.
+            - -ingress=http://$(HOST_IP):80
             - -jellyfin=jellyfin.media.svc.cluster.local:8096
           env:
             - name: P0_LOG
               value: warn
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
           volumeMounts:
             - name: state
               mountPath: /var/lib/gateway
