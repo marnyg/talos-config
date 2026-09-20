@@ -383,6 +383,14 @@
               configServer = configServer.static;
               irohRelay = configServer.irohRelayStatic;
             };
+            # nix build .#gateway-image — the in-cluster gateway pod's image
+            # (k8s/apps/gateway/image.nix; driver: k8s/apps/gateway/build.sh).
+            packages.gateway-image = import ./k8s/apps/gateway/image.nix {
+              inherit pkgs lib;
+              self = inputs.self;
+              nix2container = inputs'.nix2container.packages.nix2container;
+              configServer = configServer.static;
+            };
           })
         ];
     };

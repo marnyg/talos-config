@@ -10,6 +10,16 @@
 # interface (mesh + LAN), so service names need no NodePort. Plain HTTP
 # by design — nebula encrypts the wire; HTTPS arrives with the
 # wallet-derived CA (task refs 162c630d, deferred).
+#
+# Mesh v3 (P2.3, talos-config-359.9.3): the identity plane reaches this
+# controller through the gateway pod (k8s/apps/gateway) over the
+# ClusterIP Service below, Host untouched, with the caller's verified
+# identity in X-Mesh-Node/Name/Groups. Until hostNetwork goes (the
+# rest of ingress off nebula), any LAN device can hit :80 directly and
+# write those headers itself (talos-config-1gv) — so nginx honours them
+# only from the pod network (the gateway's side) and blanks them from
+# everywhere else: geo on the real peer address, proxy-set-headers from
+# the mapped variables (mesh-identity-headers ConfigMap).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -28,9 +38,17 @@ spec:
           hostNetwork: true
           dnsPolicy: ClusterFirstWithHostNet
           service:
-            enabled: false
+            enabled: true
+            type: ClusterIP
           publishService:
             enabled: false
+          config:
+            http-snippet: |
+              geo $remote_addr $mesh_from_pod { default 0; 10.244.0.0/16 1; }
+              map $mesh_from_pod $mesh_node   { 1 $http_x_mesh_node;   default ""; }
+              map $mesh_from_pod $mesh_name   { 1 $http_x_mesh_name;   default ""; }
+              map $mesh_from_pod $mesh_groups { 1 $http_x_mesh_groups; default ""; }
+            proxy-set-headers: ingress-nginx/mesh-identity-headers
           ingressClassResource:
             default: true
   destination:

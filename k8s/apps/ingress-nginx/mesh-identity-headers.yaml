@@ -1,0 +1,14 @@
+# proxy-set-headers for the controller (application.yaml): the identity
+# headers reach a Service only as nginx computed them — the gateway's
+# values when the request came over the pod network, empty otherwise
+# (talos-config-1gv). An app that reads X-Mesh-* reads what the
+# gateway verified or nothing.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mesh-identity-headers
+  namespace: ingress-nginx
+data:
+  X-Mesh-Node: "$mesh_node"
+  X-Mesh-Name: "$mesh_name"
+  X-Mesh-Groups: "$mesh_groups"

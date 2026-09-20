@@ -1,0 +1,91 @@
+# The in-cluster gateway (Mesh v3 P2.3, talos-config-359.9.3): the
+# member actor in front of cluster Services — the mesh side of ingress
+# (revises ADR-0009) and the successor of ADR-0007's cert-group +
+# source-address inference. It is the node agent runtime under Kind
+# gateway (config-server/gateway, cmd/gateway): a caller on the
+# identity plane dials `gw` under ingress-http presenting its bundle,
+# the gateway authorizes once per connection against its own consent
+# and forwards each stream as one HTTP connection to ingress-nginx with
+# the Host untouched and X-Mesh-Node/Name/Groups set from the verified
+# identity. Services are named <svc>.gw.mesh.internal on the
+# presentation (irohup's tun: nodeagent.Zone); nginx still routes by
+# Host, auth_request still gates at the app layer (ADR-0010).
+#
+# Identity: the key and the Kit live on the PVC — the key is minted
+# here and never travels (invariant 1), the Kit is the membership, and
+# neither is re-derivable, so the volume outlives the pod (Recreate:
+# one holder at a time). First start with an empty volume runs the
+# device flow headlessly: `kubectl logs -n gateway deploy/gateway`
+# shows the approve URL + user code; sign on /status as `gw`, group
+# media (it calls nothing; the group is the approver's call).
+#
+# Image: k8s/apps/gateway/build.sh prints the tag@digest to pin below.
+# Egress only: the hub over HTTPS (enroll, /.well-known) and its relay;
+# no Service, no Ingress — the gateway is reached by key.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gateway-state
+  namespace: gateway
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: gateway
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: ghcr.io/marnyg/gateway:dev
+          args:
+            - -hub=https://marnyg-talos-config.fly.dev
+            - -state=/var/lib/gateway
+            - -name=gw
+            - -group=media
+            - -ingress=http://ingress-nginx-controller.ingress-nginx.svc.cluster.local
+            - -jellyfin=jellyfin.media.svc.cluster.local:8096
+          env:
+            - name: P0_LOG
+              value: warn
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/gateway
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: gateway-state

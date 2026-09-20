@@ -120,6 +120,12 @@ spec:
                 port:
                   number: 9091
 ---
+# Jackett is the first service on the identity plane (Mesh v3 P2.3,
+# talos-config-359.9.3): jackett.gw.mesh.internal reaches it through the
+# gateway pod (k8s/apps/gateway) — the caller's device identity arrives
+# verified in X-Mesh-*; SSO still gates the session (auth-signin in the
+# same zone so the cookie matches). Its nebula name jackett.cp1 is
+# cut (decision d3z3: a migrated consumer loses its nebula path).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -127,11 +133,11 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
-    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.gw.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
-    - host: jackett.cp1.mesh.internal
+    - host: jackett.gw.mesh.internal
       http:
         paths:
           - path: /

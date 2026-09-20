@@ -67,10 +67,19 @@ spec:
             - --scope=openid profile email groups
             - --email-domain=*
             - --allowed-group=admins
-            - --redirect-url=http://oauth2.cp1.mesh.internal/oauth2/callback
+            # No --redirect-url: the callback is derived from the request's
+            # X-Forwarded-Host (--reverse-proxy), so one proxy serves both
+            # zones below; both callbacks are registered at siwe-oidc.
             - --cookie-secure=false
             - --cookie-samesite=lax
+            # Two zones while ingress migrates to the gateway (Mesh v3
+            # P2.3): <svc>.cp1 over nebula, <svc>.gw over the identity
+            # plane. The longest domain matching the request host wins,
+            # so each zone gets its own session cookie; sign in once per
+            # zone. .cp1 goes when the last service leaves it.
+            - --cookie-domain=.gw.mesh.internal
             - --cookie-domain=.cp1.mesh.internal
+            - --whitelist-domain=.gw.mesh.internal
             - --whitelist-domain=.cp1.mesh.internal
             - --skip-provider-button=true
           env:
@@ -123,6 +132,16 @@ spec:
   ingressClassName: nginx
   rules:
     - host: oauth2.cp1.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: oauth2-proxy
+                port:
+                  number: 80
+    - host: oauth2.gw.mesh.internal
       http:
         paths:
           - path: /
