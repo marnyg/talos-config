@@ -100,9 +100,12 @@ classDiagram
   operation; the role is what survives.
 - **Runner** — the platform adapter the key lives in: `ext-nebula`
   (Talos allows no agents), the Android app (no root: gomobile +
-  VpnService fd + split-DNS shim), `nebup` (stock binary on a
-  laptop). All wrap one shared core (`nebderive`, `devkey`,
-  enrollment, `policyclient`); convergence owed (task `ea9404af`).
+  VpnService fd), `nebup` (stock binary on a laptop). All wrap one
+  shared core (`nebderive`, `devkey`, enrollment, `policyclient`);
+  convergence owed (task `ea9404af`). _On the identity plane the
+  runner distinction thins out: `p0agent`, `irohup` and the Android
+  app are the same `nodeagent` runtime over different links (2026-09-20,
+  P2.4)._
 
 Replaceability is the point: re-key and the role stays; reinstall and
 the role stays; swap runner and both stay. A NIC swap changes which
@@ -829,9 +832,14 @@ provisioning or recovery path may depend on it.
   (`nodeagent.HubName`, 2026-09-19). The same name is what the hub's
   self-minted member cert carries when the hub *calls* a member
   (`HubMemberName`, P2.2): one actor, `hubkey`, under one name on
-  both sides — and still never in the name map. Same dialect on every device: Android (`iroh-go/mobile`, P0.2) and
-  the desktop daemon (`config-server/fakeip` + `irohup -tun`, P2.0,
-  ADR-0025). Where the model meets a web that assumes global names
+  both sides — and still never in the name map. One dialect on every
+  device because it is one implementation: `config-server/fakeip`
+  (tun link, stack, resolver) under `config-server/meshtun` (the zone
+  rule, the port vocabulary, the connection pool), with only the link
+  differing — a utun on the desktop (`irohup -tun`, P2.0, ADR-0025),
+  the `VpnService` fd on Android (`config-server/mobile`, P2.4,
+  2026-09-20; the P0.2 spike's `iroh-go/mobile` copy is superseded).
+  Where the model meets a web that assumes global names
   (invariants, structural trade-offs) — expected to stay the fragile
   part.
 - **KMS / disk encryption** — node STATE/EPHEMERAL keys derive from

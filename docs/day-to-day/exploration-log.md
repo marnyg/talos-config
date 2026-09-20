@@ -141,3 +141,22 @@
   contact: the owner's desktop no longer has a nebula plane, so the
   issuer `auth.cp1` itself was unreachable; the whole ingress moved in
   one step (`5qh9`).
+
+## Mesh v3 P2.4 — the app's build host (2026-09-20)
+
+- 2026-09-20 — Considered keeping the Android APK in CI now that the
+  app links iroh. Ruled out for now: the AAR needs
+  `libiroh_ffi.a` for `aarch64-linux-android`, and that build is impure
+  (unfree NDK) and ~1 h cold — a stock runner would pay it on every
+  run. Landed on: build on the NixOS box (`android/shell.nix`),
+  `android/publish.sh` to the same rolling release, workflow
+  dispatch-only. Revisit if the cross build can be pushed to a binary
+  cache CI can read — the rest of the workflow (gradle, release upload)
+  still works as written.
+- 2026-09-20 — Considered adopting the P0.2 spike's `iroh-go/mobile`
+  package as the app's core (it already did netstack + fake IP + iroh).
+  Ruled out: it is a one-peer spike with no certs, no name map and its
+  own copy of the fake-IP dialect. Landed on: the app binds
+  `config-server/mobile` over the same `nodeagent` + `meshtun` the
+  desktop daemon runs, so there is one zone rule and one pool; the
+  spike package is superseded and can be deleted.

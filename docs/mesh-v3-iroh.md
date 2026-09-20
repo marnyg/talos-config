@@ -657,6 +657,18 @@ Findings:
 4. Android app swaps nebula AAR for iroh+fake-IP internals (same
    APK, ADR-0013 pipeline); phones/TV re-enroll NodeIds via the
    existing device flow. Media verified: LAN-direct and remote-relay.
+   _Code landed 2026-09-20 (`359.9.4`): the app is a member —
+   `config-server/mobile` binds `nodeagent` + `meshtun` on the
+   `VpnService` fd, enrollment is the headless device flow through Go,
+   and the nebula surface (keygen/enroll/splice, tunnel runner,
+   split-DNS shim) is deleted. The presentation is now ONE
+   implementation for desktop and phone (`fakeip` + `meshtun`, only
+   the link differs), which is what closed `phz`. The APK build left
+   CI with it: the AAR links a cross-built `libiroh_ffi.a`, so it is
+   built on the NixOS box (`android/shell.nix`) and published by
+   `android/publish.sh`. **Not yet exercised on a device** — no
+   sideload, no enrollment, no media measurement; `jellyfin.cp1` and
+   the hub's `/hosts` + `/policy` stay until a device runs it._
 5. k8s endpoint off the mesh: static LAN IPs into machine configs +
    router DHCP exclusion; certSANs → LAN names; talosconfig/
    kubeconfig re-pointed (reverses mesh-v2 phase-2 step 2; sequenced

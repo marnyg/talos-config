@@ -14,15 +14,34 @@
 
 ## Read first
 
+- 2026-09-20 — **The APK is not built by CI any more** (P2.4): the AAR
+  links `libiroh_ffi.a` cross-built for `aarch64-linux-android`
+  (`iroh-go/nix/android.nix` — impure, unfree NDK, ~1 h cold, then
+  cached), which a stock GitHub runner cannot produce. Build on the
+  NixOS box: `cd android && NIXPKGS_ALLOW_UNFREE=1 nix-shell --impure
+  shell.nix`, then `IROH_FFI_ANDROID_LIB=<…>/lib ./build-aar.sh &&
+  gradle --no-daemon assembleDebug && ./publish.sh`. The workflow still
+  exists but is dispatch-only and fails fast without the `.a`.
+  `adb` on the Mac: `nix shell nixpkgs#android-tools`.
+- 2026-09-20 — **`jellyfin.cp1` must stay in k8s until the TV runs the
+  new APK** (`k8s/apps/media/ingress.yaml`, the siwe-oidc `-client`
+  list, the jellyfin configmap's branding comment). Cutting it earlier
+  is what takes Jellyfin away from the TV; it is the first commit after
+  the device migrates, not before.
+- 2026-09-20 — `config-server/mesh`'s `TestMeshHTTPOverOverlay` can
+  flake under a full parallel `go test ./...` (2 s client deadline in
+  an e2e that stands up an overlay); it passes alone, repeatedly. Not
+  P2.4's doing — re-run the package before believing it.
 - 2026-09-21 — **`--auto-bootstrap` now needs `--iroh-relay`** (P2.2,
   `49a7bdb`): the hub dials the control plane's `apid` over the
   identity plane, so a hub without a wan endpoint reports
   `no-identity-plane` and `main` refuses the flag combination. fly's
   entrypoint sets both from `IROH_RELAY_URL` (fly.toml) — keep that
-  env when touching the deploy. Until both nodes run `p0agent` ≥ 0.1.3
-  (the `z2go` agent), a hub redeploy shows `node-unknown` on `/status`
-  for up to the old agents' 6 h beat; that is the old code, not a
-  regression.
+  env when touching the deploy. ~~Until both nodes run `p0agent` ≥
+  0.1.3 (the `z2go` agent), a hub redeploy shows `node-unknown` on
+  `/status` for up to the old agents' 6 h beat~~ — satisfied
+  2026-09-20: both nodes run 0.1.4, so a redeploy is one `MinRebeat`
+  from being noticed.
 
 - 2026-09-03 — **Read `desired-state/domain-model.md` §"The three
   layers" before any authority/identity discussion.** A design session
