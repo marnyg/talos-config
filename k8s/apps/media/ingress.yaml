@@ -1,15 +1,16 @@
-# Hostname routing over the mesh: <service>.cp1.mesh.internal resolves
-# to cp1 (hub DNS resolves any name scoped under a member — nothing to
-# declare), ingress-nginx on hostNetwork :80 routes by Host header.
-# Exposing a service = adding an Ingress here, nothing else.
-# Plain HTTP — nebula encrypts the wire; HTTPS lands with the
-# wallet-derived CA (deferred, refs 162c630d).
+# Hostname routing over the identity plane (Mesh v3 P2.3):
+# <service>.gw.mesh.internal resolves on the caller's device to the
+# in-cluster gateway pod (k8s/apps/gateway), which terminates the
+# identity stream and forwards to ingress-nginx with Host intact; nginx
+# routes by Host header. Exposing a service = adding an Ingress here,
+# nothing else. Plain HTTP — the identity stream encrypts the wire;
+# HTTPS lands with the wallet-derived CA (deferred, refs 162c630d).
 #
 # The auth-url/auth-signin annotations gate a service behind the wallet
 # (oauth2-proxy in the sso namespace → SIWE→OIDC bridge): nginx makes an
 # auth_request subrequest per request; 401s bounce the browser through
 # one wallet signature, and the session cookie (domain
-# .cp1.mesh.internal) then opens every gated service. Jellyfin is
+# .gw.mesh.internal) then opens every gated service. Jellyfin is
 # deliberately ungated here: it gets native OIDC via jellyfin-plugin-sso
 # (refs 162c630d), and the TV reaches it LAN-direct on NodePort 30096
 # outside the ingress path anyway.
@@ -21,6 +22,17 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
+    - host: jellyfin.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jellyfin
+                port:
+                  number: 8096
+    # Nebula zone kept for the TV (Android, nebula until P2.4).
     - host: jellyfin.cp1.mesh.internal
       http:
         paths:
@@ -39,11 +51,11 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
-    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.gw.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
-    - host: sonarr.cp1.mesh.internal
+    - host: sonarr.gw.mesh.internal
       http:
         paths:
           - path: /
@@ -61,11 +73,11 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
-    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.gw.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
-    - host: radarr.cp1.mesh.internal
+    - host: radarr.gw.mesh.internal
       http:
         paths:
           - path: /
@@ -83,11 +95,11 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
-    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.gw.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
-    - host: nzbget.cp1.mesh.internal
+    - host: nzbget.gw.mesh.internal
       http:
         paths:
           - path: /
@@ -105,11 +117,11 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
-    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.cp1.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.gw.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
 spec:
   ingressClassName: nginx
   rules:
-    - host: transmission.cp1.mesh.internal
+    - host: transmission.gw.mesh.internal
       http:
         paths:
           - path: /
@@ -120,12 +132,11 @@ spec:
                 port:
                   number: 9091
 ---
-# Jackett is the first service on the identity plane (Mesh v3 P2.3,
-# talos-config-359.9.3): jackett.gw.mesh.internal reaches it through the
-# gateway pod (k8s/apps/gateway) — the caller's device identity arrives
-# verified in X-Mesh-*; SSO still gates the session (auth-signin in the
-# same zone so the cookie matches). Its nebula name jackett.cp1 is
-# cut (decision d3z3: a migrated consumer loses its nebula path).
+# Jackett was the first service migrated to the identity plane (Mesh v3
+# P2.3, talos-config-359.9.3); the caller's device identity arrives
+# verified in X-Mesh-*, SSO still gates the session (auth-signin in the
+# same zone so the cookie matches). Its nebula name jackett.cp1 is cut
+# (decision d3z3: a migrated consumer loses its nebula path).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
