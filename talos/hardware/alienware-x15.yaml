@@ -30,15 +30,15 @@ machine:
     # install time only — repinning does not move an installed system.
     disk: /dev/nvme0n1
     # The same imager-built installer cp1 runs (hardware/minipc.yaml has
-    # the full account): stock Talos + the three official extensions of
-    # factory schematic 6a9acc… (nebula, iscsi-tools, util-linux-tools;
-    # versions in talos/extensions/installer.env) + our p0agent extension, which puts the node on
-    # the identity plane (w1.mesh.internal; talos-config-qb5q). Without
-    # nebula the node has no overlay identity and the hub's serve-time
-    # cert injection has no extension service to configure; without the
+    # the full account): stock Talos + two official extensions
+    # (iscsi-tools, util-linux-tools; versions in
+    # talos/extensions/installer.env) + our p0agent extension, which puts
+    # the node on the identity plane (w1.mesh.internal; talos-config-qb5q).
+    # Without p0agent the node has no mesh identity at all; without the
     # other two it cannot run Longhorn (ADR-0011). Keep the tag AND
     # digest in step with minipc.yaml — one fleet image.
     #
-    # Predecessor: factory 6a9acc… until 2026-09-19 (upgraded in place,
-    # `talosctl upgrade`; EPHEMERAL survives).
-    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.4@sha256:a6ea8ccd3d6f105749e9420cb2e126f23ba17a790ad2cfc2e292554e5faf0abc
+    # Predecessors: factory 6a9acc… until 2026-09-19 (upgraded in place,
+    # `talosctl upgrade`; EPHEMERAL survives); p0agent-0.1.4 with the
+    # nebula extension until 2026-09-21 (Mesh v3 Phase 4, P4.1).
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc32093fa80250a2d40d2b095c3c96e09b2d1daace3830e33df7eb0dedb

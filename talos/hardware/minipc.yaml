@@ -1,8 +1,8 @@
 machine:
   install:
-    # Imager-built installer (ours, ghcr.io/marnyg) = stock Talos + the
-    # three official extensions of factory schematic 6a9acc… + our own
-    # `p0agent` extension. Versions: talos/extensions/installer.env (the
+    # Imager-built installer (ours, ghcr.io/marnyg) = stock Talos + two
+    # official extensions (Longhorn's) + our own `p0agent` extension.
+    # Versions: talos/extensions/installer.env (the
     # one place they are spelled out; build.sh reads it). The Image Factory only carries official
     # extensions, so a third-party extension means `imager` + a registry we
     # own; content-addressing gives way to a tag pinned by digest. Rebuild
@@ -12,8 +12,6 @@ machine:
     # bead 5cz, ADR-0023): declare what cp1 runs rather than upgrade back to the
     # factory image Phase 1 would immediately replace.
     #
-    # - nebula        (1.10.3) runs the mesh overlay on the node. Without
-    #                 it the node has no mesh identity at all.
     # - iscsi-tools   iscsid + iscsiadm + the iscsi_tcp module, which
     #                 Longhorn's V1 data engine attaches volumes with.
     # - util-linux-tools  nsenter (required by Longhorn ≥1.5) and fstrim
@@ -40,11 +38,16 @@ machine:
     #                 presentation reads a name's kind off the plane
     #                 instead of assuming node; both nodes report
     #                 `facets [apid kube-api]` since 2026-09-20.
+    #                 0.1.5 (P4.1, 2026-09-21) carries the h2-liveness
+    #                 hub client (rnfk, 2c2f607) and is the first image
+    #                 WITHOUT the nebula extension: Mesh v3 Phase 4, the
+    #                 node's only mesh identity is its NodeId.
     #
     # Predecessors: factory 011ccc… (nebula only) until 2026-07-31 when
-    # Longhorn landed; factory 6a9acc… (the three official extensions)
-    # until 2026-09-15. w1 (alienware-x15.yaml) declares this same image
-    # since 2026-09-19 (qb5q) — change both together.
+    # Longhorn landed; factory 6a9acc… (nebula + the two above) until
+    # 2026-09-15; p0agent-0.1.x with nebula until 2026-09-21. w1
+    # (alienware-x15.yaml) declares this same image since 2026-09-19
+    # (qb5q) — change both together.
     #
     # Changing this image on a *running* node needs an upgrade, not a
     # reboot: `talosctl upgrade --image <the image below>`.
@@ -52,4 +55,4 @@ machine:
     # is why there is no --preserve flag to pass — so etcd and
     # /var/media come back. A fresh *install* is the destructive path.
     disk: /dev/nvme0n1
-    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.4@sha256:a6ea8ccd3d6f105749e9420cb2e126f23ba17a790ad2cfc2e292554e5faf0abc
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc32093fa80250a2d40d2b095c3c96e09b2d1daace3830e33df7eb0dedb

@@ -18,15 +18,11 @@ cluster:
       - 10.0.0.68
       - cp1.mesh.internal
       - cp1
-      # cp1's nebula address; kept until Phase 4 deletes nebula so the
-      # cert does not churn twice.
-      - 10.42.218.125
-  proxy:
-    # kube-proxy in nftables mode serves NodePorts only on the primary
-    # node IP by default. Serving on all addresses predates P2.5 (it
-    # was for nebula0); harmless now, revisit at Phase 4.
-    extraArgs:
-      nodeport-addresses: 0.0.0.0/0
+      # (cp1's nebula address 10.42.218.125 rode here until Mesh v3
+      # Phase 4 P4.1, 2026-09-21, when the nebula extension left the
+      # image. NodePorts bind the primary node IP only again since the
+      # same change — `nodeport-addresses: 0.0.0.0/0` existed for
+      # nebula0; Jellyfin's 30096 for the TV is LAN-direct.)
   inlineManifests:
     - name: argocd-namespace
       contents: |
