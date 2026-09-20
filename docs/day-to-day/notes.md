@@ -894,3 +894,19 @@
   `HUB_BUILDER=mar@nixos fly/deploy.sh` (~3 min) + an unseal before
   `nix run .#apply` serves it. Plan one unseal per session: batch the
   git changes, deploy once.
+- 2026-09-21 — **A device may not enroll under a machine's name or
+  `hub`**: the hub answers 409 at `/mesh/enroll/challenge` and refuses
+  the mint if the approver types one on the card. The name map is
+  witnessed, so nothing else would have stopped a second `cp1`.
+- 2026-09-21 — **Hub deploy recipe unchanged, one flag fewer**: the
+  process is a hub iff `IROH_RELAY_URL` is set (`fly/entrypoint.sh`
+  folds `--auto-bootstrap` and `--kms-advertise` under it). A wrong
+  wallet at unseal now fails with `decrypting secrets … (wrong wallet
+  or message?)` instead of a CA-pin mismatch — same meaning.
+- 2026-09-21 — **Enrollment message is v3** (`name, group, node,
+  nonce`). A client built before `600d2d4` signs v2 and gets 403 at
+  mint; the phone/TV APK, gateway image and Mac daemon are on that
+  list until rebuilt (bd task). Existing kits renew regardless.
+- 2026-09-21 — **The dedicated fly IPv4 is the KMS port's, not
+  nebula's**: `fly ips release 213.188.219.215` would break disk
+  unlock on the next node boot (shared v4 = 80/443 only). `os8s`.

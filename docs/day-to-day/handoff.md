@@ -5,56 +5,58 @@
 
 ## Last session
 
-2026-09-20 (seventeenth session, late night) — **Phase 4 started: the
-nebula extension is off both nodes (`359.11.1` closed).**
+2026-09-21 (eighteenth session) — **P4.2 landed: nebula is out of the
+code and off the hub (`359.11.2` ready to close).**
 
-- `99299ae` — P4.2 prerequisite: the `<name>.mesh.internal` apid
-  certSAN moved from the nebula render (`mesh.MachinePatch`) to the
-  identity-plane render (`agentPatch` → `machineSAN`, `nodeenroll.go`);
-  the overlay-address SAN is gone; `bootstrap.zone()` reads
-  `fakeip.Zone`. `nebmachine.go` now emits only the nebula
-  ExtensionServiceConfig and has no load-bearing role.
-- `14c84db` — P4.1: `talos/extensions/installer.env` without
-  `nebula:1.10.3`; fleet image `v1.12.6-p0agent-0.1.5@sha256:3c2c7cc3…`
-  (agent at `2c2f607`, the h2-liveness client) pinned in both
-  `talos/hardware/*.yaml`; `cluster.yaml` loses the `10.42.218.125`
-  apiserver SAN and `nodeport-addresses: 0.0.0.0/0`.
-- Nodes: w1 upgraded 21:27Z (~3.5 min), cp1 21:34Z (~7 min drain).
-  Extensions now `iscsi-tools, util-linux-tools, p0agent 0.1.5`; no
-  `nebula0`; same NodeIds; `beat ok` on both. Hub redeployed 21:42Z
-  (bakes `talos/`), unsealed, `nix run .#apply` to both nodes 21:43Z
-  without reboot; kube-apiserver cert regenerated without `10.42.x`.
-- `hyjv` closed: w1's member addresses are `[10.0.0.71]` only,
-  `talosctl -n w1 -e cp1` answers, so `apply`'s `-n <hostname>` works.
+- `600d2d4` — deleted `config-server/{mesh,nebderive,nebstack,nebtest,
+  devkey}/`, `cmd/nebup`, `nebenroll*.go` (→ `deviceenroll.go`),
+  `slackhq/nebula` + ~30 transitive deps, `talos/mesh-policy.yaml`,
+  `mesh-blocklist.txt`, `nickel/mesh-policy.ncl`, the fly `udp/4242`
+  service, `MESH_ENDPOINT`/`MESH_CA_PIN`, `--mesh-*`, `recover
+  -ca-fingerprint`. −7,400 lines. `enrollmsg.V3(name, group, node,
+  nonce)` is the one enrollment message (no pubkey line); the hub
+  answers with the bare Kit JSON; the hub is gated on `--iroh-relay`;
+  unseal no longer pins a CA fingerprint (wrong wallet fails at the
+  age decrypt); `mesh.MachineDNSName` → `machines.DNSName`; `meta.yaml`
+  `ip:` gone. New guard: a device name equal to a declared machine or
+  `hub` is refused (409 at challenge, 403 at mint) — the nebula render
+  used to do this, the witnessed name map would not.
+- `737ea8c`/`+1` — `irohup -dns-upstream` dropped (its only reason was
+  nebula's DNS beside the tun); `fly.toml` records why the dedicated
+  IPv4 stays (KMS `:8443`).
+- Hub redeployed 22:20Z on the nebula-free image, hubkey `a65c301d…`,
+  unsealed 22:20:27Z (both signatures); auto-bootstrap read
+  `etcd-running` off cp1 over the identity plane 8 s later.
+  `nix run .#apply` to both nodes without reboot: the inert `nebula`
+  ExtensionServiceConfig is gone, `p0agent` doc at v3, `ext-p0agent`
+  Running.
+- Closed `06j0` (status DNS column via `machineSAN`) and `qoak` (PEM
+  carve-out) — both fell out of the deletion.
 
 ## Loose threads
 
-- The hub still runs its nebula lighthouse (fly udp/4242, `--mesh-port`)
-  and still serves a `nebula` ExtensionServiceConfig document that no
-  node has a service for (Talos accepted the apply; inert). Both die
-  with P4.2.
-- `talos/mesh-policy.yaml` keeps the dead `host: hub` row until the
-  file dies with the render (noted on `359.11.2`).
-- `mesh.MachineDNSName` needs a home outside `mesh/` before the
-  package goes (`nodeenroll.go`, `bootstrap.go`, `status.go` use it);
-  `status.go:731` reads the DNS zone off the nebula manager —
-  switch to `machineSAN`.
-- Longhorn `pvc-1a3572dc…` was `degraded` (replica rebuild after the
-  two reboots) at session end; two kubevirt `Error` pods are drain
-  leftovers with Running replacements.
-- `c4vd` (w1's machine dir is the dock's MAC) is untouched by upgrades
-  — only a reinstall re-fetches by MAC.
-- TV admin session; Mac daemon binary age unknown (`darwin-rebuild
-  switch` pending since the previous session).
+- **Clients speak v2 until rebuilt** (`bd` task filed, P3): phone/TV
+  APK, gateway pod image, Mac daemon. Harmless while every member
+  holds a kit; only the *next enrollment* from a stale binary fails.
+- **Dedicated IPv4 `213.188.219.215` kept**: fly shared v4s carry
+  80/443 only and KMS disk-unseal is `:8443` (invariant 4). Moving KMS
+  onto 443 so the IP can go is `talos-config-os8s`.
+- Docs still describe the nebula era in places the code no longer
+  does: `desired-state/domain-model.md` (Key = X25519, Runner =
+  ext-nebula/nebup, `{config, kit}` envelope, `enrollmsg` v1/v2,
+  lighthouse/rendezvous, `mesh-policy.yaml` frozen recipe),
+  `invariants.md` #5 ("HTTPS + its UDP overlay port"),
+  `technical/deployed-state.md` (`MESH_CA_PIN`, `10.42.0.1`
+  lighthouse), `docs/mesh-v3-iroh.md` Phase 4 checklist. All P4.4.
+- `-n cp1` still fails by name from the tun (`t7b2`, cp1's generated
+  hostname `talos-wu6-eib`); `apply` already routes around it.
 
 ## Suggested next steps
 
-- **P4.2** (`bd show talos-config-359.11.2`): delete
-  `config-server/mesh/neb*.go`, `nebderive`, `nebstack`, `nebenroll.go`,
-  `cmd/nebup`, the vendored nebula service pkg, nebula parts of
-  `android/build-aar.sh`, the DNS shim in `mobile/`; drop `--mesh-*`
-  flags and `MESH_CA_PIN` from `fly.toml`; then a hub redeploy +
-  unseal (one signature) and a phone APK without the nebula AAR.
-  Read the notes on the bead first — they carry the must-carry list.
-- P4.3 ADRs and P4.4 docs (`359.11.3`, `359.11.4`) after; the
-  `deployed-state.md` rewrite belongs to P4.4.
+- Close `359.11.2` (user confirms), then **P4.3** (`359.11.3`): promote
+  ADR-0016's supersession of 0002/0005 and ADR-0017 to Accepted;
+  revision notes on 0006/0007/0009/0013/0014.
+- **P4.4** (`359.11.4`): the doc rewrite listed above — goals (Mesh v2
+  entry becomes history, Mesh v3 "reached"), invariant 5 wording,
+  domain-model nebula-era sections, deployed-state, fold
+  `mesh-v3-iroh.md` into the exploration log.
