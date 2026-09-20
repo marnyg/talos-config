@@ -5,8 +5,8 @@
 
 ## Last session
 
-2026-09-20 (tenth session) — **P2.4 code landed; `594e` done. Device
-side not yet exercised.**
+2026-09-20 (tenth session) — **P2.4 landed and verified on a phone;
+`594e` done. The TV has not moved.**
 
 - **The Android app is a member of the identity plane**, not a nebula
   client (`e0fb4b0`, `6802b35`): `config-server/mobile` binds
@@ -32,14 +32,39 @@ side not yet exercised.**
 - **Both nodes run p0agent 0.1.4** (worker `p0agent-014`, `acabeac`):
   `facets [apid kube-api]` in each agent's log, installer pinned in
   both hardware files, and the `≤ 0.1.3` clause is out of `KindOf`.
+- **Verified on the owner's phone** (Sony XQ-BQ52, Android 13, driven
+  over adb): enrolled as member `phone`/`media` through the in-app
+  device flow; name map reads `gw` as `(gateway)` off `cav.facet`;
+  split DNS correct (`hub→198.18.1.1`, `jellyfin.gw→198.18.1.2`,
+  `example.com` to the underlay); Jellyfin 10.11.6 served at
+  `jellyfin.gw:8096` in the browser **and** in the Jellyfin app.
+  Paths (new `Conn.Paths()`, `ea27af4`): `*ip:10.0.0.67` on wifi,
+  `*relay` on 5G with wifi off, HTTP 200 in 0.10 s — **both halves of
+  the acceptance criteria's transport**, one `ConnectivityManager`
+  callback apart.
+- **`be0c1d7`**: the app's wallet sign-in died at siwe-oidc with
+  `redirect_uri … :8096 … is not registered` (the raw `jellyfin`
+  facet is a different origin from the `:80` ingress, and the plugin
+  derives the URI from Host). The `:8096` origin is now registered;
+  ArgoCD synced it and the same request answers 200.
 
 ## Loose threads
 
-- **Nothing has been installed or enrolled yet.** The APK is at
-  `~/Downloads/talos-mesh-p24.apk`; `adb` comes from
-  `nix shell nixpkgs#android-tools`. Until a device runs it, P2.4 is
-  code, not a migration — the acceptance criteria (Jellyfin app +
-  browser, LAN-direct *and* relay) are all unexercised.
+- **No media has actually been played.** The transport is verified on
+  both paths, but the acceptance criteria's *media* (Direct Play,
+  sustained bitrate) is not: the Jellyfin app is signed out.
+- **Wallet sign-in cannot work inside an app webview** — SIWE needs an
+  injected provider, and MetaMask's dapp browser would keep the
+  session in its own cookie jar. Quick Connect (enabled server-side)
+  is the bridge and was mid-flight when the session ended; the deeper
+  fork is spike `i1il` (let the gateway's verified `X-Mesh-*` log the
+  app in, Tailscale's `proxy-to-grafana` pattern) with `95la` deferred
+  behind it.
+- **The phone is v3-only now**: the CI-signed v1 app had to be
+  uninstalled (different debug keystore), which took its nebula config
+  with it. Its Jellyfin app points at `jellyfin.gw.mesh.internal:8096`.
+- The APK is at `~/Downloads/talos-mesh-p24.apk`; `adb` comes from
+  `nix shell nixpkgs#android-tools`.
 - **`jellyfin.cp1` is still in k8s on purpose**: `k8s/apps/media/
   ingress.yaml`, the siwe-oidc client list, the jellyfin configmap's
   branding comment. Cutting it before the TV runs the new APK takes
@@ -57,7 +82,11 @@ side not yet exercised.**
 
 ## Suggested next steps
 
-- Sideload + enroll a phone (owner offered one on USB), then the TV:
-  `jellyfin.gw:8096` LAN-direct, then the same over the relay.
-- Then cut `jellyfin.cp1` and re-check the SSO redirect list.
+- Finish the phone: Quick Connect the Jellyfin app in (code from the
+  app, approved from a wallet-authenticated browser session), play
+  something, read `paths` again under load.
+- Then the TV — the same install + enroll, and it will hit the same
+  sign-in wall (`95la`/`i1il`) and want its own registered origin.
+- Only then cut `jellyfin.cp1` (ingress, siwe-oidc client list,
+  jellyfin configmap comment) and the hub's `/hosts` + `/policy`.
 - Then P2.5 (`359.9.5`): k8s/Talos endpoint off the mesh.

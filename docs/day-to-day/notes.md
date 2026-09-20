@@ -14,6 +14,21 @@
 
 ## Read first
 
+- 2026-09-20 — **The gateway's two Jellyfin paths are two origins.**
+  `jellyfin.gw.mesh.internal` (:80, `ingress-http` facet, through
+  nginx) and `jellyfin.gw.mesh.internal:8096` (the raw `jellyfin`
+  facet, no nginx — P2.3's appliance path) are different origins to
+  every browser and to jellyfin-plugin-sso, which derives its
+  `redirect_uri` from the request Host. Both must be registered in
+  siwe-oidc's `-client=jellyfin=…` list (they are, since `be0c1d7`);
+  an unregistered one fails as a silent bounce in the app, with a 400
+  only visible by curling `/authorize` directly.
+- 2026-09-20 — **The Mac cannot test the raw `jellyfin` facet.**
+  `mesh-policy-v3.yaml` grants `jellyfin` to `group: media` only, and
+  the laptop is `admins`, so `curl jellyfin.gw:8096` from the Mac gets
+  `irohtransport: refused: not authorized` — the gateway working, not
+  a bug. Test that facet from a `media` device (the phone), or use
+  `:80`.
 - 2026-09-20 — **The APK is not built by CI any more** (P2.4): the AAR
   links `libiroh_ffi.a` cross-built for `aarch64-linux-android`
   (`iroh-go/nix/android.nix` — impure, unfree NDK, ~1 h cold, then
