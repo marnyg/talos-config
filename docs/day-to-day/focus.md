@@ -3,13 +3,14 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** **Mesh v3 Phase 3 — soak (`359.10`).** Phase 2 is complete:
-P2.5 (2026-09-21) put the k8s endpoint on cp1's declared LAN address,
-so nothing in steady-state cluster membership touches any overlay.
-Nebula is installed but carries nothing that matters. Exit is on event
-coverage, not calendar: one natural hub re-seal, one node reboot (w1's
-USB NIC rename + flannel is the thing to watch), one full remote-media
-session — then Phase 4 (`359.11`) deletes nebula.
+**Now:** **Mesh v3 Phase 3 — soak (`359.10`), 1/3 events.** Phase 2
+is complete: P2.5 (2026-09-20) put the k8s endpoint on cp1's declared
+LAN address, so nothing in steady-state cluster membership touches any
+overlay. Nebula is installed but carries nothing that matters. Exit is
+on event coverage, not calendar: ~~one node reboot~~ (w1, 2026-09-20 —
+two P2.5 defects found and fixed), one natural hub re-seal, one full
+remote-media session (first attempt void: cellular bearer churn; fix
+`rnfk` before retrying) — then Phase 4 (`359.11`) deletes nebula.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
 members dialed by key, IP as device-local fiction, hub as actors

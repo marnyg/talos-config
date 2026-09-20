@@ -14,10 +14,55 @@
 
 ## Read first
 
+- 2026-09-20 — **Changing `cluster.controlPlane.endpoint` rotates the
+  service-account issuer.** Talos sets `--service-account-issuer` and
+  `--api-audiences` to the endpoint URL. Every projected SA token
+  minted before the apiserver restarts with the new flags carries the
+  old `iss` and is refused (`Unauthorized`) — and kubelet's default
+  token extension makes those tokens 1-year, so kubelet never
+  refreshes them. P2.5 hit this on cp1: kubelet restarted at the apply
+  and re-fetched *all* tokens 2 s before the apiserver flipped. Only
+  pods that talk to the API notice (control loops: kube-proxy,
+  flannel, longhorn-manager/csi, kubevirt, ingress-nginx); media/
+  gateway/share-manager pods do not. Remedy: delete the affected pods
+  (`kubectl get pods -A -o jsonpath` by `startTime` older than the
+  apiserver's `startedAt`, then grep their logs for Unauthorized).
+  Decode a pod's token to check: `exec … cat
+  /var/run/secrets/kubernetes.io/serviceaccount/token | cut -d. -f2 |
+  base64 -d`. Bead `etzl` for making the endpoint-change runbook do
+  this. Nodes rebooted *after* the flip are fine (w1 was).
+- 2026-09-20 — **w1's static address selects the dongle's MAC, not the
+  directory's.** `talos/machines/98-e7-43-11-97-b8` is the laptop's
+  Dell pass-through address; the box has no wired PCI NIC (Wi-Fi only,
+  undriven), and the r8152 dongle it runs on is `0c:37:96:5d:26:c4`.
+  A selector on the directory MAC matches nothing and Talos falls back
+  to DHCP *silently* — check `talosctl -n <ip> logs controller-runtime
+  | grep 'no matching network device'` and that
+  `get addressspecs` lists the declared address, don't trust the lease
+  happening to be right. Swap the dongle → update the selector.
+  A reinstall needs the Dell dock (or the dir renamed): bead `c4vd`.
+  **After any address change on a node, delete its flannel pod** (same
+  stale `public-ip` failure as the rename note below) and expect
+  `talosctl -n <hostname>` via cp1 to hang for a while (`hyjv`; use
+  the LAN IP).
+- 2026-09-20 — **Phone Wi-Fi→cellular takes minutes to recover, and
+  the phone's cellular at home is unusable for testing.** The tunnel
+  re-underlays at once (`advertising <cell ip>`), but the agent's
+  hub fetch reuses the Wi-Fi-era h2 connection and times out 30 s per
+  attempt until it gives up on it (`rnfk`); cellular→Wi-Fi is ~30 s
+  because the old conn gets a RST. Separately the cellular bearer
+  churned netIds every minute or two (`dumpsys connectivity | grep
+  'Active default'`) with plain `curl` dead — do the remote-media soak
+  event from a place with stable signal. adb notes: the mesh log is
+  `run-as dev.marnyg.mesh tail cache/mesh.log` (debug build);
+  `svc wifi disable|enable` flips Wi-Fi; the phone locks itself after
+  a few minutes — drive the Jellyfin app while it's awake.
 - 2026-09-20 — **w1's LAN NIC is a USB adapter and its name is not
   stable across boots.** It came back from the last reboot as
   `enp0s13f0u1` / `10.0.0.71` (was `enp0s13f0u1u4` / `10.0.0.67`, the
-  address the TV's LAN-direct path was verified against). flannel on
+  address the TV's LAN-direct path was verified against). _(Later the
+  same day: that was an adapter swap, not a rename — the `.67` MAC was
+  the Dell dock's pass-through address; see the entry above.)_ flannel on
   w1 kept waiting for the old name (`external interface … not found,
   retrying`), the node annotation still said `.67`, and **cross-node
   pod traffic was silently dead for ~4.5 h** while host↔host worked:

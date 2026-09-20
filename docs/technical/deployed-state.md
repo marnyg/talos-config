@@ -25,9 +25,14 @@ or change something, update the date.
     was `talos-ezw-edv`/`10.0.0.32` before the second reprovision the
     same day — generated names are not stable across reinstalls, and
     cp1's hostname is **not** pinned the way w1's is).
-  - **w1** — worker `98:e7:43:11:97:b8`, node `w1` (**hostname pinned**,
-    so reinstalls stop stranding NotReady node objects), LAN lease
-    `10.0.0.39` (drifts), mesh `10.42.227.66`. Alienware x15 R1,
+  - **w1** — worker `98:e7:43:11:97:b8` (the *provisioning* MAC: Dell's
+    pass-through address, only a Dell dock carries it; the box has no
+    wired PCI NIC), node `w1` (**hostname pinned**, so reinstalls stop
+    stranding NotReady node objects), LAN `10.0.0.71` declared on the
+    r8152 USB dongle `0c:37:96:5d:26:c4` (`deviceSelector` by *that*
+    MAC, 2026-09-20 — the P2.5 selector on the dir MAC matched nothing
+    and the node silently ran on DHCP; a reinstall needs the dock or a
+    renamed dir, `c4vd`), mesh `10.42.227.66`. Alienware x15 R1,
     i9-11900H, 1TB SK hynix PC711 NVMe. Disk: STATE (LUKS2) +
     EPHEMERAL 200GiB (LUKS2, capped) + `u-longhorn` 700GiB (xfs,
     **unencrypted** — decision pending, thread `8e46f3a5`) at
@@ -57,7 +62,11 @@ or change something, update the date.
   declare their LAN address in `talos/machines/<mac>/patch.yaml`
   (`deviceSelector.hardwareAddr`, `dhcp: false`, default via
   `10.0.0.1`, resolver `10.0.0.1`): cp1 `10.0.0.68` on `eno1`, w1
-  `10.0.0.71` on its USB NIC. The router's DHCP pool is deliberately
+  `10.0.0.71` on its USB dongle (selector: the dongle's MAC, not the
+  dir's — see the node list). **The hub image still serves the old w1
+  selector until the next deploy**; w1 was patched live. Changing the
+  endpoint also rotated the SA issuer — 14 cp1 control-loop pods had
+  to be recreated (notes.md 2026-09-20). The router's DHCP pool is deliberately
   not edited (decision `ebis`). Predecessors: DHCP lease (drifted four
   times in one day) → wg0 → nebula `10.42.218.125` (mesh-v2 phase 2
   step 2, until 2026-09-21).

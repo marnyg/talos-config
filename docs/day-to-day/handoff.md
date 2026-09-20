@@ -5,56 +5,64 @@
 
 ## Last session
 
-2026-09-21 (thirteenth session) — **P2.5 landed; Mesh v3 Phase 2 is
-complete.** `625a2e6` + hub deploy + `nix run .#apply` w1 → cp1, no
-reboot, both nodes stayed Ready throughout.
+2026-09-20 (fourteenth session, same evening as P2.5) — **Phase 3
+soak started; the forced w1 reboot (event 1/3) surfaced two P2.5
+defects. Remote-media (event 3/3) attempted, not covered.**
 
-- **Static LAN addresses declared by MAC** in
-  `talos/machines/<mac>/patch.yaml` (`deviceSelector.hardwareAddr`,
-  `dhcp: false`, default via `10.0.0.1`, resolver `10.0.0.1`): cp1
-  `10.0.0.68`, w1 `10.0.0.71` — the addresses the MACs already held.
-  **No router DHCP exclusion** (decision `ebis`): adding a node must
-  not depend on router access; a pool collision is accepted risk.
-- **Cluster endpoint `https://10.0.0.68:6443`** in `cluster.yaml` and
-  `worker-cluster.yaml` (was nebula `10.42.218.125`). certSANs now
-  state `10.0.0.68`, `cp1.mesh.internal`, `cp1`, and keep
-  `10.42.218.125` until Phase 4. The apiserver cert rolled (`DNS:cp1`
-  added); kubevirt controllers restarted on leader election — normal.
-- **`6gq` resolved by construction**: `talosctl etcd members` shows
-  `10.0.0.68:2380/2379`, a declared address.
-- **Invariant 4's cluster-membership exception closed** (struck
-  through in `invariants.md`): a worker's kubelet reaches the API over
-  the LAN; no overlay is needed for membership.
-- talosconfig / `nix run .#kubeconfig` untouched — they already went
-  via `cp1.mesh.internal` on the tun since P2.1.
-- **Fixed en route**: `cmd/irohup/tun_other.go` (linux stub) did not
-  compile since `c075081` (`connPool` → `meshtun.Pool`), which broke
-  the hub image build (`fly/deploy.sh`). One-liner, `585524e`.
-- **Observed**: after a hub redeploy the Mac daemon beat OK with the
-  new hub NodeId at 20:13:53, but the tun kept dialing the *old* hub
-  NodeId for ~15 s more (in-flight dials). Self-healed; not filed.
+- **w1's declared address never applied.** P2.5's `deviceSelector`
+  used the machine-dir MAC `98:e7:43:11:97:b8` — Dell's *pass-through*
+  address, which only a Dell dock inherits; the LAN NIC today is an
+  r8152 dongle `0c:37:96:5d:26:c4`. Pre-reboot `.71` was a surviving
+  DHCP lease; the reboot came back on `.72`. Fixed: patch.yaml now
+  pins the dongle's MAC (user chose that over `physical: true`), and
+  the same one-line change went to w1 live via `talosctl patch mc`
+  (**hub not redeployed** — the served config still has the old
+  selector until the next `fly/deploy.sh`). Flannel needed its pod
+  deleted after the address change (stale `public-ip`), same as after
+  a rename. Beads `c4vd` (reinstall path), `hyjv` (`-n w1` via cp1
+  picks the dead nebula leg; use the LAN IP until Phase 4).
+- **P2.5 rotated the service-account issuer.** Talos derives
+  `--service-account-issuer`/`--api-audiences` from the cluster
+  endpoint; cp1's kubelet re-fetched every pod's token 2 s before the
+  apiserver flipped, minting 1-year tokens with `iss` = the nebula
+  endpoint. 14 control-loop pods on cp1 (kube-proxy, flannel,
+  longhorn-manager/csi-plugin, all kubevirt, ingress-nginx) were
+  `Unauthorized` and were deleted by hand → recreated clean. Data-
+  plane pods never touched the API and were left alone. Bead `etzl`.
+- Longhorn salvaged `win2k25`'s two volumes after the dead
+  virt-launcher was deleted; the VM is back on w1, replicas rebuilding.
+  34 dead pod objects (incl. the two 18 h-old kubevirt ones) cleaned.
+- **Remote media, phone on cellular:** the tunnel re-underlaid
+  (`advertising 10.3.91.10:…`) but took ~3.5 min to `beat ok` — the
+  agent's hub-fetch `http.Client` reuses the Wi-Fi-era h2 connection,
+  30 s timeout per attempt (bead `rnfk`). Then the cellular bearer
+  itself churned (netId 152→154→155/156, plain `curl` dead), so no
+  client could have held a session — **event not covered**. Reverse
+  handover 28 s (the stale conn got a RST). Wi-Fi restored; Jellyfin
+  reconnects to the gateway in <1 s on Wi-Fi.
 
 ## Loose threads
 
-- cp1's `machined` still holds pre-P2.5 ESTABLISHED sockets to
-  `10.42.218.125:6443` (loopback-local on nebula0). Gone at the next
-  reboot / when nebula stops. Nothing depends on them.
-- w1 USB NIC rename → flannel stale-interface failure (notes.md
-  2026-09-20) is still live risk on w1's next reboot. The static
-  address survives a rename; flannel does not.
-- Two kubevirt pods (`virt-controller-…-9q746`,
-  `virt-exportproxy-…-xt4kz`) in `Error` since the 09-20 flannel
-  outage; the replacement replicas run. Cosmetic; `kubectl delete`
-  them when convenient.
+- **Hub redeploy pending** so the served w1 config carries the dongle
+  MAC; until then `nix run .#apply` would re-serve the wrong selector
+  (harmless live — Talos falls back to DHCP — but it undoes the fix
+  on the next reboot). Do it with the next deploy; needs the unseal.
+- `talosctl -n w1` (and `nix run .#apply` for w1) hangs via cp1
+  (`hyjv`); `-n 10.0.0.71` works.
+- Two Longhorn volumes `degraded` (w1 replicas rebuilding) — check
+  they return to `healthy`.
 - **TV still holds a Jellyfin admin session**; non-admin user not
   created. **Mac daemon still on the pre-`d4960c1` binary**; `~/git/
   nixos` lock bump uncommitted; `darwin-rebuild switch` not run.
-- `talos/mesh-policy.yaml` still carries dead nebula rules on purpose
-  (byte-stable render until Phase 4). `bh74` still reproduces on the TV.
+- Several docs date P2.5 as 2026-09-21; the commits are 2026-09-20
+  (`invariants.md` inv. 4, `deployed-state.md`, `domain-model.md`,
+  exploration-log P2.2 header). Not fixed — surfaced.
 
 ## Suggested next steps
 
-- **Phase 3 soak (`359.10`)**: nothing to build; wait for the events.
-  When w1 next reboots, check flannel's `public-ip` annotation first.
-- `darwin-rebuild switch`, commit the nixos lock bump.
-- Phase 4 (`359.11`) once the soak's three events have passed.
+- Soak: 1/3 events (node reboot). Still open: a natural hub re-seal,
+  a remote-media session from somewhere with stable cellular (or the
+  laptop tethered elsewhere). Fix `rnfk` first or the session will
+  spend its first minutes waiting on the hub fetch.
+- Redeploy the hub (also picks up nothing else — image `585524e`).
+- Phase 4 (`359.11`) once the two remaining events have passed.

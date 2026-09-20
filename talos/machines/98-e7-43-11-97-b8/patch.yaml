@@ -10,14 +10,25 @@ machine:
     # the control plane is git-derived, not leased (invariant 7). No
     # router DHCP exclusion on purpose (decision talos-config-ebis).
     #
-    # deviceSelector by MAC, not `interface:` — this is the USB NIC
-    # whose name moved from enp0s13f0u1u4 to enp0s13f0u1 across one
-    # reboot (notes.md 2026-09-20). The address survives a rename; note
-    # flannel does not (it caches the name), so the flannel-pod restart
-    # from that note is still needed after a rename.
+    # deviceSelector by MAC, not `interface:` — this is a USB NIC whose
+    # name is not stable (enp0s13f0u1u4 → enp0s13f0u1, notes.md
+    # 2026-09-20). The address survives a rename; note flannel does not
+    # (it caches the name), so the flannel-pod restart from that note is
+    # still needed after a rename.
+    #
+    # This MAC is NOT this directory's MAC. 98:e7:43:11:97:b8 is the
+    # laptop's Dell pass-through address, which only a Dell-branded
+    # dock/adapter inherits; the box has no wired PCI NIC (Wi-Fi only,
+    # undriven). It provisioned through such a dock, and that MAC still
+    # selects this config at (re)install — but the LAN NIC today is a
+    # plain Realtek r8152 dongle with its own MAC, so a selector on the
+    # directory MAC matched nothing and the node silently fell back to
+    # DHCP (found by the mesh v3 soak reboot, 2026-09-20). Swapping the
+    # dongle means updating this line; reinstalling means reattaching
+    # the dock or renaming the directory (talos-config bead filed).
     interfaces:
       - deviceSelector:
-          hardwareAddr: 98:e7:43:11:97:b8
+          hardwareAddr: 0c:37:96:5d:26:c4
         dhcp: false
         addresses:
           - 10.0.0.71/24
