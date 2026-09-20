@@ -1,7 +1,7 @@
 # Mesh v3 blocklist — blocked MEMBER KEYS, one `ed:<64 lowercase hex>`
 # actor id (the member's iroh EndpointId, its member cert's aud) per
-# line; '#' starts a comment. Sibling of mesh-blocklist.txt (the frozen
-# v2 nebula-fingerprint list, read by the nebula render until Phase 4).
+# line; '#' starts a comment. (The v2 nebula-fingerprint list,
+# mesh-blocklist.txt, went with the nebula render in Phase 4.)
 #
 # Enforcement is the beat (decision j0b): the Issuer refuses #renew and
 # #bundle to a listed key and hands the list out in every #bundle;

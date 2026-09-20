@@ -122,13 +122,12 @@ func approved(t *testing.T, w wallet, group string) (issuer.MintDeviceRequest, c
 	}
 	node := cert.NewEdSigner(priv).ActorID()
 	req := issuer.MintDeviceRequest{
-		Node:        node,
-		Name:        "tv",
-		Group:       group,
-		Fingerprint: strings.Repeat("ab", 32),
-		Nonce:       "n0nce",
+		Node:  node,
+		Name:  "tv",
+		Group: group,
+		Nonce: "n0nce",
 	}
-	req.Signature = w.signHex(t, enrollmsg.V2(req.Name, req.Group, req.Fingerprint, string(req.Node), req.Nonce))
+	req.Signature = w.signHex(t, enrollmsg.V3(req.Name, req.Group, string(req.Node), req.Nonce))
 	return req, node
 }
 

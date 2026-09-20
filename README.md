@@ -46,14 +46,13 @@ Each machine gets a directory named by MAC address (dashes for colons):
 
 ```
 machines/b0-41-6f-15-3b-8f/
-  meta.yaml       # metadata: ip, base config, patch list
+  meta.yaml       # metadata: name, uuid, base config, patch list
   patch.yaml      # machine-specific Talos patch (optional)
 ```
 
 `meta.yaml`:
 ```yaml
-ip: 10.42.218.125          # the machine's DERIVED MESH address, not a DHCP lease
-name: cp1                  # mesh DNS label -> cp1.mesh.internal
+name: cp1                  # mesh name -> cp1.mesh.internal (member cert, apid SAN)
 uuid: 37a1f6ed-…           # SMBIOS UUID: the durable KMS unseal allowlist
 diskEncryption: true       # inject KMS + recovery-passphrase LUKS config at serve time
 config: base/controlplane.yaml
@@ -63,11 +62,11 @@ patches:
   - hardware/minipc.yaml
 ```
 
-`ip:` is the hub-derived overlay address (HKDF from the MAC), which is
-stable across DHCP leases and reprovisions — never a lease. It is only
-computable with the master key, so for a brand-new machine it is left
-empty and filled in after the first config serve (`dig
-<name>.mesh.internal @10.42.0.1`); `apply` skips machines without it.
+`name:` is the machine's mesh name: the member cert's name caveat, the
+`<name>.mesh.internal` apid certSAN, and what the name map resolves on
+the irohup tun. It defaults to the MAC with dashes. No address is
+declared — members are dialed by key (Mesh v3, ADR-0016); the LAN
+address is the machine's own business (`patch.yaml`, or DHCP).
 
 `patch.yaml` is a standard Talos strategic merge patch — usable directly with `talosctl machineconfig patch`.
 
@@ -158,7 +157,8 @@ flyctl logs -a marnyg-talos-config --no-tail | grep "device auth started"
 
 1. Hardware layer, if this hardware type is new — install disk (**required**;
    the role templates set none) and the factory installer image, which must
-   carry the nebula extension or the node gets no mesh identity:
+   carry the `p0agent` extension (`talos/extensions/`) or the node never
+   joins the identity plane:
    ```yaml
    # hardware/new-hw.yaml
    machine:
@@ -173,8 +173,7 @@ flyctl logs -a marnyg-talos-config --no-tail | grep "device auth started"
 2. Declare the machine — directory named by MAC with dashes:
    ```yaml
    # machines/aa-bb-cc-dd-ee-ff/meta.yaml
-   ip: ""                   # derived mesh address; fill in after first serve
-   name: w2                 # mesh DNS label -> w2.mesh.internal
+   name: w2                 # mesh name -> w2.mesh.internal
    uuid: <from the log above>  # record BEFORE first boot: makes the KMS
                               # allowlist durable instead of relying on the
                               # session-scoped "sealed this lifetime" grace
@@ -209,22 +208,19 @@ flyctl logs -a marnyg-talos-config --no-tail | grep "device auth started"
 5. Commit, then deploy the hub (see [Deploying the hub](#deploying-the-hub)).
    **The deploy re-seals the hub**, so unseal
    at [`/status`](https://marnyg-talos-config.fly.dev/status) with the
-   wallet afterwards — config serving, KMS and the mesh are all down
-   until you do.
+   wallet afterwards (two signatures: master + speak-as) — config
+   serving, KMS and the identity plane are all down until you do.
 
 6. The machine restarts its device flow on its own (codes expire after
    10 minutes). **Approve it on `/status`** — check the displayed
    uuid/mac/serial against the machine you think you are approving.
-   It then installs and reboots.
+   It then installs, reboots, and its agent enrolls itself with the
+   boot token in its served config (ADR-0015); it shows up under
+   "Members" on `/status` once it beats.
 
-7. Read back its derived mesh address and record it, so `apply` can
-   target it:
-   ```bash
-   dig +short <name>.mesh.internal @10.42.0.1   # -> put in meta.yaml `ip:`
-   ```
-
-Subsequent config changes are `nix run .#apply` (over the mesh, hub-composed
-— never composed locally, which would strip serve-time identity).
+Subsequent config changes are `nix run .#apply` (over the identity
+plane, hub-composed — never composed locally, which would strip
+serve-time identity).
 
 ## Deploying the hub
 

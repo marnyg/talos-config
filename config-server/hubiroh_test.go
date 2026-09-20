@@ -44,7 +44,7 @@ func TestHubBeatOverIroh(t *testing.T) {
 	home := startRelay(t)
 	public := strings.Replace(home, "127.0.0.1", "localhost", 1)
 
-	m := testHubManagerOn(t, []string{wellKnownAddr}, "", irohHubTransport(home, public, "127.0.0.1:0"))
+	m := testHubManagerOn(t, []string{wellKnownAddr}, irohHubTransport(home, public, "127.0.0.1:0"))
 	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
 		t.Fatal(err)
 	}

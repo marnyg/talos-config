@@ -50,7 +50,6 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/machines"
-	"github.com/marnyg/talos-config/config-server/mesh"
 )
 
 const (
@@ -234,7 +233,7 @@ func (b *bootstrapper) step(ctx context.Context) {
 		mac = m
 	}
 	m := cps[mac]
-	name := mesh.MachineDNSName(mac, m)
+	name := machines.DNSName(mac, m)
 
 	obs, peer := b.observe(ctx, m, name)
 	if obs != b.lastObs || !b.obsLogged {

@@ -119,7 +119,7 @@ type Issuer struct {
 }
 
 // New returns a sealed Issuer over a fresh random hubkey. groups is the
-// closed group list (mesh-policy.yaml's vocabulary); the speak-as
+// closed group list (policy.Groups); the speak-as
 // proposal delegates all of them. clock nil ⇒ time.Now.
 func New(groups []string, t actor.Transport, clock func() int64) (*Issuer, error) {
 	_, priv, err := ed25519.GenerateKey(rand.Reader)

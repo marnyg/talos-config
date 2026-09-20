@@ -6,7 +6,6 @@
 //
 //	recover -sig <hex> -recovery -mac <mac>   # disk recovery passphrase (LUKS slot 1)
 //	recover -sig <hex> -age-recipient         # age recipient, for talos/age-recipient.txt
-//	recover -sig <hex> -ca-fingerprint        # mesh CA fingerprint, for MESH_CA_PIN
 //	recover -sig <hex> -master-hex            # raw master, for WG_MASTER_KEY (dev)
 //
 // -master <hex> is accepted anywhere -sig is, for dev masters that
@@ -23,7 +22,6 @@ import (
 	"strings"
 
 	"github.com/marnyg/talos-config/config-server/masterderive"
-	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
 func main() {
@@ -33,7 +31,6 @@ func main() {
 		mac       = flag.String("mac", "", "machine MAC (with -recovery)")
 		recovery  = flag.Bool("recovery", false, "print the machine's disk recovery passphrase (needs -mac)")
 		ageRecip  = flag.Bool("age-recipient", false, "print the wallet-derived age recipient; commit it as talos/age-recipient.txt")
-		caFP      = flag.Bool("ca-fingerprint", false, "print the mesh CA fingerprint; pin it via MESH_CA_PIN")
 		masterHex = flag.Bool("master-hex", false, "print the raw master key (handle like the signature itself)")
 	)
 	flag.Parse()
@@ -63,16 +60,10 @@ func main() {
 	case *ageRecip:
 		_, recipient := masterderive.AgeIdentity(m)
 		fmt.Println(recipient)
-	case *caFP:
-		fp, err := nebderive.CAFingerprint(m)
-		if err != nil {
-			log.Fatalf("deriving CA fingerprint: %v", err)
-		}
-		fmt.Println(fp)
 	case *masterHex:
 		fmt.Println(*master)
 	default:
 		flag.Usage()
-		log.Fatal("pick one of -recovery, -age-recipient, -ca-fingerprint, -master-hex")
+		log.Fatal("pick one of -recovery, -age-recipient, -master-hex")
 	}
 }

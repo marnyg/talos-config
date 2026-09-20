@@ -7,18 +7,20 @@ package main
 // HKDF-derived from the signature and lives only in memory. A server
 // restart re-seals — see the repo decision log.
 //
-// The master is the root of every derivation the hub serves: the mesh
-// CA and all leaf identities (nebderive), the per-node KMS seal keys
-// and recovery passphrases, and the age identity that decrypts the
-// repo's secrets. The unseal used to live on the wg0 manager; phase 2
-// deleted wg0 and lifted it here, the hub-level concern it always was.
+// The master is the root of every derivation the hub serves: the
+// per-node KMS seal keys and recovery passphrases, the boot tokens,
+// and the age identity that decrypts the repo's secrets. The unseal
+// used to live on the wg0 manager; phase 2 deleted wg0 and lifted it
+// here, the hub-level concern it always was. (Until Mesh v3 Phase 4
+// it also rooted the nebula CA; a wrong wallet now fails at the age
+// decrypt instead of at a CA-fingerprint pin.)
 //
 // Beside the master lives the hub's IDENTITY (ADR-0018, ADR-0024): a
 // random per-process hubkey that holds no authority until the same
 // wallet signs a speak-as cert to it. The unseal is therefore two
 // EIP-191 signatures from one allowlisted wallet (decision ce8): one
-// over MasterMessage (master/seed — the nebula plane), one over the
-// Issuer's proposal (hubkey authority — the identity plane). They may
+// over MasterMessage (master/seed — secrets, KMS, boot tokens), one
+// over the Issuer's proposal (hubkey authority — the identity plane). They may
 // arrive in one POST or separately; the second must come from the
 // wallet that signed the first.
 
@@ -40,30 +42,18 @@ import (
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/masterderive"
-	"github.com/marnyg/talos-config/config-server/mesh"
-	"github.com/marnyg/talos-config/config-server/nebderive"
+	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // hubManager owns the hub's seal state: the master key and everything
-// that unlocks with it. Created when the mesh is enabled (--mesh-port)
-// and starts sealed unless a dev master is supplied via WG_MASTER_KEY.
+// that unlocks with it. Created when the hub serves an identity plane
+// (--iroh-relay) and starts sealed unless a dev master is supplied via
+// WG_MASTER_KEY.
 type hubManager struct {
 	root       string   // talos/ directory
 	adminAddrs []string // wallets allowed to unseal
-
-	// pinnedCAFP is the expected mesh CA fingerprint (hex, "" =
-	// unpinned). The CA derives from the master alone, so a wrong
-	// wallet — or the right wallet signing a subtly different message —
-	// derives a different CA, and the unseal fails loudly instead of
-	// bringing up a mesh no enrolled member trusts.
-	pinnedCAFP string
-
-	// mesh is the overlay the control channel rides. Never nil in
-	// production (main refuses the combination); nil only in tests
-	// that exercise seal state alone.
-	mesh *mesh.Manager
 
 	// issuer is the hub's identity: the per-process hubkey and the
 	// speak-as the wallet signs to it. Sealed independently of the
@@ -122,7 +112,7 @@ const (
 	locationRefresh = 6 * time.Hour
 )
 
-func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh.Manager, wan hubTransport) (*hubManager, error) {
+func newHubManager(root string, adminAddrs []string, wan hubTransport) (*hubManager, error) {
 	// The hub's actors on one in-process network: the Issuer (hubkey,
 	// random per process) listens; Enroll dials it. With wan set the
 	// same key is also bound on iroh and the Issuer accepts from both
@@ -148,7 +138,7 @@ func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh
 			return nil, err
 		}
 	}
-	iss := issuer.NewWithKey(priv, mesh.Groups(), transport, nil)
+	iss := issuer.NewWithKey(priv, slices.Sorted(slices.Values(policy.Groups)), transport, nil)
 	// #bundle compiles talos/mesh-policy-v3.yaml and hands out
 	// mesh-blocklist-v3.txt from the checkout on every beat: git as
 	// compiler input, nothing cached (invariant 2).
@@ -168,7 +158,7 @@ func newHubManager(root string, adminAddrs []string, pinnedCAFP string, nm *mesh
 		}
 		wallets = append(wallets, w)
 	}
-	return &hubManager{root: root, adminAddrs: adminAddrs, pinnedCAFP: pinnedCAFP, mesh: nm, issuer: iss, wallets: wallets, enroll: en, wan: wanEp}, nil
+	return &hubManager{root: root, adminAddrs: adminAddrs, issuer: iss, wallets: wallets, enroll: en, wan: wanEp}, nil
 }
 
 // listen runs the Issuer's actor for the process's life. Sealed or
@@ -328,45 +318,28 @@ func (m *hubManager) identityLine() (line string, warn bool) {
 	}
 }
 
-// unsealWithMaster checks the derived CA against the pin, decrypts the
-// repo secrets, holds the master, and fans out to the mesh. Idempotent
-// once unsealed.
+// unsealWithMaster decrypts the repo secrets and holds the master.
+// Idempotent once unsealed.
 //
-// The unseal succeeds once the master is held and the secrets decrypt,
-// even if the mesh then fails to start: KMS disk unlocks ride the WAN
-// listener and must not depend on the overlay (invariant 4), so a mesh
-// startup failure surfaces on /sealed and /status — loudly, as a 503 —
-// instead of holding the master hostage.
+// The age decrypt is also the wallet check: a wrong wallet — or the
+// right wallet signing a subtly different message — derives a master
+// whose age identity is not the committed recipient, and the unseal
+// fails loudly instead of serving configs with broken secrets.
 func (m *hubManager) unsealWithMaster(master []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.master != nil {
-		return nil // already unsealed; nebula cannot be restarted in-process
-	}
-
-	fp, err := nebderive.CAFingerprint(master)
-	if err != nil {
-		return fmt.Errorf("fingerprinting mesh CA: %w", err)
-	}
-	if m.pinnedCAFP != "" && fp != m.pinnedCAFP {
-		return fmt.Errorf("derived mesh CA fingerprint %s does not match pinned %s (wrong wallet or message?)", fp, m.pinnedCAFP)
+		return nil // already unsealed
 	}
 
 	// Secrets decrypt before anything unblocks: config serving and the
-	// KMS gate on master != nil, and an unseal that cannot produce the
-	// secrets must fail loudly rather than serve broken configs.
+	// KMS gate on master != nil.
 	if err := decryptAgeSecrets(m.root, master); err != nil {
-		return fmt.Errorf("decrypting secrets: %w", err)
+		return fmt.Errorf("decrypting secrets: %w (wrong wallet or message?)", err)
 	}
 
 	m.master = master
-	log.Printf("hub unsealed: mesh CA %s", fp)
-
-	if m.mesh != nil {
-		if err := m.mesh.UnsealWithMaster(master); err != nil {
-			log.Printf("MESH DOWN: %v", err)
-		}
-	}
+	log.Printf("hub unsealed")
 	return nil
 }
 
@@ -411,22 +384,9 @@ func (s *server) handleUnseal(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSealed is a monitoring endpoint: 200 when healthy, 503 when the
-// hub is sealed OR the mesh failed to start — point an external pinger
-// at it.
-//
-// Mesh state changing the status code is the phase-2 inversion: the
-// mesh is the control channel now, so a mesh that failed to start is
-// something to page for, not something to read about later. The check
-// is on the recorded startup error rather than on liveness: a stubbed
-// start in tests leaves no service and no error, and production's
-// startMeshNebula never does.
+// hub is sealed — point an external pinger at it.
 func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 	sealed := s.hub != nil && s.hub.sealed()
-	nm := s.mesh()
-	var meshErr error
-	if nm != nil {
-		_, _, meshErr = nm.State()
-	}
 
 	// Identity pages too, once this hub serves an identity plane
 	// (--iroh-relay set; talos-config-tqr, flipped 2026-09-19 when the
@@ -441,7 +401,7 @@ func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 		identityWarn = identityWarn && s.hub.publicURL != ""
 	}
 
-	if sealed || meshErr != nil || identityWarn {
+	if sealed || identityWarn {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
@@ -457,27 +417,6 @@ func (s *server) handleSealed(w http.ResponseWriter, _ *http.Request) {
 	if s.hub != nil {
 		fmt.Fprintln(w, "identity: "+identity)
 	}
-
-	switch {
-	case nm == nil:
-		fmt.Fprintln(w, "mesh: disabled")
-	case nm.Up():
-		fmt.Fprintln(w, "mesh: up")
-	case meshErr != nil:
-		fmt.Fprintf(w, "mesh: DOWN (%v)\n", meshErr)
-	case sealed:
-		fmt.Fprintln(w, "mesh: sealed")
-	default:
-		fmt.Fprintln(w, "mesh: down")
-	}
-}
-
-// mesh returns the mesh manager, or nil when the mesh is disabled.
-func (s *server) mesh() *mesh.Manager {
-	if s.hub == nil {
-		return nil
-	}
-	return s.hub.mesh
 }
 
 // wellKnownSpeakAsPath serves the hub's current speak-as over WAN HTTPS

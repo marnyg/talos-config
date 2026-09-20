@@ -18,15 +18,10 @@ import (
 
 // Machine is the parsed form of talos/machines/<mac>/meta.yaml.
 type Machine struct {
-	IP      string   `yaml:"ip"`
 	Config  string   `yaml:"config"`
 	Patches []string `yaml:"patches"`
-	// MeshIP is the nebula overlay address override, for derived-address
-	// collisions. Load-bearing beyond DNS: mesh certs bake the address,
-	// so a collision must be resolvable without re-rooting anything.
-	MeshIP string `yaml:"meshIP"`
-	// Name is the machine's tunnel DNS label (<name>.<domain>);
-	// defaults to the MAC with dashes.
+	// Name is the machine's mesh name (<name>.<zone>, the member cert's
+	// name caveat); defaults to the MAC with dashes. See DNSName.
 	Name string `yaml:"name"`
 	// UUID is the node's SMBIOS UUID (shown on /status at approval).
 	// It is the durable KMS unseal allowlist: deleting it revokes.
@@ -43,6 +38,18 @@ type Machine struct {
 // NormalizeMAC lowercases and converts dashes to colons.
 func NormalizeMAC(mac string) string {
 	return strings.ToLower(strings.ReplaceAll(mac, "-", ":"))
+}
+
+// DNSName returns the machine's mesh label — the meta.yaml name if
+// set, else the MAC with dashes. It is the member cert's name caveat,
+// the <name>.<zone> apid certSAN and the /status DNS column: one
+// source for the name, so re-keying or re-enrolling never moves a
+// member (invariant 1).
+func DNSName(mac string, m Machine) string {
+	if m.Name != "" {
+		return strings.ToLower(strings.TrimSpace(m.Name))
+	}
+	return strings.ReplaceAll(mac, ":", "-")
 }
 
 // Load scans machinesDir for <mac>/meta.yaml, returns MAC → Machine.

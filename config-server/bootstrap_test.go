@@ -123,7 +123,7 @@ func TestControlPlanesFilter(t *testing.T) {
 
 // TestStepSealed: the loop must be inert while the server is sealed.
 func TestStepSealed(t *testing.T) {
-	hub := testHubManager(t, nil, "")
+	hub := testHubManager(t, nil)
 	b := newBootstrapper(t.TempDir(), hub)
 	b.step(t.Context()) // must not panic or act
 	if b.st.attempted || b.st.done {
@@ -138,7 +138,7 @@ func TestStepSealed(t *testing.T) {
 // (--iroh-relay unset) has nothing to dial through and must say so,
 // not dial anything.
 func TestStepNoIdentityPlane(t *testing.T) {
-	hub := testHubManager(t, nil, "")
+	hub := testHubManager(t, nil)
 	if err := hub.unsealWithMaster([]byte("bootstrap-test-master-32-bytes!!")); err != nil {
 		t.Fatal(err)
 	}

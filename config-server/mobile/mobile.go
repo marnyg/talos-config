@@ -29,7 +29,6 @@ import (
 	"sync"
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
-	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
@@ -144,7 +143,7 @@ var (
 // answers 503 while sealed (every deploy, until the wallet unseals it):
 // that is an error here, the app retries when the user asks.
 func Enroll(stateDir, hub, name, group string, show EnrollListener) error {
-	name = nebderive.Normalize(name)
+	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return errors.New("name must not be empty")
 	}

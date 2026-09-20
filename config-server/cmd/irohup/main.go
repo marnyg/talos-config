@@ -2,16 +2,13 @@
 
 // Command irohup is the owner's desktop entrypoint to the identity
 // plane (Mesh v3 Phase 1, talos-config-359.8.4) — the successor of
-// cmd/nebup, and for the dual-plane window its sibling: one wallet
-// signature enrolls the device on both planes.
+// cmd/nebup.
 //
 // On first run it enrolls: the NodeId is minted here (an Ed25519 key,
-// the iroh EndpointId — never derived from anything the hub holds),
-// the nebula key is nebup's <name>.key (reused or created), and the
-// wallet signs the v2 enrollment message naming both (enrollmsg). The
-// hub answers {config, kit}: the nebula config is completed and cached
-// where nebup expects it, the Kit (member cert, beat grant, speak-as)
-// is persisted in the state dir. Later runs load the Kit and skip the
+// the iroh EndpointId — never derived from anything the hub holds) and
+// the wallet signs the enrollment message naming it (enrollmsg.V3).
+// The hub answers with the Kit (member cert, beat grant, speak-as),
+// persisted in the state dir. Later runs load the Kit and skip the
 // ceremony.
 //
 // Then it is a member: it beats the hub for its invoke grants and the
@@ -24,8 +21,8 @@
 //
 //	irohup                                   # enroll if needed, beat, bridge cp1's apid + kube-api
 //	irohup -bridge cp1/apid=127.0.0.1:50000  # explicit bridges (repeatable): <member>/<facet>=<listen>
-//	irohup -reenroll                         # discard the Kit and the nebula artifact, re-sign; keep both keys
-//	irohup -rekey                            # discard the keys too: a new NodeId and nebula identity
+//	irohup -reenroll                         # discard the Kit, re-sign; keep the key
+//	irohup -rekey                            # discard the key too: a new NodeId
 //	irohup -paste                            # headless: paste the signature instead
 //	irohup -enroll-only                      # enroll (browser or -paste) and exit
 //
@@ -45,19 +42,14 @@
 // the network; DNS is /etc/resolver/mesh.internal → 198.18.0.2, which
 // nix-darwin declares statically. See tun.go.
 //
-// Cache (~/.config/talos-mesh/): <name>.key and <name>.yml are nebup's
-// two files (ADR-0012); <name>.iroh/ is the identity-plane state dir
-// with the same layout as a node's /var/lib/p0agent (nodeagent.State):
-// key, kit.json, bundle.json, hub.json, mark. The keys are the only
-// state; the rest is the member's own certs and safe-to-lose caches.
-// With -state DIR the nebula files sit beside DIR instead, so a daemon
-// with no home of its own is self-contained.
+// State (~/.config/talos-mesh/<name>.iroh/, or -state DIR): the same
+// layout as a node's /var/lib/p0agent (nodeagent.State): key,
+// kit.json, bundle.json, hub.json, mark. The key is the only state;
+// the rest is the member's own certs and safe-to-lose caches.
 package main
 
 import (
 	"context"
-	"encoding/hex"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -71,10 +63,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/marnyg/talos-config/config-server/devkey"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/meshtun"
-	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/config-server/walletsign"
@@ -90,8 +80,8 @@ func main() {
 		relay    = flag.String("relay", "", "iroh home relay URL (default: the hub — one hostname on fly, ADR-0022)")
 		name     = flag.String("name", "laptop", "device name (the approver may edit this on /status)")
 		group    = flag.String("group", "admins", "requested group (admins|media); the approver decides the final value")
-		reenroll = flag.Bool("reenroll", false, "discard the Kit and the nebula artifact and re-sign with the SAME keys")
-		rekey    = flag.Bool("rekey", false, "discard the keys too: brand-new NodeId and nebula identity")
+		reenroll = flag.Bool("reenroll", false, "discard the Kit and re-sign with the SAME key")
+		rekey    = flag.Bool("rekey", false, "discard the key too: a brand-new NodeId")
 		paste    = flag.Bool("paste", false, "paste a signature instead of signing in the browser (headless)")
 		enrollOn = flag.Bool("enroll-only", false, "enroll if needed, then exit (the daemon's handoff: run as its user, sign as yourself)")
 		stateDir = flag.String("state", "", "identity-plane state dir (default ~/.config/talos-mesh/<name>.iroh)")
@@ -99,7 +89,7 @@ func main() {
 		beat     = flag.Duration("beat", nodeagent.DefaultBeat, "renewal beat interval")
 		tunMode  = flag.Bool("tun", false, "desktop presentation: utun + 198.18/15 fake IPs + split DNS instead of bridges (root at start; drops to -user)")
 		runAs    = flag.String("user", "_talosmesh", "with -tun: the user to drop to after the privileged setup")
-		dnsUp    = flag.String("dns-upstream", "", "with -tun: where mesh.internal names NOT in the name map go (nebula's DNS while it coexists); empty = NXDOMAIN")
+		dnsUp    = flag.String("dns-upstream", "", "with -tun: where mesh.internal names NOT in the name map go; empty = NXDOMAIN")
 	)
 	flag.Var(&br, "bridge", "<member>/<facet>=<host:port> local TCP bridge; repeatable (facets: "+strings.Join(policy.Facets(policy.KindNode), ", ")+")")
 	flag.Parse()
@@ -118,7 +108,7 @@ func main() {
 		}
 	}
 
-	dev := nebderive.Normalize(*name)
+	dev := strings.ToLower(strings.TrimSpace(*name))
 	if dev == "" {
 		log.Fatal("-name must not be empty")
 	}
@@ -147,7 +137,7 @@ func main() {
 		}
 	}
 
-	keyPath, cfgPath, dir, err := cachePaths(dev, *stateDir)
+	dir, err := statePath(dev, *stateDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -156,11 +146,9 @@ func main() {
 	}
 	state := nodeagent.State{Dir: dir}
 	if *rekey {
-		_ = os.Remove(keyPath)
 		_ = os.Remove(filepath.Join(dir, nodeagent.KeyFile))
 	}
 	if *rekey || *reenroll {
-		_ = os.Remove(cfgPath)
 		_ = os.Remove(filepath.Join(dir, nodeagent.KitFile))
 		_ = os.Remove(filepath.Join(dir, nodeagent.BundleFile))
 	}
@@ -181,7 +169,7 @@ func main() {
 			// daemon has neither. Enroll as the service user once, headless.
 			log.Fatalf("not enrolled: run `sudo -u %s irohup -name %s -state %s -enroll-only` once (sign in the browser, or add -paste), then start the daemon", *runAs, dev, dir)
 		}
-		if err := enroll(strings.TrimRight(*hub, "/"), dev, *group, node, keyPath, cfgPath, state, *paste); err != nil {
+		if err := enroll(strings.TrimRight(*hub, "/"), dev, *group, node, state, *paste); err != nil {
 			log.Fatal(err)
 		}
 	} else if *enrollOn {
@@ -234,52 +222,29 @@ func main() {
 	os.Exit(exit)
 }
 
-// cachePaths: nebup's (<name>.key, <name>.yml) and irohup's <name>.iroh/
-// under ~/.config/talos-mesh/ — or, with an explicit state dir, the
-// nebula files beside it.
-func cachePaths(name, explicit string) (keyPath, cfgPath, stateDir string, err error) {
-	base := ""
+// statePath: <name>.iroh/ under ~/.config/talos-mesh/, or the explicit
+// state dir.
+func statePath(name, explicit string) (string, error) {
 	if explicit != "" {
-		base = filepath.Dir(explicit)
-	} else {
-		dir, err := os.UserConfigDir()
-		if err != nil {
-			return "", "", "", fmt.Errorf("resolving config dir: %w", err)
-		}
-		base = filepath.Join(dir, "talos-mesh")
-		explicit = filepath.Join(base, name+".iroh")
+		return explicit, nil
 	}
-	if err := os.MkdirAll(base, 0o700); err != nil {
-		return "", "", "", err
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("resolving config dir: %w", err)
 	}
-	return filepath.Join(base, name+".key"), filepath.Join(base, name+".yml"), explicit, nil
+	return filepath.Join(dir, "talos-mesh", name+".iroh"), nil
 }
 
-// enroll runs the wallet-signed v2 enrollment and persists both
-// planes' results: the completed nebula config at cfgPath (nebup's
-// artifact) and the Kit in state.
-func enroll(hub, name, group string, node cert.ActorID, keyPath, cfgPath string, state nodeagent.State, paste bool) error {
-	xpriv, xpub, created, err := devkey.LoadOrCreate(keyPath)
+// enroll runs the wallet-signed enrollment and persists the Kit in
+// state.
+func enroll(hub, name, group string, node cert.ActorID, state nodeagent.State, paste bool) error {
+	body, err := walletsign.MeshEnroll(hub+"/mesh/enroll", name, group, string(node), "irohup", paste)
 	if err != nil {
 		return err
 	}
-	if created {
-		log.Printf("minted nebula key %s", keyPath)
-	}
-	body, err := walletsign.MeshEnroll(hub+"/mesh/enroll", name, group, hex.EncodeToString(xpub[:]), string(node), "irohup", paste)
+	kit, err := issuer.DecodeKit(body)
 	if err != nil {
-		return err
-	}
-	var env struct {
-		Config string          `json:"config"`
-		Kit    json.RawMessage `json:"kit"`
-	}
-	if err := json.Unmarshal(body, &env); err != nil || len(env.Kit) == 0 {
-		return fmt.Errorf("enrollment: the hub did not answer with {config, kit} (identity plane not served?): %s", strings.TrimSpace(firstLine(body)))
-	}
-	kit, err := issuer.DecodeKit(env.Kit)
-	if err != nil {
-		return fmt.Errorf("enrollment: kit: %w", err)
+		return fmt.Errorf("enrollment: kit: %w (%s)", err, strings.TrimSpace(firstLine(body)))
 	}
 	if err := nodeagent.CheckKit(kit, node); err != nil {
 		return err
@@ -287,15 +252,9 @@ func enroll(hub, name, group string, node cert.ActorID, keyPath, cfgPath string,
 	if err := state.SaveKit(kit); err != nil {
 		return err
 	}
-	spliced, err := devkey.SpliceKeyInline([]byte(env.Config), xpriv)
-	if err != nil {
-		log.Printf("warning: nebula config not cached: %v", err)
-	} else if err := os.WriteFile(cfgPath, spliced, 0o600); err != nil {
-		log.Printf("warning: nebula config not cached: %v", err)
-	}
-	log.Printf("enrolled %q groups %v until %s (issuer %s) — kit at %s, nebula config at %s",
+	log.Printf("enrolled %q groups %v until %s (issuer %s) — kit at %s",
 		kit.Member.Cav.Name, kit.Member.Cav.Groups, time.Unix(kit.Member.Exp, 0).UTC().Format(time.RFC3339), kit.Member.Iss,
-		filepath.Join(state.Dir, nodeagent.KitFile), cfgPath)
+		filepath.Join(state.Dir, nodeagent.KitFile))
 	return nil
 }
 

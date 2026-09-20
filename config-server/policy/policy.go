@@ -33,14 +33,13 @@ import (
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
-// File is the recipe's name under the talos tree, beside the frozen v2
-// mesh-policy.yaml that the nebula render keeps reading until Phase 4.
+// File is the recipe's name under the talos tree. (The "-v3" is
+// historical: it sat beside the v2 mesh-policy.yaml through the dual
+// plane; renaming it would touch every deployed hub image for nothing.)
 const File = "mesh-policy-v3.yaml"
 
 // BlocklistFile is the v3 blocklist beside File: one blocked member key
 // (an ed: actor id — the iroh EndpointId a member cert names) per line.
-// Sibling of the frozen v2 mesh-blocklist.txt (nebula cert
-// fingerprints), which the nebula render keeps reading until Phase 4.
 const BlocklistFile = "mesh-blocklist-v3.txt"
 
 // GrantTTL is a compiled grant's lifetime: 7 days. Callers refetch on
@@ -100,10 +99,21 @@ func FacetByPort(k Kind, port uint16) string {
 	return ""
 }
 
-// Groups is the closed group vocabulary. It mirrors mesh.Groups() (v2)
-// and the Issuer's speak-as caveat: a grant addressed to a group the
-// wallet never delegated would be a grant to nobody.
-var Groups = []string{"admins", "media", "machines"}
+// The closed group vocabulary, by name. Devices enroll as admins or
+// media (the approver picks); machines are the node agents.
+const (
+	GroupAdmins   = "admins"
+	GroupMedia    = "media"
+	GroupMachines = "machines"
+)
+
+// Groups is the closed group vocabulary. It is the Issuer's speak-as
+// caveat and the Nickel contracts assert against it: a grant addressed
+// to a group the wallet never delegated would be a grant to nobody.
+var Groups = []string{GroupAdmins, GroupMedia, GroupMachines}
+
+// DeviceGroup reports whether g is a group a device may enroll into.
+func DeviceGroup(g string) bool { return g == GroupAdmins || g == GroupMedia }
 
 // Facets returns the closed facet set of a kind (nil for an unknown
 // kind). The returned slice is a copy.

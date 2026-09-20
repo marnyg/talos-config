@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-
-	"github.com/marnyg/talos-config/config-server/nebderive"
 )
 
 // bridge is one local listener: TCP on Listen → facet on the member
@@ -34,6 +32,6 @@ func (b *bridges) Set(s string) error {
 	if _, _, err := net.SplitHostPort(listen); err != nil {
 		return fmt.Errorf("%q: %w", s, err)
 	}
-	*b = append(*b, bridge{Name: nebderive.Normalize(name), Facet: facet, Listen: listen})
+	*b = append(*b, bridge{Name: strings.ToLower(strings.TrimSpace(name)), Facet: facet, Listen: listen})
 	return nil
 }

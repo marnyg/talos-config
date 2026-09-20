@@ -1,23 +1,19 @@
 // Package walletsign is the client half of the hub's wallet-signed
 // enrollment flow: fetch a single-use challenge, get it signed by an
-// allowlisted wallet, redeem it for the device's config.
+// allowlisted wallet, redeem it for the device's member Kit.
 //
 // The signature is always over an ordinary auth message — never the
 // fleet master message, which is signed only at /status or offline with
 // `cast wallet sign`. The hub side of the exchange lives in
-// nebenroll.go; this package knows only the shape, and keeps the part
-// that is fiddly and security-relevant in one place: rendering a
+// deviceenroll.go; this package knows only the shape, and keeps the
+// part that is fiddly and security-relevant in one place: rendering a
 // signing page no other local process can reach, and never letting a
 // signature touch a file or an argv.
 //
-// Under ADR-0012 the caller has already generated an X25519 keypair
-// locally; only the pubkey travels here, and the private key never
-// leaves the caller's disk.
-//
-// Dual plane (Mesh v3 Phase 1, enrollmsg v2): a caller that also names
-// its NodeId (`node`, an ed: actor id) signs the v2 message and the
-// hub answers JSON {config, kit} instead of the bare YAML config — one
-// wallet act, both planes. Node "" is the v1 flow, byte for byte.
+// Under ADR-0012 the caller has already minted its NodeId (an ed:
+// actor id, the iroh EndpointId) locally; only the id travels here,
+// and the private key never leaves the caller's disk. The wallet signs
+// enrollmsg.V3(name, group, node, nonce).
 package walletsign
 
 import (
@@ -54,26 +50,21 @@ const nonceTTL = 5 * time.Minute
 var client = &http.Client{Timeout: 30 * time.Second}
 
 // Challenge is what /mesh/enroll/challenge returns: the canonical
-// message the wallet signs, plus the single-use nonce that binds it
-// and the fingerprint the hub computed from the submitted pubkey so
-// the client can echo it in the signing UI.
+// message the wallet signs, plus the single-use nonce that binds it.
 type Challenge struct {
-	Name        string `json:"name"`
-	Group       string `json:"group"`
-	Node        string `json:"node"`
-	Nonce       string `json:"nonce"`
-	Fingerprint string `json:"fingerprint"`
-	Message     string `json:"message"`
+	Name    string `json:"name"`
+	Group   string `json:"group"`
+	Node    string `json:"node"`
+	Nonce   string `json:"nonce"`
+	Message string `json:"message"`
 }
 
 // MeshEnroll runs the whole enrollment exchange against endpoint
-// (typically "<hub>/mesh/enroll") for a device that has already
-// generated its keypair locally. Returns the body the hub rendered:
-// the YAML config (node ""), which the caller completes by splicing
-// in its own private key before running nebula, or the v2 JSON
-// envelope {config, kit} when node names the device's actor id.
-func MeshEnroll(endpoint, name, group, pubkeyHex, node, tool string, paste bool) ([]byte, error) {
-	ch, err := FetchChallenge(endpoint, name, group, pubkeyHex, node)
+// (typically "<hub>/mesh/enroll") for a device that has already minted
+// its NodeId. Returns the body the hub rendered: the member Kit as
+// JSON (issuer.EncodeKit).
+func MeshEnroll(endpoint, name, group, node, tool string, paste bool) ([]byte, error) {
+	ch, err := FetchChallenge(endpoint, name, group, node)
 	if err != nil {
 		return nil, err
 	}
@@ -81,17 +72,14 @@ func MeshEnroll(endpoint, name, group, pubkeyHex, node, tool string, paste bool)
 	if err != nil {
 		return nil, err
 	}
-	return Redeem(endpoint, ch, pubkeyHex, sig)
+	return Redeem(endpoint, ch, sig)
 }
 
 // FetchChallenge asks endpoint's /challenge subpath for a challenge
-// binding (name, group, pubkey[, node]). The hub echoes back the
-// canonical message it expects signed (v1, or v2 when node is set).
-func FetchChallenge(endpoint, name, group, pubkeyHex, node string) (Challenge, error) {
-	form := url.Values{"name": {name}, "group": {group}, "pubkey": {pubkeyHex}}
-	if node != "" {
-		form.Set("node", node)
-	}
+// binding (name, group, node). The hub echoes back the canonical
+// message it expects signed.
+func FetchChallenge(endpoint, name, group, node string) (Challenge, error) {
+	form := url.Values{"name": {name}, "group": {group}, "node": {node}}
 	resp, err := client.PostForm(endpoint+"/challenge", form)
 	if err != nil {
 		return Challenge{}, fmt.Errorf("fetching enrollment challenge: %w", err)
@@ -122,18 +110,14 @@ func Sign(ch Challenge, tool string, paste bool) (string, error) {
 }
 
 // Redeem posts the signed challenge and returns the hub's response
-// body — the rendered device config, minus its private key (v1), or
-// the {config, kit} envelope (v2, ch.Node set).
-func Redeem(endpoint string, ch Challenge, pubkeyHex, sig string) ([]byte, error) {
+// body — the member Kit as JSON.
+func Redeem(endpoint string, ch Challenge, sig string) ([]byte, error) {
 	form := url.Values{
 		"name":      {ch.Name},
 		"group":     {ch.Group},
-		"pubkey":    {pubkeyHex},
+		"node":      {ch.Node},
 		"nonce":     {ch.Nonce},
 		"signature": {sig},
-	}
-	if ch.Node != "" {
-		form.Set("node", ch.Node)
 	}
 	resp, err := client.PostForm(endpoint, form)
 	if err != nil {

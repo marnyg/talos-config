@@ -29,8 +29,8 @@ const (
 // machine declares declaredUUID.
 func newTestKMS(t *testing.T) (*hubManager, *kmsServer) {
 	t.Helper()
-	m := testHubManager(t, []string{wellKnownAddr}, "")
-	meta := "ip: 127.0.0.1\nconfig: base.yaml\npatches: []\nuuid: " + strings.ToUpper(declaredUUID) + "\n"
+	m := testHubManager(t, []string{wellKnownAddr})
+	meta := "config: base.yaml\npatches: []\nuuid: " + strings.ToUpper(declaredUUID) + "\n"
 	if err := os.WriteFile(filepath.Join(m.root, "machines", "aa-bb-cc-dd-ee-ff", "meta.yaml"), []byte(meta), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestKMSUnsealRejectsForgedBlob(t *testing.T) {
 }
 
 func TestKMSSealedServerRefuses(t *testing.T) {
-	m := testHubManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr})
 	k := newKMSServer(m.root, m) // manager never unsealed
 
 	_, err := k.Seal(context.Background(), &kmsapi.Request{NodeUuid: declaredUUID, Data: []byte("key")})
@@ -165,7 +165,7 @@ func TestDiskEncryptionInjection(t *testing.T) {
 	}
 
 	// Enable diskEncryption in meta.yaml.
-	meta := "ip: 127.0.0.1\nconfig: base.yaml\npatches: []\nuuid: " + declaredUUID + "\ndiskEncryption: true\n"
+	meta := "config: base.yaml\npatches: []\nuuid: " + declaredUUID + "\ndiskEncryption: true\n"
 	if err := os.WriteFile(filepath.Join(m.root, "machines", "aa-bb-cc-dd-ee-ff", "meta.yaml"), []byte(meta), 0o644); err != nil {
 		t.Fatal(err)
 	}

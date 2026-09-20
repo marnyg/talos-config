@@ -9,15 +9,6 @@ set -eu
 mkdir -p /dev/shm/talos
 cp -R /app/talos/. /dev/shm/talos/
 
-# Nebula mesh: enabled when MESH_ENDPOINT is set. Starts SEALED — no
-# key material at rest; an admin unseals at runtime by signing the
-# master message at /status (wallet). MESH_CA_PIN pins the expected
-# derived CA fingerprint so a wrong-wallet unseal fails loudly.
-MESH_ARGS=""
-if [ -n "${MESH_ENDPOINT:-}" ]; then
-    MESH_ARGS="--mesh-port 4242 --mesh-endpoint $MESH_ENDPOINT ${MESH_CA_PIN:+--mesh-ca-pin $MESH_CA_PIN} ${MESH_DEVICES:+--mesh-devices $MESH_DEVICES} ${MESH_MEDIA_DEVICES:+--mesh-media-devices $MESH_MEDIA_DEVICES} --auto-bootstrap ${KMS_ADVERTISE:+--kms-advertise $KMS_ADVERTISE}"
-fi
-
 # iroh home relay (Mesh v3, ADR-0022): a keyless child of the hub,
 # plain HTTP on loopback, proxied on :8080 so 443 stays the single
 # entrypoint. Runs sealed or not. Set RELAY_DISABLE=1 to leave it off.
@@ -26,13 +17,16 @@ if [ -z "${RELAY_DISABLE:-}" ] && [ -x /usr/local/bin/iroh-relay ]; then
     RELAY_ARGS="--relay-bin /usr/local/bin/iroh-relay"
 fi
 
-# The hub's own iroh endpoint (talos-config-e8d, ADR-0024): the hubkey
-# is the EndpointId; homed on the relay child above, advertised to
-# members as IROH_RELAY_URL (the public hostname). Unset = in-process
-# actors only, as before e8d.
-IROH_ARGS=""
+# The hub proper (ADR-0024): --iroh-relay makes this process a hub —
+# the hubkey is the EndpointId, homed on the relay child above and
+# advertised to members as IROH_RELAY_URL (the public hostname). It
+# starts SEALED — no key material at rest; an admin unseals at runtime
+# by signing the master message and the speak-as proposal at /status
+# (wallet). Unset = a plain config server: no identity plane, no KMS,
+# no auto-bootstrap.
+HUB_ARGS=""
 if [ -n "${IROH_RELAY_URL:-}" ]; then
-    IROH_ARGS="--iroh-relay $IROH_RELAY_URL"
+    HUB_ARGS="--iroh-relay $IROH_RELAY_URL --auto-bootstrap ${KMS_ADVERTISE:+--kms-advertise $KMS_ADVERTISE}"
 fi
 
 # shellcheck disable=SC2086
@@ -42,6 +36,5 @@ exec config-server \
     --port 8080 \
     --require-auth \
     $RELAY_ARGS \
-    $IROH_ARGS \
-    ${ADMIN_ADDRESSES:+--admin-address "$ADMIN_ADDRESSES"} \
-    $MESH_ARGS
+    $HUB_ARGS \
+    ${ADMIN_ADDRESSES:+--admin-address "$ADMIN_ADDRESSES"}

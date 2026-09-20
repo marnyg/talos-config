@@ -42,9 +42,9 @@ jobs:
       matrix:
         module: [config-server, protocol]
     steps:
-      # Full checkout, not sparse: config-server's mesh/ and policy/ tests
-      # read the shipped ../talos/mesh-policy{,-v3}.yaml and the Nickel
-      # contract (see flake.nix config-server-bin).
+      # Full checkout, not sparse: config-server's policy/ tests read
+      # the shipped ../talos/mesh-policy-v3.yaml and the Nickel contract
+      # (see flake.nix config-server-bin).
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v7
         with:

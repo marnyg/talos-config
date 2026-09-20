@@ -38,7 +38,7 @@ func (h *fakeHub) handler() http.Handler {
 			return
 		}
 		_ = r.ParseForm()
-		if r.FormValue("node") != string(h.node) || len(r.FormValue("pubkey")) != 64 || r.FormValue("proposed_name") != "gw" {
+		if r.FormValue("node") != string(h.node) || r.FormValue("proposed_name") != "gw" {
 			http.Error(w, "bad start: "+r.Form.Encode(), http.StatusBadRequest)
 			return
 		}
@@ -75,7 +75,8 @@ func (h *fakeHub) handler() http.Handler {
 		if err != nil {
 			h.t.Fatal(err)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"config": "pki: {}\n", "kit": json.RawMessage(kit)})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(kit)
 	})
 	return mux
 }

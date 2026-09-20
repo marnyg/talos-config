@@ -1,11 +1,7 @@
-# Nebula overlay address (HKDF-derived from the MAC) — stable across
-# DHCP leases and reprovisions. No longer a dial target: talosconfig
-# and `nix run .#apply` go by name over the irohup tun (359.9.1); the
-# hub still composes it into the served config until Phase 4.
-ip: 10.42.218.125
-# Mesh DNS name: cp1.mesh.internal (nebula: served by the hub at
-# 10.42.0.1:53; identity plane: the name map, on the tun).
-# Services need no declaration here: <service>.cp1.mesh.internal
+# Mesh name: cp1.mesh.internal — the member cert's name, apid's
+# certSAN, resolved by the name map on the tun (was also the nebula
+# DNS label; the overlay address 10.42.218.125 went with nebula in
+# Mesh v3 Phase 4). Services need no declaration here: <service>.cp1.mesh.internal
 # resolves to this machine automatically, and ingress-nginx routes by
 # Host header — exposing a service is purely an Ingress in k8s/apps.
 name: cp1

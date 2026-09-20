@@ -110,7 +110,7 @@ func newFacetFixture(t *testing.T, san string, impl machineapi.MachineServiceSer
 	go srv.Serve(ln) //nolint:errcheck
 	t.Cleanup(srv.Stop)
 
-	b := newBootstrapper(t.TempDir(), testHubManager(t, nil, ""))
+	b := newBootstrapper(t.TempDir(), testHubManager(t, nil))
 	m := machines.Machine{Dir: "/fake/cp1"}
 	b.caCache[m.Dir] = &x509.PEMEncodedCertificateAndKey{Crt: ca.CrtPEM, Key: ca.KeyPEM}
 	return &facetFixture{b: b, m: m, facet: &pipeFacet{accept: accept}}

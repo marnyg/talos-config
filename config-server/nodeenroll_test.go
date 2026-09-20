@@ -15,8 +15,8 @@ import (
 	"github.com/marnyg/talos-config/config-server/boottoken"
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/issuer"
-	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
+	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/siderolabs/talos/pkg/machinery/config/configloader"
 	"gopkg.in/yaml.v3"
@@ -65,7 +65,7 @@ func postEnroll(t *testing.T, s *server, node cert.ActorID, token string) *httpt
 // carries a token instead of a key; the token buys exactly one member
 // cert for a NodeId the hub never saw before, named by git.
 func TestNodeBootEnroll(t *testing.T) {
-	m := testHubManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr})
 	m.publicURL = "https://hub.example"
 	s := &server{root: m.root, store: deviceflow.NewStore(), sessions: newSessionStore(), hub: m, adminAddrs: m.adminAddrs}
 	_, nodePriv, _ := ed25519.GenerateKey(rand.Reader)
@@ -92,7 +92,7 @@ func TestNodeBootEnroll(t *testing.T) {
 		t.Fatalf("served token: %q %v", mac, err)
 	}
 	// The served config carries no member key: only the token.
-	if strings.Contains(rec.Body.String(), "PRIVATE KEY") && !strings.Contains(rec.Body.String(), "NEBULA") {
+	if strings.Contains(rec.Body.String(), "PRIVATE KEY") {
 		t.Fatal("served config carries a private key")
 	}
 	// The identity-plane name lands as an apid certSAN — appended to the
@@ -124,7 +124,7 @@ func TestNodeBootEnroll(t *testing.T) {
 	}
 	mem := kit.Member
 	if mem.Aud != string(node) || mem.Iss != m.issuer.ID() || mem.Can != cert.VerbMember ||
-		mem.Cav.Name != "aa-bb-cc-dd-ee-ff" || len(mem.Cav.Groups) != 1 || mem.Cav.Groups[0] != mesh.GroupMachines {
+		mem.Cav.Name != "aa-bb-cc-dd-ee-ff" || len(mem.Cav.Groups) != 1 || mem.Cav.Groups[0] != policy.GroupMachines {
 		t.Fatalf("member: %+v", mem)
 	}
 	if err := cert.Verify(mem); err != nil {
@@ -163,7 +163,7 @@ func TestNodeBootEnroll(t *testing.T) {
 // Without an identity plane (no --iroh-relay) the served config is the
 // v2 shape: no agent document at all.
 func TestNoAgentDocumentWithoutRelay(t *testing.T) {
-	m := testHubManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr})
 	s := &server{root: m.root, store: deviceflow.NewStore(), hub: m, adminAddrs: m.adminAddrs}
 	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
 		t.Fatal(err)

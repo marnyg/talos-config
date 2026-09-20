@@ -10,24 +10,23 @@
 #                                        -static: the binary fly/image.nix
 #                                        ships. Linux only.
 #
-# buildGo126Module, not buildGoModule: the embedded nebula (slackhq/
-# nebula 1.11.0, for the mesh CA + lighthouse/relay) requires go >=
-# 1.26.0 while pkgs.go is still 1.25.x here. The Dockerfile that used to
-# pin the same toolchain is gone (fly deploys the nix image).
+# buildGo126Module, not buildGoModule: go.mod says go 1.26 (first
+# pinned for the since-deleted nebula dependency; the code now uses
+# 1.26 stdlib) while pkgs.go is still 1.25.x here. The Dockerfile that
+# used to pin the same toolchain is gone (fly deploys the nix image).
 { pkgs, lib, self }:
 let
   # go.mod `replace`s ../protocol, ../iroh-transport and ../iroh-go, so the
   # source root is the repo and modRoot points here. The real
-  # talos/mesh-policy*.yaml + blocklist ride along on purpose: the policy
-  # tests run against the shipped files (mesh/ reads v2, policy/ reads v3
-  # and asserts its facet vocabulary against the Nickel contract, the hub
-  # test compiles a bundle from them), so the sandbox must carry them — a
-  # fixture copy would un-guard the file (019ce97).
+  # talos/mesh-policy-v3.yaml + blocklist ride along on purpose: the
+  # policy tests run against the shipped files (policy/ asserts its
+  # facet vocabulary against the Nickel contract, the hub test compiles
+  # a bundle from them), so the sandbox must carry them — a fixture
+  # copy would un-guard the file (019ce97).
   src = lib.fileset.toSource {
     root = ../..;
     fileset = lib.fileset.unions [
       ../.
-      ../../talos/mesh-policy.yaml
       ../../talos/mesh-policy-v3.yaml
       ../../talos/mesh-blocklist-v3.txt
       ../../verification/nickel/mesh-policy-v3.ncl
@@ -77,7 +76,7 @@ let
       #     already-realised path; run alone against a cold store it
       #     aborts ("outputs ... are not valid, so checking is not
       #     possible") rather than checking anything.
-      vendorHash = "sha256-KAuh++c9q7xBPDa5dPnHKRLnpSNbnPOqCmUCsvkYnVY=";
+      vendorHash = "sha256-6SiCBfqm6TFFQZR66+IGl1lAU+R1M1TzhVyIJQCdTTM=";
       tags = [ "iroh" ];
       env.CGO_ENABLED = 1;
       env.CGO_LDFLAGS = irohGo'.cgoLdflags;
@@ -104,7 +103,7 @@ let
       '';
       passthru = { inherit (irohGo') iroh-ffi-static iroh-relay; };
       meta = {
-        description = "talos-config hub: config server, sealed-hub unseal, nebula lighthouse, Issuer/Enroll actors on iroh";
+        description = "talos-config hub: config server, sealed-hub unseal, iroh home relay, Issuer/Enroll actors on iroh";
         mainProgram = "config-server";
       };
     };

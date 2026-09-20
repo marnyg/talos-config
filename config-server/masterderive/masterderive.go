@@ -2,8 +2,7 @@
 // the master key (HKDF-derived from a wallet signature) and the
 // derivations that hang directly off it — per-node KMS disk-seal keys,
 // break-glass recovery passphrases, and the age identity that decrypts
-// the repo's secrets (age.go). Mesh identities derive from the same
-// master in nebderive.
+// the repo's secrets (age.go), and the boot tokens (boottoken).
 //
 // There is no key registry and no key state outside the master secret:
 // everything here is a pure function of (master, stable identifier).

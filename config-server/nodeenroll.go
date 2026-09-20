@@ -30,8 +30,8 @@ import (
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/machines"
-	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
+	"github.com/marnyg/talos-config/config-server/policy"
 )
 
 // agentPatch renders the machine's identity-plane patch for mac: a
@@ -67,7 +67,7 @@ func (m *hubManager) agentPatch(master []byte, mac string, mach machines.Machine
 // machineSAN is the machine's identity-plane name, <name>.<zone>: the
 // git-declared mesh label under the presentation zone.
 func machineSAN(mac string, m machines.Machine) string {
-	return mesh.MachineDNSName(mac, m) + "." + strings.TrimSuffix(fakeip.Zone, ".")
+	return machines.DNSName(mac, m) + "." + strings.TrimSuffix(fakeip.Zone, ".")
 }
 
 // handleNodeEnroll (POST /mesh/enroll/node) redeems a boot token for a
@@ -125,7 +125,7 @@ func (s *server) handleNodeEnroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "token already redeemed", http.StatusConflict)
 		return
 	}
-	kit, err := s.hub.issuer.Mint(req.Node, mesh.MachineDNSName(mac, m), []string{mesh.GroupMachines})
+	kit, err := s.hub.issuer.Mint(req.Node, machines.DNSName(mac, m), []string{policy.GroupMachines})
 	if err != nil {
 		s.hub.bootSeen.Release(req.Token)
 		log.Printf("node enroll for %s: mint: %v", mac, err)
@@ -144,5 +144,5 @@ func (s *server) handleNodeEnroll(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(body)
-	log.Printf("node enroll: minted member %s for %s (%s)", mesh.MachineDNSName(mac, m), mac, req.Node)
+	log.Printf("node enroll: minted member %s for %s (%s)", machines.DNSName(mac, m), mac, req.Node)
 }

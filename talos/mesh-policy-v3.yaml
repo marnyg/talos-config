@@ -2,9 +2,9 @@
 # 2026-09-18 amendment). Compiled by config-server/policy into `invoke`
 # grants that CALLERS carry; no receiver holds a copy of this table.
 #
-# Dual plane (359.8): this file lives beside talos/mesh-policy.yaml,
-# the frozen v2 (port-based) recipe that the nebula render still reads.
-# Phase 4 deletes v2. Nickel contract: verification/nickel/mesh-policy-v3.ncl.
+# The only policy file since Mesh v3 Phase 4 (the v2 port-based
+# mesh-policy.yaml went with the nebula render). Nickel contract:
+# verification/nickel/mesh-policy-v3.ncl.
 #
 # Rule shape: {facet, host|group}
 #   facet: a named entry point the receiver exposes — closed set per

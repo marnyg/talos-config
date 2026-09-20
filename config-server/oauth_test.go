@@ -34,7 +34,7 @@ func newTestServer(t *testing.T) *server {
 	if err := os.WriteFile(filepath.Join(root, "base.yaml"), []byte(base), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	meta := "ip: 127.0.0.1\nconfig: base.yaml\npatches: []\n"
+	meta := "config: base.yaml\npatches: []\n"
 	if err := os.WriteFile(filepath.Join(dir, "meta.yaml"), []byte(meta), 0o644); err != nil {
 		t.Fatal(err)
 	}

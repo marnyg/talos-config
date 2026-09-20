@@ -13,7 +13,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/netip"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -31,8 +30,6 @@ import (
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/masterderive"
-	"github.com/marnyg/talos-config/config-server/mesh"
-	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 )
 
@@ -56,7 +53,7 @@ func talosRoot() (string, error) {
 // keyed off the unsealed master. They share one shape — derive, and
 // refuse the serve if the derivation says no, because a machine is
 // better off retrying than installing a config it cannot use.
-func (s *server) serveTimePatches(mac string, m machines.Machine, byMAC map[string]machines.Machine) ([]string, int, string) {
+func (s *server) serveTimePatches(mac string, m machines.Machine) ([]string, int, string) {
 	if s.hub == nil {
 		if m.DiskEncryption {
 			// Disk keys derive from the master; without the hub there is none.
@@ -84,23 +81,8 @@ func (s *server) serveTimePatches(mac string, m machines.Machine, byMAC map[stri
 		extra = append(extra, diskEncryptionPatch(master, mac, s.kmsAdvertise))
 	}
 
-	// Mesh identity. Derivation only needs the master, so this does not
-	// care whether the hub's *own* nebula service came up — a node still
-	// gets a correct config while the hub's mesh is down, and reaches the
-	// mesh when the hub returns. A failure here is a repo mistake
-	// (address collision, bad meshIP), not a runtime condition.
-	if nm := s.hub.mesh; nm != nil {
-		p, err := nm.MachinePatch(master, mac, m, byMAC)
-		if err != nil {
-			log.Printf("error building mesh patch for %s: %v", mac, err)
-			return nil, http.StatusInternalServerError, "internal error"
-		}
-		extra = append(extra, p)
-	}
-
-	// Identity plane (Mesh v3 Phase 1, ADR-0015): the <name>.<zone>
-	// certSAN and the agent's document with a boot token in place of a
-	// key. Empty without --iroh-relay.
+	// Identity plane (ADR-0015): the <name>.<zone> certSAN and the
+	// agent's document with a boot token in place of a key.
 	p, err := s.hub.agentPatch(master, mac, m, time.Now())
 	if err != nil {
 		log.Printf("error building agent patch for %s: %v", mac, err)
@@ -123,7 +105,7 @@ type server struct {
 	clientID     string           // expected OAuth client_id ("" = accept any)
 	adminToken   string           // break-glass fallback for approval/login
 	adminAddrs   []string         // allowlisted wallet addresses (lowercase 0x)
-	hub          *hubManager      // nil = seal/mesh machinery disabled entirely
+	hub          *hubManager      // nil = no identity plane (no --iroh-relay): plain config server
 	boot         *bootstrapper    // nil unless --auto-bootstrap
 	kms          *kmsServer       // nil unless KMS enabled
 	kmsAdvertise string           // endpoint machines dial for disk unseal
@@ -167,7 +149,7 @@ func (s *server) composeFor(mac string) ([]byte, int, string) {
 		return nil, http.StatusNotFound, fmt.Sprintf("no config for MAC %s", mac)
 	}
 
-	extra, status, msg := s.serveTimePatches(mac, m, byMAC)
+	extra, status, msg := s.serveTimePatches(mac, m)
 	if status != http.StatusOK {
 		return nil, status, msg
 	}
@@ -273,25 +255,19 @@ func (s *server) mux() *http.ServeMux {
 
 func main() {
 	var (
-		port         = flag.Int("port", 8080, "listen port")
-		bind         = flag.String("bind", "0.0.0.0", "bind address")
-		root         = flag.String("root", "", "talos/ directory (default: <git root>/talos)")
-		requireAuth  = flag.Bool("require-auth", false, "require OAuth device-flow bearer token on /config")
-		clientID     = flag.String("client-id", "talos-pxe", "expected OAuth client_id (empty = accept any)")
-		adminAddrs   = flag.String("admin-address", "", "comma-separated wallet addresses allowed to approve machines")
-		meshPort     = flag.Int("mesh-port", 0, "nebula UDP listen port (0 = disabled; the hub starts sealed); the hub is the mesh lighthouse + relay")
-		meshSubnet   = flag.String("mesh-subnet", "10.42.0.0/16", "mesh overlay CIDR; the hub takes the first host address (derived, not configurable)")
-		meshHost     = flag.String("mesh-listen-host", "", "address nebula binds (default: fly-global-services on fly, 0.0.0.0 elsewhere)")
-		meshEndpoint = flag.String("mesh-endpoint", "", "public host:port mesh members dial to reach the hub lighthouse (required with --mesh-port)")
-		meshZone     = flag.String("mesh-dns-zone", nebderive.DNSZone, "DNS zone the hub serves on the mesh (empty = no mesh DNS)")
-		meshCAPin    = flag.String("mesh-ca-pin", "", "pinned expected mesh CA fingerprint (hex); unseal fails on mismatch (wrong wallet or message)")
-		autoBoot     = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the mesh when its etcd waits for it")
-		kmsAdv       = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --mesh-port)")
-		kmsPort      = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared cleartext-h2 port)")
-		relayBin     = flag.String("relay-bin", "", "path to the iroh-relay binary; runs it as a child on loopback and proxies /relay, /ping, /generate_204 (empty = no iroh relay)")
-		relayPort    = flag.Int("relay-port", 3340, "loopback port the iroh-relay child binds (only reachable through the hub's proxy)")
-		irohRelay    = flag.String("iroh-relay", "", "public relay URL members dial the hub's iroh endpoint through (e.g. https://host); binds the hubkey on iroh, homed on the relay child when --relay-bin is set (empty = in-process only; needs a -tags iroh build)")
-		irohBind     = flag.String("iroh-bind", "0.0.0.0:0", "UDP socket the hub's iroh endpoint binds (relay-only on fly: nothing reaches it directly)")
+		port        = flag.Int("port", 8080, "listen port")
+		bind        = flag.String("bind", "0.0.0.0", "bind address")
+		root        = flag.String("root", "", "talos/ directory (default: <git root>/talos)")
+		requireAuth = flag.Bool("require-auth", false, "require OAuth device-flow bearer token on /config")
+		clientID    = flag.String("client-id", "talos-pxe", "expected OAuth client_id (empty = accept any)")
+		adminAddrs  = flag.String("admin-address", "", "comma-separated wallet addresses allowed to approve machines")
+		autoBoot    = flag.Bool("auto-bootstrap", false, "bootstrap the single declared control plane over the identity plane when its etcd waits for it")
+		kmsAdv      = flag.String("kms-advertise", "", "KMS endpoint machines dial for disk unseal (e.g. https://host:443); enables the KMS gRPC service (requires --iroh-relay)")
+		kmsPort     = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared cleartext-h2 port)")
+		relayBin    = flag.String("relay-bin", "", "path to the iroh-relay binary; runs it as a child on loopback and proxies /relay, /ping, /generate_204 (empty = no iroh relay)")
+		relayPort   = flag.Int("relay-port", 3340, "loopback port the iroh-relay child binds (only reachable through the hub's proxy)")
+		irohRelay   = flag.String("iroh-relay", "", "public relay URL members dial the hub's iroh endpoint through (e.g. https://host); makes this process a HUB (sealed until an admin wallet signs at /status): the hubkey is bound on iroh, homed on the relay child when --relay-bin is set (needs a -tags iroh build)")
+		irohBind    = flag.String("iroh-bind", "0.0.0.0:0", "UDP socket the hub's iroh endpoint binds (relay-only on fly: nothing reaches it directly)")
 	)
 	flag.Parse()
 
@@ -322,46 +298,24 @@ func main() {
 
 	var hub *hubManager
 	var masterEnv string
-	if *meshPort > 0 {
-		subnet, err := netip.ParsePrefix(*meshSubnet)
-		if err != nil {
-			log.Fatalf("--mesh-subnet: %v", err)
-		}
-		if subnet.Addr() != subnet.Masked().Addr() {
-			log.Fatalf("--mesh-subnet %s is not a network address (did you mean %s?)", subnet, subnet.Masked())
-		}
-		if *meshEndpoint == "" {
-			log.Fatal("--mesh-port needs --mesh-endpoint (the public host:port members dial to find the lighthouse)")
-		}
-		listenHost := *meshHost
-		if listenHost == "" {
-			listenHost = mesh.ResolveListenHost()
-		}
-		nm := mesh.NewManager(*meshPort, subnet, listenHost, *meshEndpoint, *meshZone, *root)
+	if *irohRelay != "" {
 		// The hub's iroh endpoint (talos-config-e8d): homed on its own
 		// relay child over loopback when there is one, else on the public
 		// URL itself; advertised as the public URL either way.
-		var wan hubTransport
-		if *irohRelay != "" {
-			home := *irohRelay
-			if *relayBin != "" {
-				home = fmt.Sprintf("http://127.0.0.1:%d", *relayPort)
-			}
-			wan = irohHubTransport(home, *irohRelay, *irohBind)
+		home := *irohRelay
+		if *relayBin != "" {
+			home = fmt.Sprintf("http://127.0.0.1:%d", *relayPort)
 		}
-		hub, err = newHubManager(*root, addrs, *meshCAPin, nm, wan)
+		var err error
+		hub, err = newHubManager(*root, addrs, irohHubTransport(home, *irohRelay, *irohBind))
 		if err != nil {
 			log.Fatalf("hub: %v", err)
 		}
 		hub.publicURL = *irohRelay
-		if wan != nil {
-			log.Printf("hub identity %s on iroh, advertised at %s", hub.issuer.Fingerprint(), hub.endpoints())
-		}
-		log.Printf("mesh enabled: %s on udp/%d, binding %s (unseals with the hub)", subnet, *meshPort, listenHost)
+		log.Printf("hub identity %s on iroh, advertised at %s", hub.issuer.Fingerprint(), hub.endpoints())
 
 		// Dev/testing escape hatch: the master env auto-unseals — but
-		// the unseal itself runs after the server is built, so the
-		// overlay /config route is wired before the mesh comes up.
+		// the unseal itself runs after the server is built.
 		masterEnv = os.Getenv(masterKeyEnv)
 		if masterEnv == "" {
 			if len(addrs) == 0 {
@@ -438,7 +392,7 @@ func main() {
 
 	if *kmsAdv != "" {
 		if hub == nil {
-			log.Fatal("--kms-advertise requires --mesh-port (disk keys derive from the same master)")
+			log.Fatal("--kms-advertise requires --iroh-relay (disk keys derive from the hub's master)")
 		}
 		s.kms = newKMSServer(*root, hub)
 		log.Printf("kms: serving disk unseal, advertised endpoint %s", *kmsAdv)
@@ -464,7 +418,7 @@ func main() {
 	}
 
 	if *autoBoot {
-		if hub == nil || hub.wan == nil {
+		if hub == nil {
 			log.Fatal("--auto-bootstrap requires --iroh-relay (it dials nodes over the identity plane)")
 		}
 		s.boot = newBootstrapper(*root, hub)

@@ -3,12 +3,7 @@
 # (talos-config-6z9). Sibling of ../quint/check.sh: quint verifies the
 # design over all traces; this validates the actual files in git.
 #
-#   ./check.sh    == mesh-policy ==
-#                 talos/mesh-policy.yaml (the REAL v2 file, nebula
-#                 render) against mesh-policy.ncl: closed schema,
-#                 closed groups, one-of host/group, node isolates
-#                 machines, device inbound ICMP-only.
-#                 == mesh-policy-v3 ==
+#   ./check.sh    == mesh-policy-v3 ==
 #                 talos/mesh-policy-v3.yaml (the REAL v3 file, input of
 #                 config-server/policy) against mesh-policy-v3.ncl: the
 #                 facet-class recipe shape of ADR-0017 — closed
@@ -25,15 +20,9 @@
 # this note and that workflow in sync.
 #
 # Every contract has been mutation-tested: seeding the bug it guards
-# against produces a contract blame.
-#   v2 (mesh-policy.ncl):
-#     1. `group: machines` rule under node        NodeIsolatesMachines
-#     2. tcp rule under device                    DeviceInboundIcmpOnly
-#     3. typoed group (`admin`)                   Group
-#     4. typoed key (`hosts`)                     RuleShape (closed)
-#     5. port out of range (`70000`)              Port
-#     6. empty inbound                            NonEmptyInbound
-#     7. host + group on one rule                 ExactlyOneTarget
+# against produces a contract blame. (The v2 contract, mesh-policy.ncl
+# over the nebula render's talos/mesh-policy.yaml, went with nebula in
+# Mesh v3 Phase 4; its mutations 1-7 are in git history.)
 #   v3 (mesh-policy-v3.ncl):
 #     8. unknown receiver kind (`device`)         Policy (closed)
 #     9. `facet: apid` under gateway              Facet gateway
@@ -52,10 +41,6 @@
 #   hub}` under node both pass.
 set -euo pipefail
 cd "$(dirname "$0")"
-
-echo "== mesh-policy =="
-nickel export check.ncl --field mesh_policy --format json > /dev/null
-echo "ok: talos/mesh-policy.yaml satisfies mesh-policy.ncl"
 
 echo "== mesh-policy-v3 =="
 nickel export check.ncl --field mesh_policy_v3 --format json > /dev/null

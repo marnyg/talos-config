@@ -4,17 +4,12 @@ package nodeagent
 // gateway pod, 359.9.3): a member with no wallet and no browser of its
 // own starts a flow at the hub, shows the approve URL wherever it can
 // (its log), and polls until the Owner has signed on /status. The
-// wallet's signature covers the NodeId this member minted (ADR-0012 v2
-// message), so what comes back is this member's Kit and nobody else's.
-//
-// Dual-plane baggage: the hub's device flow still mints a nebula config
-// too, so the flow needs an X25519 pubkey. A throwaway is minted per
-// attempt and its config discarded — the identity plane is the only
-// plane a headless member joins. Phase 4 deletes the parameter.
+// wallet's signature covers the NodeId this member minted (ADR-0012,
+// enrollmsg.V3), so what comes back is this member's Kit and nobody
+// else's.
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,12 +19,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marnyg/talos-config/config-server/devkey"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
-// Device-flow paths on the hub (nebenroll.go, oauth.go).
+// Device-flow paths on the hub (deviceenroll.go, oauth.go).
 const (
 	DeviceEnrollPath = "/mesh/enroll/device"
 	DeviceTokenPath  = "/token"
@@ -84,12 +78,7 @@ func EnrollDevice(ctx context.Context, c *http.Client, base string, node cert.Ac
 }
 
 func startDeviceFlow(ctx context.Context, c *http.Client, base string, node cert.ActorID, name, group string) (DeviceFlow, error) {
-	_, xpub, err := devkey.Generate()
-	if err != nil {
-		return DeviceFlow{}, err
-	}
 	form := url.Values{
-		"pubkey":         {hex.EncodeToString(xpub[:])},
 		"node":           {string(node)},
 		"proposed_name":  {name},
 		"proposed_group": {group},
@@ -159,7 +148,7 @@ func pollDeviceFlow(ctx context.Context, c *http.Client, base string, flow Devic
 	}
 }
 
-// redeemDeviceFlow fetches the approved {config, kit} and keeps the Kit.
+// redeemDeviceFlow fetches the approved Kit.
 func redeemDeviceFlow(ctx context.Context, c *http.Client, base string, node cert.ActorID, token string) (issuer.Kit, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+DeviceConfigPath, nil)
 	if err != nil {
@@ -178,13 +167,7 @@ func redeemDeviceFlow(ctx context.Context, c *http.Client, base string, node cer
 	if resp.StatusCode != http.StatusOK {
 		return issuer.Kit{}, fmt.Errorf("nodeagent: redeem: %d %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
-	var env struct {
-		Kit json.RawMessage `json:"kit"`
-	}
-	if err := json.Unmarshal(raw, &env); err != nil || len(env.Kit) == 0 {
-		return issuer.Kit{}, errors.New("nodeagent: redeem: the hub did not answer with {config, kit} (identity plane not served?)")
-	}
-	kit, err := issuer.DecodeKit(env.Kit)
+	kit, err := issuer.DecodeKit(raw)
 	if err != nil {
 		return issuer.Kit{}, fmt.Errorf("nodeagent: redeem: kit: %w", err)
 	}

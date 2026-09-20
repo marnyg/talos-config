@@ -187,14 +187,14 @@
             # nix run .#kubeconfig — fetch the admin kubeconfig over the
             # mesh and point it at the control plane's mesh name.
             # `talosctl kubeconfig` writes cluster.controlPlane.endpoint
-            # (the nebula address 10.42.218.125) as the server; that is
-            # the kubelets' endpoint, not the admin's, and it is
-            # unreachable from a desktop that is on the irohup tun but
-            # not on nebula. The apiServer certSANs already carry the
-            # mesh name (talos/clusters/homelab/cluster.yaml).
+            # (cp1's declared LAN address since P2.5) as the server; that
+            # is the kubelets' endpoint, not the admin's, and it is
+            # unreachable from a remote desktop on the irohup tun. The
+            # apiServer certSANs already carry the mesh name
+            # (talos/clusters/homelab/cluster.yaml).
             apps.kubeconfig = {
               type = "app";
-              meta.description = "Write $KUBECONFIG via talosctl, server rewritten to https://<cp>.mesh.internal:6443 (irohup tun; nebula not required)";
+              meta.description = "Write $KUBECONFIG via talosctl, server rewritten to https://<cp>.mesh.internal:6443 (irohup tun)";
               program = toString (pkgs.writeShellScript "kubeconfig" ''
                 set -euo pipefail
                 root="$(git rev-parse --show-toplevel)"
@@ -237,8 +237,7 @@
             # the identity plane — which is why it survived w1 running
             # the agentless factory image until qb5q (2026-09-19).
             # Needs the talos-mesh daemon up and this device
-            # enrolled as an admin; nebula is not involved. Override the
-            # hub with APPLY_HUB.
+            # enrolled as an admin. Override the hub with APPLY_HUB.
             apps.apply = {
               type = "app";
               meta.description = "talosctl apply-config the hub-composed config to every machine (or one MAC) over the identity plane (irohup tun)";
@@ -331,22 +330,16 @@
                 jq
                 kubeseal
                 flyctl
-                # dig: verifying mesh DNS is a routine check now, and it has
-                # to be aimed at the hub's overlay address (dig @10.42.0.1)
-                # because the zone is served only on the overlay.
+                # dig: verifying split DNS on the tun (dig @198.18.0.2
+                # cp1.mesh.internal) is a routine check.
                 dnsutils
-                # nebula-cert: the mesh golden interop test
-                # (nebderive.TestStockNebulaCertVerify) shells out to it and
-                # skips when absent. Version must track the Sidero nebula
-                # extension shipped by the factory (currently 1.10.3).
-                nebula
                 # quint: design-level model checking of the seal/enrollment/
                 # approval lifecycles (verification/quint/, epic
                 # talos-config-7wg). Bundles Apalache + JVM for `quint verify`.
                 quint
                 # nickel: contract-checks the real durable artifacts against
                 # their snapshot invariants (verification/nickel/, currently
-                # talos/mesh-policy.yaml) — the per-value complement to the
+                # talos/mesh-policy-v3.yaml) — the per-value complement to the
                 # quint models' all-traces verification.
                 nickel
               ];

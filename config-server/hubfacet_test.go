@@ -131,7 +131,7 @@ func memberOf(t *testing.T, m *hubManager, name, group string) (cert.ActorID, ce
 func TestHubHTTPFacet(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	m := testHubManager(t, []string{wellKnownAddr}, "")
+	m := testHubManager(t, []string{wellKnownAddr})
 	s := &server{root: m.root, store: deviceflow.NewStore(), sessions: newSessionStore(), adminAddrs: []string{wellKnownAddr}, hub: m}
 	srv, ln := facethttp.Server("hub-http", s.hubFacetMux())
 	go func() { _ = srv.Serve(ln) }()

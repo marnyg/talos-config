@@ -49,7 +49,7 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	home := startRelay(t)
 	public := strings.Replace(home, "127.0.0.1", "localhost", 1)
 
-	m := testHubManagerOn(t, []string{wellKnownAddr}, "", irohHubTransport(home, public, "127.0.0.1:0"))
+	m := testHubManagerOn(t, []string{wellKnownAddr}, irohHubTransport(home, public, "127.0.0.1:0"))
 	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +489,7 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	if err := m.wan.Close(); err != nil {
 		t.Fatal(err)
 	}
-	m2 := testHubManagerOn(t, []string{wellKnownAddr}, "", irohHubTransport(home, public, "127.0.0.1:0"))
+	m2 := testHubManagerOn(t, []string{wellKnownAddr}, irohHubTransport(home, public, "127.0.0.1:0"))
 	s2 := &server{root: m2.root, store: deviceflow.NewStore(), sessions: newSessionStore(), adminAddrs: []string{wellKnownAddr}, hub: m2}
 	m2.publicURL = ts.URL
 	go m2.listen(ctx)
@@ -563,7 +563,7 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	// third hubkey) and dials the node's apid with grants under it: the
 	// admitted bundle's speak-as is wallet-signed and newer than the one
 	// the node holds — the node beats at the hub it just learned of.
-	m3 := testHubManagerOn(t, []string{wellKnownAddr}, "", irohHubTransport(home, public, "127.0.0.1:0"))
+	m3 := testHubManagerOn(t, []string{wellKnownAddr}, irohHubTransport(home, public, "127.0.0.1:0"))
 	if err := m3.unsealWithSignature(unsealSig(t)); err != nil {
 		t.Fatal(err)
 	}

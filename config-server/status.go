@@ -30,7 +30,6 @@ import (
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/masterderive"
-	"github.com/marnyg/talos-config/config-server/mesh"
 )
 
 const sessionCookieName = "talos_status_session"
@@ -383,7 +382,6 @@ var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("
  <tr><th>server</th><td>{{.Version}}{{if .Started}} — up since {{.Started}}{{end}}</td></tr>
  <tr><th>hub</th><td{{if .Sealed}} class="warn"{{end}}>{{.Seal}}</td></tr>
  {{if .Identity}}<tr><th>identity</th><td{{if .IdentitySealed}} class="warn"{{end}}>{{.Identity}}</td></tr>{{end}}
- {{if .Mesh}}<tr><th>mesh</th><td{{if .MeshWarn}} class="warn"{{end}}>{{.Mesh}}</td></tr>{{end}}
  {{if .Relay}}<tr><th>iroh relay</th><td{{if .RelayWarn}} class="warn"{{end}}>{{.Relay}}</td></tr>{{end}}
  {{with .Boot}}
  <tr><th>auto-bootstrap</th><td>{{.State}}{{if .Target}} — target {{.Target}} ({{.Name}}{{if .Peer}}, {{.Peer}}{{end}}){{end}}{{if .Done}} — cluster bootstrapped, idle{{else if .Attempted}} — Bootstrap called, watching etcd{{end}}{{if .LastErr}} — last error: {{.LastErr}}{{end}}</td></tr>
@@ -403,15 +401,14 @@ server restart or it will not be able to unlock its disks.</div>
 <table>
  <tr><th>User code</th><td>{{.Auth.UserCode}}</td></tr>
  <tr><th>kind</th><td>{{.Auth.Kind}}</td></tr>
- <tr><th>pubkey fingerprint</th><td><code>{{index .Auth.Identity "pubkey_fp"}}</code></td></tr>
- {{with index .Auth.Identity "node"}}<tr><th>node id</th><td><code>{{.}}</code> — also joins the identity plane (member kit)</td></tr>{{end}}
+ <tr><th>node id</th><td><code>{{index .Auth.Identity "node"}}</code></td></tr>
  <tr><th>proposed</th><td>{{index .Auth.Identity "proposed_name"}} ({{index .Auth.Identity "proposed_group"}})</td></tr>
  <tr><th>Requested</th><td>{{.Auth.CreatedAt.Format "15:04:05"}}</td></tr>
 </table>
-<p>Verify the fingerprint against what the device shows before approving.
+<p>Verify the node id against what the device shows before approving.
 You decide the final name and group — the device only proposed them.</p>
 <form method="POST" action="/mesh/enroll/approve" class="mesh-enroll"
-      data-fp="{{index .Auth.Identity "pubkey_fp"}}" data-node="{{index .Auth.Identity "node"}}" data-nonce="{{.Auth.Nonce}}">
+      data-node="{{index .Auth.Identity "node"}}" data-nonce="{{.Auth.Nonce}}">
  <input type="hidden" name="user_code" value="{{.Auth.UserCode}}">
  <p>
   <label>name <input type="text" name="name" value="{{index .Auth.Identity "proposed_name"}}"></label>
@@ -480,18 +477,9 @@ You decide the final name and group — the device only proposed them.</p>
 {{end}}
 <h2>Machines</h2>
 <table>
- <tr><th>mac</th><th>dns</th><th>role</th><th>lan ip</th><th>last config fetch</th></tr>
-{{range .Rows}} <tr><td>{{.MAC}}</td><td>{{.DNS}}</td><td>{{.Role}}</td><td>{{.IP}}</td><td>{{.LastFetch}}</td></tr>
+ <tr><th>mac</th><th>mesh name</th><th>role</th><th>last config fetch</th></tr>
+{{range .Rows}} <tr><td>{{.MAC}}</td><td>{{.DNS}}</td><td>{{.Role}}</td><td>{{.LastFetch}}</td></tr>
 {{end}}</table>
-{{if .Mesh}}
-<h2>Mesh</h2>
-{{if .MeshRows}}
-<table>
- <tr><th>name</th><th>group</th><th>mesh ip</th><th>tunnel</th><th>wan endpoint</th><th>relaying via hub to</th></tr>
-{{range .MeshRows}} <tr><td>{{.Name}}</td><td>{{.Group}}</td><td>{{.Addr}}</td><td>{{.Tunnel}}</td><td>{{.Endpoint}}</td><td>{{.Relays}}</td></tr>
-{{end}}</table>
-{{else}}<p>Membership appears after unseal.</p>{{end}}
-{{end}}
 {{if .Identity}}
 <h2>Members (identity plane)</h2>
 {{if .MemberRows}}
@@ -563,18 +551,14 @@ You decide the final name and group — the device only proposed them.</p>
   // message with the FINAL name/group the operator picks, so the
   // message is rebuilt from the form fields on every edit. The server
   // rebuilds the same message from the submitted values
-  // (handleMeshEnrollApprove, enrollmsg) — the two must agree byte for
-  // byte, including the name normalization (trim + lowercase). v2 (a
-  // node id present) adds the "node" line: one signature, two planes.
+  // (handleMeshEnrollApprove, enrollmsg.V3) — the two must agree byte
+  // for byte, including the name normalization (trim + lowercase).
   function meshEnrollMsg(form) {
     var name = form.querySelector('input[name=name]').value.trim().toLowerCase();
     var checked = form.querySelector('input[name=group]:checked');
     var group = checked ? checked.value : '';
-    var node = form.dataset.node || '';
-    var v = node ? 'v2' : 'v1';
-    return 'talos config-server mesh device enrollment ' + v + '\nname: ' + name +
-           '\ngroup: ' + group + '\npubkey: ' + form.dataset.fp +
-           (node ? '\nnode: ' + node : '') +
+    return 'talos config-server mesh device enrollment v3\nname: ' + name +
+           '\ngroup: ' + group + '\nnode: ' + form.dataset.node +
            '\nnonce: ' + form.dataset.nonce;
   }
   function updateEnroll() {
@@ -626,8 +610,8 @@ You decide the final name and group — the device only proposed them.</p>
 // join in nebseal.go — so this row only carries what is knowable from
 // the repo plus the fetch log.
 type statusRow struct {
-	MAC, DNS, Role, IP string
-	LastFetch          string
+	MAC, DNS, Role string
+	LastFetch      string
 }
 
 // memberRow is one identity-plane member as the name map knows it.
@@ -665,9 +649,6 @@ type statusData struct {
 	Started       string
 	Seal          string
 	Sealed        bool
-	Mesh          string // mesh seal-state line ("" = mesh disabled)
-	MeshWarn      bool
-	MeshRows      []mesh.MemberRow
 	MemberRows    []memberRow // identity-plane name map (issuer.NameMap)
 	Relay         string      // iroh relay child line ("" = no relay)
 	RelayWarn     bool
@@ -723,13 +704,13 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 			MAC:       mac,
 			DNS:       "—",
 			Role:      strings.TrimSuffix(filepath.Base(m.Config), filepath.Ext(m.Config)),
-			IP:        m.IP,
 			LastFetch: "never",
 		}
-		// DNS names are derived from meta.yaml + the configured zone,
-		// so they are known even while the hub is sealed.
-		if nm := s.mesh(); nm != nil && nm.DNSZone() != "" {
-			row.DNS = mesh.MachineDNSName(mac, m) + "." + nm.DNSZone()
+		// The mesh name is derived from meta.yaml, so it is known even
+		// while the hub is sealed; same source as the served certSAN and
+		// the member cert's name (machineSAN).
+		if s.hub != nil {
+			row.DNS = machineSAN(mac, m)
 		}
 		if t, ok := s.lastFetch(mac); ok {
 			row.LastFetch = ago(now, t)
@@ -756,20 +737,6 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		}
 		data.MemberRows = memberRows(s.hub.issuer.NameMap())
 	}
-	if nm := s.mesh(); nm != nil {
-		svc, _, meshErr := nm.State()
-		switch {
-		case svc != nil:
-			data.Mesh = "up — lighthouse+relay, endpoint " + nm.Endpoint()
-		case meshErr != nil:
-			data.Mesh, data.MeshWarn = "DOWN — "+meshErr.Error(), true
-		case data.Sealed:
-			data.Mesh = "sealed"
-		default:
-			data.Mesh = "down"
-		}
-		data.MeshRows = nm.Members()
-	}
 	if s.relay != nil {
 		data.Relay, data.RelayWarn = s.relay.statusLine()
 	}
@@ -782,7 +749,7 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 	}
 	for _, da := range s.store.Pending() {
 		if da.Kind == deviceflow.KindMeshEnroll {
-			// No MsgApprove: approval IS the wallet signature over the v1
+			// No MsgApprove: approval IS the wallet signature over the
 			// enrollment message, rebuilt live on the card. Deny still
 			// goes through /verify with the generic deny message.
 			data.Pending = append(data.Pending, verifyEntry{

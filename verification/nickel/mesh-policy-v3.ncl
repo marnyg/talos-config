@@ -1,9 +1,8 @@
 # mesh-policy-v3.ncl — snapshot invariants for the Mesh v3 policy
 # recipe (talos-config-6z9, part (a); ADR-0017).
 #
-# Sibling of mesh-policy.ncl, NOT its replacement: the v2 (port-based)
-# contract keeps validating the real talos/mesh-policy.yaml until the
-# nebula render is deleted in Phase 4. This file validates the
+# Successor of mesh-policy.ncl (the v2 port-based contract, deleted
+# with the nebula render in Phase 4). This file validates the
 # facet-class shape the recipe takes under ADR-0017, where the hub
 # compiles the recipe into `invoke` grants that callers carry and a
 # receiver holds nothing but its own accept table. It validates the

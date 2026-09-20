@@ -37,16 +37,15 @@ const FacetMintDevice = "mint-device"
 var ErrNotApproved = errors.New("issuer: approval not signed by the wallet this hub speaks for")
 
 // MintDeviceRequest is #mint-device's payload: the approved enrollment
-// and the wallet's signature over enrollmsg.V2(name, group, nebula
-// fingerprint, node, nonce). Name is already normalized by Enroll;
-// the Issuer rebuilds the message from these exact fields.
+// and the wallet's signature over enrollmsg.V3(name, group, node,
+// nonce). Name is already normalized by Enroll; the Issuer rebuilds
+// the message from these exact fields.
 type MintDeviceRequest struct {
-	Node        cert.ActorID `json:"node"`
-	Name        string       `json:"name"`
-	Group       string       `json:"group"`
-	Fingerprint string       `json:"fingerprint"` // nebula pubkey fingerprint (v1 field)
-	Nonce       string       `json:"nonce"`
-	Signature   string       `json:"signature"` // 0x-hex EIP-191, r||s||v
+	Node      cert.ActorID `json:"node"`
+	Name      string       `json:"name"`
+	Group     string       `json:"group"`
+	Nonce     string       `json:"nonce"`
+	Signature string       `json:"signature"` // 0x-hex EIP-191, r||s||v
 }
 
 // wireKit is Kit on the wire: each cert in its JSON form.
@@ -156,10 +155,10 @@ func (i *Issuer) mintDeviceHandler(_ context.Context, inv *actor.Invocation) ([]
 	if err := json.Unmarshal(inv.Envelope.Payload, &req); err != nil {
 		return nil, fmt.Errorf("issuer: mint-device: %w", err)
 	}
-	if req.Name == "" || req.Group == "" || req.Fingerprint == "" || req.Nonce == "" || req.Signature == "" {
-		return nil, errors.New("issuer: mint-device: node, name, group, fingerprint, nonce and signature are all required")
+	if req.Name == "" || req.Group == "" || req.Nonce == "" || req.Signature == "" {
+		return nil, errors.New("issuer: mint-device: node, name, group, nonce and signature are all required")
 	}
-	msg := enrollmsg.V2(req.Name, req.Group, req.Fingerprint, string(req.Node), req.Nonce)
+	msg := enrollmsg.V3(req.Name, req.Group, string(req.Node), req.Nonce)
 	addr, err := ethsig.RecoverPersonalSign(msg, req.Signature)
 	if err != nil {
 		return nil, fmt.Errorf("issuer: mint-device: %w", err)
