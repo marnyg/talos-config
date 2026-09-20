@@ -5,64 +5,57 @@
 
 ## Last session
 
-2026-09-21 (seventh session) — **P2.2 built, not deployed.** Two
-commits, both green under `-race` with the relay e2e:
+2026-09-20 (eighth session) — **P2.2 is live; `359.9.2` closed.**
 
-- `4814be3` — **the mirror of `ipt7`** (decision `z2go`): after a hub
-  redeploy the hub knows nobody until members beat, and a Talos node
-  dials nothing between beats. Evidence it *does* see: (A) the pooled
-  QUIC connection its last beat left to the hub closes — iroh
-  keep-alives every connection at 5 s, so a dead hub is `Closed()`
-  32 s after SIGKILL (measured, relay up or down); `iroh-transport`
-  evicts on `Closed()` and reports `Options.OnConnLost`. (B) an
-  admitted caller's rooted `speak-as` names a hubkey issued at/after
-  ours. Both `Kick()`; `Kick` now *schedules* at the earliest
-  `MinRebeat` instead of dropping. A beat refused as `ErrHubSealed`
-  retries flat at `MinRebeat` (no cache fallback to the dead key) —
-  **every live member has beaten within one `MinRebeat` of the
-  unseal.** Beat `Send`s are bounded by `DialTimeout`.
-- `49a7bdb` — **the hub as an ordinary caller** (`hubcaller.go`):
-  self-minted member cert `{aud: hubkey, name: hub}` + the recipe's
-  one host row `{facet: apid, host: hub}` compiled for it, presented
-  on the node's `apid` facet via the name map. `bootstrap.go` no
-  longer imports `nebstack`; new observation `node-unknown`;
-  `mesh-down` → `no-identity-plane`; `--auto-bootstrap` requires
-  `--iroh-relay`. `/status` gains a "Members (identity plane)" table
-  from `issuer.NameMap()`.
+- `p0agent` 0.1.3 (the `z2go` agent, `d12d1e6`) on **w1** (00:20Z)
+  and **cp1** (00:27Z) via `talosctl upgrade`; installer
+  `v1.12.6-p0agent-0.1.3@sha256:923158ad…` pinned in both hardware
+  files (`527d099`). `get extensions` finally reports the true version.
+- **Bug found by the deploy, fixed in `98acac7`:** cp1 admitted the
+  hub's `apid` stream fine, but the hub logged `name resolver error:
+  produced zero addresses` → `unreachable`. Machinery hands a single
+  endpoint to gRPC as `dns:///cp1.mesh.internal`, so gRPC's DNS
+  resolver ran *on the hub* before the facet dialer could. Fix:
+  `facetResolver` (per-ClientConn via `grpc.WithResolvers`) shadows
+  the `dns` scheme and passes the name through; `bootstrap_client_test.go`
+  drives the client over a `net.Pipe` facet with an unresolvable name
+  and fails without the fix.
+- **Live acceptance passed** (hub `98acac7`, unsealed 00:33:54Z,
+  hubkey `4034b889…`): both nodes logged `connection to hub … lost;
+  beating` → `beat ok` within 8 s; hub `node-unknown` at 00:34:00 →
+  **`etcd-running` at 00:34:36** — 42 s unseal-to-known, under the
+  ~1 min bar. (No `hub sealed` retry was exercised: the unseal
+  preceded the nodes' 32 s loss detection.)
+- Broken windows (`510bf18`): `bootstrapper.dial` seam +
+  `TestObserveOverFacet` (observe → talosClient end to end);
+  `talos/extensions/installer.env` is now the one place the Talos
+  version + official extension refs live (`build.sh` sources it and
+  prints the `tag@digest` to pin); relay-child "did not reach
+  established state" baselined at ~1.7/min loopback noise (notes.md).
 
 ## Loose threads
 
-- **Hub deployed** (`registry.fly.io/marnyg-talos-config:d12d1e6`,
-  unsealed 00:08Z, hubkey `2878c8f5…`); `/status` shows auto-bootstrap
-  `node-unknown` for cp1 — correct until the nodes beat. **Not yet
-  deployed:** `p0agent` 0.1.3 on cp1/w1 (static `nodeagent` via the
-  nixos builder, `build.sh`, pin in `talos/hardware/minipc.yaml`,
-  `talosctl upgrade` ~11 min each) and the Mac's `irohup` (nixos flake
-  input bump to `d12d1e6`). The old agents beat on their 6 h timer
-  only, so the hub learns them within 6 h; after that `/status` should
-  read `etcd-running (cp1, <NodeId>)` — half the live acceptance.
-- **Live acceptance once the nodes run 0.1.3:** redeploy the hub,
-  unseal, watch `/status` flip to `etcd-running` within ~1 min; the
-  node logs `connection to hub … lost; beating` → `hub sealed (retry
-  in 1m)` → `beat ok`.
-- The vendor FOD trap bit again (`iroh-transport/*.go` changed ⇒
-  `config-server` `vendorHash`); recomputed in `d12d1e6`. Any change
-  under a `replace`d tree needs the two-command check in
-  `config-server/nix/default.nix`.
-- Relay child logs `Connection did not reach established state within
-  timeout` from loopback peers a few times after the deploy; no
-  pre-deploy baseline — watch, don't chase.
-- Broken windows closed in `4756627`: `await` releases a late FFI
-  result, `publishLocation` waits for `Online()`, bootstrap's zone
-  falls back to `fakeip.Zone`, the v2 `host: hub` row is marked dead
-  (removal rides Phase 4, noted on `359.11.2` with the certSAN move).
-  Filed: `zbgk` (iroh-ffi watchers unusable).
+- **Mac `irohup` switch not yet done** — needs sudo. The closure is
+  built (`~/git/nixos`, flake.lock bumped to `2155da7`, uncommitted):
+  `cd ~/git/nixos && sudo darwin-rebuild switch --flake .#mac`, then
+  commit the lock. The running daemon (`kdhgj9…`) is the pre-`z2go`
+  binary; `ipt7`'s fix is already in it, so nothing is broken meanwhile.
+- The sealed-hub flat retry (`ErrHubSealed` → `MinRebeat`) is covered
+  by the relay e2e but has not been seen live; a slow unseal on the
+  next redeploy will show it.
+- `/status` needs a wallet login; the hub's `auto-bootstrap:` log lines
+  (`fly logs`) carry the same observation and were what acceptance
+  read.
+- Domain-model entry "The hub as a caller" says *built 2026-09-21*;
+  it is live as of 2026-09-20 (dates in the 09-21 entries look off by
+  a day) — cosmetic.
 - `0q0` blocked on capacity; ADR-0011 vs invariant 2 ruling still open.
 - Route-churn restart path unobserved (`7c3`); control socket (`fgr`);
   mobile `fakeip` (`phz`); cp1 hostname pin (`t7b2`).
 
 ## Suggested next steps
 
-- Ship `p0agent` 0.1.3 to both nodes and bump the Mac's `irohup`;
-  run the live acceptance; then close `359.9.2` and `ipt7`.
-- P2.3 (`359.9.3`): the in-cluster gateway pod.
+- Run the Mac switch (above); commit `~/git/nixos` flake.lock.
+- **P2.3** (`359.9.3`): the in-cluster gateway pod — terminates
+  identity streams, forwards to Services, injects the verified
+  device-identity header (revises ADR-0007); Jackett first.

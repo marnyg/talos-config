@@ -500,8 +500,25 @@
   .#packages.x86_64-linux.config-server-static` (`bin/nodeagent`,
   ~24 MB; `scp` it over — `file` is not on the box, fish shell), then
   `gh auth token | docker login ghcr.io -u marnyg --password-stdin`
-  and `talos/extensions/p0agent/build.sh <bin> <ver>`; pin tag +
-  `crane digest` in `talos/hardware/minipc.yaml`. A scratch rootfs has
+  and `talos/extensions/p0agent/build.sh <bin> <ver>`; its last line
+  prints the `tag@digest` to pin in **both** `talos/hardware/*.yaml`
+  (2026-09-20: `docker buildx imagetools inspect` — no `crane` here).
+  Talos version + official extension refs live in
+  `talos/extensions/installer.env`, nowhere else.
+- 2026-09-20 — **A machinery `client.New` with ONE endpoint runs
+  gRPC's DNS resolver** (`dns:///<name>`) before any
+  `WithContextDialer`; a name that only the identity plane knows
+  fails as `name resolver error: produced zero addresses` — on the
+  hub it read as auto-bootstrap `unreachable` while the node was
+  admitting the stream. `facetResolver` in `bootstrap.go` shadows the
+  scheme per client; any new machinery client over a facet needs the
+  same option, and `bootstrap_client_test.go` is the pattern.
+- 2026-09-20 — **Live acceptance of a hub redeploy** reads from
+  `fly logs -a marnyg-talos-config | grep auto-bootstrap` (`/status`
+  needs a wallet) and `talosctl -n <node> logs ext-p0agent`: expect
+  `connection to hub … lost; beating` → `beat ok` on the node within
+  ~40 s of the kill, and `node-unknown` → `etcd-running` on the hub
+  within one 30 s poll of the unseal. 2026-09-20: 42 s. A scratch rootfs has
   no CA bundle: Go's HTTPS client needs the `/etc/ssl/certs` bind the
   0.1.1 spec adds (iroh's relay client carries webpki roots itself).
 - 2026-09-19 — `talosctl upgrade --wait` on cp1 takes ~11 min (drain

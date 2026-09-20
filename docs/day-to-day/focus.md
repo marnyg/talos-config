@@ -6,22 +6,21 @@
 **Now:** **Mesh v3 Phase 2 — consumers migrate one at a time**
 (`359.9`), and since 2026-09-19 each migration **cuts its nebula path
 as it lands** (decision `d3z3`) — Phase 4 is whatever never moved.
-**P2.0 and P2.1 are live**: the Mac runs `irohup -tun` as a launchd
-daemon, and talosconfig / kubeconfig / `nix run .#apply` all go by
-name over it — hub included. **P2.2 is built; hub deployed, nodes pending**
-(`359.9.2`, commits `4814be3` + `49a7bdb`, hub image `d12d1e6`): auto-bootstrap dials the
-control plane's `apid` facet as an ordinary caller; the hub's
-netstack dial path is gone from `bootstrap.go`. Its prerequisite —
-how the hub re-learns members after its own restart — is settled by
-decision `z2go`: members re-beat on transport evidence (their pooled
-connection to the hub dying; a caller carrying a newer `speak-as`),
-and poll a *sealed* hub flat, so the hub's name map is complete one
-`MinRebeat` after the unseal. Remaining: `p0agent` 0.1.3 on both
-nodes, then the Mac. Then **P2.3** (`359.9.3`), the gateway.
+**P2.0, P2.1 and P2.2 are live**: the Mac runs `irohup -tun` as a
+launchd daemon, talosconfig / kubeconfig / `nix run .#apply` go by
+name over it, and the hub's auto-bootstrap dials the control plane's
+`apid` facet as an ordinary caller (`359.9.2`, closed 2026-09-20:
+42 s from unseal to `etcd-running` after a redeploy, both nodes on
+the `z2go` agent). The hub's netstack dial path is gone from
+`bootstrap.go`. Next is **P2.3** (`359.9.3`): the in-cluster gateway
+pod that terminates identity streams and forwards to Services with a
+verified device-identity header — Jackett first, then the rest of
+ingress.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
 members dialed by key, IP as device-local fiction, hub as actors
-(ADR-0024). The admin plane is now that fiction end to end.
+(ADR-0024). The admin plane and the hub→node plane are now that
+fiction end to end; the workload plane is what P2.3 starts.
 
 **Out of scope:**
 - Phase 3/4 as a separate pass: nebula removal now rides each
