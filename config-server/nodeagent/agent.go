@@ -217,7 +217,7 @@ func Start(o Options) (*Agent, error) {
 		a.log = log.Default()
 	}
 	if a.http == nil {
-		a.http = &http.Client{Timeout: 30 * time.Second, Transport: hubTransport()}
+		a.http = hubClient()
 	}
 	a.actor = actor.New(cert.NewEdSigner(priv), ep)
 	a.actor.Clock = o.Clock

@@ -7,6 +7,13 @@ import (
 	"golang.org/x/net/http2"
 )
 
+// hubClient is the default client for hub HTTPS: 30 s per request over
+// hubTransport. One constructor so enrollment and the beat loop cannot
+// drift apart on the liveness settings.
+func hubClient() *http.Client {
+	return &http.Client{Timeout: 30 * time.Second, Transport: hubTransport()}
+}
+
 // hubTransport is the default transport for hub HTTPS: the stock one
 // plus HTTP/2 liveness pings. Without ReadIdleTimeout a pooled h2
 // connection whose underlay vanished without a RST (a phone leaving

@@ -61,12 +61,13 @@ type DeviceFlow struct {
 // EnrollDevice runs one device flow to completion: start, show, poll,
 // redeem, verify. name and group are proposals — the approver picks
 // the final values on /status. show is called once with the flow the
-// Owner must act on. c nil ⇒ a 30 s-timeout client. Returns ErrHubSealed (the hub answered 503:
+// Owner must act on. c nil ⇒ hubClient (30 s timeout, h2 liveness
+// pings — the poll runs on a phone that may change networks). Returns ErrHubSealed (the hub answered 503:
 // retry later), ErrEnrollDenied, ErrEnrollExpired, or the transport's
 // error.
 func EnrollDevice(ctx context.Context, c *http.Client, base string, node cert.ActorID, name, group string, show func(DeviceFlow)) (issuer.Kit, error) {
 	if c == nil {
-		c = &http.Client{Timeout: 30 * time.Second}
+		c = hubClient()
 	}
 	flow, err := startDeviceFlow(ctx, c, base, node, name, group)
 	if err != nil {
