@@ -82,8 +82,10 @@ or change something, update the date.
   fine (link `nebula0`, DNS `10.42.0.1`); `dig`, `curl` and `kubectl`
   all resolve mesh names. Fixable node-side by pointing the node's
   resolver at `10.42.0.1`, not yet done. Services are reached by hostname
-  over the mesh — `http://<service>.cp1.mesh.internal/` via
-  ingress-nginx (ADR-0009); the only web NodePort left is Jellyfin's
+  over the identity plane — `http://<service>.gw.mesh.internal/` via
+  the gateway pod and a ClusterIP-only ingress-nginx (ADR-0026; the
+  last `*.cp1` name and the hostNetwork controller went 2026-09-20,
+  `vftt`/`xnat`); the only web NodePort left is Jellyfin's
   30096 for LAN-direct clients (TV), plus transmission's peer ports.
   Recovery path: LAN address SANs (`talosctl -e 10.0.0.<lease>`) with
   owner keys.

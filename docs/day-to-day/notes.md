@@ -14,6 +14,25 @@
 
 ## Read first
 
+- 2026-09-20 — **w1's LAN NIC is a USB adapter and its name is not
+  stable across boots.** It came back from the last reboot as
+  `enp0s13f0u1` / `10.0.0.71` (was `enp0s13f0u1u4` / `10.0.0.67`, the
+  address the TV's LAN-direct path was verified against). flannel on
+  w1 kept waiting for the old name (`external interface … not found,
+  retrying`), the node annotation still said `.67`, and **cross-node
+  pod traffic was silently dead for ~4.5 h** while host↔host worked:
+  Longhorn volumes with a replica on the other node could not attach,
+  pods sat in ContainerCreating, and longhorn-manager kept deleting
+  them "so that Kubernetes will handle remounting". Fix: delete w1's
+  `kube-flannel-*` pod; check `kubectl get node w1 -o
+  jsonpath='{.metadata.annotations.flannel\.alpha\.coreos\.com/public-ip}'`
+  matches the node's INTERNAL-IP after any w1 reboot.
+- 2026-09-20 — **ingress-nginx is no longer on the LAN** (`xnat`): a
+  ClusterIP Service only, dialed by the gateway. To poke nginx without
+  going through the mesh, `kubectl -n ingress-nginx port-forward
+  svc/ingress-nginx-controller 8080:80` and send a `Host:` header.
+  `curl http://10.0.0.68/` answering anything means someone put
+  hostNetwork back.
 - 2026-09-20 — **The gateway's two Jellyfin paths are two origins.**
   `jellyfin.gw.mesh.internal` (:80, `ingress-http` facet, through
   nginx) and `jellyfin.gw.mesh.internal:8096` (the raw `jellyfin`

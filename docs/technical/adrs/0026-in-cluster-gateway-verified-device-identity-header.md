@@ -2,6 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-09-20
+- Revision 2026-09-20 (`xnat`): the interim `1gv` gate and the
+  node-local dial are gone — ingress-nginx is a plain Deployment +
+  ClusterIP Service (no hostNetwork, namespace back to PSS baseline)
+  and the gateway dials it by Service name as its only caller. The
+  header's unforgeability now rests on reachability alone.
 - Revises: ADR-0007 (cert-group + source-address inference), ADR-0009
   (service exposure over nebula-native ingress, `<svc>.<member>` names)
 
