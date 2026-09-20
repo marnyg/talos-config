@@ -46,7 +46,10 @@ min_machines_running = 1
 # Disk-unseal KMS: gRPC needs end-to-end HTTP/2, which fly's HTTP
 # handler would not guarantee to the backend — so it gets its own TLS
 # port with ALPN h2 and byte-passthrough to the same internal port
-# (the server's h2c handler speaks prior-knowledge h2).
+# (the server's h2c handler speaks prior-knowledge h2). A non-443 port
+# needs the app's DEDICATED IPv4 (213.188.219.215, $2/mo; shared v4s
+# carry 80/443 only) — that address outlived the nebula udp/4242
+# service it was first allocated for (Mesh v3 Phase 4).
 [[services]]
 protocol = "tcp"
 internal_port = 8081
