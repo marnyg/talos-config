@@ -98,9 +98,10 @@ func (s *server) serveTimePatches(mac string, m machines.Machine, byMAC map[stri
 		extra = append(extra, p)
 	}
 
-	// Identity plane (Mesh v3 Phase 1, ADR-0015): the agent's document
-	// with a boot token in place of a key. Empty without --iroh-relay.
-	p, err := s.hub.agentPatch(master, mac, time.Now())
+	// Identity plane (Mesh v3 Phase 1, ADR-0015): the <name>.<zone>
+	// certSAN and the agent's document with a boot token in place of a
+	// key. Empty without --iroh-relay.
+	p, err := s.hub.agentPatch(master, mac, m, time.Now())
 	if err != nil {
 		log.Printf("error building agent patch for %s: %v", mac, err)
 		return nil, http.StatusInternalServerError, "internal error"

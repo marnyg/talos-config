@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/siderolabs/talos/pkg/machinery/config/configloader"
 	"gopkg.in/yaml.v3"
 )
 
@@ -92,6 +94,15 @@ func TestNodeBootEnroll(t *testing.T) {
 	// The served config carries no member key: only the token.
 	if strings.Contains(rec.Body.String(), "PRIVATE KEY") && !strings.Contains(rec.Body.String(), "NEBULA") {
 		t.Fatal("served config carries a private key")
+	}
+	// The identity-plane name lands as an apid certSAN — appended to the
+	// repo's own, never replacing them — read back the way Talos will.
+	provider, err := configloader.NewFromBytes(rec.Body.Bytes())
+	if err != nil {
+		t.Fatalf("talos cannot load the served config: %v\n%s", err, rec.Body.String())
+	}
+	if got, want := provider.Machine().Security().CertSANs(), []string{"10.0.0.20", "aa-bb-cc-dd-ee-ff.mesh.internal"}; !slices.Equal(got, want) {
+		t.Fatalf("served certSANs = %v, want %v", got, want)
 	}
 
 	// Master unsealed but the Issuer not: the token verifies, nothing

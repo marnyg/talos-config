@@ -67,16 +67,16 @@ const nebNodeMTU = 1300
 // thread uuid dc04e3e8) requires a config-refresh mechanism first.
 const nebMachineCertValidity = 5 * 365 * 24 * time.Hour
 
-// MachinePatch renders the strategic-merge patch that gives a machine
-// its mesh identity: an ExtensionServiceConfig document carrying the
-// nebula config plus the derived CA, cert and key, preceded by a
-// machine.certSANs merge adding the overlay address and mesh DNS name.
+// MachinePatch renders the patch that gives a machine its nebula
+// identity: an ExtensionServiceConfig document carrying the nebula
+// config plus the derived CA, cert and key.
 //
-// The SAN merge exists for the DNS name: apid's own cert SANs cover
-// every node address (nebula0's included — verified on cp1's CertSANs
-// resource, 2026-09-19) but never a mesh name, and <name>.mesh.internal
-// is what talosconfig and the tun dial by. The overlay address entry is
-// belt and braces from before that was checked.
+// Until Phase 4 (P4.2) this also carried a machine.certSANs merge for
+// the overlay address and <name>.mesh.internal; the name outlives the
+// overlay, so the SAN moved to the identity-plane render (agentPatch),
+// and the address entry was belt and braces (apid's own SANs cover
+// every node address — verified on cp1's CertSANs resource,
+// 2026-09-19).
 //
 // machines is the full machine set, not just this one, because the
 // overlay address comes from buildMeshZone — the same function that
@@ -149,14 +149,7 @@ func (n *Manager) MachinePatch(master []byte, mac string, m machines.Machine, by
 	if err != nil {
 		return "", fmt.Errorf("marshalling extension config for %s: %w", mac, err)
 	}
-	// Two documents: the machine.certSANs merge, then the extension
-	// config. The separator matters — configpatcher merges the first
-	// into machine: and appends the second as its own document.
-	sans := "machine:\n  certSANs:\n    - " + addr.String() + "\n"
-	if n.dnsZone != "" {
-		sans += "    - " + name + "." + n.dnsZone + "\n"
-	}
-	return sans + "---\n" + string(out), nil
+	return string(out), nil
 }
 
 // nebExtSvcYAML is Talos's ExtensionServiceConfig document.

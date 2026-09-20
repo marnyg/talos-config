@@ -321,14 +321,9 @@ func (b *bootstrapper) bootstrap(ctx context.Context, mac string, m machines.Mac
 	log.Printf("AUTO-BOOTSTRAP: Bootstrap accepted by %s — watching for etcd to come up", mac)
 }
 
-// zone is the mesh DNS zone machine certs carry as a SAN. Today the
-// nebula render injects it (mesh.MachinePatch, the manager's zone);
-// Phase 4 (359.11.2) moves the SAN with the render, and the
-// presentation zone the identity plane already uses is the fallback.
+// zone is the presentation zone machine certs carry <name> under as a
+// SAN (agentPatch injects it at serve; machineSAN is the same rule).
 func (b *bootstrapper) zone() string {
-	if b.hub.mesh != nil {
-		return b.hub.mesh.DNSZone()
-	}
 	return strings.TrimSuffix(fakeip.Zone, ".")
 }
 
@@ -337,7 +332,7 @@ func (b *bootstrapper) zone() string {
 // presenting the hub's bundle), authenticating with a short-lived
 // os:admin cert minted from the cluster's OS CA (extracted from the
 // machine's composed config). TLS verifies the node's <name>.<zone>
-// certSAN, which mesh.MachinePatch injects for exactly this reason —
+// certSAN, which agentPatch injects for exactly this reason —
 // the same name talosconfig uses over irohup. The facet connection is
 // closed with the client; a dial failure is returned as-is
 // (errMemberUnknown when the name map has nobody of that name).

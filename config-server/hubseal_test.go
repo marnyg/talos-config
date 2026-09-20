@@ -80,7 +80,7 @@ func testHubManagerOn(t *testing.T, adminAddrs []string, pinnedCAFP string, wan 
 	if err := os.WriteFile(filepath.Join(machineDir, "meta.yaml"), []byte(meta), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	base := "version: v1alpha1\nmachine:\n  type: worker\n"
+	base := "version: v1alpha1\nmachine:\n  type: worker\n  certSANs:\n    - 10.0.0.20\n"
 	if err := os.WriteFile(filepath.Join(root, "base.yaml"), []byte(base), 0o644); err != nil {
 		t.Fatal(err)
 	}

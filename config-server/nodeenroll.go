@@ -23,19 +23,32 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/boottoken"
+	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/mesh"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 )
 
-// agentPatch renders the p0agent ExtensionServiceConfig for mac, with a
-// fresh boot token, or "" when the hub has no iroh identity plane
-// (no --iroh-relay): a node then runs nebula alone, as before Phase 1.
-func (m *hubManager) agentPatch(master []byte, mac string, now time.Time) (string, error) {
+// agentPatch renders the machine's identity-plane patch for mac: a
+// machine.certSANs merge adding <name>.<zone>, then the p0agent
+// ExtensionServiceConfig with a fresh boot token. "" when the hub has
+// no iroh identity plane (no --iroh-relay): a node then runs nebula
+// alone, as before Phase 1.
+//
+// The SAN is the name every identity-plane caller verifies apid's TLS
+// against: talosconfig over the irohup tun and the hub's own apid dials
+// (bootstrap.go talosClient) both dial <name>.mesh.internal. apid's own
+// cert SANs cover every node address but never a mesh name, so the
+// serve injects it. (Moved here from the nebula render, Phase 4 P4.2 —
+// the name outlives the overlay.) Two documents: configpatcher merges
+// the first into machine: (certSANs is append-merged, never replaced)
+// and appends the second as its own document.
+func (m *hubManager) agentPatch(master []byte, mac string, mach machines.Machine, now time.Time) (string, error) {
 	if m.publicURL == "" {
 		return "", nil
 	}
@@ -43,7 +56,18 @@ func (m *hubManager) agentPatch(master []byte, mac string, now time.Time) (strin
 	if err != nil {
 		return "", err
 	}
-	return nodeagent.Patch(nodeagent.Config{Hub: m.publicURL, Relay: m.publicURL, Token: token})
+	doc, err := nodeagent.Patch(nodeagent.Config{Hub: m.publicURL, Relay: m.publicURL, Token: token})
+	if err != nil {
+		return "", err
+	}
+	sans := "machine:\n  certSANs:\n    - " + machineSAN(mac, mach) + "\n"
+	return sans + "---\n" + doc, nil
+}
+
+// machineSAN is the machine's identity-plane name, <name>.<zone>: the
+// git-declared mesh label under the presentation zone.
+func machineSAN(mac string, m machines.Machine) string {
+	return mesh.MachineDNSName(mac, m) + "." + strings.TrimSuffix(fakeip.Zone, ".")
 }
 
 // handleNodeEnroll (POST /mesh/enroll/node) redeems a boot token for a
