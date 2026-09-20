@@ -702,8 +702,13 @@ mesh-v2 lesson.
 
 _2026-09-20:_ node reboot (w1) and hub re-seal passed — the re-seal
 was a forced `fly machine restart`, counted because the recovery path
-is identical to a fly-initiated one (decision `iwrk`). Remote-media on
-cellular is the remaining event.
+is identical to a fly-initiated one (decision `iwrk`). _Later the same
+day (19:48–19:56Z):_ remote-media passed — phone on stable LTE
+(Telenor), Wi-Fi→LTE handover `beat ok` in 1 s (`rnfk` fixed; was
+3.5 min), gateway admitted `phone [media]` in 321 ms, 52.7 MB main
+stream over 5m54s, seek responsive, ~69 MB total, zero reconnects;
+LTE→Wi-Fi return 8 s (was 28 s). **Phase 3 closed 2026-09-20**
+(`359.10`); Phase 4 unblocked.
 
 ### Phase 4 — deletion
 

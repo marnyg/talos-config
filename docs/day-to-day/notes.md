@@ -56,7 +56,15 @@
   event from a place with stable signal. adb notes: the mesh log is
   `run-as dev.marnyg.mesh tail cache/mesh.log` (debug build);
   `svc wifi disable|enable` flips Wi-Fi; the phone locks itself after
-  a few minutes — drive the Jellyfin app while it's awake.
+  a few minutes — drive the Jellyfin app while it's awake. _(Later:
+  the bearer was stable for the whole 3/3 soak session, so the churn
+  was that afternoon's, not the phone's; a home-Wi-Fi-off test over
+  USB adb is a valid cellular test when `dumpsys connectivity` shows
+  one LTE netId holding for minutes.)_ Reading `mesh.log` during
+  playback: Jellyfin's HTTP pool closes idle conns in batches every
+  ~3–5 min, so bursts of `stream done … 5m0s` are normal, not a
+  reconnect — `cat /proc/net/dev | grep tun0` growing is the
+  playback signal.
 - 2026-09-20 — **w1's LAN NIC is a USB adapter and its name is not
   stable across boots.** It came back from the last reboot as
   `enp0s13f0u1` / `10.0.0.71` (was `enp0s13f0u1u4` / `10.0.0.67`, the
