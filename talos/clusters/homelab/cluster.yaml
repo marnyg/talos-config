@@ -1,20 +1,30 @@
 cluster:
   clusterName: homelab
   controlPlane:
-    # Node's own derived mesh address (HKDF from MAC) — loopback-local
-    # on the node, independent of DHCP/router state (invariant 7).
-    endpoint: https://10.42.218.125:6443
+    # cp1's declared LAN address (machines/b0-41-6f-15-3b-8f/patch.yaml,
+    # static, selected by MAC) — mesh v3 P2.5 (talos-config-359.9.5):
+    # kubernetes is IP-native and stays off the identity mesh; the
+    # endpoint is a git declaration, not a lease (invariant 7). Was the
+    # nebula address 10.42.218.125 from mesh-v2 phase 2 step 2 until
+    # 2026-09-21, and the wg0 address before that.
+    endpoint: https://10.0.0.68:6443
   apiServer:
     certSANs:
-      # cp1's nebula identity (HKDF-derived from the MAC; confirmed by
-      # the phase-1 reboot check). The wg0 SAN (10.99.0.54) left with
-      # phase 2 step 3.
-      - 10.42.218.125
+      # Talos adds every node address and the endpoint host on its own;
+      # these are the names admins and kubelets dial, stated so the cert
+      # is a declaration and not an enumeration of whatever is up:
+      # the LAN address (endpoint), the identity-plane name (talosconfig
+      # and `nix run .#kubeconfig` on the irohup tun), and the hostname.
+      - 10.0.0.68
       - cp1.mesh.internal
+      - cp1
+      # cp1's nebula address; kept until Phase 4 deletes nebula so the
+      # cert does not churn twice.
+      - 10.42.218.125
   proxy:
     # kube-proxy in nftables mode serves NodePorts only on the primary
-    # node IP by default — which would exclude nebula0. Serve them on
-    # all addresses so mesh members reach apps over the overlay.
+    # node IP by default. Serving on all addresses predates P2.5 (it
+    # was for nebula0); harmless now, revisit at Phase 4.
     extraArgs:
       nodeport-addresses: 0.0.0.0/0
   inlineManifests:

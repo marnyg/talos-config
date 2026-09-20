@@ -5,6 +5,27 @@
 machine:
   network:
     hostname: w1
+    # Declared LAN address (mesh v3 P2.5, talos-config-359.9.5) — the
+    # address this MAC already held, declared so the kubelet's path to
+    # the control plane is git-derived, not leased (invariant 7). No
+    # router DHCP exclusion on purpose (decision talos-config-ebis).
+    #
+    # deviceSelector by MAC, not `interface:` — this is the USB NIC
+    # whose name moved from enp0s13f0u1u4 to enp0s13f0u1 across one
+    # reboot (notes.md 2026-09-20). The address survives a rename; note
+    # flannel does not (it caches the name), so the flannel-pod restart
+    # from that note is still needed after a rename.
+    interfaces:
+      - deviceSelector:
+          hardwareAddr: 98:e7:43:11:97:b8
+        dhcp: false
+        addresses:
+          - 10.0.0.71/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: 10.0.0.1
+    nameservers:
+      - 10.0.0.1
   kubelet:
     # Longhorn's data path, bind-mounted into the kubelet container with
     # `rshared` propagation (ADR-0011, per Longhorn's Talos guide).

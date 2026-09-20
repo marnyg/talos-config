@@ -8,12 +8,11 @@
 # after it joins.
 cluster:
   clusterName: homelab
-  # cp1's derived mesh address — the same value cluster.yaml gives the
-  # control plane, and deliberately not a DHCP lease (invariant 7).
-  # Consequence: a worker's kubelet reaches the API server *over the
-  # mesh*, so ext-nebula must be up before it can join. That is a boot
-  # ordering the node retries through, not a bootstrap dependency —
-  # invariant 4 constrains provisioning and recovery, and both still
-  # run on HTTPS + LAN.
+  # cp1's declared LAN address — the same value cluster.yaml gives the
+  # control plane; static in its machine patch, so not a DHCP lease
+  # (invariant 7). Since P2.5 (talos-config-359.9.5) a worker's kubelet
+  # reaches the API server over the LAN, so cluster membership no
+  # longer needs any overlay up — the invariant-4 exception that the
+  # nebula-address endpoint created is gone.
   controlPlane:
-    endpoint: https://10.42.218.125:6443
+    endpoint: https://10.0.0.68:6443

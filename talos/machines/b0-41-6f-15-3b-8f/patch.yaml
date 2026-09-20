@@ -1,6 +1,30 @@
 cluster:
   allowSchedulingOnControlPlanes: true
 machine:
+  network:
+    # Declared LAN address (mesh v3 P2.5, talos-config-359.9.5): the
+    # cluster endpoint and etcd advertise this, so it is a declaration
+    # in git, not a DHCP lease (invariant 7). The value is the address
+    # the MAC already held; the router's pool is deliberately NOT
+    # edited — adding a node must not depend on router access
+    # (decision talos-config-ebis), so a pool collision is a risk we
+    # accept, not one we prevent.
+    #
+    # Selected by MAC, never by interface name: names are a kernel
+    # enumeration order, and w1's USB NIC has already been renamed by a
+    # reboot once (notes.md 2026-09-20).
+    interfaces:
+      - deviceSelector:
+          hardwareAddr: b0:41:6f:15:3b:8f
+        dhcp: false
+        addresses:
+          - 10.0.0.68/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: 10.0.0.1
+    # DHCP no longer supplies resolvers; the router forwards upstream.
+    nameservers:
+      - 10.0.0.1
   kubelet:
     # Longhorn's data path, bind-mounted into the kubelet container with
     # `rshared` propagation — same reasoning as w1's patch: Talos
