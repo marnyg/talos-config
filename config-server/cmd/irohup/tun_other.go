@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 
+	"github.com/marnyg/talos-config/config-server/meshtun"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 )
 
@@ -20,6 +21,6 @@ func privilegedSetup(string, string) (*tunSetup, error) {
 	return nil, errors.New("-tun: desktop presentation is not implemented on this OS yet (macOS first)")
 }
 
-func serveTun(context.Context, *tunSetup, *nodeagent.Agent, *connPool, string, *log.Logger) error {
+func serveTun(context.Context, *tunSetup, *nodeagent.Agent, *meshtun.Pool, string, *log.Logger) error {
 	return errors.New("unreachable")
 }
