@@ -3,13 +3,15 @@
 # gateway pod (k8s/apps/gateway) forwards <service>.gw names here with
 # Host intact, so exposure is Ingress-only. Replaces the
 # tailscale operator/ingressClass — access control moves to SIWE SSO
-# (sketch 162c630d), transport stays nebula, and no hosted account sits
+# (sketch 162c630d), transport is the identity stream the gateway
+# terminates (nebula for the TV until P2.4), and no hosted account sits
 # in the access path (invariant 3).
 #
 # hostNetwork on the single node: the controller owns :80 on every
 # interface (mesh + LAN), so service names need no NodePort. Plain HTTP
-# by design — nebula encrypts the wire; HTTPS arrives with the
-# wallet-derived CA (task refs 162c630d, deferred).
+# by design — the QUIC stream (and nebula, while it lasts) encrypts the
+# wire; HTTPS arrives with the wallet-derived CA (task refs 162c630d,
+# deferred).
 #
 # Mesh v3 (P2.3, talos-config-359.9.3): the identity plane reaches this
 # controller through the gateway pod (k8s/apps/gateway) — the node-local
