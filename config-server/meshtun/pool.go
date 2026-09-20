@@ -20,6 +20,8 @@ import (
 	"io"
 	"log"
 	"net"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +66,24 @@ func (p *Pool) Open(ctx context.Context, name, facet string) (*irohtransport.Raw
 		return nil, err
 	}
 	return c.Open(ctx)
+}
+
+// Paths reports each live pooled connection as
+// "<member>/<facet>: <path>[, <path>…]" (irohtransport.Conn.Paths),
+// sorted: the evidence for whether media is riding a LAN-direct path
+// or the relay.
+func (p *Pool) Paths() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]string, 0, len(p.conns))
+	for k, c := range p.conns {
+		if !c.Alive() {
+			continue
+		}
+		out = append(out, k+": "+strings.Join(c.Paths(), ", "))
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Close drops every pooled connection.

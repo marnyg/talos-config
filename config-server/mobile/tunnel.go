@@ -240,6 +240,7 @@ func (t *Tunnel) StatusJSON() string {
 		DNSRefused int64    `json:"dnsRefused"`
 		Upstreams  []string `json:"upstreams"`
 		Table      []string `json:"table"`
+		Paths      []string `json:"paths"`
 		Endpoints  []string `json:"endpoints"`
 		Fatal      string   `json:"fatal,omitempty"`
 	}
@@ -260,6 +261,9 @@ func (t *Tunnel) StatusJSON() string {
 		v.Upstreams = append(v.Upstreams, u.String())
 	}
 	v.Table = t.tun.Resolver.Names()
+	// "*ip:…" = LAN-direct, "*relay:…" = through the hub's relay
+	// (ADR-0006's ceiling). The status screen's headline number.
+	v.Paths = t.tun.Pool.Paths()
 	v.Endpoints = t.agent.Endpoint().Endpoints()
 	t.mu.Lock()
 	v.Fatal = t.fatalErr

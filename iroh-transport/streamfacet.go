@@ -77,6 +77,31 @@ func (c *Conn) Peer() cert.ActorID { return c.peer }
 // ALPN is the negotiated ALPN class — the acceptor's AcceptTable key.
 func (c *Conn) ALPN() string { return c.alpn }
 
+// Paths is how this connection's packets are actually travelling, as
+// iroh sees it: one entry per candidate path, `*` marking the selected
+// one, e.g. "*ip:10.0.0.11:7842" or "*relay:https://…". It is the only
+// honest answer to "is this LAN-direct or relayed" (ADR-0006 makes the
+// difference a bandwidth ceiling, not a detail), so every presentation
+// that reports a status surfaces it.
+func (c *Conn) Paths() []string {
+	var out []string
+	for _, p := range c.conn.Paths() {
+		kind := "other"
+		switch {
+		case p.IsRelay:
+			kind = "relay"
+		case p.IsIp:
+			kind = "ip"
+		}
+		sel := ""
+		if p.IsSelected {
+			sel = "*"
+		}
+		out = append(out, sel+kind+":"+p.RemoteAddr)
+	}
+	return out
+}
+
 // Alive reports whether the QUIC connection is still open.
 func (c *Conn) Alive() bool {
 	select {
