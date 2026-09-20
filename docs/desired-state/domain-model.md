@@ -86,7 +86,13 @@ classDiagram
   (the approver-set device name). Addresses derive from the role by
   pure function — `MachineIP(master, MAC)`, `DeviceIP(master, name)`
   — so the namespace is a **stateless registry**: computed, never
-  stored, impossible to drift (invariants 1–2).
+  stored, impossible to drift (invariants 1–2). _2026-09-21 (P2.5,
+  `359.9.5`): a machine role additionally **declares** its LAN
+  address in its patch (`talos/machines/<mac>/patch.yaml`, interface
+  selected by MAC); this is the cluster endpoint and etcd's advertised
+  address — stored, not computed, because kubernetes is IP-native and
+  stays off the identity plane (ADR-0016). Under v3 no other address
+  is a property of a role; presentation IPs are device-local fiction._
 - **Binding** — the CA-signed cert: a time-boxed lease of a role to a
   key, carrying (name, address, groups), 90-day validity. Membership
   *is* holding an unexpired binding; **revocation is expiry**

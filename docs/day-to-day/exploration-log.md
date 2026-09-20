@@ -125,14 +125,6 @@
   daemon resolves `nodeagent.HubName` from the hub record it already
   keeps for the beat.
 
-## Mesh v3 P2.3 — the gateway's path to ingress-nginx (2026-09-20)
-
-- 2026-09-20 — Considered "Jackett first" with SSO staying on
-  `.cp1` (second cookie domain + `oauth2.gw` host). Ruled out on
-  contact: the owner's desktop no longer has a nebula plane, so the
-  issuer `auth.cp1` itself was unreachable; the whole ingress moved in
-  one step (`5qh9`).
-
 ## Mesh v3 P2.4 — the app's build host (2026-09-20)
 
 - 2026-09-20 — Considered keeping the Android APK in CI now that the
