@@ -89,7 +89,11 @@ classDiagram
   stored, impossible to drift (invariants 1–2). _2026-09-20 (P2.5,
   `359.9.5`): a machine role additionally **declares** its LAN
   address in its patch (`talos/machines/<mac>/patch.yaml`, interface
-  selected by MAC); this is the cluster endpoint and etcd's advertised
+  selected by the NIC's own MAC — which need not be the MAC that
+  selects the role: w1's directory MAC is the laptop's Dell pass-
+  through address, its LAN NIC is a dongle with its own, and a
+  selector on the wrong one silently falls back to DHCP, 2026-09-20);
+  this is the cluster endpoint and etcd's advertised
   address — stored, not computed, because kubernetes is IP-native and
   stays off the identity plane (ADR-0016). Under v3 no other address
   is a property of a role; presentation IPs are device-local fiction._
