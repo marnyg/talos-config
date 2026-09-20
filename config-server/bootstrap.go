@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/resolver"
 
 	"github.com/siderolabs/crypto/x509"
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
@@ -336,20 +337,38 @@ func (b *bootstrapper) zone() string {
 // the same name talosconfig uses over irohup. The facet connection is
 // closed with the client; a dial failure is returned as-is
 // (errMemberUnknown when the name map has nobody of that name).
+//
+// The endpoint is a name, not an address: machinery hands a single
+// endpoint to gRPC as `dns:///<san>`, and gRPC's DNS resolver would
+// look it up here (on the hub, where it does not exist — "produced
+// zero addresses") before our dialer ever ran. facetResolver shadows
+// the dns scheme for this one client and passes the name through.
 func (b *bootstrapper) talosClient(ctx context.Context, m machines.Machine, name string) (*bootClient, string, error) {
-	ca, err := b.issuingCA(m)
-	if err != nil {
-		return nil, "", err
-	}
-	admin, err := secrets.NewAdminCertificateAndKey(time.Now(), ca, role.MakeSet(role.Admin), time.Hour)
-	if err != nil {
-		return nil, "", fmt.Errorf("minting admin cert: %w", err)
-	}
 	fc, err := b.hub.dialMember(ctx, name, "apid", bootstrapDialTimeout)
 	if err != nil {
 		return nil, "", err
 	}
-	san := name + "." + b.zone()
+	c, err := b.clientOver(ctx, m, name+"."+b.zone(), fc)
+	if err != nil {
+		_ = fc.Close()
+		return nil, "", err
+	}
+	return &bootClient{Client: c, fc: fc}, string(fc.Peer()), nil
+}
+
+// clientOver is talosClient after the facet dial: the machinery client
+// with every gRPC connection opened as one stream on fc, TLS-verified
+// against san. Split out so a test can drive it over an in-memory
+// facet with no name map or issuer.
+func (b *bootstrapper) clientOver(ctx context.Context, m machines.Machine, san string, fc facetClient) (*client.Client, error) {
+	ca, err := b.issuingCA(m)
+	if err != nil {
+		return nil, err
+	}
+	admin, err := secrets.NewAdminCertificateAndKey(time.Now(), ca, role.MakeSet(role.Admin), time.Hour)
+	if err != nil {
+		return nil, fmt.Errorf("minting admin cert: %w", err)
+	}
 	cfg := clientconfig.NewConfig("auto-bootstrap", []string{san}, ca.Crt, admin)
 	dialer := grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 		raw, err := fc.Open(ctx)
@@ -358,13 +377,30 @@ func (b *bootstrapper) talosClient(ctx context.Context, m machines.Machine, name
 		}
 		return &facetStreamConn{ReadWriteCloser: raw, peer: fc.Peer()}, nil
 	})
-	c, err := client.New(ctx, client.WithConfig(cfg), client.WithGRPCDialOptions(dialer))
-	if err != nil {
-		_ = fc.Close()
-		return nil, "", err
-	}
-	return &bootClient{Client: c, fc: fc}, string(fc.Peer()), nil
+	return client.New(ctx, client.WithConfig(cfg), client.WithGRPCDialOptions(dialer, grpc.WithResolvers(facetResolver{})))
 }
+
+// facetResolver is a gRPC resolver for the `dns` scheme that never
+// resolves: the target's endpoint is reported as the one address, so
+// the context dialer sees it verbatim and TLS uses it as ServerName.
+// Registered per-ClientConn via grpc.WithResolvers, so it shadows the
+// global DNS resolver for the bootstrap client only.
+type facetResolver struct{}
+
+func (facetResolver) Scheme() string { return "dns" }
+
+func (facetResolver) Build(target resolver.Target, cc resolver.ClientConn, _ resolver.BuildOptions) (resolver.Resolver, error) {
+	ep := target.Endpoint()
+	if err := cc.UpdateState(resolver.State{Addresses: []resolver.Address{{Addr: ep, ServerName: ep}}}); err != nil {
+		return nil, err
+	}
+	return noopResolver{}, nil
+}
+
+type noopResolver struct{}
+
+func (noopResolver) ResolveNow(resolver.ResolveNowOptions) {}
+func (noopResolver) Close()                                {}
 
 // bootClient is a machinery client over one facet connection; Close
 // releases both.
