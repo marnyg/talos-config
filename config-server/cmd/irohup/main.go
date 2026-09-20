@@ -89,7 +89,6 @@ func main() {
 		beat     = flag.Duration("beat", nodeagent.DefaultBeat, "renewal beat interval")
 		tunMode  = flag.Bool("tun", false, "desktop presentation: utun + 198.18/15 fake IPs + split DNS instead of bridges (root at start; drops to -user)")
 		runAs    = flag.String("user", "_talosmesh", "with -tun: the user to drop to after the privileged setup")
-		dnsUp    = flag.String("dns-upstream", "", "with -tun: where mesh.internal names NOT in the name map go; empty = NXDOMAIN")
 	)
 	flag.Var(&br, "bridge", "<member>/<facet>=<host:port> local TCP bridge; repeatable (facets: "+strings.Join(policy.Facets(policy.KindNode), ", ")+")")
 	flag.Parse()
@@ -206,7 +205,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := serveTun(ctx, tunUp, a, pool, *dnsUp, logger); err != nil && ctx.Err() == nil {
+			if err := serveTun(ctx, tunUp, a, pool, logger); err != nil && ctx.Err() == nil {
 				// The utun or its route is gone and we cannot re-add:
 				// exit non-zero so launchd restarts us as root.
 				logger.Printf("fatal: %v", err)

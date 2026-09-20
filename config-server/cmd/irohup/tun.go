@@ -111,7 +111,7 @@ func chownTree(dir string, uid, gid int) error {
 
 // serveTun runs the presentation (meshtun) over the utun until ctx
 // ends or the tun path breaks.
-func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *meshtun.Pool, upstream string, logger *log.Logger) error {
+func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *meshtun.Pool, logger *log.Logger) error {
 	if os.Geteuid() == 0 {
 		return errors.New("serveTun as root: privilegedSetup must run first")
 	}
@@ -119,7 +119,7 @@ func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *meshtu
 	if err != nil {
 		return err
 	}
-	mt, err := meshtun.Start(meshtun.Options{Agent: a, Link: link, Pool: pool, Upstreams: upstream, Log: logger})
+	mt, err := meshtun.Start(meshtun.Options{Agent: a, Link: link, Pool: pool, Log: logger})
 	if err != nil {
 		link.Close()
 		return err
