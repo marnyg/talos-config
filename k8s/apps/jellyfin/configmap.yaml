@@ -117,9 +117,12 @@ data:
 
     # Wallet button on the login page. Relative action: the redirect
     # URI is derived from the requesting host; both jellyfin.gw and
-    # jellyfin.cp1 (nebula TV until P2.4) callbacks are registered at
-    # siwe-oidc, while LAN-direct clients (TV on 30096) keep using the
-    # local login form.
+    # jellyfin.cp1 callbacks are registered at siwe-oidc. The TV moved
+    # to jellyfin.gw with the v3 APK (359.9.4.5), so the jellyfin.cp1
+    # registration is dead weight until vftt cuts it. Clients that
+    # cannot run SIWE in a webview — the Android/TV apps — sign in
+    # with Quick Connect or the local form instead (95la/i1il), as do
+    # LAN-direct clients on NodePort 30096.
     curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" "$JELLYFIN_URL/System/Configuration/branding" -d '{
       "LoginDisclaimer": "<form action=\"/sso/OID/start/wallet\"><button class=\"raised block emby-button button-submit\">Sign in with wallet</button></form>",
       "CustomCss": "a.raised.emby-button { padding: 0.9em 1em; color: inherit !important; } .disclaimerContainer { display: block; }",

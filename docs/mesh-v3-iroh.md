@@ -486,8 +486,11 @@ Findings that shape Phase 1:
   the same APK also loads on 16 KB-page devices.
 
 Not exercised: the Shield as the client (the throughput bar was met on
-the phone; the Shield adds only a wired NIC and a different SoC — the
-parents'-TV deployment `4te` is where it gets exercised), cp1 as the node side
+the phone; the Shield adds only a different SoC — the
+parents'-TV deployment `4te` is where it gets exercised. _2026-09-20,
+`359.9.4.5`: the Shield now runs the shipped v3 app. It is on **wlan0**,
+not the wired NIC this line assumed, and the bar was not re-measured —
+the only library item is a 480p ~1 Mbps clip._), cp1 as the node side
 (step 7: extension `0.0.4` with the Jellyfin forward), UDP flows other
 than DNS, IPv6 inside the tunnel, the `SocketProtector` path under
 routes wider than `198.18/15`.
@@ -666,9 +669,15 @@ Findings:
    the link differs), which is what closed `phz`. The APK build left
    CI with it: the AAR links a cross-built `libiroh_ffi.a`, so it is
    built on the NixOS box (`android/shell.nix`) and published by
-   `android/publish.sh`. **Not yet exercised on a device** — no
-   sideload, no enrollment, no media measurement; `jellyfin.cp1` and
-   the hub's `/hosts` + `/policy` stay until a device runs it._
+   `android/publish.sh`. **Both devices migrated 2026-09-20**: the
+   phone (`359.9.4`) proved enrollment, split DNS and both path types
+   (`*ip` on wifi, `*relay` on 5G); the TV (`359.9.4.5`) proved the
+   media itself — Direct Play, no transcode, over a LAN-direct `*ip`
+   path to w1. Neither signs in with the wallet: SIWE cannot run in an
+   app webview (`95la`, spike `i1il`), so the TV came in on Quick
+   Connect as the local break-glass account. `jellyfin.cp1`, the hub's
+   `/hosts` + `/policy` and the `1gv` gate are now cuttable (`vftt`,
+   `ri3b`, `xnat`)._
 5. k8s endpoint off the mesh: static LAN IPs into machine configs +
    router DHCP exclusion; certSANs → LAN names; talosconfig/
    kubeconfig re-pointed (reverses mesh-v2 phase-2 step 2; sequenced

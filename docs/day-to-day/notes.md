@@ -731,3 +731,32 @@
   `protocol/*.go` changes** (local replace vendored from the tree);
   the remote nix build failed with "a.actor.Serves undefined" from a
   stale FOD. Bogus hash → read `got:` (default.nix caveat 2).
+- 2026-09-20 — **The TV is driven over network adb, not a remote**:
+  `adb connect 10.0.0.2:5555` after Settings → Device Preferences →
+  Developer options → Network debugging (the first connect needs the
+  on-screen "Allow debugging" accepted once). The Shield's leanback UI
+  ignores `input tap` — navigate with `input keyevent DPAD_*` and read
+  the focused node from `uiautomator dump`. `DPAD_CENTER` inside an
+  EditText types `a` via the leanback IME; use `KEYCODE_ENTER`.
+- 2026-09-20 — **The Shield's toybox has no curl/wget/nslookup**, only
+  `nc`, and that `nc` closes the socket on stdin EOF — a piped HTTP
+  request reads as `0B in` (looks like the server hung up). Hold stdin:
+  `{ printf '...'; sleep 6; } | nc <ip> <port>`.
+- 2026-09-20 — **The mesh app is debuggable, so its log is readable
+  without root**: `adb shell run-as dev.marnyg.mesh tail -20
+  cache/mesh.log`; membership lives in `files/member/`. Reading the
+  log this way does not disturb playback, unlike opening the in-app
+  Debug screen.
+- 2026-09-20 — **Jellyfin Quick Connect can be authorized from the
+  cluster** instead of a browser: auth as `admin` at
+  `/Users/AuthenticateByName` inside the pod, then
+  `POST /QuickConnect/Authorize?code=<6 digits>` with `X-Emby-Token`.
+  Signs the device in as *that* account — currently an admin one.
+- 2026-09-20 — **`android-latest` can lag the real APK.** The AAR
+  build left CI at P2.4, so the release asset is only as fresh as the
+  last manual `android/publish.sh`; check the asset size (v1 ≈ 94 MB,
+  v3 ≈ 18 MB) before telling anyone to sideload it.
+- 2026-09-20 — **Reinstalling the app is destructive and one-way**:
+  the CI-signed v1 and the NixOS-built v3 have different debug
+  keystores, so `pm install -r` fails `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+  and the uninstall takes the device's nebula config with it.

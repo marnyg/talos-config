@@ -5,60 +5,73 @@
 
 ## Last session
 
-2026-09-21 (eleventh session) — **backlog grooming only. No code
-changed**; the working tree is untouched since `7a0d084`. The whole
-session moved state from prose into the issue graph.
+2026-09-20 (eleventh session) — **the TV is on the identity plane;
+`359.9.4.5` closed. P2.4 is done on both devices.**
 
-- **Eleven issues closed.** Three were duplicates or resolved gates
-  (`im9` was a verbatim copy of `p5g`; `vdv`'s first half landed as
-  `359.8.2.2` and its second half *is* `5gz`; `7ci`'s gate `359.1.5`
-  passed). Five were nebula-era work the iroh migration had already
-  eaten (`adz` `9nf` `exq` `en6` `4ns`). `359.8.2` ("Hub as actors")
-  was open with all four children and six decision beads closed and
-  its parent Phase 1 closed on 09-19 — a leftover, not work.
-  `t6n` is subsumed by `359.11.2`'s `neb*.go` deletion scope.
-- **The last session's loose threads are now beads, not prose.**
-  `eq91` (the handover issue) was carrying six threads in its body;
-  each is now a real issue with its own edges, and `eq91` is closed.
-  The three post-TV cleanups (`vftt` cut `jellyfin.cp1`, `ri3b` delete
-  the hub's `/hosts` + `/policy`, `xnat` drop the `1gv` gate and
-  `hostNetwork`) are blocked on the TV migration so they cannot
-  surface as ready work early.
-- **The Mesh v3 spine was verified coherent end to end**:
-  `359.9.4 → 359.9.5 → 359.10 → 359.11 → .1→.2→.3→.4 → ihn`.
-  Deletion genuinely cannot precede soak. 53 → 51 open, deferred
-  17 → 11.
+- **The Shield runs the v3 APK and plays media over the plane.**
+  Driven end to end over network adb (`adb connect 10.0.0.2:5555`,
+  authorized once from the remote). Enrolled through the in-app device
+  flow as member **`tv` / `[media]`**, NodeId `ed:b96def6f…`; the
+  gateway logged `admitted "tv" [media] → jellyfin.media.svc…:8096`.
+  Split DNS correct (`hub→198.18.1.1`, `jellyfin.gw→198.18.1.2` in
+  4 ms, `example.com` to the underlay), split routing correct (only
+  `198.18.0.0/15` in `tun0`, default stays on wlan0).
+- **Media verified where the phone's could not be**: Big Buck Bunny,
+  **`DirectPlay`, no transcode**, `RemoteEndPoint 10.244.2.222` (the
+  gateway pod), selected path **`*ip:10.0.0.67:48198` = w1 LAN-direct,
+  no relay**, 138 ms to connect. `tun0` carried 20.3 MB at 0.89 Mbps —
+  the clip's bitrate, not a ceiling (the only library item is 480p).
+- **Sign-in went around the wall, not through it.** SIWE still cannot
+  run in an app webview (`95la`/`i1il`), so the TV came in on **Quick
+  Connect**, authorized via `kubectl exec` against the Jellyfin API as
+  the `jellyfin-admin` break-glass account. The TV therefore holds a
+  **Jellyfin admin** session, not the wallet identity.
+- **The `android-latest` release had never carried the v3 APK** — it
+  was still the 94 MB CI-built v1 from 2026-09-19. Published the
+  18 MB v3 build (`android/publish.sh`, `talos-mesh.apk @ c063f06`).
+  Sideload over that asset would have installed nebula-era v1.
+- `k8s/apps/jellyfin/configmap.yaml`: the branding comment said
+  "jellyfin.cp1 (nebula TV until P2.4)" — corrected to name Quick
+  Connect / the local form as the non-SIWE path and to mark the
+  `jellyfin.cp1` registration as dead weight until `vftt`.
 
 ## Loose threads
 
-- **Still nothing played.** `359.9.4.4` is the one unproven item in
-  P2.4's acceptance criteria — transport is verified on both path
-  types, media is not. It is the only real P1 in the repo.
-- **`359.9.4.4` was created as `in_progress`, not `open`** —
-  `bd create --parent` appears to inherit the parent's status, and
-  `bd ready` excludes `in_progress`. So the highest-priority task in
-  the repo is currently absent from the ready queue and reads as
-  though someone is on it. Nobody is. Fix with
-  `bd update talos-config-359.9.4.4 --status open`.
-- **`0q0` moved from `blocked` to `deferred`.** Nothing in the graph
-  blocked it; the gate is buying hardware. The knowing deviation from
-  invariant 2 (`longhorn-bulk` at 1 replica) is unchanged by this —
-  but the bead is now less visible, so the deviation is easier to
-  forget. See the invariant-2 note under "Workloads / storage".
-- **`bd ready --exclude-type` is a silent no-op** in `1.0.3 (dev)` for
-  both `epic` and `bug`. Epics therefore rank inside `bd ready` —
-  `0bc` and `359` are P1 and outrank real P2 work. Left as-is by
-  owner ruling rather than deferring or demoting live epics to satisfy
-  a broken filter; `bd ready -n 99 | grep -v '\[epic\]'` is the
-  workaround. Unfiled upstream.
-- Not done, offered and skipped: `4mg`/`owh` prose-vs-graph drift
-  (both say "wait for X" where X has landed or has no edge), and
-  `bsj` → `98d` ordering under the Longhorn epic.
+- **The bead's premise was half wrong.** The TV's *active* Jellyfin
+  server was `https://jellyfin.pytt.io` — a **foreign** server (id
+  `9cdce8763dbc`, "odin", v12.0.0) reached over **Tailscale**
+  (`com.tailscale.ipn` is installed; the name resolves into 100.64/10).
+  `jellyfin.cp1.mesh.internal` was a *saved* server, not the one in
+  use, and the v1 mesh app was not even running (no tun). Owner's
+  call: **leave all saved servers in place**, and **leave the
+  Tailscale/mesh one-VPN-slot conflict unrecorded** for now.
+- **The TV is signed in as Jellyfin `admin`.** Jellyfin admin means
+  plugin install, i.e. code execution in the pod
+  (`k8s/apps/jellyfin/sealed-secret.yaml:8`). A non-admin user for the
+  TV is the obvious hardening and was not done.
+- **Four `config-server/` files are modified in the worktree from an
+  earlier session and deliberately left uncommitted**: `meshtun/{tun,
+  pool}.go`, `cmd/irohup/main.go`, `mesh/nebhttp_e2e_test.go`. They
+  move `BytesIn/BytesOut` into `Pipe` so a long flow shows throughput
+  *while* it runs — exactly the gap that made `bytesIn: 0` misleading
+  mid-stream this session. `meshtun` is behind the `iroh` build tag,
+  so it cannot be compiled on the Mac; `go vet ./mesh/...` passes.
+- `bh74` (a member advertising its own fake-range address) reproduces
+  on the TV: `endpoints` includes `iroh:udp=198.18.0.1:59924`.
+- The enroll screen's status line ("approve at /status") renders at
+  y≈1130 on the Shield's 1080-px screen — invisible; only the QR and
+  user code show.
+- `tun: flow to 198.18.0.2:853: not a name we minted` counts as a
+  `flowError` on every start — that is Android Private DNS probing
+  DoT at the fake resolver (a P0.2 finding), logged as an error.
 
 ## Suggested next steps
 
-- Re-open `359.9.4.4`, then finish it: Quick Connect the Jellyfin app
-  in, play something, read `paths` under load.
-- Then `359.9.4.5` (the TV), which unblocks `vftt`/`ri3b`/`xnat` in
-  one go.
+- Cut the now-unblocked nebula scaffolding: `vftt` (`jellyfin.cp1` in
+  `k8s/apps/media/ingress.yaml`, the siwe-oidc client list, the
+  jellyfin configmap comment), `ri3b` (the hub's `/hosts` + `/policy`),
+  `xnat` (the `1gv` gate + ingress-nginx hostNetwork).
+- Decide what to do with the four uncommitted `meshtun` files —
+  finish and commit on the NixOS box (where the `iroh` tag builds), or
+  discard.
 - Then P2.5 (`359.9.5`): k8s/Talos endpoint off the mesh.
