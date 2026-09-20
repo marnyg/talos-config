@@ -46,20 +46,12 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Wait for the admin's handshake once; every case runs over the
-	// established tunnels after that.
-	deadline := time.Now().Add(30 * time.Second)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		_, _, lastErr = meshGet(admin, hub.OverlayAddr(), "/")
-		if lastErr == nil {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	if lastErr != nil {
-		t.Fatalf("mesh http never answered over the overlay: %v", lastErr)
-	}
+	// Wait out each device's first handshake before any case runs, so
+	// no case pays for one inside its own request timeout. Warming only
+	// the admin left the tv's handshake in the first tv case, which is
+	// what made this test flake under a loaded parallel `go test ./...`.
+	waitOverlayReady(t, "admin", admin, hub.OverlayAddr())
+	waitOverlayReady(t, "tv", tv, hub.OverlayAddr())
 
 	t.Run("hello for every peer", func(t *testing.T) {
 		status, body, err := meshGet(tv, hub.OverlayAddr(), "/")
@@ -165,11 +157,33 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 	})
 }
 
+// waitOverlayReady polls / from dev until the overlay answers: the
+// first request over a fresh tunnel includes a nebula handshake, which
+// is the slow, machine-load-sensitive part.
+func waitOverlayReady(t *testing.T, name string, dev *nebstack.Service, hubAddr netip.Addr) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if _, _, lastErr = meshGet(dev, hubAddr, "/"); lastErr == nil {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("mesh http never answered over the overlay for %s: %v", name, lastErr)
+}
+
+// meshGetTimeout bounds one request. It is not a latency assertion —
+// the hub answers in milliseconds once the tunnel is up — only a bound
+// so a wedged tunnel fails the case instead of the whole run; keep it
+// far above the handshake a cold tunnel may still need under load.
+const meshGetTimeout = 15 * time.Second
+
 // meshGet performs one HTTP GET through a member's netstack to the
 // hub's overlay listener.
 func meshGet(dev *nebstack.Service, hubAddr netip.Addr, path string) (int, string, error) {
 	client := &http.Client{
-		Timeout: 2 * time.Second,
+		Timeout: meshGetTimeout,
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return dev.DialContext(ctx, network, addr)

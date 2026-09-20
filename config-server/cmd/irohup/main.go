@@ -331,7 +331,7 @@ func (b bridge) serve(ctx context.Context, pool *meshtun.Pool, logger *log.Logge
 				return
 			}
 			t0 := time.Now()
-			in, out := meshtun.Pipe(raw, tcp.(*net.TCPConn))
+			in, out := meshtun.Pipe(raw, tcp.(*net.TCPConn), nil)
 			logger.Printf("bridge %s/%s: stream done: %dB in, %dB out, %s", b.Name, b.Facet, in, out, time.Since(t0).Round(time.Millisecond))
 		}()
 	}

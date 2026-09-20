@@ -43,8 +43,10 @@ type Stats struct {
 	Flows      atomic.Int64
 	FlowsOpen  atomic.Int64
 	FlowErrors atomic.Int64
-	BytesIn    atomic.Int64 // member → client
-	BytesOut   atomic.Int64 // client → member
+	// Byte counters move while a flow is running (see Pipe), so a
+	// long-lived stream shows up in them before it ends.
+	BytesIn  atomic.Int64 // member → client
+	BytesOut atomic.Int64 // client → member
 }
 
 // Tun is a running presentation.
@@ -133,9 +135,10 @@ func (t *Tun) flow(app fakeip.Conn, dst netip.AddrPort) {
 		return
 	}
 	t0 := time.Now()
-	in, out := Pipe(raw, app)
-	t.Stats.BytesIn.Add(in)
-	t.Stats.BytesOut.Add(out)
+	// The counters are handed to Pipe rather than added after it
+	// returns: a flow that lives for a whole movie would otherwise
+	// read as zero throughput on the status surface until it closed.
+	in, out := Pipe(raw, app, &Counters{In: &t.Stats.BytesIn, Out: &t.Stats.BytesOut})
 	t.log.Printf("tun: %s/%s (%s): stream done: %dB in, %dB out, %s", member, facet, name, in, out, time.Since(t0).Round(time.Millisecond))
 }
 

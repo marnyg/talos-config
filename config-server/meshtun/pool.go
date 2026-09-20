@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/nodeagent"
@@ -157,17 +158,70 @@ type HalfCloser interface {
 	CloseWrite() error
 }
 
+// Counters are the two directions of a Pipe, incremented as the bytes
+// move rather than when the flow ends: a status surface read during a
+// long-lived stream (a movie) must not report zero for it. Either
+// field may be nil, and a nil *Counters accounts for nothing.
+type Counters struct {
+	In  *atomic.Int64 // member → client
+	Out *atomic.Int64 // client → member
+}
+
+func (c *Counters) in() *atomic.Int64 {
+	if c == nil {
+		return nil
+	}
+	return c.In
+}
+
+func (c *Counters) out() *atomic.Int64 {
+	if c == nil {
+		return nil
+	}
+	return c.Out
+}
+
+// countWriter adds what it wrote to n before returning. Wrapping the
+// destination hides any ReadFrom fast path, so copyCounted pairs it
+// with a buffer of its own rather than leaving io.Copy's 32 KiB one.
+type countWriter struct {
+	w io.Writer
+	n *atomic.Int64
+}
+
+func (c countWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	if n > 0 && c.n != nil {
+		c.n.Add(int64(n))
+	}
+	return n, err
+}
+
+func copyCounted(dst io.Writer, src io.Reader, n *atomic.Int64) int64 {
+	if n == nil {
+		copied, _ := io.Copy(dst, src)
+		return copied
+	}
+	copied, _ := io.CopyBuffer(countWriter{w: dst, n: n}, src, make([]byte, copyBufSize))
+	return copied
+}
+
+// copyBufSize is the buffer a counted copy uses; io.Copy's default is
+// 32 KiB and a stream carrying video is happier with more.
+const copyBufSize = 64 << 10
+
 // Pipe splices local ↔ raw until both directions are done; half-closes
-// propagate. Returns bytes from the peer and bytes sent to it.
-func Pipe(raw *irohtransport.Raw, local HalfCloser) (in, out int64) {
+// propagate. Returns bytes from the peer and bytes sent to it, and — if
+// c is non-nil — adds them to c as they move, not at the end.
+func Pipe(raw *irohtransport.Raw, local HalfCloser, c *Counters) (in, out int64) {
 	defer raw.Close()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		out, _ = io.Copy(raw, local)
+		out = copyCounted(raw, local, c.out())
 		_ = raw.CloseWrite()
 	}()
-	in, _ = io.Copy(local, raw)
+	in = copyCounted(local, raw, c.in())
 	_ = local.CloseWrite()
 	<-done
 	return in, out
