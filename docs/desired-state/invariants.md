@@ -93,11 +93,16 @@ this list is the checkable form.
    HTTPS + device flow; recovery works from LAN with owner keys.
    _Scope, clarified 2026-07-31 when the first worker joined:_ this
    constrains **provisioning and admin recovery**, not steady-state
-   cluster membership. A worker's kubelet reaches the API server over
+   cluster membership. ~~A worker's kubelet reaches the API server over
    the mesh, because `apiServer.certSANs` carries only mesh names
    (`10.42.218.125`, `cp1.mesh.internal`) — so a worker cannot rejoin
    while the lighthouse is unreachable. Accepted deliberately: the
-   lighthouse is a hard dependency of cluster membership. Provisioning
+   lighthouse is a hard dependency of cluster membership.~~ _Closed
+   2026-09-21 (mesh v3 P2.5, `359.9.5`): the cluster endpoint is cp1's
+   declared LAN address, so cluster membership needs no overlay at all
+   and the invariant holds unqualified for the cluster too. The
+   identity plane carries only the admin CLI path (`cp1.mesh.internal`
+   SAN)._ Provisioning
    a replacement node still needs nothing but HTTPS + the wallet.
 5. **Single public entrypoint.** The hub is the only public surface
    (HTTPS + its UDP overlay port). No second entrypoint, no home-IP

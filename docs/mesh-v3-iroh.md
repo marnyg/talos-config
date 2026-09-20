@@ -682,6 +682,16 @@ Findings:
    router DHCP exclusion; certSANs → LAN names; talosconfig/
    kubeconfig re-pointed (reverses mesh-v2 phase-2 step 2; sequenced
    late because it is the only step touching cluster availability).
+   _Live 2026-09-21 (`359.9.5`, `625a2e6`): both nodes declare their
+   LAN address by MAC in `talos/machines/<mac>/patch.yaml`; endpoint
+   `https://10.0.0.68:6443`; certSANs name the LAN address, the
+   identity-plane name and the hostname. Applied without a reboot,
+   both nodes stayed Ready. No router DHCP exclusion (decision `ebis`:
+   adding a node must not depend on router access). talosconfig and
+   kubeconfig were NOT re-pointed — they had moved to
+   `cp1.mesh.internal` on the irohup tun in step 1, so the SAN stays.
+   `6gq` (etcd advertising the lease) resolved by construction.
+   Invariant 4's cluster-membership exception is closed._
 
 ### Phase 3 — soak
 

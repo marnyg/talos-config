@@ -3,14 +3,13 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** **Mesh v3 Phase 2 — last step: P2.5 (`359.9.5`), the
-k8s/Talos endpoint off the mesh.** P2.0–P2.4 are live and the
-scaffolding they held up is gone (`vftt`, `ri3b`, `xnat`, 2026-09-20):
-no `*.cp1` names in k8s, no nebula-side hub HTTP beyond a hello,
-ingress-nginx reachable only through the gateway. What is left on
-nebula is the apiServer certSAN / kubelet path (`cp1.mesh.internal`,
-invariant 4's stated exception) — P2.5 moves it to declared LAN
-addresses, then Phase 3 (`359.10`) soaks with nebula idle.
+**Now:** **Mesh v3 Phase 3 — soak (`359.10`).** Phase 2 is complete:
+P2.5 (2026-09-21) put the k8s endpoint on cp1's declared LAN address,
+so nothing in steady-state cluster membership touches any overlay.
+Nebula is installed but carries nothing that matters. Exit is on event
+coverage, not calendar: one natural hub re-seal, one node reboot (w1's
+USB NIC rename + flannel is the thing to watch), one full remote-media
+session — then Phase 4 (`359.11`) deletes nebula.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
 members dialed by key, IP as device-local fiction, hub as actors

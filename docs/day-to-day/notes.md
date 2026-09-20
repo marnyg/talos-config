@@ -298,10 +298,14 @@
 
 ## Cluster / Talos
 
-- **cp1's LAN lease drifts freely** (moved four times in one day).
-  Never hardcode it; the cluster endpoint is cp1's mesh address
-  `10.42.218.125`. Find a node in maintenance mode with a port-50000
-  scan. (Mesh v3 P2.5 replaces this with declared static LAN IPs.)
+- **LAN addresses are declared, not leased** _(2026-09-21, P2.5)_:
+  cp1 `10.0.0.68`, w1 `10.0.0.71`, in `talos/machines/<mac>/patch.yaml`
+  by MAC; the cluster endpoint is `https://10.0.0.68:6443`. A **blank**
+  node (maintenance mode, before its config is applied) still gets a
+  DHCP lease — find it with a port-50000 scan; the static address
+  takes over with the first apply. Adding a node needs no router
+  access (decision `ebis`); a DHCP-pool collision is accepted, and its
+  symptom would be a duplicate-address fight on the LAN.
 - Talos-generated node names are **not stable across reinstalls**
   (cp1 is currently `talos-wu6-eib`); w1 pins its hostname for this
   reason.

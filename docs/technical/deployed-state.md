@@ -9,9 +9,13 @@ or change something, update the date.
 > the last dated blocks except: w1 down since 2026-08-04 (media volumes
 > faulted); hub redeployed 2026-08-15 with `/hosts` + media :80 rule;
 > Android app shipped (ADR-0013). **Mesh v3 / ADR-0017 are not
-> deployed** — nebula, as described below, is what runs. Blocks below
-> are ~5 weeks stale on cluster facts (etcd still advertises the DHCP
-> lease, `talos-config-6gq`, deferred pending v3 P2.5).
+> deployed** — nebula, as described below, is what runs.
+>
+> **2026-09-21:** the banner above is itself stale — Mesh v3 Phase 2
+> is complete and live (irohup tun, gateway, app, and P2.5's LAN
+> endpoint; see `mesh-v3-iroh.md` Phase 2 and the cluster-endpoint
+> bullet below). Only the two endpoint/etcd bullets were re-verified
+> today; the rest of this file still describes the nebula era.
 
 ## Cluster — _last verified 2026-07-31_
 
@@ -48,25 +52,24 @@ or change something, update the date.
   --system-labels-to-wipe EPHEMERAL`) keeps the bootloader and
   `u-media`; a **plain `talosctl reset` wipes the entire disk including
   the media library** and needs USB/PXE to recover — don't.
-- Cluster endpoint `https://10.42.218.125:6443` — the node's **derived
-  mesh address**, deliberately not its DHCP LAN address (invariant 7;
-  DHCP handed out four leases in one day before this moved off the LAN,
-  and the wg0 address it moved to next died with phase 2).
-- **etcd still advertises the DHCP lease**, which invariant 7 forbids
-  and which the cluster endpoint above already moved away from:
-  `talosctl etcd members` shows peer/client URLs at `10.0.0.41:2380/2379`.
-  Talos reconciles the *peer* URL from the current address but never the
-  *client* URL, which is only re-published when etcd restarts — and etcd
-  has no API restart, only a reboot. A lease drift between reboots
-  therefore leaves a member advertising a dead address, which fails
-  `talosctl upgrade`'s pre-flight (`etcd member … is not healthy`) while
-  etcd itself is fine. Hit on 2026-07-31; cleared by a reboot, not fixed.
-  Durable fix is `cluster.etcd.advertisedSubnets` on the mesh —
-  **but** setting it implicitly narrows the listen addresses to the same
-  subnet (siderolabs/talos@dce923f), and kube-apiserver dials
-  `--etcd-servers=https://127.0.0.1:2379`, so it needs an explicit
-  `listenSubnets` that retains loopback or the API server dies
-  (siderolabs/talos#12542).
+- **Cluster endpoint `https://10.0.0.68:6443` — cp1's declared static
+  LAN address** _(2026-09-21, mesh v3 P2.5 `359.9.5`)_. Both nodes
+  declare their LAN address in `talos/machines/<mac>/patch.yaml`
+  (`deviceSelector.hardwareAddr`, `dhcp: false`, default via
+  `10.0.0.1`, resolver `10.0.0.1`): cp1 `10.0.0.68` on `eno1`, w1
+  `10.0.0.71` on its USB NIC. The router's DHCP pool is deliberately
+  not edited (decision `ebis`). Predecessors: DHCP lease (drifted four
+  times in one day) → wg0 → nebula `10.42.218.125` (mesh-v2 phase 2
+  step 2, until 2026-09-21).
+- **etcd advertises `10.0.0.68:2380/2379`** — now a declared address,
+  which resolves `talos-config-6gq` by construction (it used to
+  advertise the DHCP lease, and a lease drift between reboots left a
+  member advertising a dead address — failed `talosctl upgrade`
+  pre-flight on 2026-07-31). `advertisedSubnets` was never set; it is
+  not needed now.
+- cp1's `machined` kept a few pre-P2.5 ESTABLISHED sockets to
+  `10.42.218.125:6443` (loopback-local on `nebula0`); they die at the
+  next reboot or when nebula stops. Nothing depends on them.
 - Media stack Running. SealedSecrets (`newshosting`, `nzbgeek`)
   unseal via the inlineManifest-provisioned key pair.
 - Admin access is mesh-only: `talos/talosconfig` + `kubeconfig` (local,
