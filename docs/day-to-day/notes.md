@@ -760,3 +760,31 @@
   the CI-signed v1 and the NixOS-built v3 have different debug
   keystores, so `pm install -r` fails `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
   and the uninstall takes the device's nebula config with it.
+- 2026-09-20 — **The NixOS box builds the APK from `~/p24`, which is
+  not a git clone** — an rsync'd copy of the tree (`~/p0` is the old
+  P0.2 clone, on a detached HEAD). Sync the files you changed
+  (`rsync -a config-server/meshtun/ mar@nixos:~/p24/config-server/meshtun/`)
+  before building, or you will ship the previous source. Warm, the
+  rebuild is minutes, not the hour the cold cross build costs:
+  `libiroh_ffi.a` for `aarch64-linux-android` and the gradle caches
+  are already in the store.
+- 2026-09-20 — **`adb install -r` over the *same* debug keystore keeps
+  the member**: reinstalling the NixOS-built APK on top of itself left
+  `files/member/` intact (name, key, kit) — only the tunnel had to be
+  reconnected. The destructive case is v1→v3 (different keystores).
+- 2026-09-20 — **Jellyfin's libraries are backed by read-only mounts
+  in the jellyfin pod**; writes go through the *arr pods
+  (`kubectl exec -n media deploy/radarr -c radarr -- …` sees
+  `/movies` read-write). `POST /Library/Refresh` with an admin token
+  picks the file up in ~20 s.
+- 2026-09-20 — **The Mac daemon lags a talos-config commit by a
+  `darwin-rebuild switch`**: bumping `~/git/nixos/flake.lock` is not
+  enough, and nothing warns you — compare the store path in
+  `/Library/LaunchDaemons/org.nixos.talos-mesh.plist` against a symbol
+  you expect (`grep Counters $(nix-store -q --deriver …)`-ish) or just
+  the plist's mtime.
+- 2026-09-20 — **`jellyfin.gw.mesh.internal:8096` is unreachable from
+  the Mac** (`marius-mac`, a node, not in `media`) while `hub` and the
+  `:80` ingress both answer; the phone and TV reach `:8096`. Unproven
+  guess: facet authorization is group-scoped. Use the `:80` ingress
+  from the desktop.
