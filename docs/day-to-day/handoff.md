@@ -32,33 +32,37 @@ commits, both green under `-race` with the relay e2e:
 
 ## Loose threads
 
-- **Nothing is deployed.** The hub image needs a `fly deploy`; the
-  nodes need `p0agent` 0.1.3 (static `nodeagent` via the nixos
-  builder, `build.sh`, pin in `talos/hardware/minipc.yaml`,
-  `talosctl upgrade` ~11 min each); the Mac's `irohup` needs the
-  nixos flake input bump. Until the nodes are upgraded, a hub deploy
-  shows `node-unknown` for up to the old agents' 6 h beat.
-- **Live acceptance to run after deploy:** redeploy the hub, unseal,
-  watch `/status` → auto-bootstrap `etcd-running (cp1, <NodeId>)`
-  within ~1 min; the node logs `connection to hub … lost; beating`
-  then `hub sealed (retry in 1m)` then `beat ok`.
-- `iroh-ffi` 1.1.0 `WatchHomeRelay` is unusable (sync fn spawning
-  outside tokio; drops `is_connected()`) — noted on `z2go`; not
-  needed now.
-- `hubseal.go publishLocation` publishes before the wan endpoint is
-  `Online()` (the e2e had to wait explicitly; fly's loopback relay
-  hides it).
-- `iroh-transport/stream.go await` still leaks a late success after a
-  ctx timeout; exercised more now that beat `Send`s are bounded.
-- `talos/mesh-policy.yaml` (v2) still carries the hub→node apid
-  firewall row; dead since `49a7bdb`, Phase 4 deletes it with the
-  render.
+- **Hub deployed** (`registry.fly.io/marnyg-talos-config:d12d1e6`,
+  unsealed 00:08Z, hubkey `2878c8f5…`); `/status` shows auto-bootstrap
+  `node-unknown` for cp1 — correct until the nodes beat. **Not yet
+  deployed:** `p0agent` 0.1.3 on cp1/w1 (static `nodeagent` via the
+  nixos builder, `build.sh`, pin in `talos/hardware/minipc.yaml`,
+  `talosctl upgrade` ~11 min each) and the Mac's `irohup` (nixos flake
+  input bump to `d12d1e6`). The old agents beat on their 6 h timer
+  only, so the hub learns them within 6 h; after that `/status` should
+  read `etcd-running (cp1, <NodeId>)` — half the live acceptance.
+- **Live acceptance once the nodes run 0.1.3:** redeploy the hub,
+  unseal, watch `/status` flip to `etcd-running` within ~1 min; the
+  node logs `connection to hub … lost; beating` → `hub sealed (retry
+  in 1m)` → `beat ok`.
+- The vendor FOD trap bit again (`iroh-transport/*.go` changed ⇒
+  `config-server` `vendorHash`); recomputed in `d12d1e6`. Any change
+  under a `replace`d tree needs the two-command check in
+  `config-server/nix/default.nix`.
+- Relay child logs `Connection did not reach established state within
+  timeout` from loopback peers a few times after the deploy; no
+  pre-deploy baseline — watch, don't chase.
+- Broken windows closed in `4756627`: `await` releases a late FFI
+  result, `publishLocation` waits for `Online()`, bootstrap's zone
+  falls back to `fakeip.Zone`, the v2 `host: hub` row is marked dead
+  (removal rides Phase 4, noted on `359.11.2` with the certSAN move).
+  Filed: `zbgk` (iroh-ffi watchers unusable).
 - `0q0` blocked on capacity; ADR-0011 vs invariant 2 ruling still open.
 - Route-churn restart path unobserved (`7c3`); control socket (`fgr`);
   mobile `fakeip` (`phz`); cp1 hostname pin (`t7b2`).
 
 ## Suggested next steps
 
-- Deploy P2.2 (hub → nodes → Mac, in that order) and run the live
-  acceptance above; then close `359.9.2` and `ipt7`.
+- Ship `p0agent` 0.1.3 to both nodes and bump the Mac's `irohup`;
+  run the live acceptance; then close `359.9.2` and `ipt7`.
 - P2.3 (`359.9.3`): the in-cluster gateway pod.

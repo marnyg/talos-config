@@ -8,16 +8,16 @@
 as it lands** (decision `d3z3`) — Phase 4 is whatever never moved.
 **P2.0 and P2.1 are live**: the Mac runs `irohup -tun` as a launchd
 daemon, and talosconfig / kubeconfig / `nix run .#apply` all go by
-name over it — hub included. **P2.2 is built, awaiting deploy**
-(`359.9.2`, commits `4814be3` + `49a7bdb`): auto-bootstrap dials the
+name over it — hub included. **P2.2 is built; hub deployed, nodes pending**
+(`359.9.2`, commits `4814be3` + `49a7bdb`, hub image `d12d1e6`): auto-bootstrap dials the
 control plane's `apid` facet as an ordinary caller; the hub's
 netstack dial path is gone from `bootstrap.go`. Its prerequisite —
 how the hub re-learns members after its own restart — is settled by
 decision `z2go`: members re-beat on transport evidence (their pooled
 connection to the hub dying; a caller carrying a newer `speak-as`),
 and poll a *sealed* hub flat, so the hub's name map is complete one
-`MinRebeat` after the unseal. Deploy order: hub, then `p0agent` 0.1.3
-on both nodes, then the Mac. Then **P2.3** (`359.9.3`), the gateway.
+`MinRebeat` after the unseal. Remaining: `p0agent` 0.1.3 on both
+nodes, then the Mac. Then **P2.3** (`359.9.3`), the gateway.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
 members dialed by key, IP as device-local fiction, hub as actors
