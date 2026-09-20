@@ -5,7 +5,7 @@
 #
 # Identity comes from the SIWE→OIDC bridge (public client, PKCE — the
 # client_secret below is a required-but-ignored placeholder, not a
-# secret). The session rides one cookie scoped to .cp1.mesh.internal,
+# secret). The session rides one cookie scoped to .gw.mesh.internal,
 # so a single wallet signature opens all gated services. Cookie secret
 # is sealed (sealed-secret.yaml) so sessions survive pod restarts;
 # cookie-secure=false is the ADR-0009 plain-HTTP posture — the mesh
@@ -25,7 +25,7 @@
 #
 # Pointing at the ClusterIP is not a workaround for OIDC's issuer-URL
 # equality rule — it satisfies it. siwe-oidc advertises
-# issuer/authorization_endpoint/jwks_uri as http://auth.cp1.mesh.internal
+# issuer/authorization_endpoint/jwks_uri as http://auth.gw.mesh.internal
 # no matter how the discovery document is fetched, so the browser's view
 # and this pod's view agree on the issuer string. Only the transport
 # differs: server-side calls (discovery, token redeem, JWKS) resolve
@@ -51,7 +51,7 @@ spec:
     spec:
       hostAliases:
         - ip: 10.107.226.217
-          hostnames: [auth.cp1.mesh.internal]
+          hostnames: [auth.gw.mesh.internal]
       containers:
         - name: oauth2-proxy
           image: quay.io/oauth2-proxy/oauth2-proxy:v7.13.0
@@ -60,7 +60,7 @@ spec:
             - --reverse-proxy=true
             - --provider=oidc
             - --provider-display-name=wallet
-            - --oidc-issuer-url=http://auth.cp1.mesh.internal
+            - --oidc-issuer-url=http://auth.gw.mesh.internal
             - --client-id=oauth2-proxy
             - --client-secret=public-client-pkce-only
             - --code-challenge-method=S256
@@ -68,19 +68,12 @@ spec:
             - --email-domain=*
             - --allowed-group=admins
             # No --redirect-url: the callback is derived from the request's
-            # X-Forwarded-Host (--reverse-proxy), so one proxy serves both
-            # zones below; both callbacks are registered at siwe-oidc.
+            # X-Forwarded-Host (--reverse-proxy); the callback is
+            # registered at siwe-oidc.
             - --cookie-secure=false
             - --cookie-samesite=lax
-            # Two zones while ingress migrates to the gateway (Mesh v3
-            # P2.3): <svc>.cp1 over nebula, <svc>.gw over the identity
-            # plane. The longest domain matching the request host wins,
-            # so each zone gets its own session cookie; sign in once per
-            # zone. .cp1 goes when the last service leaves it.
             - --cookie-domain=.gw.mesh.internal
-            - --cookie-domain=.cp1.mesh.internal
             - --whitelist-domain=.gw.mesh.internal
-            - --whitelist-domain=.cp1.mesh.internal
             - --skip-provider-button=true
           env:
             - name: OAUTH2_PROXY_COOKIE_SECRET
@@ -131,16 +124,6 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: oauth2.cp1.mesh.internal
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: oauth2-proxy
-                port:
-                  number: 80
     - host: oauth2.gw.mesh.internal
       http:
         paths:
