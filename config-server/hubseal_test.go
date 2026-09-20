@@ -112,6 +112,14 @@ func speakAsSig(t *testing.T, m *hubManager, priv *secp256k1.PrivateKey) string 
 	return personalSign(t, priv, msg)
 }
 
+// otherKey is a valid wallet that is NOT in the admin allowlist.
+func otherKey(t *testing.T) *secp256k1.PrivateKey {
+	t.Helper()
+	b := make([]byte, 32)
+	b[31] = 2
+	return secp256k1.PrivKeyFromBytes(b)
+}
+
 // otherAddr is otherKey's lowercase 0x address.
 func otherAddr(t *testing.T) string {
 	t.Helper()

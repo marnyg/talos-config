@@ -9,7 +9,6 @@ package mesh
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -23,15 +22,14 @@ import (
 )
 
 // TestMeshHTTPOverOverlay proves the control channel's HTTP surface
-// works on the mesh: a real admin device fetches /config through a real
-// nebula handshake against the hub's netstack listener, and a device
-// outside the admins set is refused by the source-IP gate.
+// still answers on the mesh through a real nebula handshake against
+// the hub's netstack listener — and that the routes cut from it
+// (/config in 359.8.2.4, /hosts and /policy in ri3b) are really gone,
+// not hidden behind a catch-all greeting.
 //
 // The firewall layer (cert group → tcp/80) is nebula's own enforcement
 // and is validated against the rendered config in nebconf_test.go; the
-// nebtest harness runs an open firewall precisely so this test isolates
-// the second layer — the derived-admin-address + cert-group gate that
-// carries ADR-0003 onto the mesh (ADR-0012).
+// nebtest harness runs an open firewall.
 func TestMeshHTTPOverOverlay(t *testing.T) {
 	master := []byte("mesh-http-e2e-test-master-32byte")
 	subnet := netip.MustParsePrefix("10.42.0.0/16")
@@ -42,7 +40,7 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 	tv := nebtest.DeviceWithGroups(t, master, subnet, "tv", lighthousePort, []string{GroupMedia})
 
 	m := NewManager(lighthousePort, subnet, nebtest.Loopback, "hub.example:4242", "", nebPolicyRoot(t))
-	if err := m.serveMeshHTTP(hub, master); err != nil {
+	if err := m.serveMeshHTTP(hub); err != nil {
 		t.Fatal(err)
 	}
 
@@ -68,93 +66,19 @@ func TestMeshHTTPOverOverlay(t *testing.T) {
 	})
 
 	// /config is gone from this listener (359.8.2.4): it lives on the
-	// hub-http facet, tested in hubfacet_test.go.
-	t.Run("config is not served on the overlay", func(t *testing.T) {
-		status, _, err := meshGet(admin, hub.OverlayAddr(), "/config?mac=aa-bb-cc-dd-ee-01")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if status != http.StatusNotFound {
-			t.Fatalf("/config on the overlay: %d, want 404", status)
-		}
-	})
-
-	// /hosts is the device-facing member list (the TV app's screen).
-	// Both groups may read it; each caller must appear in its own list
-	// as a live device, and the hub row is always present and online.
-	for caller, svc := range map[string]*nebstack.Service{"media": tv, "admin": admin} {
-		t.Run(caller+" device lists hosts", func(t *testing.T) {
-			status, body, err := meshGet(svc, hub.OverlayAddr(), "/hosts")
+	// hub-http facet, tested in hubfacet_test.go. /hosts and /policy
+	// went with the Android app's move to the identity plane (ri3b).
+	for _, path := range []string{"/config?mac=aa-bb-cc-dd-ee-01", "/hosts", "/policy"} {
+		t.Run(path+" is not served on the overlay", func(t *testing.T) {
+			status, _, err := meshGet(admin, hub.OverlayAddr(), path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if status != http.StatusOK {
-				t.Fatalf("status = %d, want 200 (body %q)", status, body)
-			}
-			var got struct {
-				Hosts []hostEntry `json:"hosts"`
-			}
-			if err := json.Unmarshal([]byte(body), &got); err != nil {
-				t.Fatalf("response is not the expected JSON: %v (body %q)", err, body)
-			}
-			rows := map[string]hostEntry{}
-			for _, h := range got.Hosts {
-				rows[h.Name] = h
-			}
-			if h, ok := rows["hub"]; !ok || h.Kind != "hub" || !h.Online {
-				t.Errorf("hub row = %+v, want kind=hub online=true", rows["hub"])
-			}
-			if h, ok := rows["tv"]; !ok || h.Kind != "device" || !h.Online {
-				t.Errorf("tv row = %+v, want kind=device online=true (caller must see live devices)", rows["tv"])
+			if status != http.StatusNotFound {
+				t.Fatalf("%s on the overlay: %d, want 404", path, status)
 			}
 		})
 	}
-
-	// /policy is the live-sync poll target (task 6462fed4 phase 3): a
-	// media device reads the device-scope rules through a real
-	// handshake, and an overlay installed on the hub changes what the
-	// next poll returns — the propagation path devices actually ride.
-	t.Run("media device polls policy, overlay propagates", func(t *testing.T) {
-		status, body, err := meshGet(tv, hub.OverlayAddr(), "/policy")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if status != http.StatusOK {
-			t.Fatalf("status = %d, want 200 (body %q)", status, body)
-		}
-		var base struct {
-			Epoch   string        `json:"epoch"`
-			Inbound []nebRuleYAML `json:"inbound"`
-		}
-		if err := json.Unmarshal([]byte(body), &base); err != nil {
-			t.Fatalf("response is not the expected JSON: %v (body %q)", err, body)
-		}
-		if base.Epoch == "" || len(base.Inbound) == 0 {
-			t.Fatalf("empty policy response: %q", body)
-		}
-
-		if err := m.SetPolicyOverlay([]byte(nebOverlayDoc), "0xabc"); err != nil {
-			t.Fatal(err)
-		}
-		defer m.ClearPolicyOverlay()
-		_, body2, err := meshGet(tv, hub.OverlayAddr(), "/policy")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var over struct {
-			Epoch   string        `json:"epoch"`
-			Inbound []nebRuleYAML `json:"inbound"`
-		}
-		if err := json.Unmarshal([]byte(body2), &over); err != nil {
-			t.Fatal(err)
-		}
-		if over.Epoch == base.Epoch {
-			t.Error("overlay did not change the policy epoch")
-		}
-		if len(over.Inbound) != 1 || over.Inbound[0].Port != "18080" {
-			t.Errorf("overlay rules = %+v, want the overlay's single 18080 rule", over.Inbound)
-		}
-	})
 }
 
 // waitOverlayReady polls / from dev until the overlay answers: the

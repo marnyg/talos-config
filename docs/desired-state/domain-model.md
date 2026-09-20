@@ -101,7 +101,7 @@ classDiagram
 - **Runner** — the platform adapter the key lives in: `ext-nebula`
   (Talos allows no agents), the Android app (no root: gomobile +
   VpnService fd), `nebup` (stock binary on a laptop). All wrap one
-  shared core (`nebderive`, `devkey`, enrollment, `policyclient`);
+  shared core (`nebderive`, `devkey`, enrollment);
   convergence owed (task `ea9404af`). _On the identity plane the
   runner distinction thins out: `p0agent`, `irohup` and the Android
   app are the same `nodeagent` runtime over different links (2026-09-20,
@@ -253,19 +253,19 @@ Rules that fall out of the cut:
 ```mermaid
 classDiagram
     class PolicyFile["talos/mesh-policy.yaml (durable, git)"]
-    class Overlay["Ephemeral overlay (hub memory, wallet-signed)"]
     class Effective["Effective policy"]
     class HubScope["hub scope"]
     class NodeScope["node scope"]
     class DeviceScope["device scope"]
-    PolicyFile --> Effective : base
-    Overlay --> Effective : replaces while installed (ADR-0014)
+    PolicyFile --> Effective : the only input (overlay cut 2026-09-20, ri3b)
     Effective --> HubScope : renders at unseal
     Effective --> NodeScope : renders at apply (manual — task d7028379)
-    Effective --> DeviceScope : GET /policy, devices poll + hot-reload
+    Effective --> DeviceScope : renders at enrollment (the GET /policy poll cut in ri3b)
 ```
 
-_Nebula-era render path, as built. Under ADR-0017 (Proposed) the
+_Nebula-era render path, as built; the wallet-signed ephemeral overlay
+(ADR-0014) and the device poll left with the Android app's move to
+the identity plane (`ri3b`). Under ADR-0017 (Proposed) the
 effective policy compiles to `invoke` grants that **callers** carry
 and receivers verify; the three render sites above become one
 (grants fetched on the renewal beat) plus producer-side accept
@@ -273,9 +273,9 @@ tables. Redraw when Mesh v3 Phase 1 lands._
 
 Policy names members by role predicates, so syncing rules never moves
 bindings, keys or addresses. The three scopes are member *classes* in
-the admission table, not kinds of member. Propagation is the
-remaining asymmetry: devices self-update (phase 3), nodes need an
-`apply` until phase 4 lands (`d7028379`).
+the admission table, not kinds of member. Propagation on the nebula
+plane is now uniformly "next render" (unseal / apply / enrollment);
+the identity plane replaces all three with grants on the beat.
 
 ## 3. Network: a sovereign's offer, a member's consent
 

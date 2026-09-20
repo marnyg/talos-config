@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -71,11 +70,7 @@ func loadPolicy(root string) (*meshPolicy, error) {
 	return p, nil
 }
 
-// parsePolicy parses and validates a policy document. Shared by the
-// git file (loadPolicy) and the ephemeral overlay (SetPolicyOverlay):
-// the overlay must clear exactly the bar the file does — a typo must
-// not brick composed members just because it arrived over HTTP instead
-// of a commit.
+// parsePolicy parses and validates a policy document.
 func parsePolicy(raw []byte) (*meshPolicy, error) {
 	var p meshPolicy
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
@@ -106,91 +101,12 @@ func parsePolicy(raw []byte) (*meshPolicy, error) {
 	return &p, nil
 }
 
-// --- Ephemeral policy overlay (task 6462fed4, phase 2) ---
-//
-// The overlay is a full replacement policy document held in memory
-// only: a redeploy or restart drops it, so git remains the only
-// durable owner of policy (invariant 2). It exists for the experiment
-// loop — install a candidate table, exercise it through the normal
-// propagation channels (device re-enrollment now, node configs on the
-// next apply), then export the exact text into talos/mesh-policy.yaml
-// and commit. The hub's OWN firewall renders at unseal, which in
-// practice precedes any overlay in this process's lifetime, so the hub
-// scope effectively always rides git until live sync (phases 3–4).
-
-type policyOverlay struct {
-	raw    []byte
-	parsed *meshPolicy
-	by     string // wallet address that signed the install
-	since  time.Time
-}
-
-// SetPolicyOverlay validates raw and installs it as the effective
-// policy. by is the wallet address whose signature authorized it,
-// recorded for the /policy page only — the signature itself was
-// verified by the caller.
-func (m *Manager) SetPolicyOverlay(raw []byte, by string) error {
-	p, err := parsePolicy(raw)
-	if err != nil {
-		return err
-	}
-	m.polMu.Lock()
-	defer m.polMu.Unlock()
-	m.polOver = &policyOverlay{raw: raw, parsed: p, by: by, since: time.Now()}
-	return nil
-}
-
-// ClearPolicyOverlay reverts the effective policy to the git file.
-func (m *Manager) ClearPolicyOverlay() {
-	m.polMu.Lock()
-	defer m.polMu.Unlock()
-	m.polOver = nil
-}
-
-// PolicyOverlay reports the installed overlay, if any.
-func (m *Manager) PolicyOverlay() (raw []byte, by string, since time.Time, ok bool) {
-	m.polMu.Lock()
-	defer m.polMu.Unlock()
-	if m.polOver == nil {
-		return nil, "", time.Time{}, false
-	}
-	return m.polOver.raw, m.polOver.by, m.polOver.since, true
-}
-
-// PolicyGitRaw returns the policy file as shipped in this hub's talos
-// tree — the base every diff on the /policy page is against.
-func (m *Manager) PolicyGitRaw() ([]byte, error) {
-	return os.ReadFile(filepath.Join(m.root, PolicyFile))
-}
-
-// composeEffective is the composition law behind effectivePolicy
-// (ADR-0014): an installed overlay REPLACES the base policy wholesale —
-// it never merges, never falls back per scope. Pure, so the law is
-// directly property-testable (nebpolicy_prop_test.go).
-func composeEffective(base, overlay *meshPolicy) *meshPolicy {
-	if overlay != nil {
-		return overlay
-	}
-	return base
-}
-
-// effectivePolicy is what every render site composes with: the overlay
-// when one is installed, the git file otherwise.
+// effectivePolicy is what every render site composes with. It was the
+// overlay-or-git composition (ADR-0014) until ri3b removed the
+// ephemeral overlay along with the /policy page and the device poll
+// that propagated it; what remains is the git file, read per render.
 func (m *Manager) effectivePolicy() (*meshPolicy, error) {
-	m.polMu.Lock()
-	var overlay *meshPolicy
-	if m.polOver != nil {
-		overlay = m.polOver.parsed
-	}
-	m.polMu.Unlock()
-	if overlay != nil {
-		return composeEffective(nil, overlay), nil
-	}
-	base, err := loadPolicy(m.root)
-	if err != nil {
-		return nil, err
-	}
-	return composeEffective(base, nil), nil
+	return loadPolicy(m.root)
 }
 
 func validatePolicyRule(r nebRuleYAML) error {

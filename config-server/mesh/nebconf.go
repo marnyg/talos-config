@@ -71,7 +71,7 @@ type HubParams struct {
 	Blocklist  []string     // revoked cert fingerprints (mesh-blocklist.txt)
 	// Inbound is the hub's firewall admission table: the hub scope of
 	// talos/mesh-policy.yaml (loadPolicy). Never empty — a hub that
-	// admits nothing cannot serve enrollment, /hosts, or DNS.
+	// admits nothing cannot serve enrollment or DNS.
 	Inbound []nebRuleYAML
 	Now     func() time.Time
 }
@@ -183,14 +183,13 @@ type nebFirewallYAML struct {
 }
 
 // FirewallRule is the exported name for a policy/firewall rule, for
-// callers outside the package that assemble HubParams (today the
-// server-level tests; the policy overlay UI will join them). Alias, so
-// the yaml shapes and the policy file stay one type.
+// callers outside the package that assemble HubParams (the
+// server-level tests). Alias, so the yaml shapes and the policy file
+// stay one type.
 type FirewallRule = nebRuleYAML
 
-// JSON tags because the device scope of these rules is also the GET
-// /policy wire format (nebhttp.go); policyclient.Rule mirrors the
-// shape on the device side, guarded by the mesh e2e test.
+// The JSON tags are a leftover of the GET /policy wire format (cut in
+// ri3b); harmless, and the file goes with Phase 4.
 type nebRuleYAML struct {
 	Port  string `yaml:"port" json:"port"`
 	Proto string `yaml:"proto" json:"proto"`

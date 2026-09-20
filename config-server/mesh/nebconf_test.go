@@ -171,10 +171,10 @@ func TestHubNebulaConfigInvariants(t *testing.T) {
 		t.Error("inbound firewall must default to drop")
 	}
 
-	// tcp/80 admits exactly the two device groups (per-route gates in
-	// serveMeshHTTP decide who sees what) and never machines: served
-	// configs carry other machines' secrets, and machine certs must be
-	// dropped by the firewall before a request is accepted.
+	// tcp/80 admits exactly the two device groups and never machines.
+	// The listener now serves only a hello (ri3b), but the rule is the
+	// hub's rendered nebula firewall, kept as-is until Phase 4 so the
+	// render stays byte-stable.
 	httpGroups := map[string]bool{}
 	for _, r := range got.Firewall.Inbound {
 		if r.Port != "80" || r.Proto != "tcp" {

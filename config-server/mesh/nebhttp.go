@@ -1,143 +1,36 @@
 package mesh
 
 // Mesh control-channel HTTP: the hub's overlay HTTP surface, served on
-// the nebula netstack. "/" is a hello (liveness through a real
-// handshake), /config serves hub-composed machine configs to admin
-// devices only — the route `nix run .#apply` fetches from — and
-// /hosts serves the mesh member list (the same zone mesh DNS answers
-// from, in JSON with liveness) to any enrolled device: it is what the
-// TV/phone app renders as its Tailscale-style device list.
+// the nebula netstack. What is left is "/", a hello — liveness through
+// a real handshake, which is what the e2e tests and `nebup` probe.
 //
-// The /config gate is two layers deep. The nebula firewall admits
-// tcp/80 only from certs carrying the admins group (HubConfig) — a
-// predicate the CA signed, which a peer that merely reaches us cannot
-// spoof. The handler below is the second layer, and under ADR-0012 it
-// is fully cert-derived: no declared device list, no allowlist of
-// admin addresses. For the peer that sourced the request, verify the
-// live hostmap entry's cert has group=admins AND the cert's address
-// equals DeviceIP(master, cert.Name). That structurally excludes
-// machines (which carry group=machines) and any peer whose address
-// does not match its own derivation — the property ADR-0007 carried
-// from wg0's cryptokey routing onto the mesh, restated without the
-// declared list.
+// The routes this listener used to carry are all gone: /config left
+// 2026-09-19 (359.8.2.4; admins fetch composed configs over the
+// hub-http facet on the identity plane), and /hosts + /policy left
+// 2026-09-20 (ri3b) once the Android/TV app — their last consumer —
+// ran the v3 APK (359.9.4). Neither has an identity-plane successor:
+// the name map rides the Issuer's beat reply (decision mdv), and
+// policy compiles to grants (ADR-0017), which are pulled, not polled.
+// Phase 4 (359.11.2) deletes this file with the rest of neb*.go.
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"net/netip"
-	"slices"
-	"strings"
 
-	"github.com/slackhq/nebula"
-
-	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nebstack"
 )
-
-// isGroupPeer reports whether the peer sourcing this request holds a
-// cert in one of the allowed device groups whose address matches its
-// derived overlay address. Called per-request so newly-enrolled
-// devices are admitted without hub restart, and revoked/expired peers
-// stop being admitted the moment nebula drops the tunnel.
-func isGroupPeer(master []byte, subnet netip.Prefix, peers []nebula.ControlHostInfo, src netip.Addr, allowed ...string) bool {
-	for _, hi := range peers {
-		var match bool
-		for _, a := range hi.VpnAddrs {
-			if a == src {
-				match = true
-				break
-			}
-		}
-		if !match {
-			continue
-		}
-		var inGroup bool
-		for _, g := range hi.Cert.Groups() {
-			if slices.Contains(allowed, g) {
-				inGroup = true
-				break
-			}
-		}
-		if !inGroup {
-			return false
-		}
-		want, err := nebderive.DeviceIP(master, hi.Cert.Name(), subnet)
-		if err != nil {
-			return false
-		}
-		return want == src
-	}
-	return false
-}
 
 // serveMeshHTTP starts the overlay HTTP listener. The netstack owns
 // only the hub's overlay address, so the wildcard listen cannot expose
 // the routes anywhere but on the mesh.
-func (m *Manager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
+func (m *Manager) serveMeshHTTP(svc *nebstack.Service) error {
 	mux := http.NewServeMux()
 	// Exact root only: a "GET /" catch-all answered every unknown
 	// path with 200, hiding a removed route behind a greeting.
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "hello from the mesh: %s\n", svc.OverlayAddr())
 	})
-	// GET /config left this listener 2026-09-19 (359.8.2.4): admins
-	// fetch composed configs over the hub-http facet on the identity
-	// plane. /hosts and /policy stay until their consumers move (the
-	// TV app, 359.9.4) and have no identity-plane successor (mdv).
-
-	// /hosts: the member list for any enrolled device. m.zone is nil
-	// when mesh DNS is off (and in tests that call serveMeshHTTP
-	// directly); the hub itself is still listed so the response is
-	// never empty.
-	static := m.zone
-	if static == nil {
-		if hubIP, err := nebderive.HubIP(m.subnet); err == nil {
-			static = map[string]netip.Addr{nebderive.HubName: hubIP}
-		}
-	}
-	hosts := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		peers := svc.Peers()
-		online := make(map[netip.Addr]bool, len(peers))
-		for _, hi := range peers {
-			for _, a := range hi.VpnAddrs {
-				online[a] = true
-			}
-		}
-		list := buildHostsList(static, liveDeviceZone(master, m.subnet, static, peers), online)
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{"hosts": list}); err != nil {
-			log.Printf("mesh /hosts: encoding response: %v", err)
-		}
-	})
-	mux.Handle("GET /hosts", requirePeerGroups(master, m.subnet, svc.Peers, hosts, GroupAdmins, GroupMedia))
-
-	// /policy: live policy sync (task 6462fed4 phase 3) — the device
-	// scope of the effective policy (git or overlay, loaded per request
-	// so /policy page experiments propagate on the next poll), tagged
-	// with an epoch devices compare before reloading their firewall.
-	// Same gate as /hosts: any enrolled device; it only learns rules it
-	// already holds in its own config.
-	policy := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		p, err := m.effectivePolicy()
-		if err != nil {
-			log.Printf("mesh /policy: loading policy: %v", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		body, err := devicePolicyWire(p.Device.Inbound)
-		if err != nil {
-			log.Printf("mesh /policy: encoding response: %v", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
-	})
-	mux.Handle("GET /policy", requirePeerGroups(master, m.subnet, svc.Peers, policy, GroupAdmins, GroupMedia))
 
 	listener, err := svc.Listen("tcp", ":80")
 	if err != nil {
@@ -148,80 +41,6 @@ func (m *Manager) serveMeshHTTP(svc *nebstack.Service, master []byte) error {
 			log.Printf("mesh http server: %v", err)
 		}
 	}()
-	log.Printf("mesh http: hello + /config (admins) + /hosts + /policy (devices) on %s:80 (gated per-request by cert group + derived address)", svc.OverlayAddr())
+	log.Printf("mesh http: hello on %s:80", svc.OverlayAddr())
 	return nil
-}
-
-// requirePeerGroups gates an overlay route to peers whose live cert
-// carries one of the allowed groups and whose address matches
-// DeviceIP(master, cert.Name). The peer supplier is a function
-// (svc.Peers) so revocations take effect the moment nebula drops the
-// tunnel.
-func requirePeerGroups(master []byte, subnet netip.Prefix, peers func() []nebula.ControlHostInfo, next http.Handler, allowed ...string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ap, err := netip.ParseAddrPort(r.RemoteAddr)
-		if err != nil {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		src := ap.Addr().Unmap()
-		if !isGroupPeer(master, subnet, peers(), src, allowed...) {
-			log.Printf("mesh %s %s: refused peer %s (need group %s)", r.Method, r.URL.Path, src, strings.Join(allowed, "/"))
-			http.Error(w, "forbidden: "+strings.Join(allowed, "/")+" devices only", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// devicePolicyWire renders the GET /policy body: the device-scope
-// inbound rules plus an epoch derived from them. The epoch is a hash
-// of the rules themselves (not of the whole policy document), so an
-// overlay that only touches hub or node scopes does not make every
-// device rebuild an identical firewall. Pure function.
-func devicePolicyWire(inbound []nebRuleYAML) ([]byte, error) {
-	rules, err := json.Marshal(inbound)
-	if err != nil {
-		return nil, err
-	}
-	sum := sha256.Sum256(rules)
-	return json.Marshal(map[string]any{
-		"epoch":   hex.EncodeToString(sum[:]),
-		"inbound": inbound,
-	})
-}
-
-// hostEntry is one row of GET /hosts. Names and addresses are already
-// visible to every member via mesh DNS; this is the same zone in JSON
-// form plus liveness, so it discloses nothing DNS does not.
-type hostEntry struct {
-	Name   string `json:"name"`
-	IP     string `json:"ip"`
-	Kind   string `json:"kind"` // "hub", "machine" or "device"
-	Online bool   `json:"online"`
-}
-
-// buildHostsList merges the static (git-derived) zone with the live
-// device zone into a name-sorted host list. Pure function, tested
-// without a netstack. The hub is always online (it answered this
-// request); a machine is online when some live peer holds its address;
-// devices are by construction live (liveDeviceZone only reports
-// established tunnels).
-func buildHostsList(static, live map[string]netip.Addr, online map[netip.Addr]bool) []hostEntry {
-	out := make([]hostEntry, 0, len(static)+len(live))
-	for name, ip := range static {
-		kind, on := "machine", online[ip]
-		if name == nebderive.HubName {
-			kind, on = "hub", true
-		}
-		out = append(out, hostEntry{Name: name, IP: ip.String(), Kind: kind, Online: on})
-	}
-	for name, ip := range live {
-		if _, shadowed := static[name]; shadowed {
-			continue
-		}
-		out = append(out, hostEntry{Name: name, IP: ip.String(), Kind: "device", Online: true})
-	}
-	slices.SortFunc(out, func(a, b hostEntry) int { return strings.Compare(a.Name, b.Name) })
-	return out
 }

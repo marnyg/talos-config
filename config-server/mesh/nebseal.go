@@ -60,12 +60,6 @@ type Manager struct {
 	svc  *nebstack.Service // nil until unsealed
 	zone map[string]netip.Addr
 	err  error // last startup failure, surfaced by State()
-
-	// Ephemeral policy overlay (nebpolicy.go). Its own mutex: policy
-	// reads happen on every config render and must not contend with
-	// the service lifecycle lock above.
-	polMu   sync.Mutex
-	polOver *policyOverlay
 }
 
 func NewManager(port int, subnet netip.Prefix, listenHost, endpoint, dnsZone, root string) *Manager {
@@ -176,7 +170,7 @@ func (m *Manager) UnsealWithMaster(master []byte) error {
 	}
 
 	if svc != nil {
-		if err := m.serveMeshHTTP(svc, master); err != nil {
+		if err := m.serveMeshHTTP(svc); err != nil {
 			return m.fail(fmt.Errorf("starting mesh http: %w", err))
 		}
 	}

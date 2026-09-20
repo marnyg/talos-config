@@ -6,6 +6,15 @@
   data with the ephemeral overlay, but under Mesh v3 it compiles to
   `invoke` grants carried by callers, not to firewall stanzas held by
   receivers. The three render sites collapse into one.
+- Revision 2026-09-20 (`ri3b`): the ephemeral overlay half is
+  **removed from code** — the hub's `/policy` page, the overlay
+  set/clear API, the device-facing `GET /policy` poll and
+  `policyclient` are deleted, along with `GET /hosts`. The Android app
+  was the last device on nebula and now runs the identity plane
+  (`359.9.4`); with no live consumer the experiment loop the overlay
+  existed for had no propagation path. "Policy as git data" stands
+  unchanged; `talos/mesh-policy.yaml` is the only input until Phase 4
+  deletes the nebula render.
 
 ## Context and Problem Statement
 

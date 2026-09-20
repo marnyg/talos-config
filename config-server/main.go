@@ -260,9 +260,6 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("GET "+wellKnownSpeakAsPath, s.handleWellKnownSpeakAs)
 	mux.HandleFunc("GET "+wellKnownReachMeAtPath, s.handleWellKnownReachMeAt)
 	mux.HandleFunc("GET /status", s.handleStatus)
-	mux.HandleFunc("GET /policy", s.handlePolicyPage)
-	mux.HandleFunc("POST /policy/overlay", s.handlePolicySet)
-	mux.HandleFunc("POST /policy/clear", s.handlePolicyClear)
 	mux.HandleFunc("POST /status/login", s.handleStatusLogin)
 	mux.HandleFunc("POST /status/logout", s.handleStatusLogout)
 	if s.relay != nil {

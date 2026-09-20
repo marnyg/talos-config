@@ -1,19 +1,15 @@
 package mesh
 
-// Property-based law suite for policy composition (epic
-// talos-config-7wg). Each property names the design law it pins:
+// Property-based law suite for policy parsing (epic
+// talos-config-7wg). L1 (ADR-0014's overlay-replaces-wholesale) left
+// with the ephemeral overlay (ri3b); what remains:
 //
-//   L1 (ADR-0014): an installed overlay REPLACES the git policy
-//       wholesale — never merges, never falls back per scope.
 //   L2: parsePolicy is deterministic — same bytes, same table.
 //
 // Generators produce only *valid* policies (validatePolicyRule's
 // domain); rejection of invalid ones is covered by nebpolicy_test.go.
 
 import (
-	"net/netip"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -64,67 +60,6 @@ func marshalPolicy(f failer, p *meshPolicy) []byte {
 		f.Fatalf("marshaling generated policy: %v", err)
 	}
 	return raw
-}
-
-// TestPropOverlayReplaces: L1 through the real Manager path. Whatever
-// policy git declares, installing an overlay makes effectivePolicy
-// exactly the overlay's table (no rule from git survives), and
-// clearing it restores exactly git's table.
-func TestPropOverlayReplaces(t *testing.T) {
-	subnet := netip.MustParsePrefix("10.42.0.0/16")
-	rapid.Check(t, func(rt *rapid.T) {
-		gitPol := genPolicyDoc().Draw(rt, "gitPolicy")
-		ovlPol := genPolicyDoc().Draw(rt, "overlayPolicy")
-		gitRaw, ovlRaw := marshalPolicy(rt, gitPol), marshalPolicy(rt, ovlPol)
-
-		root := t.TempDir()
-		if err := os.WriteFile(filepath.Join(root, PolicyFile), gitRaw, 0o600); err != nil {
-			rt.Fatalf("writing git policy: %v", err)
-		}
-		m := NewManager(4242, subnet, "0.0.0.0", "hub.example:4242", "", root)
-
-		if err := m.SetPolicyOverlay(ovlRaw, "0xtest"); err != nil {
-			rt.Fatalf("installing generated overlay: %v", err)
-		}
-		eff, err := m.effectivePolicy()
-		if err != nil {
-			rt.Fatalf("effectivePolicy with overlay: %v", err)
-		}
-		want, err := parsePolicy(ovlRaw)
-		if err != nil {
-			rt.Fatalf("re-parsing overlay: %v", err)
-		}
-		if !reflect.DeepEqual(eff, want) {
-			rt.Fatalf("overlay did not replace wholesale:\n got %+v\nwant %+v", eff, want)
-		}
-
-		m.ClearPolicyOverlay()
-		eff, err = m.effectivePolicy()
-		if err != nil {
-			rt.Fatalf("effectivePolicy after clear: %v", err)
-		}
-		want, err = parsePolicy(gitRaw)
-		if err != nil {
-			rt.Fatalf("re-parsing git policy: %v", err)
-		}
-		if !reflect.DeepEqual(eff, want) {
-			rt.Fatalf("clear did not restore git policy:\n got %+v\nwant %+v", eff, want)
-		}
-	})
-}
-
-// TestPropComposeEffective: L1 on the pure core, all cases.
-func TestPropComposeEffective(t *testing.T) {
-	rapid.Check(t, func(rt *rapid.T) {
-		base := genPolicyDoc().Draw(rt, "base")
-		overlay := genPolicyDoc().Draw(rt, "overlay")
-		if got := composeEffective(base, overlay); got != overlay {
-			rt.Fatalf("overlay installed: got %p, want overlay %p", got, overlay)
-		}
-		if got := composeEffective(base, nil); got != base {
-			rt.Fatalf("no overlay: got %p, want base %p", got, base)
-		}
-	})
 }
 
 // TestPropParsePolicyDeterministic: L2.
