@@ -69,7 +69,12 @@
   in the running mesh.** Nebula is the mesh until Phase 4. Deferred
   nebula-era issues (`cjo en6 4ns 41b 6gq ap2 90a`) were parked on the
   Phase 0 gate; the gate passed 2026-09-16 — re-triage them under
-  `359.8`/`359.9` rather than closing.
+  `359.8`/`359.9` rather than closing. _(Re-triaged 2026-09-21: `en6`
+  and `4ns` closed — nebup and Mobile Nebula are on `359.11.2`'s
+  deletion list, so their premises are gone; `90a` rescoped from a
+  nebula CA in the host trust store to HTTPS on mesh names terminated
+  at the v3 gateway. `cjo 41b 6gq ap2` still parked and still
+  nebula-era — read them with the same suspicion.)_
 - 2026-09-05 — **The Quint models are the sharper spec for
   ADR-0015/0017.** Five doc sentences were refuted and ruled the same
   day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
@@ -418,6 +423,20 @@
   `export.auto` is `false`. Session-close check: `git ls-remote origin
   refs/dolt/data` must move after `bd dolt push`. Q-threads that are
   `blocks`-chained need `--force` to close with a reason.
+- 2026-09-21 — **Three `bd` traps found while grooming, all silent.**
+  (a) `bd ready --exclude-type` is a **no-op** in `1.0.3 (dev)` — it
+  is accepted without error and filters nothing, for `epic` and `bug`
+  alike, so any type-filtered ready query is wrong without saying so.
+  Epics therefore rank inside `bd ready` (`0bc`, `359` are P1 and
+  outrank real work); `bd ready -n 99 | grep -v '\[epic\]'` is the
+  workaround. (b) `bd create --deps blocks:<id>` points the **opposite**
+  way from what it reads like: it makes the new issue block `<id>`, not
+  depend on it. Use `bd dep add <new> --blocked-by <id>`, then confirm
+  the new issue is *absent* from `bd ready`. (c) `bd create --parent`
+  **inherits the parent's status** — children created under an
+  `in_progress` parent are born `in_progress`, and `bd ready` excludes
+  those, so a fresh task can be invisible in the ready queue from
+  birth. Check `--status` after any `--parent` create.
 
 ## CI / orchestration
 
