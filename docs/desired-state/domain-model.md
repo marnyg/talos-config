@@ -853,8 +853,14 @@ provisioning or recovery path may depend on it.
 - **Workload plane** — Kubernetes on the machines: ArgoCD syncs
   `k8s/` from git; the gateway terminates `ingress-http` and
   ingress-nginx routes `<svc>.gw.mesh.internal` by Host (`jellyfin.cp1`
-  survives for the nebula TV until P2.4); SIWE→OIDC bridge (issuer
-  `auth.gw`) gates every exposed service with the wallet.
+  outlived its consumer — the TV moved to `jellyfin.gw` 2026-09-20,
+  `359.9.4.5` — and survives only until `vftt` cuts it); SIWE→OIDC
+  bridge (issuer `auth.gw`) gates every exposed service the **browser**
+  reaches. Native apps are the documented hole: SIWE needs an injected
+  wallet provider, which an app webview has not got (`95la`, spike
+  `i1il`), so the phone and the TV sign into Jellyfin with Quick
+  Connect against its local account instead — app-layer credentials
+  that are not wallet-rooted, on the app side of the seam.
   Data-plane state is excepted from invariant 2 (Longhorn bookkeeping
   shares its payload's fate).
 
