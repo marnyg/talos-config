@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
-# pre-push: refuse to push a stale Go vendorHash.
+# pre-push: refuse to push a stale Go vendorHash, or a Go package whose
+# other-OS half no longer type-checks (see the second block).
 #
 # config-server-bin and iroh-transport vendor the local `replace`d
 # modules (protocol/, iroh-transport/, iroh-go/iroh/) into a
@@ -58,6 +59,48 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
       done
     done
     echo "pre-push: vendorHashes OK" >&2
+  fi
+fi
+
+# Cross-OS type check (scripts/oscheck.go). Packages split by OS build
+# constraint only get the host's half compiled locally; the linux half
+# of cmd/irohup rotted for a day after c075081 and the hub image build
+# (the fly deploy) was what noticed. CI's hub-image job goes red too,
+# but same story as above: nobody reads the tab. ~50 s when Go under
+# config-server/ (or the modules it replaces) is in the pushed range.
+# SKIP_OSCHECK=1 to bypass.
+if [ "${SKIP_OSCHECK:-0}" != "1" ]; then
+  gotouched=""
+  while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+      range="$local_sha --not --remotes"
+    else
+      range="$remote_sha..$local_sha"
+    fi
+    # shellcheck disable=SC2086
+    files=$(git -C "$repo" diff --name-only $range -- \
+      'config-server/**/*.go' 'config-server/*.go' 'protocol/**/*.go' 'protocol/*.go' \
+      'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' 2>/dev/null || true)
+    [ -n "$files" ] && gotouched="$gotouched$files
+"
+  done
+  if [ -n "$gotouched" ]; then
+    case "$(uname -s)" in
+      Darwin) other=linux ;;
+      *) other=darwin ;;
+    esac
+    # Packages with an OS build constraint anywhere in them.
+    pkgs=$(cd "$repo/config-server" && grep -rlE '^//go:build.*(darwin|linux|android|windows|unix)' --include='*.go' . | xargs -n1 dirname | sort -u)
+    if [ -n "$pkgs" ]; then
+      echo "pre-push: type-checking OS-split packages for GOOS=$other:" >&2
+      printf '%s\n' "$pkgs" | sed 's/^/  /' >&2
+      # shellcheck disable=SC2086
+      if ! (cd "$repo/config-server" && go run ../scripts/oscheck.go "$other" $pkgs >&2); then
+        echo "pre-push: GOOS=$other type check failed (SKIP_OSCHECK=1 to override)" >&2
+        exit 1
+      fi
+    fi
   fi
 fi
 
