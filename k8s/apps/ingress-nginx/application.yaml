@@ -1,7 +1,7 @@
 # The mesh-facing reverse proxy: one hostname per service
-# (jellyfin.cp1.mesh.internal, …) instead of remembered ports — hub
-# DNS resolves any <service>.<member> name to the member, so exposure
-# is Ingress-only. Replaces the
+# (jellyfin.gw.mesh.internal, …) instead of remembered ports — the
+# gateway pod (k8s/apps/gateway) forwards <service>.gw names here with
+# Host intact, so exposure is Ingress-only. Replaces the
 # tailscale operator/ingressClass — access control moves to SIWE SSO
 # (sketch 162c630d), transport stays nebula, and no hosted account sits
 # in the access path (invariant 3).

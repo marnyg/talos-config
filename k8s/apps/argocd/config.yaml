@@ -26,7 +26,7 @@ metadata:
 data:
   # External URL, used to build OIDC redirect URIs. Must match the
   # ingress host (k8s/apps/argocd/ingress.yaml) or the redirect breaks.
-  url: http://argocd.cp1.mesh.internal
+  url: http://argocd.gw.mesh.internal
   # SSO (sketch 162c630d): ArgoCD authenticates against the wallet via
   # the in-cluster SIWE→OIDC bridge (k8s/apps/siwe-oidc). No dex — the
   # bridge is the only IdP (invariant 1: no hosted identity).
@@ -39,7 +39,7 @@ data:
   # (server-patch.yaml, reconciled by ArgoCD like this file).
   oidc.config: |
     name: wallet
-    issuer: http://auth.cp1.mesh.internal
+    issuer: http://auth.gw.mesh.internal
     clientID: argocd
     enablePKCEAuthentication: true
     requestedScopes: ["openid", "profile", "email", "groups"]

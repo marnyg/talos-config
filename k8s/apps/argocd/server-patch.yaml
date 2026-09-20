@@ -9,7 +9,7 @@
 # other than the pinned one cannot dial a mesh IP. The ClusterIP is
 # pinned in the siwe-oidc Service manifest so this literal cannot go
 # stale. OIDC issuer-URL equality still holds — siwe-oidc advertises
-# http://auth.cp1.mesh.internal however the discovery document is
+# http://auth.gw.mesh.internal however the discovery document is
 # fetched.
 #
 # This used to be a `kubectl patch` inside the argocd-installer Job
@@ -35,4 +35,4 @@ spec:
     spec:
       hostAliases:
         - ip: 10.107.226.217
-          hostnames: [auth.cp1.mesh.internal]
+          hostnames: [auth.gw.mesh.internal]

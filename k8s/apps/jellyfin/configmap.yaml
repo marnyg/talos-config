@@ -99,7 +99,7 @@ data:
     # the issuer is plain HTTP over the mesh (ADR-0009). /sso/OID/Add
     # overwrites the named provider, so re-runs converge.
     curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" "$JELLYFIN_URL/sso/OID/Add/wallet" -d '{
-      "oidEndpoint": "http://auth.cp1.mesh.internal",
+      "oidEndpoint": "http://auth.gw.mesh.internal",
       "oidClientId": "jellyfin",
       "oidSecret": "",
       "enabled": true,
@@ -116,9 +116,10 @@ data:
     }' || echo "WARN: SSO provider config failed"
 
     # Wallet button on the login page. Relative action: the redirect
-    # URI is derived from the requesting host, so mesh users get the
-    # registered jellyfin.cp1.mesh.internal callback while LAN-direct
-    # clients (TV on 30096) keep using the local login form.
+    # URI is derived from the requesting host; both jellyfin.gw and
+    # jellyfin.cp1 (nebula TV until P2.4) callbacks are registered at
+    # siwe-oidc, while LAN-direct clients (TV on 30096) keep using the
+    # local login form.
     curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" "$JELLYFIN_URL/System/Configuration/branding" -d '{
       "LoginDisclaimer": "<form action=\"/sso/OID/start/wallet\"><button class=\"raised block emby-button button-submit\">Sign in with wallet</button></form>",
       "CustomCss": "a.raised.emby-button { padding: 0.9em 1em; color: inherit !important; } .disclaimerContainer { display: block; }",

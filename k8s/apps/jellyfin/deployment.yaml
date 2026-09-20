@@ -22,7 +22,7 @@ spec:
       # (nebula carries 10.42.0.0/16 sources; pods are 10.244.x.x).
       hostAliases:
         - ip: 10.107.226.217
-          hostnames: [auth.cp1.mesh.internal]
+          hostnames: [auth.gw.mesh.internal]
       containers:
         - name: jellyfin
           image: lscr.io/linuxserver/jellyfin:10.11.6
