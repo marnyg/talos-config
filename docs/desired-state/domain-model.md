@@ -852,9 +852,9 @@ provisioning or recovery path may depend on it.
   `ce8`).
 - **Workload plane** — Kubernetes on the machines: ArgoCD syncs
   `k8s/` from git; the gateway terminates `ingress-http` and
-  ingress-nginx routes `<svc>.gw.mesh.internal` by Host (`jellyfin.cp1`
-  outlived its consumer — the TV moved to `jellyfin.gw` 2026-09-20,
-  `359.9.4.5` — and survives only until `vftt` cuts it); SIWE→OIDC
+  ingress-nginx routes `<svc>.gw.mesh.internal` by Host (the last
+  nebula-zone Ingress host, `jellyfin.cp1`, was cut 2026-09-20 once
+  the TV moved to `jellyfin.gw`, `359.9.4.5`/`vftt`); SIWE→OIDC
   bridge (issuer `auth.gw`) gates every exposed service the **browser**
   reaches. Native apps are the documented hole: SIWE needs an injected
   wallet provider, which an app webview has not got (`95la`, spike

@@ -39,7 +39,7 @@ spec:
             - -admin=0xf56863bF40A75dC3c632C17fc65AA2EB06a89406=mar
             - -client=argocd=http://argocd.gw.mesh.internal/auth/callback
             - -client=oauth2-proxy=http://oauth2.gw.mesh.internal/oauth2/callback
-            # Three origins, on purpose. The plugin derives redirect_uri
+            # Two origins, on purpose. The plugin derives redirect_uri
             # from the requesting Host, and a Jellyfin app reaches the
             # gateway's RAW `jellyfin` facet on :8096 (P2.3's path for
             # appliance apps — no nginx hop), which is a different origin
@@ -47,9 +47,9 @@ spec:
             # "Sign in with wallet" in the app dies at siwe-oidc with
             # `redirect_uri … is not registered` and the app falls back to
             # its connect screen (seen on the phone, 2026-09-20).
-            # jellyfin.cp1 stays registered for the nebula TV until it
-            # runs the P2.4 APK.
-            - -client=jellyfin=http://jellyfin.gw.mesh.internal/sso/OID/redirect/wallet,http://jellyfin.gw.mesh.internal:8096/sso/OID/redirect/wallet,http://jellyfin.cp1.mesh.internal/sso/OID/redirect/wallet
+            # The nebula-era jellyfin.cp1 origin was cut with the TV on
+            # the v3 APK (vftt).
+            - -client=jellyfin=http://jellyfin.gw.mesh.internal/sso/OID/redirect/wallet,http://jellyfin.gw.mesh.internal:8096/sso/OID/redirect/wallet
           ports:
             - containerPort: 8080
           readinessProbe:

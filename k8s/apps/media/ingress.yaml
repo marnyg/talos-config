@@ -12,8 +12,10 @@
 # one wallet signature, and the session cookie (domain
 # .gw.mesh.internal) then opens every gated service. Jellyfin is
 # deliberately ungated here: it gets native OIDC via jellyfin-plugin-sso
-# (refs 162c630d), and the TV reaches it LAN-direct on NodePort 30096
-# outside the ingress path anyway.
+# (refs 162c630d). Its nebula name jellyfin.cp1 was cut once the TV ran
+# the v3 APK (359.9.4.5, vftt; decision d3z3) — every device now reaches
+# it as jellyfin.gw, either through this ingress or the gateway's raw
+# :8096 facet.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -23,17 +25,6 @@ spec:
   ingressClassName: nginx
   rules:
     - host: jellyfin.gw.mesh.internal
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: jellyfin
-                port:
-                  number: 8096
-    # Nebula zone kept for the TV (Android, nebula until P2.4).
-    - host: jellyfin.cp1.mesh.internal
       http:
         paths:
           - path: /

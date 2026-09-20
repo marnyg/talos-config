@@ -38,11 +38,6 @@
   gradle --no-daemon assembleDebug && ./publish.sh`. The workflow still
   exists but is dispatch-only and fails fast without the `.a`.
   `adb` on the Mac: `nix shell nixpkgs#android-tools`.
-- 2026-09-20 — **`jellyfin.cp1` must stay in k8s until the TV runs the
-  new APK** (`k8s/apps/media/ingress.yaml`, the siwe-oidc `-client`
-  list, the jellyfin configmap's branding comment). Cutting it earlier
-  is what takes Jellyfin away from the TV; it is the first commit after
-  the device migrates, not before.
 - 2026-09-20 — `config-server/mesh`'s `TestMeshHTTPOverOverlay` can
   flake under a full parallel `go test ./...` (2 s client deadline in
   an e2e that stands up an overlay); it passes alone, repeatedly. Not

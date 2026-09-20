@@ -116,10 +116,9 @@ data:
     }' || echo "WARN: SSO provider config failed"
 
     # Wallet button on the login page. Relative action: the redirect
-    # URI is derived from the requesting host; both jellyfin.gw and
-    # jellyfin.cp1 callbacks are registered at siwe-oidc. The TV moved
-    # to jellyfin.gw with the v3 APK (359.9.4.5), so the jellyfin.cp1
-    # registration is dead weight until vftt cuts it. Clients that
+    # URI is derived from the requesting host; the jellyfin.gw callbacks
+    # (:80 ingress and the gateway's raw :8096 facet) are registered at
+    # siwe-oidc. Clients that
     # cannot run SIWE in a webview — the Android/TV apps — sign in
     # with Quick Connect or the local form instead (95la/i1il), as do
     # LAN-direct clients on NodePort 30096.
