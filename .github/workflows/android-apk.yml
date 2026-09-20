@@ -9,17 +9,17 @@
 # Debug signing is deliberate for now: a release keystore is a later
 # step because changing the signature forces uninstall + re-enroll on
 # every device.
+#
+# SINCE P2.4 (iroh inside the app) THIS WORKFLOW CANNOT RUN ON A STOCK
+# RUNNER: the AAR links libiroh_ffi.a cross-built for
+# aarch64-linux-android (iroh-go/nix/android.nix — impure, unfree NDK,
+# ~1 h cold). Until that build is cached for CI, the app is built on
+# the NixOS box (android/shell.nix) and published with
+# android/publish.sh to the same rolling release. The push trigger is
+# off; dispatch by hand only once IROH_FFI_ANDROID_LIB is obtainable.
 name: android-apk
 on:
   workflow_dispatch:
-  push:
-    branches: [main, master]
-    paths:
-      - "android/**"
-      - "config-server/mobile/**"
-      - "config-server/devkey/**"
-      - "config-server/go.mod"
-      - ".github/workflows/android-apk.yml"
 permissions:
   contents: write # rolling android-latest release
 jobs:
@@ -43,7 +43,9 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> "$GITHUB_ENV"
       - name: build gomobile AAR
-        run: ./android/build-aar.sh
+        run: |
+          : "${IROH_FFI_ANDROID_LIB:?the aarch64-linux-android libiroh_ffi.a is not available on this runner (see header)}"
+          ./android/build-aar.sh
       - name: build APK
         working-directory: android
         run: gradle --no-daemon assembleDebug

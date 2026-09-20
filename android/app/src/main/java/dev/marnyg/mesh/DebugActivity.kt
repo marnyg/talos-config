@@ -18,13 +18,13 @@ import java.io.RandomAccessFile
 import java.net.InetAddress
 
 /**
- * The introspection screen (D-pad friendly): the split-DNS shim's
- * state from Tunnel.DebugJSON (addressing, live upstreams, counters,
- * recent per-query decisions) plus the tail of this session's nebula
- * log. "Test DNS" resolves one mesh name and one public name through
- * the system resolver — with the tunnel up that traverses the tun's
- * magic resolver, exercising the exact mesh-vs-underlay split real
- * apps hit; both lookups then show up in the event ring.
+ * The introspection screen (D-pad friendly): the member's status from
+ * Tunnel.StatusJSON (identity, beats, flow + DNS counters, the fake-IP
+ * table, the endpoint's advertised addresses) plus the tail of this
+ * session's Go log. "Test DNS" resolves one mesh name and one public
+ * name through the system resolver — with the tunnel up that traverses
+ * the fake resolver, exercising the exact mesh-vs-underlay split real
+ * apps hit.
  */
 class DebugActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -60,8 +60,8 @@ class DebugActivity : Activity() {
     }
 
     private fun buildReport(): String = buildString {
-        append("== DNS shim (Tunnel.DebugJSON) ==\n")
-        val dbg = MeshVpnService.debugJson()
+        append("== member (Tunnel.StatusJSON) ==\n")
+        val dbg = MeshVpnService.statusJson()
         append(
             if (dbg == null) getString(R.string.debug_not_running)
             else try {
@@ -72,7 +72,7 @@ class DebugActivity : Activity() {
         )
         append("\n\n== last tunnel start error ==\n")
         append(MeshVpnService.lastError ?: getString(R.string.debug_no_error))
-        append("\n\n== nebula log (tail) ==\n")
+        append("\n\n== log (tail) ==\n")
         append(logTail())
     }
 
@@ -98,20 +98,14 @@ class DebugActivity : Activity() {
         testStatus.text = getString(R.string.dns_test_running)
         scope.launch {
             val report = withContext(Dispatchers.IO) {
-                // "hub" is nebderive.HubName — always in the mesh zone,
-                // always the resolver's own address, so it isolates DNS
-                // from whichever host the user is actually chasing.
-                val zone = try {
-                    val cfg = Store.config(this@DebugActivity) ?: throw IllegalStateException()
-                    JSONObject(Mobile.configInfo(cfg)).getString("dnsZone")
-                } catch (e: Exception) {
-                    "mesh.internal"
-                }
-                (listOf("hub.$zone", "example.com") + listOf(extra).filter { it.isNotEmpty() })
+                // "hub" is nodeagent.HubName: resolvable as soon as the
+                // first beat landed, so it isolates DNS from whichever
+                // member the user is actually chasing.
+                (listOf("hub.${Mobile.Zone}", "example.com") + listOf(extra).filter { it.isNotEmpty() })
                     .joinToString("\n") { resolveOne(it) }
             }
             testStatus.text = report
-            refresh() // the lookups just landed in the shim's event ring
+            refresh() // the counters moved
         }
     }
 

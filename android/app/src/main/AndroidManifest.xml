@@ -7,16 +7,15 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- ConnectivityManager (underlay DNS discovery + roaming callback
-         for the split-DNS shim): without this, activeNetwork throws and
-         the tunnel never starts. -->
+    <!-- ConnectivityManager (underlay DNS + address discovery, roaming
+         callback → redial): without this, activeNetwork throws and the
+         tunnel never starts. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- usesCleartextTraffic: the mesh HTTP surface (hub /hosts) is
-         plain http over the encrypted overlay; drop this once the
-         wallet-derived CA upgrades mesh HTTP to HTTPS (task 75c8b6b3). -->
+    <!-- usesCleartextTraffic: services on the plane are plain http to a
+         fake IP; the identity stream underneath is the encryption. -->
     <application
         android:label="@string/app_name"
         android:icon="@drawable/ic_launcher"
@@ -35,7 +34,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Introspection: split-DNS shim state + nebula log tail. -->
+        <!-- Introspection: member status + log tail. -->
         <activity
             android:name=".DebugActivity"
             android:exported="false" />

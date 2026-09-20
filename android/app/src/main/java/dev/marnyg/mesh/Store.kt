@@ -1,31 +1,32 @@
 package dev.marnyg.mesh
 
 import android.content.Context
+import java.io.File
 
 /**
- * App-private persistence, mirroring nebup's two-file cache (ADR-0012):
+ * Where the member lives. The identity-plane state is a directory in
+ * app-private storage with the node agent's layout (Go's
+ * nodeagent.State: key, kit.json, bundle.json, hub.json, mark) — Go
+ * owns every file in it; Kotlin only hands the path over. The key is
+ * the one thing that is state (possession is the credential, ADR-0012);
+ * the rest is the member's own certs and safe-to-lose caches.
  *
- *  - privKey: device-born identity. Survives re-enrollment; the whole
- *    membership credential. Only leaves this store spliced into the
- *    running config.
- *  - config:  disposable hub artifact (CA + cert + spliced key). Any
- *    re-enrollment replaces it; deleting it returns the app to the
- *    enroll screen without changing the device's identity or address.
- *
- * SharedPreferences MODE_PRIVATE is the v1 trust level (same as
- * Mobile Nebula); Android Keystore wrapping is a possible hardening.
+ * SharedPreferences keeps the two user inputs: hub URL and the name
+ * the device proposed at enrollment.
  */
 object Store {
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences("mesh", Context.MODE_PRIVATE)
 
-    fun privKey(ctx: Context): String? = prefs(ctx).getString("privKey", null)
-    fun setPrivKey(ctx: Context, hex: String) =
-        prefs(ctx).edit().putString("privKey", hex).apply()
+    /** The state dir; created on first use. */
+    fun stateDir(ctx: Context): File = File(ctx.filesDir, "member").apply { mkdirs() }
 
-    fun config(ctx: Context): String? = prefs(ctx).getString("config", null)
-    fun setConfig(ctx: Context, yaml: String) =
-        prefs(ctx).edit().putString("config", yaml).apply()
-    fun clearConfig(ctx: Context) =
-        prefs(ctx).edit().remove("config").apply()
+    fun hub(ctx: Context): String =
+        prefs(ctx).getString("hub", null) ?: ctx.getString(R.string.default_hub)
+    fun setHub(ctx: Context, url: String) =
+        prefs(ctx).edit().putString("hub", url).apply()
+
+    fun name(ctx: Context): String? = prefs(ctx).getString("name", null)
+    fun setName(ctx: Context, name: String) =
+        prefs(ctx).edit().putString("name", name).apply()
 }

@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import mobile.Mobile
 
 /**
  * TV autostart: reconnect the mesh on boot so the Jellyfin app works
@@ -15,7 +16,7 @@ import android.net.VpnService
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        if (Store.config(ctx) == null) return
+        if (!Mobile.enrolled(Store.stateDir(ctx).absolutePath)) return
         if (VpnService.prepare(ctx) != null) return
         ctx.startForegroundService(Intent(ctx, MeshVpnService::class.java))
     }

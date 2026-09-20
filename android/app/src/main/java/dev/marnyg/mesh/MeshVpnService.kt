@@ -12,30 +12,33 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.VpnService
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import java.io.File
 import java.net.Inet4Address
 import mobile.Mobile
 import mobile.Tunnel
-import org.json.JSONObject
 
 /**
- * Runs nebula on the tun fd this VpnService establishes. Kotlin owns
- * the fd's creation and the route/address plumbing (values parsed from
- * the enrolled config via Mobile.configInfo); Go owns the nebula
- * instance (mobile.Tunnel).
+ * Runs the member on the tun fd this VpnService establishes (Mesh v3
+ * P2.4). Kotlin owns the fd's creation and the route/address/DNS
+ * plumbing; Go (mobile.Tunnel: nodeagent + meshtun) owns everything
+ * on it.
  *
- * DNS: Android sends *all* device queries to a VPN-provided resolver,
- * and the hub answers only the mesh zone — so the resolver we
- * advertise (dnsIP, a magic in-mesh address) is answered by a split
- * shim inside the Go tunnel: mesh-zone names go to the hub through the
- * tunnel, everything else is forwarded on the underlay via sockets
- * protected with VpnService.protect. A sealed hub only costs mesh
- * names, never general DNS. (Task 3b1734db; details in Go dnsshim.go.)
+ * Split routing: only the fake range 198.18.0.0/15 enters the tunnel,
+ * so everything else on the device — iroh's own UDP, the underlay DNS
+ * forward — never loops back into the tun. Android still sends *all*
+ * DNS to the VPN's resolver, so the fake resolver at 198.18.0.2
+ * answers *.mesh.internal from the plane's name map and forwards
+ * everything else to the underlay's resolvers through protect()ed
+ * sockets.
+ *
+ * One VpnService per device (P2.4 finding .1): starting this evicts
+ * any other VPN; MainActivity says so before asking for consent.
  */
 class MeshVpnService : VpnService() {
     private var tunnel: Tunnel? = null
-    private var policyTimer: java.util.Timer? = null
+    private var pfd: ParcelFileDescriptor? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -43,8 +46,8 @@ class MeshVpnService : VpnService() {
             return START_NOT_STICKY
         }
         if (running) return START_STICKY
-        val cfg = Store.config(this)
-        if (cfg == null) {
+        val stateDir = Store.stateDir(this).absolutePath
+        if (!Mobile.enrolled(stateDir)) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -54,25 +57,28 @@ class MeshVpnService : VpnService() {
             // One session per log file: Go appends from here (debug
             // screen shows this session, or the last one after a stop).
             val log = logFile(this).apply { delete() }
-            val info = JSONObject(Mobile.configInfo(cfg))
-            val ownIP = info.getString("ownIP")
-            val prefixLen = info.getInt("prefixLen")
             val upstreamDns = underlayDnsServers() // before establish(): "active" must be the underlay
-            val pfd = Builder()
+            val localAddrs = underlayAddresses()   // idem
+            val fd = Builder()
                 .setSession("talos-mesh")
-                .setMtu(info.optInt("mtu", 1300))
-                .addAddress(ownIP, prefixLen)
-                .addRoute(networkBase(ownIP, prefixLen), prefixLen)
-                .addDnsServer(info.getString("dnsIP"))
+                .setMtu(MTU)
+                .addAddress(Mobile.TunIP, 32)
+                .addRoute(Mobile.FakeRange, Mobile.FakePrefixLen.toInt())
+                .addDnsServer(Mobile.ResolverIP)
                 .establish()
                 ?: throw IllegalStateException("VPN consent missing or revoked")
-            // detachFd: Go owns the fd from here; nebula closes it on Stop.
-            tunnel = Mobile.newTunnel(cfg, pfd.detachFd().toLong(), log.absolutePath, upstreamDns, protector)
+            pfd = fd
+            // detachFd: Go reads the fd until Stop; we close it after.
+            tunnel = Mobile.start(
+                stateDir, Store.hub(this), "",
+                fd.detachFd().toLong(), MTU.toLong(),
+                upstreamDns, localAddrs, log.absolutePath, protector
+            )
             registerUnderlayCallback()
-            startPolicySync()
             instance = this
             lastError = null
             running = true
+            Log.i(TAG, "tunnel up node=${tunnel?.nodeID()} upstreamDns=$upstreamDns localAddrs=$localAddrs")
         } catch (e: Exception) {
             Log.e(TAG, "starting tunnel", e)
             // Surface the failure where a TV user can see it: the
@@ -96,11 +102,11 @@ class MeshVpnService : VpnService() {
 
     private fun teardown() {
         instance = null
-        policyTimer?.cancel()
-        policyTimer = null
         unregisterUnderlayCallback()
-        tunnel?.stop()
+        tunnel?.let { runCatching { it.stop() }.onFailure { e -> Log.w(TAG, "stop", e) } }
         tunnel = null
+        pfd?.let { runCatching { it.close() } }
+        pfd = null
         running = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -124,17 +130,23 @@ class MeshVpnService : VpnService() {
     }
 
     /**
-     * The resolvers captured at establish() go stale when the device
-     * roams wifi↔cellular; this callback feeds the shim the current
-     * underlay's resolvers as links change. The request's default
-     * NOT_VPN capability keeps our own tun out of the updates.
+     * The underlay moved (wifi↔cellular, a new link): the resolvers
+     * captured at establish() are stale, and so is what iroh knows
+     * about our addresses — iroh-ffi's own network monitor is dead
+     * inside an Android app (P2.4 finding .2), so this callback is the
+     * redial trigger. The request's default NOT_VPN capability keeps
+     * our own tun out of the updates.
      */
     private val underlayCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
-            val v4 = lp.dnsServers.filterIsInstance<Inet4Address>()
+            val dns = lp.dnsServers.filterIsInstance<Inet4Address>()
                 .mapNotNull { it.hostAddress }
                 .joinToString(",")
-            if (v4.isNotEmpty()) tunnel?.setUpstreams(v4)
+            if (dns.isNotEmpty()) tunnel?.setUpstreams(dns)
+            val addrs = lp.linkAddresses.map { it.address }.filterIsInstance<Inet4Address>()
+                .mapNotNull { it.hostAddress }
+                .joinToString(",")
+            tunnel?.networkChanged(addrs)
         }
     }
     private var callbackRegistered = false
@@ -160,44 +172,16 @@ class MeshVpnService : VpnService() {
         }
     }
 
-    /**
-     * Live policy sync (task 6462fed4 phase 3): poll the hub's mesh
-     * /policy route; Go hot-reloads nebula's firewall when the rules
-     * changed (no tunnel restart, identity untouched). Failures are
-     * normal weather — a sealed hub makes the route unreachable — so
-     * they log at debug and the device keeps its current rules.
-     * Timer threads are fine here: syncPolicy blocks on a short-
-     * timeout HTTP call, never the main thread.
-     */
-    private fun startPolicySync() {
-        policyTimer = java.util.Timer("policy-sync", true).apply {
-            scheduleAtFixedRate(
-                object : java.util.TimerTask() {
-                    override fun run() {
-                        try {
-                            if (tunnel?.syncPolicy() == true) {
-                                Log.i(TAG, "policy sync: new firewall rules applied")
-                            }
-                        } catch (e: Exception) {
-                            Log.d(TAG, "policy sync: ${e.message}")
-                        }
-                    }
-                },
-                POLICY_SYNC_INITIAL_MS,
-                POLICY_SYNC_INTERVAL_MS
-            )
-        }
-    }
-
-    /** Marks the shim's underlay DNS sockets as VPN-bypassing. */
+    /** Marks the resolver's underlay DNS sockets as VPN-bypassing. */
     private val protector = object : mobile.SocketProtector {
         override fun protect(fd: Int): Boolean = this@MeshVpnService.protect(fd)
     }
 
     /**
      * The active network's IPv4 resolvers (comma-separated) for the
-     * shim's non-mesh forwards. Must be read before establish(), so
-     * "active" is the underlay. Empty is fine — Go falls back to 1.1.1.1.
+     * non-mesh forwards. Must be read before establish(), so "active"
+     * is the underlay. Empty ⇒ unknown in-zone names get NXDOMAIN and
+     * out-of-zone queries are dropped, so the callback above matters.
      */
     private fun underlayDnsServers(): String {
         val cm = getSystemService(ConnectivityManager::class.java)
@@ -207,21 +191,19 @@ class MeshVpnService : VpnService() {
             .joinToString(",")
     }
 
-    /** Network base address for (ip, prefixLen): 10.42.9.9/16 → 10.42.0.0. */
-    private fun networkBase(ip: String, prefixLen: Int): String {
-        val p = ip.split(".").map { it.toInt() }
-        var v = (p[0] shl 24) or (p[1] shl 16) or (p[2] shl 8) or p[3]
-        val mask = if (prefixLen == 0) 0 else (-1 shl (32 - prefixLen))
-        v = v and mask
-        return "${(v ushr 24) and 255}.${(v ushr 16) and 255}.${(v ushr 8) and 255}.${v and 255}"
+    /** The underlay's IPv4 addresses, for iroh to advertise as direct addrs. */
+    private fun underlayAddresses(): String {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val lp = cm.activeNetwork?.let { cm.getLinkProperties(it) } ?: return ""
+        return lp.linkAddresses.map { it.address }.filterIsInstance<Inet4Address>()
+            .mapNotNull { it.hostAddress }.joinToString(",")
     }
 
     companion object {
         private const val TAG = "MeshVpnService"
         private const val CHANNEL = "mesh"
         private const val NOTIFICATION_ID = 1
-        private const val POLICY_SYNC_INITIAL_MS = 60_000L
-        private const val POLICY_SYNC_INTERVAL_MS = 15 * 60_000L
+        private const val MTU = 1280
         const val ACTION_STOP = "dev.marnyg.mesh.STOP"
 
         /** Read by MainActivity to render the toggle; volatile is enough
@@ -230,28 +212,36 @@ class MeshVpnService : VpnService() {
         var running = false
             private set
 
-        /** The running service, for the debug screen's shim snapshot. */
+        /** The running service, for the screens' snapshots. */
         @Volatile
         private var instance: MeshVpnService? = null
 
-        /** Stack trace of the last failed Connect (null after a
-         *  successful start), for the debug screen. */
+        /** Stack trace of the last failed start (null after a
+         *  successful one), for the debug screen. */
         @Volatile
         var lastError: String? = null
             private set
 
-        /** Split-DNS shim state (JSON from Tunnel.DebugJSON), or null
-         *  when no tunnel is running. */
-        fun debugJson(): String? = instance?.tunnel?.let {
+        /** Tunnel.StatusJSON, or null when no tunnel is running. */
+        fun statusJson(): String? = instance?.tunnel?.let {
             try {
-                it.debugJSON()
+                it.statusJSON()
             } catch (e: Exception) {
                 "{\"error\": \"${e.message}\"}"
             }
         }
 
-        /** Where nebula logs land: this session's while running, the
+        /** Tunnel.NamesJSON (the plane's name map), or null when not running. */
+        fun namesJson(): String? = instance?.tunnel?.let {
+            try {
+                it.namesJSON()
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        /** Where Go logs land: this session's while running, the
          *  previous session's after a stop (truncated at each start). */
-        fun logFile(ctx: Context): File = File(ctx.cacheDir, "nebula.log")
+        fun logFile(ctx: Context): File = File(ctx.cacheDir, "mesh.log")
     }
 }
