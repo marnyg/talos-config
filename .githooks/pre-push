@@ -1,0 +1,67 @@
+#!/usr/bin/env sh
+# pre-push: refuse to push a stale Go vendorHash.
+#
+# config-server-bin and iroh-transport vendor the local `replace`d
+# modules (protocol/, iroh-transport/, iroh-go/iroh/) into a
+# fixed-output derivation, so any change under those trees — or to a
+# go.mod/go.sum — changes the hash while a cached vendor dir keeps
+# building fine locally. CI's `vendor-hash` job catches it, but we push
+# straight to main and nobody reads a red Actions tab: on 2026-09-20
+# main sat red for 14 pushes until darwin-rebuild hit the stale cache
+# (irohup built against an iroh-transport without Conn.Paths).
+#
+# So: when the pushed range touches one of those inputs, realise each
+# FOD and re-run it with --rebuild (the two-step dance documented on
+# config-server/nix/default.nix). ~30 s, no iroh-ffi involved. Set
+# SKIP_VENDOR_HASH=1 to bypass. Delegates to beads' shim afterwards.
+
+set -eu
+repo=$(git rev-parse --show-toplevel)
+
+if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
+  touched=""
+  while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue # deleting a ref
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+      range="$local_sha --not --remotes"
+    else
+      range="$remote_sha..$local_sha"
+    fi
+    # shellcheck disable=SC2086
+    files=$(git -C "$repo" diff --name-only $range -- \
+      'protocol/**/*.go' 'protocol/*.go' 'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' \
+      'go.mod' 'go.sum' '*/go.mod' '*/go.sum' \
+      'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 2>/dev/null || true)
+    [ -n "$files" ] && touched="$touched$files
+"
+  done
+
+  if [ -n "$touched" ]; then
+    echo "pre-push: vendored inputs changed in the pushed range:" >&2
+    printf '%s' "$touched" | sort -u | sed 's/^/  /' >&2
+    if ! git -C "$repo" diff --quiet HEAD -- protocol iroh-transport iroh-go/iroh; then
+      echo "pre-push: note: working tree is dirty under a vendored tree; the check sees tracked-file contents as on disk" >&2
+    fi
+    log=$(mktemp "${TMPDIR:-/tmp}/pre-push-vendor.XXXXXX")
+    trap 'rm -f "$log"' EXIT
+    for attr in config-server-bin iroh-transport; do
+      echo "pre-push: checking .#$attr.goModules vendorHash…" >&2
+      # Realise first (substitution allowed — a stale cached output is
+      # exactly the case), then --rebuild (implies --check) compares.
+      for flags in "" "--rebuild"; do
+        # shellcheck disable=SC2086
+        if ! nix build "$repo#$attr.goModules" --no-link $flags >"$log" 2>&1; then
+          grep -E "specified:|got:|error:" "$log" >&2 || cat "$log" >&2
+          echo "pre-push: .#$attr vendorHash is stale — paste the 'got:' hash into its nix/default.nix, commit, push again (SKIP_VENDOR_HASH=1 to override)" >&2
+          exit 1
+        fi
+      done
+    done
+    echo "pre-push: vendorHashes OK" >&2
+  fi
+fi
+
+# beads' shim (core.hooksPath used to point at .beads/hooks directly).
+if [ -x "$repo/.beads/hooks/pre-push" ]; then
+  exec "$repo/.beads/hooks/pre-push" "$@"
+fi

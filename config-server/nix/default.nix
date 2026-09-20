@@ -58,8 +58,12 @@ let
       #     path matching the hash, so a stale-but-matching vendor dir
       #     survives `go mod tidy`. Force a recompute by setting a
       #     bogus hash and reading nix's "got:" line.
-      #  3. (CI job `vendor-hash` in .github/workflows/verify.yml rebuilds
-      #     the FOD on every push, so drift fails there first.)
+      #  3. CI job `vendor-hash` in .github/workflows/verify.yml rebuilds
+      #     the FOD on every push — but we push straight to main and a red
+      #     Actions tab is silent (2026-09-20: 14 red pushes unnoticed).
+      #     `.githooks/pre-push` runs the same two commands BEFORE the
+      #     push when the range touches a vendored input; wire it with
+      #     `git config core.hooksPath .githooks` (AGENTS.md).
       #     Local `replace`s (../protocol, ../iroh-transport, ../iroh-go)
       #     are vendored from the source tree, so the hash changes
       #     whenever protocol/*.go, iroh-transport/*.go or iroh-go/iroh/*

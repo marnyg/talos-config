@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+# Delegates to beads' shim; core.hooksPath points here so .githooks/pre-push
+# can run the vendorHash check (see that file).
+repo=$(git rev-parse --show-toplevel)
+[ -x "$repo/.beads/hooks/prepare-commit-msg" ] && exec "$repo/.beads/hooks/prepare-commit-msg" "$@"
+exit 0

@@ -14,6 +14,16 @@ When working under `protocol/`, read the root
 `docs/desired-state/{goals,invariants,domain-model}.md` **and**
 `protocol/docs/desired-state/` (see the traversal rule below).
 
+## Git hooks
+
+`git config core.hooksPath .githooks` once per clone. `.githooks/pre-push`
+refuses a push whose range touches a vendored tree (`protocol/`,
+`iroh-transport/`, `iroh-go/iroh/`, any `go.mod`/`go.sum`) while a Go
+`vendorHash` is stale (the fixed-output cache hides this locally; CI's
+`vendor-hash` job only goes red after the push). The other hooks there
+just delegate to beads' shims in `.beads/hooks/`, so `bd hooks` keep
+working. `SKIP_VENDOR_HASH=1 git push` bypasses the check.
+
 <!-- docs-skill:start -->
 ## Documentation contract
 
