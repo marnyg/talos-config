@@ -11,19 +11,14 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
 
 - **Blank metal → cluster member with one human act** (wallet signature).
   Everything else automatic, declarative, re-derivable from git + owner keys.
-- **Mesh v2**: nebula replaces wg0 — **direct peer paths on the LAN**
-  (LAN traffic never hairpins through fly), phones/TV join the network,
-  one overlay, one derivation tree. Spike gate passed 2026-07-29
-  (ADR-0002); **phase 2 complete 2026-07-30** — wg0 deleted, mesh is
-  the sole overlay and control channel (ADR-0007). TV/phone client
-  shipped 2026-08-15 (ADR-0013: custom app, rolling APK release) —
-  owner-TV verified; remote (parents') deployment pending. Remaining
-  scope deliberately deferred: remote-direct paths (ADR-0006). Full
-  record in [`../mesh-v2-nebula.md`](../mesh-v2-nebula.md).
-  _Remote_ peer paths are **not** a goal: measured 2026-07-30 as
-  relay-by-default because ordinary remote networks (cellular CGNAT,
-  corporate Wi-Fi) are symmetric NATs that no overlay can punch. Remote
-  is wg0 parity via the hub; the LAN shortcut is the win. See ADR-0006.
+- ~~**Mesh v2**: nebula replaces wg0~~ — **history** (2026-07-29 →
+  2026-09-21, ADR-0002/0007/0013; record in
+  [`../mesh-v2-nebula.md`](../mesh-v2-nebula.md)). Superseded by Mesh
+  v3 (ADR-0016); the last nebula code left the repo in Phase 4 P4.2.
+  What carried over verbatim: _remote_ peer paths are **not** a goal —
+  measured 2026-07-30 as relay-by-default because ordinary remote
+  networks (cellular CGNAT, corporate Wi-Fi) are symmetric NATs no
+  overlay can punch; the LAN shortcut is the win (ADR-0006).
 - **Mesh v3**: identity-addressed mesh (iroh) replaces the nebula IP
   overlay — members are dialed by key, IP survives only as device-local
   fiction, k8s leaves the mesh onto declared LAN addresses, per-request
@@ -31,9 +26,12 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   (ADR-0016; decision `talos-config-dlk`, trigger: sovereign-actor
   build-out); **Phase 0 gate passed 2026-09-16** (decision
   `talos-config-b2t`; relay, Android, Talos extension, API churn all
-  probed), Phase 1 dual-plane build-out is next. Nebula stays the
-  deployed mesh until Phase 4. Record in
-  [`../mesh-v3-iroh.md`](../mesh-v3-iroh.md).
+  probed); Phases 1–3 landed 2026-09-17 → 09-20 (dual plane, admin
+  and media consumers migrated, soak on event coverage); **Phase 4
+  P4.1/P4.2 done 2026-09-21** — no nebula extension, package, port or
+  document anywhere; the identity plane is the only plane. Remaining
+  before "reached": ADR promotions (P4.3) and this doc set (P4.4).
+  Record in [`../mesh-v3-iroh.md`](../mesh-v3-iroh.md).
 - **Sovereign-actor protocol at the center** (decision `talos-config-5w1`,
   2026-09-03): this repo becomes a monorepo around a reusable protocol
   — actors as keypair+wallet, authority as delegation certs,

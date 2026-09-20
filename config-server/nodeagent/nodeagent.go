@@ -62,9 +62,8 @@ func Load(path string) (Config, error) {
 	return c, c.Validate()
 }
 
-// extSvcYAML is Talos's ExtensionServiceConfig document (same shape as
-// mesh/nebmachine.go's; duplicated rather than shared so the v2 nebula
-// render can be deleted in Phase 4 without touching this).
+// extSvcYAML is Talos's ExtensionServiceConfig document, the one
+// document the hub adds to a served machine config.
 type extSvcYAML struct {
 	APIVersion  string           `yaml:"apiVersion"`
 	Kind        string           `yaml:"kind"`

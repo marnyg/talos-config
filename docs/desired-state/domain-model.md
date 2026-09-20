@@ -6,15 +6,15 @@
      budget: as expressive as the domain requires; pruned for
      accuracy and drift, never for length. -->
 
-> **Live vs. planned (2026-09-03).** This model is written for the
-> *desired* state and is deliberately ahead of the code. What runs
-> today: nebula mesh, CA-signed bindings, receiver-side firewall
-> compiled from `mesh-policy.yaml` (ADR-0014), SIWE→OIDC app sessions
-> (ADR-0010). **Planned, not built:** everything marked ADR-0016 /
-> ADR-0017 or `359.*` — iroh transport, grants, facets, consent
-> grants, `authorize()`, the name map. The §1–§4 structure and the
-> "three layers" vocabulary apply to both; the glossary says per term
-> which side it is on.
+> **Live vs. planned (2026-09-21).** As of Mesh v3 Phase 4 P4.2 the
+> model and the code describe the same system: iroh transport, member
+> certs and `invoke` grants compiled from the recipe, facets,
+> `Authorize` at every receiver, the name map, SIWE→OIDC app sessions
+> (ADR-0010). Nothing nebula-era runs or exists in the tree; where a
+> paragraph below says "v2" or "nebula" it is history kept for the
+> contrast, not a live path. Still ahead of the code: the verb
+> vocabulary beyond `member`/`invoke`/`speak-as`, and the N>1
+> generalization.
 
 What this system models, in one sentence: **decentralized,
 client-owned identity under wallet-rooted authority, organized into
@@ -69,8 +69,8 @@ Every member is four layers, each independently replaceable:
 ```mermaid
 classDiagram
     class Role["Role (abstract identity — durable name)"]
-    class Binding["Binding (CA-signed cert, time-boxed)"]
-    class Key["Key (X25519 keypair, born on member)"]
+    class Binding["Binding (member cert, hubkey-signed, time-boxed)"]
+    class Key["Key (Ed25519 keypair = NodeId, born on member)"]
     class Runner["Runner (platform embodiment)"]
     Role <-- Binding : leases the role to a key
     Binding <-- Key : held by
@@ -83,10 +83,15 @@ classDiagram
   policy predicates that match it. Roles come into being two ways:
   *declared* in git (`talos/machines/<mac>/` — the MAC selects which
   config a box receives, invariant 6) or *ratified* at enrollment
-  (the approver-set device name). Addresses derive from the role by
-  pure function — `MachineIP(master, MAC)`, `DeviceIP(master, name)`
-  — so the namespace is a **stateless registry**: computed, never
-  stored, impossible to drift (invariants 1–2). _2026-09-20 (P2.5,
+  (the approver-set device name). **A role owns a name and nothing
+  else** — no address, no derived material: `<name>` is the member
+  cert's caveat, `<name>.mesh.internal` the apid certSAN and the
+  presentation label, and the two sets may not overlap (a device may
+  not enroll as a declared machine's name or `hub`; the hub refuses
+  before the wallet act, 2026-09-21). _Until P4.2 the role also owned
+  a derived overlay address — `MachineIP(master, MAC)`,
+  `DeviceIP(master, name)`, a stateless registry computed from the
+  master; that went with nebula._ _2026-09-20 (P2.5,
   `359.9.5`): a machine role additionally **declares** its LAN
   address in its patch (`talos/machines/<mac>/patch.yaml`, interface
   selected by the NIC's own MAC — which need not be the MAC that
@@ -97,25 +102,25 @@ classDiagram
   address — stored, not computed, because kubernetes is IP-native and
   stays off the identity plane (ADR-0016). Under v3 no other address
   is a property of a role; presentation IPs are device-local fiction._
-- **Binding** — the CA-signed cert: a time-boxed lease of a role to a
-  key, carrying (name, address, groups), 90-day validity. Membership
+- **Binding** — the `member` cert: a time-boxed lease of a role to a
+  key, carrying (name, groups), 90-day validity, signed by the hub's
+  hot key and resolved through the wallet's `speak-as`. Membership
   *is* holding an unexpired binding; **revocation is expiry**
-  (blocklist-by-fingerprint as the emergency path). Re-keying mints a
-  new lease on the same role — nothing moves.
+  (blocklist-by-key as the emergency path). Re-keying mints a new
+  lease on the same role — nothing moves.
 - **Key** — the only thing that acts. Born on the member, never
-  travels; the hub mints bindings, never keys (ADR-0012 for devices;
-  ADR-0015, Proposed, extends this to machines — until it lands,
-  machine keys are still hub-derived via `nebderive.MachineKey`).
-  Keys are disposable: identity death at the leaves is normal
-  operation; the role is what survives.
-- **Runner** — the platform adapter the key lives in: `ext-nebula`
-  (Talos allows no agents), the Android app (no root: gomobile +
-  VpnService fd), `nebup` (stock binary on a laptop). All wrap one
-  shared core (`nebderive`, `devkey`, enrollment);
-  convergence owed (task `ea9404af`). _On the identity plane the
-  runner distinction thins out: `p0agent`, `irohup` and the Android
-  app are the same `nodeagent` runtime over different links (2026-09-20,
-  P2.4)._
+  travels; the hub mints bindings, never keys (ADR-0012 for devices,
+  ADR-0015 for machines — a boot token in the served config redeems
+  for the Kit). The key is the Ed25519 NodeId, which is also the
+  iroh `EndpointId`: dialing by key and signing as an actor are one
+  identity. Keys are disposable: identity death at the leaves is
+  normal operation; the role is what survives.
+- **Runner** — the platform adapter the key lives in: `p0agent`
+  (Talos system extension — Talos allows no agents), the Android app
+  (no root: gomobile + VpnService fd), `irohup` (a launchd daemon on
+  a utun, ADR-0025). All three are the one `nodeagent` runtime over
+  different links (2026-09-20, P2.4); the runner distinction is the
+  link, not the code.
 
 Replaceability is the point: re-key and the role stays; reinstall and
 the role stays; swap runner and both stay. A NIC swap changes which
@@ -144,9 +149,10 @@ classDiagram
     Wallet ..> Seed : 2nd EIP-191 sig, same wallet (ce8); provisioner only
 ```
 
-_Nebula-era shape, as built: `Wallet → Master (HKDF of the unseal
-signature) → CA → certs`; the signature **is** the key, so hub = owner.
-ADR-0018 replaces it; the master survives only as the secrets seed._
+_Nebula-era shape (history): `Wallet → Master (HKDF of the unseal
+signature) → CA → certs`; the signature **was** the key, so hub =
+owner. ADR-0018 replaced it; the master survives only as the secrets
+seed (age, KMS, recovery passphrases, boot tokens)._
 
 Authority has exactly two tiers, both rooted at the wallet and both
 exercised through the hot key:
@@ -158,22 +164,24 @@ exercised through the hot key:
 
   | Adapter | Signature distance |
   |---|---|
-  | nebup | **zero** — signer operates the enrolling device |
+  | irohup | **zero** — signer operates the enrolling device |
   | RFC 8628 / APK | **spatial** — device proposes, approver signs elsewhere |
   | machine boot token (ADR-0015) | **temporal** — the hardware-approval signature, carried forward by a single-use token in the served config |
 
-- **Authorization** — what may this role reach: policy predicates
-  (`host:`, `group:`) over binding attributes, enforced at handshake
-  and firewall — checked once per connection, not per message. This
-  is the *network layer* only; application sessions are a separate
-  layer (see "The three layers" above). Under Mesh v3 the same rule
-  is evaluated by the gateway/node agent against the NodeId's cert
-  chain instead of nebula's firewall (ADR-0016).
+- **Authorization** — what may this role reach: recipe rows
+  (`host:`, `group:` × facet) compiled into `invoke` grants the
+  caller carries, checked by `Authorize` at the receiver once per
+  connection, not per message. This is the *network layer* only;
+  application sessions are a separate layer (see "The three layers"
+  above). _(Was nebula's handshake + firewall over binding attributes
+  until P4.2; ADR-0016/0017.)_
 
 ### Hub actors: cut by key, not by module
 
-_Pinned 2026-09-16, `359.8.2.1` grill-design (Mesh v3 Phase 1.2a).
-Desired state; the nebula-era hub is one process with one master._
+_Pinned 2026-09-16, `359.8.2.1` grill-design (Mesh v3 Phase 1.2a);
+built through Phases 1–2. The hub is a hub iff it serves an identity
+plane (`--iroh-relay`, 2026-09-21); the master is only the secrets
+seed, unsealed by the same wallet's second signature._
 
 The hub is several protocol actors in one process. An actor **is** a
 keypair, so the cut follows keys: exactly one key carries the wallet's
@@ -262,30 +270,29 @@ Rules that fall out of the cut:
 
 ```mermaid
 classDiagram
-    class PolicyFile["talos/mesh-policy.yaml (durable, git)"]
-    class Effective["Effective policy"]
-    class HubScope["hub scope"]
-    class NodeScope["node scope"]
-    class DeviceScope["device scope"]
-    PolicyFile --> Effective : the only input (overlay cut 2026-09-20, ri3b)
-    Effective --> HubScope : renders at unseal
-    Effective --> NodeScope : renders at apply (manual — task d7028379)
-    Effective --> DeviceScope : renders at enrollment (the GET /policy poll cut in ri3b)
+    class Recipe["talos/mesh-policy-v3.yaml (durable, git)"]
+    class Issuer["Issuer (#bundle, per beat)"]
+    class Grants["invoke grants (7 d, signed by hubkey)"]
+    class Caller["Caller (carries grants)"]
+    class Receiver["Receiver (accept table = its own facets)"]
+    Recipe --> Issuer : compiled on every beat, nothing cached
+    Issuer --> Grants : rows matching this member (name or group)
+    Grants --> Caller : returned with the blocklist + speak-as
+    Caller --> Receiver : presents member + grants on connect
+    Receiver ..> Receiver : Authorize — no policy file, no registry
 ```
 
-_Nebula-era render path, as built; the wallet-signed ephemeral overlay
-(ADR-0014) and the device poll left with the Android app's move to
-the identity plane (`ri3b`). Under ADR-0017 (Proposed) the
-effective policy compiles to `invoke` grants that **callers** carry
-and receivers verify; the three render sites above become one
-(grants fetched on the renewal beat) plus producer-side accept
-tables. Redraw when Mesh v3 Phase 1 lands._
+_ADR-0017 as built (`359.8.5`, 2026-09-18). The nebula-era shape —
+one policy file rendered three ways (hub at unseal, node at apply,
+device at enrollment) into receiver-side firewalls — went with the
+render in P4.2; ADR-0014's wallet-signed policy overlay went earlier
+(`ri3b`)._
 
-Policy names members by role predicates, so syncing rules never moves
-bindings, keys or addresses. The three scopes are member *classes* in
-the admission table, not kinds of member. Propagation on the nebula
-plane is now uniformly "next render" (unseal / apply / enrollment);
-the identity plane replaces all three with grants on the beat.
+Policy names members by role predicates, so editing rules never moves
+bindings or keys. Receiver kinds (`node`, `gateway`, `hub`) are
+vocabularies of facets, not kinds of member. Propagation is the beat:
+a rule change is a commit, a hub redeploy + unseal, and every member's
+next `#bundle` — no render sites, no per-member re-apply.
 
 ## 3. Network: a sovereign's offer, a member's consent
 
@@ -300,9 +307,9 @@ sovereigns are many in the model, one in this deployment.
 classDiagram
     class Sovereign["Sovereign (wallet)"]
     class Network["Network (mesh.internal)"]
-    class Mint["Mint (CA)"]
-    class Namespace["Namespace fn (nebderive)"]
-    class Rendezvous["Rendezvous (lighthouse + relay)"]
+    class Mint["Mint (Issuer: hubkey under the wallet's speak-as)"]
+    class Namespace["Namespace (declared roles in git + the witnessed name map)"]
+    class Rendezvous["Rendezvous (iroh home relay + name map on the beat)"]
     class Provisioning["Provisioning (config serve, KMS)"]
     class Hub["Hub (one binary on fly — the N=1 bundle)"]
     Sovereign --> Network : roots
@@ -333,19 +340,21 @@ Discovery holds the system's **only genuinely runtime state**
 
 ```mermaid
 flowchart LR
-    A["member boots\n(runner activates key)"] --> B["presents binding\nto lighthouse"]
-    B --> C["registration:\nrole → endpoint (volatile)"]
-    C --> D["lookup: peers resolve\nrole (hosts map, mesh DNS)"]
+    A["member boots\n(runner activates key)"] --> B["beats the Issuer:\nmember cert + reach-me-at"]
+    B --> C["registration (witnessed):\nname → NodeId → endpoints (volatile)"]
+    C --> D["lookup: peers fetch the\nname map on their own beat"]
     D --> P["presentation (v3, device-local):\nname map → fake IP, IP:port → (member, facet)"]
     P --> E{"path selection"}
     E -->|"LAN, punchable"| F["direct peer path"]
     E -->|"remote (CGNAT etc.)"| G["relay via hub\n(ADR-0006: relay-by-default)"]
 ```
 
-- **Registration** — a member's first act on any network: present the
-  binding to the network's lighthouse(s). Nebula's lighthouse
-  protocol keeps the mapping fresh internally (location updates ride
-  regular traffic — piggybacking for free); the hub never persists it.
+- **Registration** — a member's first act on any network: beat the
+  Issuer with its binding and its self-issued reach-me-at. The hub
+  *witnesses* (never registers) the name → NodeId binding from the
+  cert and relays the reach-me-at; both die with the process
+  (safe-to-lose, ADR-0019). Path liveness is iroh's own business
+  (relay-homed, direct when punchable).
 - **Lookup** — roles resolve through the mesh zone
   (`*.mesh.internal`): declared roles (machines, hub) always resolve
   from the derived namespace; device roles resolve only while their
@@ -355,15 +364,16 @@ flowchart LR
   zone survives only as a **presentation** on each device — a
   resolver inside the device's tun that answers `<name>.mesh.internal`
   with a device-local **fake IP** *only for names in the member's name
-  map* and forwards or refuses the rest, so nebula and v3 can share the
-  zone one name at a time. A TCP flow to `<fake IP>:<natural port>` is
+  map* and refuses the rest (the forward-to-upstream option existed
+  only while nebula's DNS shared the zone; dropped 2026-09-21). A TCP
+  flow to `<fake IP>:<natural port>` is
   one stream to that (member, facet). Nothing in the plane has an
   opinion about the zone or the addresses.
   **Zone rule** _(2026-09-20, P2.3, `nodeagent.Zone`)_: one label is
   a member, its port read in the vocabulary of the **kind its
   reach-me-at advertises**; two labels `<svc>.<member>` is a service
   on a gateway and resolves only while the member advertises a
-  gateway facet — a service name under a node (`jackett.cp1`, nebula's)
+  gateway facet — a service name under a node (`jackett.cp1`, the v2 form)
   is unknown, not shadowed. A record advertising nothing reads as a
   node (agents that predate advertisement; a device serving nothing).
 - **Path selection** — the data plane is **peer-to-peer**: direct
@@ -402,8 +412,7 @@ provisioning or recovery path may depend on it.
 - **Grant** — a delegation cert with `can: invoke`: the Owner (or any
   grantor) authorizes an `aud` — an actor *or a group name* — to
   reach `cav.target` on `cav.facet`. `talos/mesh-policy-v3.yaml` is
-  the Owner's *recipe*; the hub compiles it into grants (v2
-  `mesh-policy.yaml` is the frozen nebula recipe until Phase 4). **The grant is
+  the Owner's *recipe*; the hub compiles it into grants. **The grant is
   the record**: the grantee stores and presents it; the grantor keeps
   no authoritative state (it may log, never consult). Renewal =
   present the expiring cert, grantor re-verifies its own signature
@@ -631,7 +640,7 @@ provisioning or recovery path may depend on it.
   Host untouched and the `Identity` (member cert only) injected as
   `X-Mesh-Node/Name/Groups`; connections are bounded (1 h) so expiry
   has a ceiling. `jellyfin` is a raw splice. Not a rendezvous point
-  (that is the relay/lighthouse); issues no authority of its own;
+  (that is the relay); issues no authority of its own;
   past it the identity is ambient (structural trade-offs).
 - **Role** — abstract identity: a durable name in a network's
   namespace. Owns address, DNS labels, policy predicates. Never acts.
@@ -640,20 +649,21 @@ provisioning or recovery path may depend on it.
   protocol this is exactly the `member` cert (`can: member`,
   `cav: {name, groups}`) — one thing, two names; "binding" is the
   mesh-side word.
-- **Key** — concrete identity: X25519 keypair born on the member,
-  never travels. The only thing that acts.
-- **Runner** — the platform embodiment of a key: ext-nebula, Android
-  app, nebup. The Android runner holds the device's single
-  `VpnService` slot — starting it evicts any other VPN (Tailscale,
-  work VPN); a user-visible property, not an implementation detail.
+- **Key** — concrete identity: Ed25519 keypair born on the member,
+  never travels; its public half is the NodeId (`ed:<hex>`) and the
+  iroh `EndpointId`. The only thing that acts.
+- **Runner** — the platform embodiment of a key: `p0agent` (Talos
+  extension), Android app, `irohup` daemon — one `nodeagent` runtime.
+  The Android runner holds the device's single `VpnService` slot —
+  starting it evicts any other VPN (Tailscale, work VPN); a
+  user-visible property, not an implementation detail.
 - **Signature distance** — where/when the admission signature is
-  produced relative to the enrollment act: zero (nebup), spatial
+  produced relative to the enrollment act: zero (irohup), spatial
   (approver flow), temporal (machine boot token).
 - **Network** — a sovereign-rooted bundle: namespace + admission
   policy + rendezvous services. This deployment runs one.
 - **Hub** — the single config-server binary on fly.io implementing
-  the network's services plus the `/status` and `/policy` admin
-  pages. Trusted infrastructure, not a root of trust; killable and
+  the network's services plus the `/status` admin page. Trusted infrastructure, not a root of trust; killable and
   re-derivable (one unseal). Under ADR-0018 it is the wallet's **hot
   key** and, concretely, several actors cut by the state they must
   keep — each with **its own per-process keypair** (an actor *is* a
@@ -692,8 +702,8 @@ provisioning or recovery path may depend on it.
   a key that process does not hold. **Two EIP-191 signatures, one
   wallet** (ruled 2026-09-16, `ce8`, amending `fje`'s "one act"):
   the `speak-as` proposal roots hub authority; the frozen
-  `MasterMessage` roots the secrets seed (nebula plane, until Phase
-  4). The second must come from the wallet that signed the first;
+  `MasterMessage` roots the secrets seed (age, KMS, boot tokens). The
+  second must come from the wallet that signed the first;
   either may arrive alone (`/status`, `POST /unseal`). While sealed,
   minting and renewal are down; nothing is lost. Because the `speak-as` belongs to the
   process, a long-lived hub approaches its expiry silently — at < 30 d
@@ -765,8 +775,8 @@ provisioning or recovery path may depend on it.
   `issuer.BeatFacets`) — and the `speak-as` that resolves both certs'
   hot-key issuer. Enough to run the first beat; everything else comes
   from `#bundle`. On the wire (`issuer.EncodeKit`): JSON `{member,
-  beat_grant, speak_as}`, each a cert in its JSON form; a dual-plane
-  enrollment returns `{config: <nebula yaml>, kit}`.
+  beat_grant, speak_as}`, each a cert in its JSON form — the whole
+  answer to an enrollment, direct or device-flow.
 - **Bundle** — two related things, one word. (a) The *connect-time
   bundle* a caller presents **on connect** (`cert.Bundle {member,
   grants[], speak-as[]}`, wire `cert.EncodeBundle`), the input of
@@ -786,22 +796,22 @@ provisioning or recovery path may depend on it.
   the Issuer keeps none (invariant 1, "the grant is the record").
 - **Blocklist (v3)** — `talos/mesh-blocklist-v3.txt`: blocked *member
   keys* (`ed:` ids — a member cert's `aud`, the iroh `EndpointId`),
-  one per line; sibling of the frozen v2 `mesh-blocklist.txt` (nebula
-  fingerprints) until Phase 4. Git is the record; it reaches enforcers
+  one per line (the `-v3` in the name is historical: it sat beside
+  nebula's fingerprint list through the dual plane). Git is the record; it reaches enforcers
   two ways, both on the beat (`j0b`): every `#bundle` carries the
   current list and receivers replace their copy wholesale (`Authorize`
   step 3, a safe-to-lose cache); and the Issuer refuses `#renew` and
   `#bundle` to a listed key, so its certs run out at the runway. A
   malformed line fails the load (nothing silently unblocked).
 - **Enrollment** — wallet-authorized minting of a binding: the member
-  submits its own pubkey, the approver (at whatever signature
-  distance) ratifies role + group, one signature mints the cert.
-  **Dual plane (Phase 1):** the signed text is `enrollmsg` **v1**
-  (name, group, nebula fingerprint, nonce — nebula only; deployed
-  clients) or **v2**, which adds `node: ed:<hex>`, the member's own
-  NodeId; one signature then mints the nebula cert *and* the member
-  Kit, and the wallet — not Enroll — is what named the NodeId. Both
-  accepted until Phase 4 deletes v1 with nebula.
+  presents its own NodeId, the approver (at whatever signature
+  distance) ratifies role + group, one signature mints the Kit. The
+  signed text is `enrollmsg` **v3** `(name, group, node, nonce)` —
+  the wallet, not Enroll, is what named the NodeId, and the Issuer
+  re-verifies that signature inside `#mint-device`. The hub refuses a
+  name git already owns (a machine's, `hub`) before the wallet act.
+  _(v1 bound a nebula pubkey fingerprint; v2 both; deleted with
+  nebula, P4.2 2026-09-21.)_
 - **Recipe** — the Owner's declared who×facet table,
   `talos/mesh-policy-v3.yaml`: rows `{facet, host|group}` under a
   **receiver kind** (`node`, `gateway`, `hub` — the actors that hold
@@ -821,14 +831,13 @@ provisioning or recovery path may depend on it.
   appears in a `member` cert's `cav.groups` and as the `aud` of
   `invoke` grants. It has no semantics of its own — what a group may
   reach is entirely the grants addressed to it. (`admins`, `media`,
-  `machines`; today also what nebula firewall rules and per-route
-  HTTP gates match on.) _(Redefined 2026-09-03, spike `359.2`.)_
-- **Mesh zone** — `*.mesh.internal`. v2: served by the hub — declared
-  roles from the derived namespace, device roles while their tunnel
-  is live; the hub's overlay HTTP is `/hosts` and `/policy` only
-  (`/config` moved to the `hub-http` facet 2026-09-19, decision
-  `d3z3`: a migrated consumer cuts its nebula path). v3: inherited unchanged (spike `eda`: every certSAN already
-  carries it) but no longer a plane concept — a **presentation**
+  `machines` — `policy.Groups`, the one copy; devices enroll into the
+  first two, machines are the node agents.) _(Redefined 2026-09-03,
+  spike `359.2`.)_
+- **Mesh zone** — `*.mesh.internal`. _v2 (history): served by the hub
+  on the overlay from the derived namespace._ v3: the zone name is
+  inherited unchanged (spike `eda`: every certSAN already carries it)
+  but is no longer a plane concept — a **presentation**
   artifact each device serves for itself (see Lookup, §4: the zone
   rule; services are two-level, `<svc>.gw`, under the gateway).
 - **Presentation** — the device-local fiction that lets IP-speaking
@@ -879,7 +888,7 @@ provisioning or recovery path may depend on it.
 The model deliberately mirrors
 [`../../protocol/docs/sovereign-actor-protocol.md`](../../protocol/docs/sovereign-actor-protocol.md)
 where the shapes agree — client-born keys, revocation-as-expiry,
-lighthouse rendezvous, consensual hierarchy — and diverges knowingly
+relay rendezvous, consensual hierarchy — and diverges knowingly
 where it doesn't: this system *embraces* the stable-name registry SAP
 refuses (made safe by being stateless), checks authority once per
 connection rather than per message, and has no economics *yet*.

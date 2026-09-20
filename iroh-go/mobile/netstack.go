@@ -20,8 +20,8 @@ import (
 // spoofing mode (accept any destination, answer from any source), a
 // default route, and forwarders instead of listeners — every TCP SYN and
 // every UDP datagram the phone routes into the tun lands in a callback.
-// Same gvisor as the hub's nebstack, without an address plan: fake IPs
-// are the DNS layer's business, not the stack's.
+// Plain gvisor with no address plan: fake IPs are the DNS layer's
+// business, not the stack's.
 type netstack struct {
 	s *stack.Stack
 }
