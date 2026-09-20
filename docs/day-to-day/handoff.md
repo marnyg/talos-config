@@ -56,7 +56,7 @@ deployed.** P2.4 (`359.9.4`) closed.
 
 ## Suggested next steps
 
-- Close `vftt`, `ri3b`, `xnat` (work verified; awaiting the owner's
+XX
   word).
 - Re-run `darwin-rebuild switch`, commit the nixos lock bump.
 - **P2.5 (`359.9.5`)**: k8s/Talos endpoint off the mesh — the only
