@@ -33,10 +33,9 @@ const HubName = "hub"
 
 // KindOf reads a member's receiver kind off what its reach-me-at
 // advertises (actor.Serves → cav.facet; policy.KindOf). A record that
-// advertises nothing is read as a node: the vocabulary every member
-// was assumed to speak before records advertised anything (agents
-// ≤ 0.1.3), and the harmless reading for a device that serves nothing
-// (the dial fails at the ALPN). HubName is the hub.
+// advertises nothing is read as a node: the harmless reading for a
+// device that serves nothing (the dial fails at the ALPN). HubName is
+// the hub.
 func KindOf(name string, entries []issuer.NameEntry) policy.Kind {
 	if name == HubName {
 		return policy.KindHub

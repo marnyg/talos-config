@@ -18,7 +18,7 @@ machine:
     #                 Longhorn's V1 data engine attaches volumes with.
     # - util-linux-tools  nsenter (required by Longhorn ≥1.5) and fstrim
     #                 (volume trimming). Both per ADR-0011.
-    # - p0agent       (0.1.3) `ext-p0agent`, the Mesh v3 node agent
+    # - p0agent       (0.1.4) `ext-p0agent`, the Mesh v3 node agent
     #                 (config-server/cmd/nodeagent, 359.8.3): NodeId key on
     #                 EPHEMERAL, boot-token enrollment (ADR-0015), renewal
     #                 beat, authorize() on ALPN-gated streams to apid /
@@ -35,6 +35,11 @@ machine:
     #                 speak-as seen) and polls a sealed hub flat at
     #                 MinRebeat, so a redeployed hub knows the node
     #                 within ~1 min of its unseal.
+    #                 0.1.4 (3e9fdef) advertises the facets it serves in
+    #                 its reach-me-at (actor.Serves → cav.facet), so a
+    #                 presentation reads a name's kind off the plane
+    #                 instead of assuming node; both nodes report
+    #                 `facets [apid kube-api]` since 2026-09-20.
     #
     # Predecessors: factory 011ccc… (nebula only) until 2026-07-31 when
     # Longhorn landed; factory 6a9acc… (the three official extensions)
@@ -47,4 +52,4 @@ machine:
     # is why there is no --preserve flag to pass — so etcd and
     # /var/media come back. A fresh *install* is the destructive path.
     disk: /dev/nvme0n1
-    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.3@sha256:923158ad0b2cb5b3dfd95978c65b181efabf8e9092c36937fce1b1b415107aae
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.4@sha256:a6ea8ccd3d6f105749e9420cb2e126f23ba17a790ad2cfc2e292554e5faf0abc

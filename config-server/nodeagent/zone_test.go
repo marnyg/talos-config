@@ -47,7 +47,7 @@ func TestZoneRule(t *testing.T) {
 		{"jellyfin.gw", 8096, "gw", "jellyfin", nil},
 		{"jackett.cp1", 80, "", "", ErrNotThatKind}, // still nebula's
 		{"x.hub", 80, "", "", ErrNotThatKind},
-		{"laptop", 50000, "laptop", "apid", nil}, // advertises nothing ⇒ read as a node (≤ 0.1.3 agents)
+		{"laptop", 50000, "laptop", "apid", nil}, // advertises nothing ⇒ read as a node (a device that serves nothing)
 		{"old", 50000, "old", "apid", nil},
 		{"nope", 80, "", "", ErrUnknownName},
 		{"a.b.c", 80, "", "", ErrUnknownName},
