@@ -3,15 +3,14 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** **Mesh v3 Phase 4 — deletion (`359.11`).** Phase 3's soak
-closed 2026-09-20 with all three exit events covered (w1 reboot, hub
-re-seal by forced restart — decision `iwrk`, remote-media from stable
-cellular). Nebula is installed but carries nothing; every path that
-matters is on the identity plane. Phase 4 removes it: P4.1 factory
-schematic without the nebula extension + node upgrades, P4.2 code
-deletion (`neb*.go`, `nebderive`, `nebstack`, `cmd/nebup`, vendored
-nebula pkg, AAR/mobile nebula parts), P4.3 ADR promotions/revisions,
-P4.4 desired-state + deployed-state docs.
+**Now:** **Mesh v3 Phase 4 — deletion (`359.11`).** P4.1 done
+2026-09-20: the nebula extension is off both nodes (fleet image
+`p0agent-0.1.5`), the apiserver cert carries no overlay address, and
+the served config's `<name>.mesh.internal` SAN comes from the
+identity-plane render. What remains: P4.2 code deletion (`neb*.go`,
+`nebderive`, `nebstack`, `nebenroll.go`, `cmd/nebup`, vendored nebula
+pkg, AAR/mobile nebula parts, hub `--mesh-*` flags), P4.3 ADR
+promotions/revisions, P4.4 desired-state + deployed-state docs.
 
 **Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
 members dialed by key, IP as device-local fiction, hub as actors

@@ -16,6 +16,19 @@ or change something, update the date.
 > endpoint; see `mesh-v3-iroh.md` Phase 2 and the cluster-endpoint
 > bullet below). Only the two endpoint/etcd bullets were re-verified
 > today; the rest of this file still describes the nebula era.
+>
+> **2026-09-20 (late), Phase 4 P4.1:** the nebula extension is **off
+> both nodes**. Fleet image
+> `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc3…`
+> (stock Talos + `iscsi-tools` v0.2.0 + `util-linux-tools` 2.41.2 +
+> `p0agent` 0.1.5) on cp1 (`10.0.0.68`, static) and w1 (`10.0.0.71`);
+> no `nebula0`, no `ext-nebula`; NodeIds unchanged (cp1 `7dd90eb3…`,
+> w1 `40c9d1ca…`). kube-apiserver cert SANs: `cp1, cp1.mesh.internal,
+> talos-wu6-eib, 10.0.0.68, 10.96.0.1` — no overlay address. apid's
+> `<name>.mesh.internal` SAN is served by the identity-plane render.
+> The hub still runs its nebula lighthouse on udp/4242 with zero
+> members until P4.2. The "Mesh (nebula)" section below is history;
+> P4.4 (`359.11.4`) rewrites this file.
 
 ## Cluster — _last verified 2026-07-31_
 

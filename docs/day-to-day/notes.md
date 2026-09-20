@@ -601,9 +601,11 @@
 - 2026-09-19 — **cp1's LAN address changes on every reboot** (DHCP:
   `.58 → .59 → .62` in one afternoon). Direct access, no mesh needed:
   `talosctl -n <ip> -e <ip> --talosconfig talos/talosconfig …`. The
-  identity plane never notices (the agent redials its relay by key);
-  `nix run .#apply` dials the *overlay* address and needs the laptop on
-  nebula.
+  identity plane never notices (the agent redials its relay by key).
+  ~~`nix run .#apply` dials the *overlay* address and needs the laptop on
+  nebula.~~ _(2026-09-20: `apply` fetches from `http://hub.mesh.internal`
+  over the irohup tun and dials `-e cp1.mesh.internal -n <hostname>`;
+  no overlay anywhere on its path since P4.1.)_
 - 2026-09-19 — **Talos restarts an extension service when its
   ExtensionServiceConfig document is *updated*, but not when it is
   first *created* under a running service.** Corrected on w1 (qb5q):
@@ -876,3 +878,19 @@
   restarted over adb** (`am start-foreground-service` → "Requires
   permission not exported"); open the app and tap Connect. Go log:
   `adb shell run-as dev.marnyg.mesh tail cache/mesh.log`.
+- 2026-09-20 — **P4.1 upgrade timings and one Talos fact**: `talosctl
+  upgrade --wait` w1 ~3.5 min, cp1 ~7 min (drain; both nodes up this
+  time). After an upgrade the node's stored config still carried the
+  `nebula` ExtensionServiceConfig for an extension that no longer
+  exists, and the later `apply-config` with the same document was
+  accepted without complaint — **Talos ignores an
+  ExtensionServiceConfig whose service is not installed**; the
+  document is inert until P4.2 stops the hub emitting it. Rollback,
+  if ever needed, is `talosctl upgrade --image <0.1.4 pin>` (git
+  history has it) — nebula would come back configured, since the
+  stored config never lost the document.
+- 2026-09-20 — **The hub bakes `talos/` at image build** (`fly/image.nix`):
+  any `talos/clusters/**` or `talos/machines/**` change needs
+  `HUB_BUILDER=mar@nixos fly/deploy.sh` (~3 min) + an unseal before
+  `nix run .#apply` serves it. Plan one unseal per session: batch the
+  git changes, deploy once.
