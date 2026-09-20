@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -60,15 +61,15 @@ type Stats struct {
 // names are dropped (the client retries as with any lost datagram);
 // that is the endgame after nebula is gone.
 type Resolver struct {
-	dir       Directory
-	upstreams []netip.AddrPort
-	control   func(network, address string, c syscall.RawConn) error
-	Stats     Stats
+	dir     Directory
+	control func(network, address string, c syscall.RawConn) error
+	Stats   Stats
 
-	mu     sync.Mutex
-	byName map[string]netip.Addr
-	byIP   map[netip.Addr]string
-	next   netip.Addr
+	mu        sync.Mutex
+	upstreams []netip.AddrPort
+	byName    map[string]netip.Addr
+	byIP      map[netip.Addr]string
+	next      netip.Addr
 }
 
 // ResolverOptions configures NewResolver.
@@ -90,7 +91,18 @@ func NewResolver(o ResolverOptions) (*Resolver, error) {
 		dir: o.Directory, control: o.DialControl,
 		byName: map[string]netip.Addr{}, byIP: map[netip.Addr]string{}, next: poolStart,
 	}
-	for _, s := range strings.Split(o.Upstreams, ",") {
+	ups, err := parseUpstreams(o.Upstreams)
+	if err != nil {
+		return nil, err
+	}
+	r.upstreams = ups
+	return r, nil
+}
+
+// parseUpstreams reads ResolverOptions.Upstreams' format.
+func parseUpstreams(list string) ([]netip.AddrPort, error) {
+	var out []netip.AddrPort
+	for _, s := range strings.Split(list, ",") {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
@@ -103,9 +115,32 @@ func NewResolver(o ResolverOptions) (*Resolver, error) {
 			}
 			ap = netip.AddrPortFrom(addr, 53)
 		}
-		r.upstreams = append(r.upstreams, ap)
+		out = append(out, ap)
 	}
-	return r, nil
+	return out, nil
+}
+
+// SetUpstreams replaces the upstreams (same format as
+// ResolverOptions.Upstreams). The resolvers a mobile device captured at
+// start go stale the moment it roams wifi↔cellular; its network
+// callback feeds the current ones here. An empty or malformed list is
+// ignored — losing general DNS to a parse error is the exact
+// all-or-nothing failure the split exists to avoid.
+func (r *Resolver) SetUpstreams(list string) {
+	ups, err := parseUpstreams(list)
+	if err != nil || len(ups) == 0 {
+		return
+	}
+	r.mu.Lock()
+	r.upstreams = ups
+	r.mu.Unlock()
+}
+
+// Upstreams is the current upstream list (status surfaces).
+func (r *Resolver) Upstreams() []netip.AddrPort {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.upstreams)
 }
 
 // Names is the current name → fake IP table, sorted.
@@ -189,7 +224,7 @@ func (r *Resolver) HandleUDP(src, dst netip.AddrPort, payload []byte) []byte {
 			r.Stats.Mesh.Add(1)
 			return r.answer(hdr, q, netip.Addr{}, dnsmessage.RCodeSuccess)
 		}
-		if len(r.upstreams) == 0 {
+		if len(r.Upstreams()) == 0 {
 			r.Stats.Refused.Add(1)
 			return r.answer(hdr, q, netip.Addr{}, dnsmessage.RCodeNameError)
 		}
@@ -229,7 +264,7 @@ func (r *Resolver) answer(hdr dnsmessage.Header, q dnsmessage.Question, ip netip
 
 // exchange forwards a query to the upstreams, first answer wins.
 func (r *Resolver) exchange(query []byte) ([]byte, error) {
-	for _, up := range r.upstreams {
+	for _, up := range r.Upstreams() {
 		dialer := net.Dialer{Timeout: dnsTimeout, Control: r.control}
 		conn, err := dialer.Dial("udp", up.String())
 		if err != nil {

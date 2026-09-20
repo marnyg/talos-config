@@ -73,6 +73,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/devkey"
 	"github.com/marnyg/talos-config/config-server/issuer"
+	"github.com/marnyg/talos-config/config-server/meshtun"
 	"github.com/marnyg/talos-config/config-server/nebderive"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/config-server/policy"
@@ -206,7 +207,7 @@ func main() {
 			stop()
 		}
 	}()
-	pool := newConnPool(a, logger)
+	pool := meshtun.NewPool(a, logger)
 	var wg sync.WaitGroup
 	for _, b := range br {
 		wg.Add(1)
@@ -309,7 +310,7 @@ func firstLine(b []byte) string {
 // serve runs one bridge for the life of ctx: each accepted TCP
 // connection is one forward stream on the pool's connection to the
 // member.
-func (b bridge) serve(ctx context.Context, pool *connPool, logger *log.Logger) {
+func (b bridge) serve(ctx context.Context, pool *meshtun.Pool, logger *log.Logger) {
 	ln, err := net.Listen("tcp", b.Listen)
 	if err != nil {
 		logger.Printf("bridge %s/%s: listen: %v", b.Name, b.Facet, err)
@@ -324,13 +325,13 @@ func (b bridge) serve(ctx context.Context, pool *connPool, logger *log.Logger) {
 		}
 		go func() {
 			defer tcp.Close()
-			raw, err := pool.open(ctx, b.Name, b.Facet)
+			raw, err := pool.Open(ctx, b.Name, b.Facet)
 			if err != nil {
 				logger.Printf("bridge %s/%s: %v", b.Name, b.Facet, err)
 				return
 			}
 			t0 := time.Now()
-			in, out := pipe(raw, tcp.(*net.TCPConn))
+			in, out := meshtun.Pipe(raw, tcp.(*net.TCPConn))
 			logger.Printf("bridge %s/%s: stream done: %dB in, %dB out, %s", b.Name, b.Facet, in, out, time.Since(t0).Round(time.Millisecond))
 		}()
 	}

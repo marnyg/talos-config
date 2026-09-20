@@ -51,8 +51,11 @@ type DeviceFlow struct {
 	DeviceCode string `json:"device_code"`
 	UserCode   string `json:"user_code"`
 	ApproveURL string `json:"verification_uri_complete"`
-	ExpiresIn  int    `json:"expires_in"`
-	Interval   int    `json:"interval"`
+	// QRPNG is ApproveURL as a QR code (PNG, base64): what a screen
+	// with no keyboard shows (the TV app). Empty for a log-only member.
+	QRPNG     string `json:"qr_png_base64"`
+	ExpiresIn int    `json:"expires_in"`
+	Interval  int    `json:"interval"`
 }
 
 // EnrollDevice runs one device flow to completion: start, show, poll,

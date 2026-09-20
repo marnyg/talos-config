@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/netip"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
+	"github.com/marnyg/talos-config/config-server/meshtun"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"golang.zx2c4.com/wireguard/tun"
 )
@@ -109,66 +109,22 @@ func chownTree(dir string, uid, gid int) error {
 	})
 }
 
-// serveTun runs the netstack over the utun until ctx ends or the tun
-// path breaks. The Directory is the agent's name map read by the zone
-// rule (nodeagent.Zone): a member name resolves to a fake IP only
-// while the map has a live entry for it, a service name `<svc>.<m>`
-// only while m advertises a gateway facet — so a name still owned by
-// nebula (jackett.cp1) is forwarded, not shadowed. A name the map
-// lacks kicks a beat (rate-limited): a member enrolled since the last
-// one resolves on the next query instead of the next beat.
-func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *connPool, upstream string, logger *log.Logger) error {
+// serveTun runs the presentation (meshtun) over the utun until ctx
+// ends or the tun path breaks.
+func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *meshtun.Pool, upstream string, logger *log.Logger) error {
 	if os.Geteuid() == 0 {
 		return errors.New("serveTun as root: privilegedSetup must run first")
-	}
-	res, err := fakeip.NewResolver(fakeip.ResolverOptions{
-		Directory: fakeip.DirectoryFunc(func(name string) bool {
-			_, _, err := a.Zone(name)
-			if errors.Is(err, nodeagent.ErrUnknownName) {
-				a.Kick()
-			}
-			return err == nil
-		}),
-		Upstreams: upstream,
-	})
-	if err != nil {
-		return err
 	}
 	link, err := fakeip.NewTunLink(t.dev, 512)
 	if err != nil {
 		return err
 	}
-	flow := func(app fakeip.Conn, dst netip.AddrPort) {
-		defer app.Close()
-		name, ok := res.NameFor(dst.Addr())
-		if !ok {
-			logger.Printf("tun: flow to %s: not a name we minted", dst)
-			return
-		}
-		// Which vocabulary a port is read in depends on who the name
-		// is: hub.<zone>:80 is hub-http, <svc>.gw:80 is ingress-http,
-		// cp1:50000 is apid (nodeagent.Target).
-		member, facet, err := a.Target(name, dst.Port())
-		if err != nil {
-			logger.Printf("tun: flow to %s (%s): %v", dst, name, err)
-			return
-		}
-		raw, err := pool.open(ctx, member, facet)
-		if err != nil {
-			logger.Printf("tun: %s/%s: %v", member, facet, err)
-			return
-		}
-		t0 := time.Now()
-		in, out := pipe(raw, app)
-		logger.Printf("tun: %s/%s (%s): stream done: %dB in, %dB out, %s", member, facet, name, in, out, time.Since(t0).Round(time.Millisecond))
-	}
-	s, err := fakeip.NewStack(link, flow, res.HandleUDP)
+	mt, err := meshtun.Start(meshtun.Options{Agent: a, Link: link, Pool: pool, Upstreams: upstream, Log: logger})
 	if err != nil {
 		link.Close()
 		return err
 	}
-	defer func() { link.Close(); s.Close() }()
-	logger.Printf("tun: resolver on %s:53 for *.%s, upstream %q", fakeip.ResolverIP, fakeip.Zone, upstream)
+	defer func() { link.Close(); mt.Close() }()
 
 	tick := time.NewTicker(routeCheckEvy)
 	defer tick.Stop()
