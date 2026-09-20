@@ -190,6 +190,11 @@
   runs while the hub is sealed. `RELAY_DISABLE=1` on the fly app turns
   it off. Probe: `p0relay listen/dial -relay https://marnyg-talos-config.fly.dev`
   (relay path only from the owner laptop — see the Cisco note).
+  **Baseline noise** (2026-09-20, measured across a redeploy, unchanged
+  by it): the child logs `relay-http-serve:conn{peer=127.0.0.1:…}
+  … Connection did not reach established state within timeout` at
+  ~1.7/min steady — loopback peers, i.e. the hub's own proxy/health
+  probes, not members. Compare against that rate before chasing it.
 - 2026-09-17 — **Deploy footguns found the hard way:** the Docker
   context is the *working tree*, not git — a gitignored
   `talos/extensions/*/_out` (145 MB) shipped into the image and

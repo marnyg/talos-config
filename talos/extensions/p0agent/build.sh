@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build chain for cp1's declared install image (talos/hardware/minipc.yaml).
-# Born as the Mesh v3 P0.3 spike; adopted at the Phase 0 gate 2026-09-16
-# (bead 5cz). Run by hand, each step idempotent; after a push, update the
-# tag AND the digest in minipc.yaml (`crane digest` or the registry's
-# Docker-Content-Digest header):
+# Build chain for the fleet's declared install image (talos/hardware/
+# minipc.yaml + alienware-x15.yaml). Born as the Mesh v3 P0.3 spike;
+# adopted at the Phase 0 gate 2026-09-16 (bead 5cz). Run by hand, each
+# step idempotent; the last line prints the tag@digest to pin in BOTH
+# hardware files. Talos version + official extensions: ../installer.env.
 #
 #   1. static agent  — x86_64-linux musl build of config-server/cmd/nodeagent:
 #                      `nix build .#config-server-static` on a linux builder
@@ -27,13 +27,12 @@ set -euo pipefail
 cd "$(dirname "$0")"
 bin=${1:?path to static nodeagent binary}
 ver=${2:-0.1.0}
-talos=v1.12.6
-# refs from https://factory.talos.dev/version/$talos/extensions/official
-official=(
-  ghcr.io/siderolabs/iscsi-tools:v0.2.0
-  ghcr.io/siderolabs/nebula:1.10.3
-  ghcr.io/siderolabs/util-linux-tools:2.41.2
-)
+# Talos version + official extension refs live in ../installer.env so
+# the hardware files and this script cannot drift apart.
+# shellcheck source=../installer.env
+. ../installer.env
+talos=$TALOS
+official=("${OFFICIAL[@]}")
 ext=ghcr.io/marnyg/p0agent:$ver
 installer=ghcr.io/marnyg/talos-installer:$talos-p0agent-$ver
 
@@ -61,4 +60,6 @@ docker tag "$loaded" "$installer"
 docker rmi "$loaded" >/dev/null
 docker push "$installer"
 echo "installer: $installer"
-echo "next: talosctl upgrade -n <node> --image $installer"
+digest=$(docker buildx imagetools inspect "$installer" --format '{{json .Manifest.Digest}}' | tr -d '"')
+echo "pin in talos/hardware/*.yaml: image: $installer@$digest"
+echo "next: talosctl upgrade -n <node> --image $installer@$digest"

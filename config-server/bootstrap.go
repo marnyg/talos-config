@@ -152,6 +152,9 @@ type bootstrapper struct {
 	obsLogged     bool
 	lastFail      string                                       // last RPC failure, logged on change only
 	caCache       map[string]*x509.PEMEncodedCertificateAndKey // machine dir -> OS CA
+	// dial opens the named member's facet; hub.dialMember in
+	// production, a pipe in tests so observe runs end to end.
+	dial func(ctx context.Context, name, facet string, timeout time.Duration) (facetClient, error)
 }
 
 func newBootstrapper(root string, hub *hubManager) *bootstrapper {
@@ -159,6 +162,7 @@ func newBootstrapper(root string, hub *hubManager) *bootstrapper {
 		root:    root,
 		hub:     hub,
 		caCache: map[string]*x509.PEMEncodedCertificateAndKey{},
+		dial:    hub.dialMember,
 	}
 }
 
@@ -344,7 +348,7 @@ func (b *bootstrapper) zone() string {
 // zero addresses") before our dialer ever ran. facetResolver shadows
 // the dns scheme for this one client and passes the name through.
 func (b *bootstrapper) talosClient(ctx context.Context, m machines.Machine, name string) (*bootClient, string, error) {
-	fc, err := b.hub.dialMember(ctx, name, "apid", bootstrapDialTimeout)
+	fc, err := b.dial(ctx, name, "apid", bootstrapDialTimeout)
 	if err != nil {
 		return nil, "", err
 	}

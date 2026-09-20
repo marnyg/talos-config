@@ -1,8 +1,9 @@
 machine:
   install:
-    # Imager-built installer (ours, ghcr.io/marnyg) = stock v1.12.6 + the
+    # Imager-built installer (ours, ghcr.io/marnyg) = stock Talos + the
     # three official extensions of factory schematic 6a9acc… + our own
-    # `p0agent` extension. The Image Factory only carries official
+    # `p0agent` extension. Versions: talos/extensions/installer.env (the
+    # one place they are spelled out; build.sh reads it). The Image Factory only carries official
     # extensions, so a third-party extension means `imager` + a registry we
     # own; content-addressing gives way to a tag pinned by digest. Rebuild
     # with `talos/extensions/p0agent/build.sh <static-p0agent> <ver>` (lists
