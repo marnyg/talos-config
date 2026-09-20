@@ -134,7 +134,11 @@ Binding conditions carried from the design record:
 - Harder: we own a Talos extension, a gateway, a desktop daemon and an
   Android VPN app with no upstream; a sealed hub blocks all non-LAN
   traffic (raises `talos-config-fbb`); k8s needs router DHCP-pool
-  exclusion for static LAN IPs.
+  exclusion for static LAN IPs. _Revised 2026-09-21 (P2.5, decision
+  `ebis`): no router exclusion — adding a node must not depend on
+  router access, so the machine patch declares the address the MAC
+  already held and a pool collision is accepted risk, not a
+  prevented one._
 - Follow-up: phase tree under `talos-config-359`; nebula-era backlog
   (`cjo en6 4ns 41b 6gq ap2 90a`) deferred on the gate; SideroLink
   (`2y7`) vs node agent must be decided before Phase 1.3; domain model

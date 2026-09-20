@@ -268,10 +268,14 @@
   on mesh startup failure** but never blocks the unseal itself (KMS
   rides the WAN, invariant 4). (`talos-config-fbb`; gets heavier under
   Mesh v3 — relay identity derives from the master.)
-- After a hub redeploy + unseal, cp1 is unreachable over the mesh for
-  ~45–60 s (lighthouse re-registration + fresh handshake), then
-  recovers unaided. Don't page on the first failed ping; warm with
-  `ping 10.42.218.125` before `apply`.
+- After a hub redeploy + unseal, `hub.mesh.internal` resets
+  connections for a minute or so: the daemon beats against the new
+  hub NodeId within ~1 min of the unseal (`beat ok` in
+  `/var/log/talos-mesh.log`), but the tun kept dialing the *old*
+  NodeId for ~15 s after that (in-flight dials). Self-heals; wait for
+  `hub/hub-http: connected to <new id>` before `nix run .#apply`
+  _(2026-09-21; nebula-era version of this note: cp1 unreachable
+  ~45–60 s while the lighthouse re-registered)_.
 - The hub **re-mints its own nebula leaf at every unseal** — never pin
   the hub's leaf fingerprint; pin the CA (`MESH_CA_PIN` in fly.toml,
   derived CA `b881d6ff…`). A wrong-wallet unseal fails loudly.
