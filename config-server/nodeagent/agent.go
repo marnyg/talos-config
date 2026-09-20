@@ -54,6 +54,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/policy"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
@@ -217,7 +219,7 @@ func Start(o Options) (*Agent, error) {
 		a.log = log.Default()
 	}
 	if a.http == nil {
-		a.http = &http.Client{Timeout: 30 * time.Second}
+		a.http = &http.Client{Timeout: 30 * time.Second, Transport: hubTransport()}
 	}
 	a.actor = actor.New(cert.NewEdSigner(priv), ep)
 	a.actor.Clock = o.Clock
@@ -260,6 +262,21 @@ func Start(o Options) (*Agent, error) {
 
 // ID is the NodeId.
 func (a *Agent) ID() cert.ActorID { return a.actor.ID() }
+
+// hubTransport is the default transport for hub HTTPS: the stock one
+// plus HTTP/2 liveness pings. Without ReadIdleTimeout a pooled h2
+// connection whose underlay vanished without a RST (a phone leaving
+// Wi-Fi, 2026-09-20) is reused for every request and each one runs
+// the client's full 30 s timeout; with it the dead connection is
+// noticed within ~2× the interval and the next request dials fresh.
+func hubTransport() http.RoundTripper {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	if h2, err := http2.ConfigureTransports(tr); err == nil {
+		h2.ReadIdleTimeout = 15 * time.Second
+		h2.PingTimeout = 10 * time.Second
+	}
+	return tr
+}
 
 // Actor exposes the protocol actor (tests, diagnostics).
 func (a *Agent) Actor() *actor.Actor { return a.actor }

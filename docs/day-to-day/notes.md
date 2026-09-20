@@ -106,7 +106,7 @@
   flake under a full parallel `go test ./...` (2 s client deadline in
   an e2e that stands up an overlay); it passes alone, repeatedly. Not
   P2.4's doing — re-run the package before believing it.
-- 2026-09-21 — **`--auto-bootstrap` now needs `--iroh-relay`** (P2.2,
+- 2026-09-20 — **`--auto-bootstrap` now needs `--iroh-relay`** (P2.2,
   `49a7bdb`): the hub dials the control plane's `apid` over the
   identity plane, so a hub without a wan endpoint reports
   `no-identity-plane` and `main` refuses the flag combination. fly's
@@ -128,7 +128,7 @@
   in the running mesh.** Nebula is the mesh until Phase 4. Deferred
   nebula-era issues (`cjo en6 4ns 41b 6gq ap2 90a`) were parked on the
   Phase 0 gate; the gate passed 2026-09-16 — re-triage them under
-  `359.8`/`359.9` rather than closing. _(Re-triaged 2026-09-21: `en6`
+  `359.8`/`359.9` rather than closing. _(Re-triaged 2026-09-20: `en6`
   and `4ns` closed — nebup and Mobile Nebula are on `359.11.2`'s
   deletion list, so their premises are gone; `90a` rescoped from a
   nebula CA in the host trust store to HTTPS on mesh names terminated
@@ -319,7 +319,7 @@
   `/var/log/talos-mesh.log`), but the tun kept dialing the *old*
   NodeId for ~15 s after that (in-flight dials). Self-heals; wait for
   `hub/hub-http: connected to <new id>` before `nix run .#apply`
-  _(2026-09-21; nebula-era version of this note: cp1 unreachable
+  _(2026-09-20; nebula-era version of this note: cp1 unreachable
   ~45–60 s while the lighthouse re-registered)_.
 - The hub **re-mints its own nebula leaf at every unseal** — never pin
   the hub's leaf fingerprint; pin the CA (`MESH_CA_PIN` in fly.toml,
@@ -347,7 +347,7 @@
 
 ## Cluster / Talos
 
-- **LAN addresses are declared, not leased** _(2026-09-21, P2.5)_:
+- **LAN addresses are declared, not leased** _(2026-09-20, P2.5)_:
   cp1 `10.0.0.68`, w1 `10.0.0.71`, in `talos/machines/<mac>/patch.yaml`
   by MAC; the cluster endpoint is `https://10.0.0.68:6443`. A **blank**
   node (maintenance mode, before its config is applied) still gets a
@@ -490,7 +490,7 @@
   `export.auto` is `false`. Session-close check: `git ls-remote origin
   refs/dolt/data` must move after `bd dolt push`. Q-threads that are
   `blocks`-chained need `--force` to close with a reason.
-- 2026-09-21 — **Three `bd` traps found while grooming, all silent.**
+- 2026-09-20 — **Three `bd` traps found while grooming, all silent.**
   (a) `bd ready --exclude-type` is a **no-op** in `1.0.3 (dev)` — it
   is accepted without error and filters nothing, for `epic` and `bug`
   alike, so any type-filtered ready query is wrong without saying so.

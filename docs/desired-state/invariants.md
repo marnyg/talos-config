@@ -98,7 +98,7 @@ this list is the checkable form.
    (`10.42.218.125`, `cp1.mesh.internal`) — so a worker cannot rejoin
    while the lighthouse is unreachable. Accepted deliberately: the
    lighthouse is a hard dependency of cluster membership.~~ _Closed
-   2026-09-21 (mesh v3 P2.5, `359.9.5`): the cluster endpoint is cp1's
+   2026-09-20 (mesh v3 P2.5, `359.9.5`): the cluster endpoint is cp1's
    declared LAN address, so cluster membership needs no overlay at all
    and the invariant holds unqualified for the cluster too. The
    identity plane carries only the admin CLI path (`cp1.mesh.internal`

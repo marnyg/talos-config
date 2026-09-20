@@ -54,15 +54,15 @@ defects. Remote-media (event 3/3) attempted, not covered.**
 - **TV still holds a Jellyfin admin session**; non-admin user not
   created. **Mac daemon still on the pre-`d4960c1` binary**; `~/git/
   nixos` lock bump uncommitted; `darwin-rebuild switch` not run.
-- Several docs date P2.5 as 2026-09-21; the commits are 2026-09-20
-  (`invariants.md` inv. 4, `deployed-state.md`, `domain-model.md`,
-  exploration-log P2.2 header). Not fixed — surfaced.
 
 ## Suggested next steps
 
 - Soak: 1/3 events (node reboot). Still open: a natural hub re-seal,
   a remote-media session from somewhere with stable cellular (or the
   laptop tethered elsewhere). Fix `rnfk` first or the session will
-  spend its first minutes waiting on the hub fetch.
+  spend its first minutes waiting on the hub fetch (the h2
+  `ReadIdleTimeout` landed at end of session caps a black-holed
+  attempt at ~30 s; `CloseIdleConnections` on `NetworkChanged` is
+  still the real fix).
 - Redeploy the hub (also picks up nothing else — image `585524e`).
 - Phase 4 (`359.11`) once the two remaining events have passed.

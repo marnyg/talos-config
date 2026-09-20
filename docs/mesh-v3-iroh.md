@@ -634,7 +634,7 @@ Findings:
    `qb5q`, `ipt7`)._
 2. Hub→node dials (/status, bootstrap probes) onto identity streams;
    delete the hub's netstack dial path (keep code until phase 4).
-   _Built 2026-09-21 (`4814be3`, `49a7bdb`), deploy pending. The hub
+   _Built 2026-09-20 (`4814be3`, `49a7bdb`), deploy pending. The hub
    is an ordinary caller: a self-minted member cert named `hub` and
    the recipe's one host row, on the node's `apid` facet
    (`config-server/hubcaller.go`). Prerequisite settled first —
@@ -682,7 +682,7 @@ Findings:
    router DHCP exclusion; certSANs → LAN names; talosconfig/
    kubeconfig re-pointed (reverses mesh-v2 phase-2 step 2; sequenced
    late because it is the only step touching cluster availability).
-   _Live 2026-09-21 (`359.9.5`, `625a2e6`): both nodes declare their
+   _Live 2026-09-20 (`359.9.5`, `625a2e6`): both nodes declare their
    LAN address by MAC in `talos/machines/<mac>/patch.yaml`; endpoint
    `https://10.0.0.68:6443`; certSANs name the LAN address, the
    identity-plane name and the hostname. Applied without a reboot,

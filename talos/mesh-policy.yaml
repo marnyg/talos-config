@@ -50,7 +50,7 @@ node:
   inbound:
     # Reachability checks from any member.
     - {port: any, proto: icmp, host: any}
-    # DEAD since 2026-09-21 (P2.2, 359.9.2): the hub's apid dials for
+    # DEAD since 2026-09-20 (P2.2, 359.9.2): the hub's apid dials for
     # auto-bootstrap ride the identity plane (mesh-policy-v3.yaml's
     # `{facet: apid, host: hub}`). Kept only because removing a rule
     # re-renders every node's nebula config; Phase 4 (359.11.2)

@@ -6,7 +6,7 @@ cluster:
     # kubernetes is IP-native and stays off the identity mesh; the
     # endpoint is a git declaration, not a lease (invariant 7). Was the
     # nebula address 10.42.218.125 from mesh-v2 phase 2 step 2 until
-    # 2026-09-21, and the wg0 address before that.
+    # 2026-09-20, and the wg0 address before that.
     endpoint: https://10.0.0.68:6443
   apiServer:
     certSANs:

@@ -11,7 +11,7 @@ or change something, update the date.
 > Android app shipped (ADR-0013). **Mesh v3 / ADR-0017 are not
 > deployed** — nebula, as described below, is what runs.
 >
-> **2026-09-21:** the banner above is itself stale — Mesh v3 Phase 2
+> **2026-09-20:** the banner above is itself stale — Mesh v3 Phase 2
 > is complete and live (irohup tun, gateway, app, and P2.5's LAN
 > endpoint; see `mesh-v3-iroh.md` Phase 2 and the cluster-endpoint
 > bullet below). Only the two endpoint/etcd bullets were re-verified
@@ -58,7 +58,7 @@ or change something, update the date.
   `u-media`; a **plain `talosctl reset` wipes the entire disk including
   the media library** and needs USB/PXE to recover — don't.
 - **Cluster endpoint `https://10.0.0.68:6443` — cp1's declared static
-  LAN address** _(2026-09-21, mesh v3 P2.5 `359.9.5`)_. Both nodes
+  LAN address** _(2026-09-20, mesh v3 P2.5 `359.9.5`)_. Both nodes
   declare their LAN address in `talos/machines/<mac>/patch.yaml`
   (`deviceSelector.hardwareAddr`, `dhcp: false`, default via
   `10.0.0.1`, resolver `10.0.0.1`): cp1 `10.0.0.68` on `eno1`, w1
@@ -69,7 +69,7 @@ or change something, update the date.
   to be recreated (notes.md 2026-09-20). The router's DHCP pool is deliberately
   not edited (decision `ebis`). Predecessors: DHCP lease (drifted four
   times in one day) → wg0 → nebula `10.42.218.125` (mesh-v2 phase 2
-  step 2, until 2026-09-21).
+  step 2, until 2026-09-20).
 - **etcd advertises `10.0.0.68:2380/2379`** — now a declared address,
   which resolves `talos-config-6gq` by construction (it used to
   advertise the DHCP lease, and a lease drift between reboots left a

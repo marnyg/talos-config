@@ -86,7 +86,7 @@ classDiagram
   (the approver-set device name). Addresses derive from the role by
   pure function — `MachineIP(master, MAC)`, `DeviceIP(master, name)`
   — so the namespace is a **stateless registry**: computed, never
-  stored, impossible to drift (invariants 1–2). _2026-09-21 (P2.5,
+  stored, impossible to drift (invariants 1–2). _2026-09-20 (P2.5,
   `359.9.5`): a machine role additionally **declares** its LAN
   address in its patch (`talos/machines/<mac>/patch.yaml`, interface
   selected by MAC); this is the cluster endpoint and etcd's advertised
@@ -238,7 +238,7 @@ Rules that fall out of the cut:
   and the hub does not roam, so ADR-0001's ≈ 1 h sketch would put a
   WAN fetch in front of every beat. After one beat the reply's
   piggyback keeps it current.
-- **The hub as a caller** _(built 2026-09-21, P2.2 `359.9.2`; ruled
+- **The hub as a caller** _(built 2026-09-20, P2.2 `359.9.2`; ruled
   2026-09-18, `359.8.5`)_: auto-bootstrap's `apid` dials to the
   control plane are stream-facet connections like any device's. The
   Issuer mints a member cert for **its own key**, `{aud: hubkey, name:
@@ -742,7 +742,7 @@ provisioning or recovery path may depend on it.
   redeploy costs one bounded dial (15 s) and one beat, not a restart
   (built 2026-09-20, `ipt7`; decision `pu9q`). A node that dials
   nothing between beats has two more kinds of evidence (built
-  2026-09-21, decision `z2go`): **the pooled connection its last beat
+  2026-09-20, decision `z2go`): **the pooled connection its last beat
   left to the hub closing** — iroh keep-alives every connection, so
   a dead hub process is observed ~30 s later without a dial — and
   **an admitted caller whose rooted `speak-as` names a `hubkey`
