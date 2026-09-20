@@ -343,7 +343,11 @@ whose deployment-free form differs from the talos wording. Source:
   travel alongside signatures when needed.
 - **Location record (`reach-me-at`)** — a Cert, not a second record
   type: `{iss: P, aud: "*", can: reach-me-at, cav: {endpoints:
-  […]}, iat, exp}`. The lifetime is the issuer's choice, not a rule —
+  […], facet?: […]}, iat, exp}`. `cav.facet` (2026-09-20, a
+  consumer-driven addition per ADR-0005, from talos ADR-0026) is the
+  set of stream facets the actor serves — "where" and "on what" as one
+  signed claim, so a presentation can read an actor's kind from the
+  plane; it advertises, it never authorizes. The lifetime is the issuer's choice, not a rule —
   ADR-0001 sketches ≈ 1 h for a roaming actor; the talos hub, non-roaming
   behind one relay, publishes 7 d. `cav.endpoints` is the verb's object in a
   structured caveat (the same move ADR-0017 made for `target`/`facet`);

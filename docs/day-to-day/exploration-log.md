@@ -124,3 +124,20 @@
   would make the Issuer a member of its own network. Landed on: the
   daemon resolves `nodeagent.HubName` from the hub record it already
   keeps for the beat.
+
+## Mesh v3 P2.3 — the gateway's path to ingress-nginx (2026-09-20)
+
+- 2026-09-20 — Tried the gateway reverse-proxying to a ClusterIP
+  Service in front of the hostNetwork ingress-nginx DaemonSet. Ruled
+  out (for the dual plane): when kube-proxy picks the controller on the
+  *other* node, flannel's ip-masq (`! --dst-type LOCAL`) rewrites the
+  source to the node IP and the `1gv` geo gate blanks `X-Mesh-*`; the
+  chart exposes no `internalTrafficPolicy`, and `trafficDistribution`
+  is zone-based. Landed on: the pod dials its own node's controller by
+  `status.hostIP` (a local destination is never masqueraded). Both the
+  gate and the dial go when hostNetwork does (ADR-0026).
+- 2026-09-20 — Considered "Jackett first" with SSO staying on
+  `.cp1` (second cookie domain + `oauth2.gw` host). Ruled out on
+  contact: the owner's desktop no longer has a nebula plane, so the
+  issuer `auth.cp1` itself was unreachable; the whole ingress moved in
+  one step (`5qh9`).

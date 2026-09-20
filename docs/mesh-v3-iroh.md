@@ -82,7 +82,8 @@ Costs:
 hub process boots → hubkey (Ed25519, random per process)
 wallet signs speak-as {aud: hubkey, cav: {verbs, groups}, exp 120 d}   (= unseal, ADR-0018)
   → hubkey signs member certs + invoke grants; bundle carries the speak-as
-  → hubkey is also the relay+gateway identity for this process
+  → hubkey is also the relay identity for this process (the gateway is
+    an in-cluster member with its own durable key — 359.5, built 359.9.3)
 wallet sig over frozen message → HKDF secrets seed (masterderive)
   → age identity, KMS seal keys, recovery passphrases ONLY — never a signing key
 member NodeIds: Ed25519 keypairs minted ON the member (ADR-0015
@@ -644,6 +645,15 @@ Findings:
 3. In-cluster gateway deployed; one low-stakes UI (e.g. Jackett)
    exposed through it end-to-end with the per-request identity
    header; then the rest of ingress (ADR-0009 revision).
+   _Live 2026-09-20 (`359.9.3`, `5qh9`; ADR-0026): the gateway pod
+   `gw` (k8s/apps/gateway, the node agent runtime under Kind gateway)
+   terminates `ingress-http` and reverse-proxies to the node-local
+   ingress-nginx with `X-Mesh-Node/Name/Groups`; every Ingress host is
+   `<svc>.gw.mesh.internal` and the SSO issuer `auth.gw`; only
+   `jellyfin.cp1` survives for the nebula TV until step 4. A member's
+   reach-me-at now advertises the facets it serves, so a presentation
+   reads a name's kind from the plane (`nodeagent.Zone`). The Mac has
+   no nebula plane left — step 3 was forced whole, not Jackett-first._
 4. Android app swaps nebula AAR for iroh+fake-IP internals (same
    APK, ADR-0013 pipeline); phones/TV re-enroll NodeIds via the
    existing device flow. Media verified: LAN-direct and remote-relay.

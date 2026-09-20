@@ -5,6 +5,19 @@
 
 ## Last session
 
+2026-09-20 — **`Actor.Serves` → reach-me-at `cav.facet`** (a
+consumer-driven runtime addition, ADR-0005; recorded in talos
+ADR-0026). The consumer's in-cluster gateway needed presentations to
+read a member's *kind* from the plane instead of assuming every name
+is a node, and the only per-actor claim a directory already carries
+is the location record — so "where to reach me" now also says "on
+what". `PublishLocation` copies `a.Serves` into the caveat; nil ⇒
+absent (∅ under ADR-0002). Verifiers ignore it; it is not authority.
+Test: the piggyback test asserts B's record advertises `echo` and A's
+advertises nothing. No wire-shape change for actors that set nothing.
+
+## Previous session
+
 2026-09-19 (second session of the day) — **`seq` is an I-JSON integer**
 (ADR-0006, Proposed). The consumer's first desktop caller (`irohup`)
 and a hub key rotation together surfaced a wire bug in ADR-0005's

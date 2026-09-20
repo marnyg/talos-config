@@ -346,6 +346,13 @@ flowchart LR
   zone one name at a time. A TCP flow to `<fake IP>:<natural port>` is
   one stream to that (member, facet). Nothing in the plane has an
   opinion about the zone or the addresses.
+  **Zone rule** _(2026-09-20, P2.3, `nodeagent.Zone`)_: one label is
+  a member, its port read in the vocabulary of the **kind its
+  reach-me-at advertises**; two labels `<svc>.<member>` is a service
+  on a gateway and resolves only while the member advertises a
+  gateway facet — a service name under a node (`jackett.cp1`, nebula's)
+  is unknown, not shadowed. A record advertising nothing reads as a
+  node (agents that predate advertisement; a device serving nothing).
 - **Path selection** — the data plane is **peer-to-peer**: direct
   paths on the LAN (a stated goal — LAN traffic never hairpins
   through fly), relay through the hub for remote members, because
@@ -433,7 +440,7 @@ provisioning or recovery path may depend on it.
   Ports exist only inside a facet definition (forward) and in the
   device-local map (expose) — never in a grant. A facet has one
   **natural port** (`policy.FacetPort`: `apid` 50000, `kube-api`
-  6443, `hub-http` 80), the port its service listens on at the
+  6443, `hub-http` 80, `ingress-http` 80, `jellyfin` 8096), the port its service listens on at the
   receiver and the port every presentation shows for it, so
   `cp1.mesh.internal:50000` reads the same on a bridge, a tun, or the
   node itself; a port is read in the vocabulary of the name's kind
@@ -455,8 +462,12 @@ provisioning or recovery path may depend on it.
   and the hub keeps no registry (invariant 1: the grant is the record),
   so each entry ships the hubkey-signed member cert itself as the proof
   of the binding (decision `2fc`; supersedes "pure function of git",
-  which predates actor sovereignty); **NodeId → endpoints** is the
-  producer's advertisement — the actor's own `reach-me-at` record,
+  which predates actor sovereignty); **NodeId → endpoints + served
+  facets** is the producer's advertisement — the actor's own
+  `reach-me-at` record (`cav.endpoints`, and since 2026-09-20
+  `cav.facet`: what it serves, read by presentations for a name's
+  kind; an advertisement, never authority — ALPN routes, Authorize
+  decides),
   **self-issued by every actor, machines included**, piggybacked on its
   envelopes; the hub relays and caches, it never issues one on an
   actor's behalf (a hub-issued 1 h record would make nodes unreachable
@@ -597,11 +608,18 @@ provisioning or recovery path may depend on it.
   machine, mutate policy, unseal): the request is signed by the
   Owner's key itself. Not a "fresh signature" or "presence" check —
   those terms are retired.
-- **Gateway** *(Mesh v3, planned)* — the member actor in front of
-  cluster services: verifies the caller's cert chain against policy,
-  forwards to the Service, injects the verified identity as a header.
-  Not a rendezvous point (that is the relay/lighthouse); issues no
-  authority of its own.
+- **Gateway** *(Mesh v3, built 2026-09-20, ADR-0026)* — the member
+  actor in front of cluster services: the node agent runtime under
+  Kind gateway, a **member with a durable key** (key + Kit on its own
+  volume, like a machine's `/var/lib`; enrolled once by the headless
+  device flow), not a hub actor. Authorizes once per connection from
+  the caller's bundle rooted in its own consent; terminates
+  `ingress-http` in-process and reverse-proxies to ingress with the
+  Host untouched and the `Identity` (member cert only) injected as
+  `X-Mesh-Node/Name/Groups`; connections are bounded (1 h) so expiry
+  has a ceiling. `jellyfin` is a raw splice. Not a rendezvous point
+  (that is the relay/lighthouse); issues no authority of its own;
+  past it the identity is ambient (structural trade-offs).
 - **Role** — abstract identity: a durable name in a network's
   namespace. Owns address, DNS labels, policy predicates. Never acts.
 - **Binding** — a CA-signed cert leasing a role to a key for a
@@ -798,7 +816,8 @@ provisioning or recovery path may depend on it.
   (`/config` moved to the `hub-http` facet 2026-09-19, decision
   `d3z3`: a migrated consumer cuts its nebula path). v3: inherited unchanged (spike `eda`: every certSAN already
   carries it) but no longer a plane concept — a **presentation**
-  artifact each device serves for itself (see Lookup, §4).
+  artifact each device serves for itself (see Lookup, §4: the zone
+  rule; services are two-level, `<svc>.gw`, under the gateway).
 - **Presentation** — the device-local fiction that lets IP-speaking
   clients reach members dialed by key: a tun, a resolver for the mesh
   zone gated on the name map, **fake IPs** (`198.18.0.0/15`, one per
@@ -824,8 +843,10 @@ provisioning or recovery path may depend on it.
   (ruled 2026-09-06, `qrb`; EIP-712 single-act ruled out 2026-09-16,
   `ce8`).
 - **Workload plane** — Kubernetes on the machines: ArgoCD syncs
-  `k8s/` from git; ingress-nginx routes `<svc>.cp1.mesh.internal` on
-  :80; SIWE→OIDC bridge gates every exposed service with the wallet.
+  `k8s/` from git; the gateway terminates `ingress-http` and
+  ingress-nginx routes `<svc>.gw.mesh.internal` by Host (`jellyfin.cp1`
+  survives for the nebula TV until P2.4); SIWE→OIDC bridge (issuer
+  `auth.gw`) gates every exposed service with the wallet.
   Data-plane state is excepted from invariant 2 (Longhorn bookkeeping
   shares its payload's fate).
 

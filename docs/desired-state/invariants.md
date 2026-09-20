@@ -63,8 +63,11 @@ this list is the checkable form.
    credential, storage may be hostile — or (b) re-derivable from git
    plus a delegation the actor receives at startup. **An actor with an
    ephemeral key holds no durable state.** Hub actors (issuer, enroll,
-   relay, gateway) are ephemeral-key actors; only the provisioner
-   holds a secrets seed. **Safe-to-lose caches** are not state in this
+   relay) are ephemeral-key actors; only the provisioner holds a
+   secrets seed. The in-cluster gateway is a member, not a hub actor:
+   its key and Kit live on its own volume like a machine's under
+   `/var/lib` _(2026-09-20, `359.9.3`; the parenthetical had listed it
+   from before decision `359.5` placed it in the cluster)_. **Safe-to-lose caches** are not state in this
    sense _(ADR-0019)_: the `iat` low-water mark, `seq` high-water
    marks, the blocklist copy — volatile, optionally persisted, and
    losing one is never a security regression (it degrades to a weaker

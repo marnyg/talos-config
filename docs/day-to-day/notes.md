@@ -656,3 +656,25 @@
   `fakeip` (or anything) imports a new package from an already-required
   module** — the vendor dir is per-package. Recompute with a bogus
   hash; `go.sum` staying identical is not evidence it's unchanged.
+- 2026-09-20 — **The Mac has no nebula plane**: `irohup -tun` runs
+  with `-dns-upstream` empty, no nebula process, no `10.42.` address.
+  Anything still named `*.cp1.mesh.internal` (only `jellyfin.cp1`, for
+  the TV) is unreachable from the Mac — by design, not a fault.
+- 2026-09-20 — **GHCR creates new packages private.** The first push
+  of `ghcr.io/marnyg/gateway` left the pod in `ErrImagePull` until the
+  package was made public in the browser (no API for visibility).
+  Same for any new `ghcr.io/marnyg/<name>`.
+- 2026-09-20 — **Gateway enrollment lives in the pod log**: with an
+  empty PVC, `kubectl logs -n gateway deploy/gateway` prints the
+  `/status?user_code=…` URL; sign as `gw`, group media, within 10 min
+  (an expired flow restarts itself with a fresh code). The PVC
+  `gateway-state` is the membership — deleting it costs one wallet act.
+- 2026-09-20 — **Verifying the identity headers**: a throwaway
+  `traefik/whoami` pod + Service + Ingress `whoami.gw.mesh.internal`
+  echoes request headers; `curl http://whoami.gw.mesh.internal/` from
+  the Mac shows `X-Mesh-*`, `curl -H Host:… http://<node>/` from the
+  LAN must show none. The `media` namespace's PSS warns but admits it.
+- 2026-09-20 — **`config-server` vendorHash moves whenever
+  `protocol/*.go` changes** (local replace vendored from the tree);
+  the remote nix build failed with "a.actor.Serves undefined" from a
+  stale FOD. Bogus hash → read `got:` (default.nix caveat 2).
