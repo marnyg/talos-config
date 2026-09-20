@@ -60,7 +60,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/marnyg/gateway:dev
+          image: ghcr.io/marnyg/gateway:ee8155b@sha256:e6ebc9d9b0f2c6568c48665315c24a62bdba3ed399cc080b62171b080b01d651
           args:
             - -hub=https://marnyg-talos-config.fly.dev
             - -state=/var/lib/gateway
