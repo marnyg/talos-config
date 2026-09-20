@@ -855,3 +855,16 @@
   `:80` ingress both answer; the phone and TV reach `:8096`. Unproven
   guess: facet authorization is group-scoped. Use the `:80` ingress
   from the desktop.
+- 2026-09-20 — **Sealing the hub on demand is a restart** (no
+  endpoint; unsealed material is memory-only, invariant 8):
+  `fly machine restart 7817426a194968 -a marnyg-talos-config`, then
+  sign both proposals at `/status`. Measured cycle: nodes log `lost;
+  beating` ~30 s after the seal (h2 ping interval), `beat ok` ≤40 s
+  after the unseal, hub `etcd-running` within the next 30 s poll.
+- 2026-09-20 — **Phone dev loop from the Mac**: `adb` is not on PATH —
+  `nix shell nixpkgs#android-tools -c adb …`. The APK build on
+  `mar@nixos` (`android/README.md` steps 1–2) is ~30 s with the store
+  warm. `adb install -r` kills the VpnService and it **cannot be
+  restarted over adb** (`am start-foreground-service` → "Requires
+  permission not exported"); open the app and tap Connect. Go log:
+  `adb shell run-as dev.marnyg.mesh tail cache/mesh.log`.

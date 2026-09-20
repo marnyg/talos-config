@@ -5,64 +5,46 @@
 
 ## Last session
 
-2026-09-20 (fourteenth session, same evening as P2.5) — **Phase 3
-soak started; the forced w1 reboot (event 1/3) surfaced two P2.5
-defects. Remote-media (event 3/3) attempted, not covered.**
+2026-09-20 (fifteenth session, late evening) — **soak 2/3: hub
+re-seal covered; `rnfk` fixed and on the phone; hub redeployed.**
 
-- **w1's declared address never applied.** P2.5's `deviceSelector`
-  used the machine-dir MAC `98:e7:43:11:97:b8` — Dell's *pass-through*
-  address, which only a Dell dock inherits; the LAN NIC today is an
-  r8152 dongle `0c:37:96:5d:26:c4`. Pre-reboot `.71` was a surviving
-  DHCP lease; the reboot came back on `.72`. Fixed: patch.yaml now
-  pins the dongle's MAC (user chose that over `physical: true`), and
-  the same one-line change went to w1 live via `talosctl patch mc`
-  (**hub not redeployed** — the served config still has the old
-  selector until the next `fly/deploy.sh`). Flannel needed its pod
-  deleted after the address change (stale `public-ip`), same as after
-  a rename. Beads `c4vd` (reinstall path), `hyjv` (`-n w1` via cp1
-  picks the dead nebula leg; use the LAN IP until Phase 4).
-- **P2.5 rotated the service-account issuer.** Talos derives
-  `--service-account-issuer`/`--api-audiences` from the cluster
-  endpoint; cp1's kubelet re-fetched every pod's token 2 s before the
-  apiserver flipped, minting 1-year tokens with `iss` = the nebula
-  endpoint. 14 control-loop pods on cp1 (kube-proxy, flannel,
-  longhorn-manager/csi-plugin, all kubevirt, ingress-nginx) were
-  `Unauthorized` and were deleted by hand → recreated clean. Data-
-  plane pods never touched the API and were left alone. Bead `etzl`.
-- Longhorn salvaged `win2k25`'s two volumes after the dead
-  virt-launcher was deleted; the VM is back on w1, replicas rebuilding.
-  34 dead pod objects (incl. the two 18 h-old kubevirt ones) cleaned.
-- **Remote media, phone on cellular:** the tunnel re-underlaid
-  (`advertising 10.3.91.10:…`) but took ~3.5 min to `beat ok` — the
-  agent's hub-fetch `http.Client` reuses the Wi-Fi-era h2 connection,
-  30 s timeout per attempt (bead `rnfk`). Then the cellular bearer
-  itself churned (netId 152→154→155/156, plain `curl` dead), so no
-  client could have held a session — **event not covered**. Reverse
-  handover 28 s (the stale conn got a RST). Wi-Fi restored; Jellyfin
-  reconnects to the gateway in <1 s on Wi-Fi.
+- **Hub redeployed** `585524e → 1173f0d` (`HUB_BUILDER=mar@nixos
+  fly/deploy.sh`), so the served w1 config carries the dongle MAC.
+  Unsealed 19:23:18Z; cp1/w1 `beat ok` on the new hub id within 5 s,
+  `etcd-running` seen 10 s later. The phone (tunnel up at the time)
+  did `lost → renewed → beat ok` inside one second.
+- **Hub re-seal event** (forced: `fly machine restart`, counted as
+  soak 2/3 — decision `iwrk`): sealed 19:34:20Z, both nodes noticed in
+  ~30 s (h2 pings), unsealed 19:35:19Z, `beat ok` at +29 s (w1) /
+  +38 s (cp1), hub back to idle 19:36:24Z. No hands, no nebula.
+- **`rnfk` fixed** (`d23dd6d`, `2c2f607`): `Agent.NetworkChanged()` =
+  `CloseIdleConnections` + `Kick`, called from
+  `mobile.Tunnel.NetworkChanged`; `hubTransport`/`hubClient` moved to
+  untagged `nodeagent/hubtransport.go` with a test pinning that
+  `CloseIdleConnections` reaches x/net's h2 transport (net/http
+  #22891); `EnrollDevice`'s fallback client now shares it. APK built
+  on `mar@nixos` (~30 s, everything cached) and `adb install -r`'d
+  on the phone (`XQ-BQ52`, 21:32 local) — **tunnel not reconnected
+  yet** (VpnService is not exported; must be tapped in the app).
+- Longhorn: `win2k25`'s data volume `healthy`; `win2k25-system`
+  (28 GB) rebuild was at 92 % at wrap-up, moving ~1 %/45 s.
 
 ## Loose threads
 
-- **Hub redeploy pending** so the served w1 config carries the dongle
-  MAC; until then `nix run .#apply` would re-serve the wrong selector
-  (harmless live — Talos falls back to DHCP — but it undoes the fix
-  on the next reboot). Do it with the next deploy; needs the unseal.
-- `talosctl -n w1` (and `nix run .#apply` for w1) hangs via cp1
-  (`hyjv`); `-n 10.0.0.71` works.
-- Two Longhorn volumes `degraded` (w1 replicas rebuilding) — check
-  they return to `healthy`.
-- **TV still holds a Jellyfin admin session**; non-admin user not
-  created. **Mac daemon still on the pre-`d4960c1` binary**; `~/git/
-  nixos` lock bump uncommitted; `darwin-rebuild switch` not run.
+- **Phone tunnel down** since the APK install; tap Connect. Then the
+  next Wi-Fi→cellular switch should `beat ok` in seconds, not 3.5 min.
+- `talos-config-jlgz` (thread): hub fetch over v6-capable cellular hit
+  a v6-only answer through the tun's `::/0` — re-check on the cellular
+  session; `tcp4` dial is the cheap fix if it recurs.
+- Unchanged from last session: `hyjv` (`-n w1` via cp1 hangs; use
+  `-n 10.0.0.71`), TV admin session, Mac daemon on the pre-`d4960c1`
+  binary (`darwin-rebuild switch` pending).
 
 ## Suggested next steps
 
-- Soak: 1/3 events (node reboot). Still open: a natural hub re-seal,
-  a remote-media session from somewhere with stable cellular (or the
-  laptop tethered elsewhere). Fix `rnfk` first or the session will
-  spend its first minutes waiting on the hub fetch (the h2
-  `ReadIdleTimeout` landed at end of session caps a black-holed
-  attempt at ~30 s; `CloseIdleConnections` on `NetworkChanged` is
-  still the real fix).
-- Redeploy the hub (also picks up nothing else — image `585524e`).
-- Phase 4 (`359.11`) once the two remaining events have passed.
+- **Soak 3/3**: one full remote-media session from real, stable
+  cellular with the new APK (watch `cache/mesh.log` via
+  `adb shell run-as dev.marnyg.mesh tail cache/mesh.log`). Then
+  Phase 4 (`359.11`).
+- Confirm `win2k25-system` reached `healthy`
+  (`kubectl get volumes.longhorn.io -n longhorn-system`).

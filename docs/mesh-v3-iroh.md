@@ -700,6 +700,11 @@ for one natural hub re-seal and one node reboot to pass, plus one
 full remote-media session. No calendar minimum — event coverage, the
 mesh-v2 lesson.
 
+_2026-09-20:_ node reboot (w1) and hub re-seal passed — the re-seal
+was a forced `fly machine restart`, counted because the recovery path
+is identical to a fly-initiated one (decision `iwrk`). Remote-media on
+cellular is the remaining event.
+
 ### Phase 4 — deletion
 
 - Factory schematic without the nebula extension; upgrade nodes.
