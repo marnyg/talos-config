@@ -132,6 +132,14 @@
 // is MONOTONE — a link may add it, none may remove it; two links that
 // both set it must agree, else the chain is tainted and rejected).
 // Postage never gates `invoke` on its own; it only unlocks `aud: "*"`.
+// Postage CHECKING is deliberately not modelled (decision, 2026-09-23):
+// whether the stamp satisfies the requirement is `postage.Scheme.Check`
+// — one stateless hash over the envelope preimage, no authority content
+// — and the inbox order (fold, then stamp, then handler) is a Go
+// property pinned by `TestPublishLookupFrontdoor` ("unstamped never
+// reaches the handler"). This model's verdict on a postage-requiring
+// chain is `AudBound` on the authority; the stamp is the receiver's
+// business afterwards.
 //
 // The connection-level `authorize` below IS `verifyChain` on the
 // one-link caller chain `[grant]` with `signer = peer`, `facet =
