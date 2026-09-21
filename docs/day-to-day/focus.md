@@ -15,8 +15,10 @@ binaries (`5q33`), relay access gating (`5gz`), `bh74`.
   every `*.gw` service down with the gateway's RWO volume.
 - **Sovereign-actor protocol v0** (`0bc`, M1–M5) — picked up
   2026-09-22: **M3 built** (`0bc.3`, protocol ADR-0007: lighthouse as
-  a plain actor, PoW postage at the frontdoor; talos wire unchanged).
-  M4 spawn (`0bc.4`) next. See `protocol/docs/day-to-day/`.
+  a plain actor, PoW postage at the frontdoor; talos wire unchanged);
+  2026-09-23: M3's threads closed (numbers chosen, pre-mailbox
+  postage refusal, verdict preference). M4 spawn (`0bc.4`) next. See
+  `protocol/docs/day-to-day/`.
 - Small ops: cp1 hostname pin (`t7b2`), w1's provisioning MAC
   (`c4vd`), SA-issuer runbook (`etzl`).
 

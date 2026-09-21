@@ -5,6 +5,16 @@
 
 ## Last session
 
+2026-09-23 — **protocol only**: M3's loose threads closed (numbers
+chosen, unstamped traffic refused before the mailbox, `VerifyChain`
+prefers a postage-free verdict, directory cap, no wire enumeration of
+the directory). Talos wire and deployment untouched; only the two
+`vendorHash`es moved (`f3d57a7`). Details in
+`protocol/docs/day-to-day/handoff.md`. The deployment state below is
+from the 2026-09-21 session and still stands.
+
+## Previous session
+
 2026-09-21 (nineteenth session) — **Mesh v3 Phase 4 closed: P4.3 +
 P4.4, the paper half of the deletion.**
 
