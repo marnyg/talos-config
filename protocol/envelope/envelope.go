@@ -11,13 +11,19 @@
 //
 // # Canonical form
 //
-// Envelope (keys in JCS order, all always present):
+// Envelope (keys in JCS order, all always present except postage):
 //
-//	{"from","loc","payload","proof","seq","to":{"facet","target"}}
+//	{"from","loc","payload",["postage",]"proof","seq","to":{"facet","target"}}
 //
 // loc is the wire JSON of a cert or null; proof is an array of cert wire
 // JSON (each including its own sig — the chain is data the sender
-// commits to); payload is base64. Reply:
+// commits to); payload is base64. postage (ADR-0007) is the stranger's
+// stamp — a token the receiver's postage scheme checks against the
+// effective cert's cav.postage — and is PRESENT ONLY WHEN NON-EMPTY, so
+// unstamped traffic keeps the M2 wire form byte for byte. It is inside
+// the signature (cannot be stripped or swapped) and outside its own
+// preimage: PostagePreimage is the canonical form with sig AND postage
+// blanked, which is what a token binds to. Reply:
 //
 //	{"from","loc","payload","re"}
 //
@@ -76,6 +82,10 @@ type Address struct {
 //     preserved) before handing them to the ChainVerifier.
 //   - Loc is an optional reach-me-at cert issued by From (discovery
 //     piggyback). A present-but-invalid Loc rejects the whole envelope.
+//   - Postage is the optional stamp (ADR-0007): opaque to this package,
+//     produced by a postage scheme over PostagePreimage and checked by
+//     the receiver when the effective cert carries cav.postage. "" ⇒
+//     absent from the wire.
 type Envelope struct {
 	From    cert.ActorID
 	To      Address
@@ -83,6 +93,7 @@ type Envelope struct {
 	Payload []byte
 	Proof   []cert.Cert
 	Loc     *cert.Cert
+	Postage string
 	Sig     []byte
 }
 
@@ -175,6 +186,7 @@ type wireEnvelope struct {
 	From    string            `json:"from"`
 	Loc     json.RawMessage   `json:"loc"`
 	Payload []byte            `json:"payload"`
+	Postage string            `json:"postage,omitempty"`
 	Proof   []json.RawMessage `json:"proof"`
 	Seq     int64             `json:"seq"`
 	Sig     string            `json:"sig,omitempty"`
@@ -224,6 +236,7 @@ func envelopeShape(e Envelope, withSig bool) (wireEnvelope, error) {
 		From:    string(e.From),
 		Loc:     loc,
 		Payload: nonNilBytes(e.Payload),
+		Postage: e.Postage,
 		Proof:   proof,
 		Seq:     e.Seq,
 		To:      wireTo{Facet: e.To.Facet, Target: string(e.To.Target)},
@@ -270,6 +283,21 @@ func CanonicalBytes(e Envelope) ([]byte, error) {
 		return nil, err
 	}
 	return canonicalize(w)
+}
+
+// PostagePreimage returns the bytes a postage token binds to: the
+// SHA-256 of the canonical form with sig and postage both blanked (the
+// stamp cannot cover itself). A token is therefore bound to this exact
+// from/to/seq/payload/proof/loc and no other; re-sending the same
+// envelope is caught by the seq high-water mark, not by postage.
+func PostagePreimage(e Envelope) ([]byte, error) {
+	e.Postage = ""
+	canon, err := CanonicalBytes(e)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(canon)
+	return sum[:], nil
 }
 
 // Encode returns the envelope's wire bytes: canonical JSON including sig
@@ -379,6 +407,7 @@ func Decode(data []byte) (Envelope, error) {
 		Payload: w.Payload,
 		Proof:   proof,
 		Loc:     loc,
+		Postage: w.Postage,
 		Sig:     sig,
 	}, nil
 }

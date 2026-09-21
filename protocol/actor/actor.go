@@ -50,6 +50,16 @@
 // Status {code, msg, body}; transport-level closes are reserved for
 // undecodable bytes and mailbox drops. The requester sees a remote
 // rejection as *RemoteError from Send.
+//
+// # Verbs and postage (M3, ADR-0007)
+//
+// A facet binds one verb: the inbox roots a chain to facet f in a
+// consent carrying Verbs[f] (invoke unless configured — #publish on a
+// lighthouse binds publish). When the effective cert carries
+// cav.postage the envelope must carry a stamp the actor's Postage
+// scheme accepts; this is how the open frontdoor (aud "*") admits
+// strangers at a cost. Send stamps automatically when the chain it
+// holds for (to, facet) names a requirement.
 package actor
 
 import (
@@ -65,6 +75,7 @@ import (
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/clock"
 	"github.com/marnyg/talos-config/protocol/envelope"
+	"github.com/marnyg/talos-config/protocol/postage"
 )
 
 // DefaultMailbox is the mailbox depth when Actor.Mailbox is 0 (ADR-0001
@@ -106,6 +117,15 @@ type Actor struct {
 	Transport Transport
 	// AcceptTable maps facet → handler. New pre-registers FacetRenew.
 	AcceptTable map[string]Handler
+	// Verbs maps facet → the verb its chains must be rooted in; a facet
+	// absent here binds invoke. Set by the facet's owner (a lighthouse
+	// binds #publish to publish); the verifier never infers it from the
+	// caller's links (talos-config-xwu).
+	Verbs map[string]cert.Verb
+	// Postage is the stamp scheme for both sides: Send solves against
+	// the requirement in the held chain, the inbox checks against the
+	// effective cert's cav.postage. nil ⇒ postage.Default (PoW).
+	Postage postage.Scheme
 	// Consents are the invoke certs this actor signed (iss == me): the
 	// roots VerifyChain prepends to every caller chain.
 	Consents []cert.Cert
@@ -179,6 +199,7 @@ func New(signer cert.Signer, t Transport) *Actor {
 		Signer:      signer,
 		Transport:   t,
 		AcceptTable: make(map[string]Handler),
+		Verbs:       make(map[string]cert.Verb),
 		Grants:      make(map[GrantKey][]cert.Cert),
 		hwm:         envelope.NewHWM(),
 		locs:        make(map[cert.ActorID]cert.Cert),
@@ -192,9 +213,27 @@ func New(signer cert.Signer, t Transport) *Actor {
 // ID is the actor's identity (its signer's id).
 func (a *Actor) ID() cert.ActorID { return a.Signer.ActorID() }
 
-// Grant records the caller-held chain for (target, facet).
+// Grant records the caller-held chain for (target, facet). A chain may
+// begin with the target's own consent (a frontdoor cert as a lookup
+// returned it): Send drops that link — the receiver prepends its own —
+// but reads its postage requirement.
 func (a *Actor) Grant(target cert.ActorID, facet string, chain ...cert.Cert) {
 	a.Grants[GrantKey{Target: target, Facet: facet}] = append([]cert.Cert(nil), chain...)
+}
+
+// verbFor is the verb facet's chains must carry: Verbs[facet] or invoke.
+func (a *Actor) verbFor(facet string) cert.Verb {
+	if v, ok := a.Verbs[facet]; ok && v != "" {
+		return v
+	}
+	return cert.VerbInvoke
+}
+
+func (a *Actor) postage() postage.Scheme {
+	if a.Postage != nil {
+		return a.Postage
+	}
+	return postage.Default
 }
 
 // Hold replaces the actor's authority set — the consents it signed and
@@ -272,6 +311,7 @@ const (
 	StatusReplay       = "replay"        // seq at or below high-water mark
 	StatusBadLoc       = "bad-loc"       // piggybacked loc invalid (fail closed)
 	StatusUnauthorized = "unauthorized"  // proof chain rejected
+	StatusPostage      = "postage"       // eff requires a stamp the envelope lacks or fails
 	StatusUnknownFacet = "unknown-facet" // no handler for to.facet
 	StatusError        = "error"         // handler returned an error
 	StatusRejected     = "rejected"      // any other verifier rejection
@@ -449,13 +489,27 @@ func (a *Actor) loop(ctx context.Context) {
 	}
 }
 
-// invokeChain is cert.VerifyChain bound to the `invoke` verb: an
-// inbound envelope IS an invocation of to.facet, so every proof chain
-// an actor's inbox verifies is rooted in one of its `invoke` consents.
-// Facets that expect another verb (M3 lighthouse #publish, relay
-// #relay) bind their own (talos-config-xwu).
-func invokeChain(r cert.Receiver, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
-	return cert.VerifyChain(r, cert.VerbInvoke, chain, speakAs, signer, facet, now)
+// chainRule is cert.VerifyChain bound to the verb this actor expects
+// for to.facet: invoke for an ordinary invocation (an inbound envelope
+// IS an invocation of to.facet), or whatever Verbs binds — a
+// lighthouse's #publish roots in a publish consent (talos-config-xwu).
+func (a *Actor) chainRule(r cert.Receiver, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
+	return cert.VerifyChain(r, a.verbFor(facet), chain, speakAs, signer, facet, now)
+}
+
+// checkPostage enforces the effective cert's cav.postage on the
+// envelope: absent requirement ⇒ nothing to check (a stamp on an
+// unstamped chain is ignored); present ⇒ the token must satisfy it
+// under the actor's scheme, one cheap operation (postage.Scheme.Check).
+func (a *Actor) checkPostage(eff cert.Cert, env envelope.Envelope) error {
+	if eff.Cav.Postage == "" {
+		return nil
+	}
+	pre, err := envelope.PostagePreimage(env)
+	if err != nil {
+		return err
+	}
+	return a.postage().Check(eff.Cav.Postage, pre, env.Postage)
 }
 
 // process runs the stateful steps for one invocation and returns the
@@ -469,7 +523,7 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 		ID:       a.ID(),
 		Consents: consents,
 		SpeakAs:  speakAs,
-		Chain:    invokeChain,
+		Chain:    a.chainRule,
 		HWM:      a.hwm,
 	}, now)
 	// Observe on BOTH paths: res.Verified is populated alongside
@@ -484,6 +538,9 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 
 	if err != nil {
 		return rejectStatus(err)
+	}
+	if err := a.checkPostage(res.Eff, env); err != nil {
+		return Status{Code: StatusPostage, Msg: err.Error()}
 	}
 	h, ok := a.AcceptTable[env.To.Facet]
 	if !ok {
@@ -518,16 +575,29 @@ func rejectStatus(err error) Status {
 
 // proofFor assembles the caller-carried proof for (to, facet): the held
 // chain links (with any issuer-resolving speak-as they were stored
-// with) plus every speak-as that names this actor's signer.
-func (a *Actor) proofFor(to cert.ActorID, facet string) []cert.Cert {
-	proof := append([]cert.Cert(nil), a.Grants[GrantKey{Target: to, Facet: facet}]...)
+// with) plus every speak-as that names this actor's signer. A held
+// chain whose first link is the receiver's own consent (a frontdoor
+// cert, as a lookup hands it out) has that link dropped — the receiver
+// prepends its consents itself and would refuse it as a link — and
+// returns the postage requirement the held links name ("" if none).
+func (a *Actor) proofFor(to cert.ActorID, facet string) (proof []cert.Cert, req string) {
+	held := a.Grants[GrantKey{Target: to, Facet: facet}]
+	for i, c := range held {
+		if req == "" {
+			req = c.Cav.Postage
+		}
+		if i == 0 && c.Iss == to && c.Can != cert.VerbSpeakAs {
+			continue
+		}
+		proof = append(proof, c)
+	}
 	_, speakAs := a.authority()
 	for _, s := range speakAs {
 		if s.Can == cert.VerbSpeakAs && s.Aud == string(a.ID()) {
 			proof = append(proof, s)
 		}
 	}
-	return proof
+	return proof, req
 }
 
 // edge returns the per-receiver in-flight lock.
@@ -566,12 +636,27 @@ func (a *Actor) Send(ctx context.Context, to cert.ActorID, facet string, payload
 	hints := a.hintsLocked(to)
 	a.mu.Unlock()
 
+	proof, req := a.proofFor(to, facet)
 	env := envelope.Envelope{
+		From:    a.ID(),
 		To:      envelope.Address{Target: to, Facet: facet},
 		Seq:     seq,
 		Payload: payload,
-		Proof:   a.proofFor(to, facet),
+		Proof:   proof,
 		Loc:     loc,
+	}
+	if req != "" {
+		// Stamp before signing: the token binds to the preimage (sig and
+		// postage blanked) and the signature then covers the token.
+		pre, err := envelope.PostagePreimage(env)
+		if err != nil {
+			return nil, err
+		}
+		tok, err := a.postage().Solve(ctx, req, pre)
+		if err != nil {
+			return nil, err
+		}
+		env.Postage = tok
 	}
 	env, err := envelope.Sign(env, a.Signer)
 	if err != nil {

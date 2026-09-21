@@ -5,18 +5,34 @@
 
 ## Last session
 
-2026-09-20 — **`Actor.Serves` → reach-me-at `cav.facet`** (a
-consumer-driven runtime addition, ADR-0005; recorded in talos
-ADR-0026). The consumer's in-cluster gateway needed presentations to
-read a member's *kind* from the plane instead of assuming every name
-is a node, and the only per-actor claim a directory already carries
-is the location record — so "where to reach me" now also says "on
-what". `PublishLocation` copies `a.Serves` into the caveat; nil ⇒
-absent (∅ under ADR-0002). Verifiers ignore it; it is not authority.
-Test: the piggyback test asserts B's record advertises `echo` and A's
-advertises nothing. No wire-shape change for actors that set nothing.
+2026-09-22 — **M3 built: lighthouse as a plain actor, postage stamps
+the envelope** (ADR-0007, Proposed; `0bc.3`).
 
-## Previous session
+- `envelope`: optional `Postage` field — canonical key `"postage"`
+  present only when non-empty (unstamped traffic is byte-identical to
+  M2), inside the signature; `PostagePreimage` = SHA-256 of the form
+  with `sig` and `postage` blanked. `TestPostageWireLaw` pins it.
+- `postage/` (new): `pow:<bits>` vocabulary, `Scheme{Solve, Check}`
+  seam (PoW default; money later). Unknown scheme fails closed both
+  ways.
+- `actor`: `Verbs[facet]` (absent ⇒ invoke) replaces the hard-bound
+  `invokeChain`; inbox checks `eff.cav.postage` after the fold →
+  `Status postage`; `Send` stamps when the held chain names a
+  requirement and drops a receiver-signed first link (a frontdoor cert
+  is held as-is); `Frontdoor(req, ttl)` mints the `aud "*"` consent;
+  `CheckLocation` exported.
+- `lighthouse/` (new, ~150 LOC + client): `New(a)` registers `#publish`
+  (verb publish, `{loc?, frontdoor?}`) and `#lookup`; volatile
+  directory of *published* records; `Publish`/`Lookup` helpers,
+  `Lookup` re-validates and caches.
+- Domain model: Lighthouse / Frontdoor / Postage / Envelope entries
+  say what is built; ADR index gained 0006 (was missing) and 0007.
+- config-server and iroh-transport build unchanged.
+
+## Previous sessions
+
+2026-09-20 — `Actor.Serves` → reach-me-at `cav.facet` (ADR-0005 addition,
+recorded in talos ADR-0026).
 
 2026-09-19 (second session of the day) — **`seq` is an I-JSON integer**
 (ADR-0006, Proposed). The consumer's first desktop caller (`irohup`)
@@ -40,24 +56,25 @@ onto one canonical `seq` and the second was refused as a replay.
 
 ## Loose threads
 
-- ADR-0006 **Accepted** 2026-09-19 (owner). The envelope contract now
-  carries a range refusal; `MaxSeq` is part of the wire law.
-- The Quint models do not model `seq` width. `authorize.qnt` is about
-  the chain; the replay counter is Go-only. If the models ever grow a
-  replay channel, the exactness law belongs there first.
-- `t29` / ADR-0005 stands, but this is its first *regression*: a
-  consumer-driven addition (`SeqBase`) landed with a wire hazard the
-  consumer then hit in production. Cheap lesson to record: additions
-  that touch the canonical form need a round-trip test, not just a
-  unit test.
+- ADR-0007 is **Proposed** — owner to accept. Numbers unchosen: PoW
+  bits, frontdoor tail, directory size.
+- Postage is checked *after* the chain fold in the mailbox loop; an
+  unstamped flood still costs one own-sig verify each. Mailbox depth is
+  the limiter. Moving it earlier needs the requirement before the fold.
+- An actor whose own `reach-me-at` expires keeps piggybacking it and is
+  refused `bad-loc` everywhere until it re-publishes (pre-existing;
+  surfaced by `TestRecordsExpire`). Worth a guard in `Send`.
+- No spent-token set: a stamped envelope's "single-use" is the seq
+  high-water mark. Open problem 8 stands.
+- The Quint models do not cover postage checking or `Verbs` (the verb
+  was already a parameter of `authorize.qnt`).
 - Carried: ADR-0001's ≈ 1 h `reach-me-at` text; held `speak-as` out of
-  `Result.Verified` (ADR-0003); `DefaultMailbox = 64`; the stream-facet
-  preamble reply is a transport convention, not envelope-signed.
+  `Result.Verified` (ADR-0003); `DefaultMailbox = 64`.
 
 ## Suggested next steps
 
-- Still nothing else queued by the consumer: `irohup` dials with what
-  exists. Watch for a pooled stream-facet `Conn` per (peer, facet) —
-  that belongs in `iroh-transport`, not here.
-- M3 `0bc.3` (lighthouse actor, `#publish`/`#lookup`, PoW postage) is
-  the next protocol-side build when picked up.
+- Accept ADR-0007; close `0bc.3` (user confirms).
+- M4 `0bc.4` (spawn-as-k8s-Job) is now unblocked on the protocol side.
+- Talos consumer: replace the Phase-1 "lighthouse as a view" (root
+  ADR-0024) with `protocol/lighthouse` when a second network exists;
+  not needed for N=1.

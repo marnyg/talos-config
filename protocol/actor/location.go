@@ -23,9 +23,11 @@ var (
 	ErrBadLocation = errors.New("actor: invalid location record")
 )
 
-// checkLocation is the same rule envelope.checkLoc applies on the wire,
-// for records that arrive by another path (tests, bootstrap bundles).
-func checkLocation(id cert.ActorID, loc cert.Cert, now int64) error {
+// CheckLocation is the same rule envelope.checkLoc applies on the wire,
+// for records that arrive by another path (bootstrap bundles, a
+// lighthouse #publish payload or #lookup reply): id issued it, it is a
+// reach-me-at, it is unexpired at now, and its signature verifies.
+func CheckLocation(id cert.ActorID, loc cert.Cert, now int64) error {
 	switch {
 	case loc.Can != cert.VerbReachMeAt:
 		return fmt.Errorf("%w: can=%q", ErrBadLocation, loc.Can)
@@ -57,7 +59,7 @@ func (a *Actor) UpdateLocation(id cert.ActorID, loc *cert.Cert) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.now()
-	if err := checkLocation(id, *loc, now); err != nil {
+	if err := CheckLocation(id, *loc, now); err != nil {
 		return err
 	}
 	a.updateLocationLocked(id, *loc, now)
@@ -132,7 +134,7 @@ func (a *Actor) CurrentLocation() *cert.Cert {
 func (a *Actor) SetLocation(loc cert.Cert) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err := checkLocation(a.ID(), loc, a.now()); err != nil {
+	if err := CheckLocation(a.ID(), loc, a.now()); err != nil {
 		return err
 	}
 	a.loc = &loc

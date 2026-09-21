@@ -28,6 +28,16 @@ this scope.
   consumer asks, runtime state only, invariant class preserved and
   opt-in; the verifier's inputs are installed atomically and judged
   from a snapshot. _Proposed 2026-09-19 (closes `t29`)._
+- [0006](0006-seq-is-an-i-json-integer.md) — `seq` is an I-JSON
+  integer (`≤ 2^53−1`), refused out of range on both sides so an
+  out-of-range seq can never park a receiver's mark. _Accepted
+  2026-09-19 (`jsq`)._
+- [0007](0007-lighthouse-as-plain-actor-postage-stamps-the-envelope.md) —
+  the lighthouse is a plain actor (`#publish` binds verb `publish` via
+  `Actor.Verbs`, `#lookup` is ordinary `invoke`); a stranger's postage
+  is an optional signed `postage` key on the envelope, bound to a
+  preimage that excludes it; `pow:<bits>` is vocabulary v0 behind a
+  pluggable `postage.Scheme`. _Proposed 2026-09-22 (M3, `0bc.3`)._
 
 The protocol's **founding** decisions are root ADRs, referenced here,
 not copied:

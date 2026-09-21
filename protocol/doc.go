@@ -21,6 +21,11 @@
 //	           protocol/docs ADR-0001 § Decision Outcome; no quint
 //	           oracle. Reference transport: actor.MemoryNetwork
 //	           (in-process), for tests and examples
+//	postage/   the stranger's stamp: cav.postage vocabulary (pow:<bits>)
+//	           and the pluggable Scheme{Solve, Check} — spec: ADR-0007
+//	lighthouse/ the rendezvous actor: #publish (verb publish) and
+//	           #lookup over a volatile directory of published
+//	           {reach-me-at, frontdoor} records — spec: ADR-0007
 //	docs/      this scope's desired-state (goals, invariants, domain
 //	           model) and the protocol sketch
 //

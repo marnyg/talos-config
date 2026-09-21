@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -624,4 +625,65 @@ func TestSeqExactOnTheWire(t *testing.T) {
 	if _, err := Verify(e2, w.recv, now); err != nil {
 		t.Fatalf("MaxSeq after MaxSeq-1 must not be a replay: %v", err)
 	}
+}
+
+// TestPostageWireLaw pins ADR-0007's wire rule: an unstamped envelope
+// has no "postage" key (byte-identical to the M2 form), a stamped one
+// carries it inside the signature, and the preimage a token binds to
+// excludes both sig and postage — so stamping does not change the
+// preimage, and the same content stamped twice has one preimage.
+func TestPostageWireLaw(t *testing.T) {
+	w := newWorld(t, edSigner(t), edSigner(t), edSigner(t))
+	plain := w.envelope(t, 1, "hi")
+
+	wire, _ := Encode(plain)
+	if _, ok := topLevel(t, wire)["postage"]; ok {
+		t.Fatalf("unstamped envelope carries a postage key: %s", wire)
+	}
+	pre1, _ := PostagePreimage(plain)
+
+	stamped := plain
+	stamped.Postage = "deadbeef"
+	stamped, err := Sign(stamped, w.a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, _ = Encode(stamped)
+	if got := topLevel(t, wire)["postage"]; string(got) != `"deadbeef"` {
+		t.Fatalf("stamped envelope lacks the key: %s", wire)
+	}
+	pre2, _ := PostagePreimage(stamped)
+	if !bytes.Equal(pre1, pre2) {
+		t.Fatal("stamping changed the preimage")
+	}
+	back, err := Decode(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Postage != "deadbeef" {
+		t.Fatalf("postage lost on the wire: %q", back.Postage)
+	}
+	if err := VerifySig(back); err != nil {
+		t.Fatal(err)
+	}
+	// The stamp is inside the signature: swapping it breaks the sig.
+	back.Postage = "cafe"
+	if err := VerifySig(back); !errors.Is(err, ErrSig) {
+		t.Fatalf("swapped stamp verified: %v", err)
+	}
+	back.Postage = ""
+	if err := VerifySig(back); !errors.Is(err, ErrSig) {
+		t.Fatalf("stripped stamp verified: %v", err)
+	}
+}
+
+// topLevel decodes the top-level keys of a wire envelope (the proof
+// certs carry their own cav.postage, so a substring search would lie).
+func topLevel(t testing.TB, wire []byte) map[string]json.RawMessage {
+	t.Helper()
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(wire, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
 }

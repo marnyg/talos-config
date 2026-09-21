@@ -137,7 +137,8 @@ short expiry). Distribution is layered:
    publish-cap}`; whoever mints the first publish-caps *founded* the
    network — network authority is just an identity issuing certs, the
    CA pattern rebuilt voluntarily, subordinate to the identities that
-   join. One identity may hold caps in many networks.
+   join. One identity may hold caps in many networks. _(Built
+   2026-09-22 as `protocol/lighthouse`, ADR-0007.)_
 
 ## Spawning
 
@@ -395,13 +396,36 @@ whose deployment-free form differs from the talos wording. Source:
 - **Lighthouse** — an ordinary actor exposing `#publish` (membership-
   gated) and `#lookup` (per-network policy). The rendezvous point;
   replicated on stable endpoints. The one place stable machine
-  addresses matter.
+  addresses matter. **Built as `protocol/lighthouse`** (ADR-0007): a
+  lighthouse L *consents* `publish {target: [L], facet: [#publish]}` to
+  a founder F, who mints publish-caps (`can: publish`, `aud: member`);
+  the chain a member presents is `[F→member]`, folded under verb
+  `publish` — the facet's verb is the receiver's configuration
+  (`Actor.Verbs`), never inferred from the links. `#publish` takes
+  `{loc?, frontdoor?}` (loc defaults to the envelope's piggyback; both
+  must be the signer's, verify, be live); `#lookup` is an ordinary
+  `invoke` facet — members-only vs public is *which grant exists*
+  (per-member, or `aud "*"` + postage), never code. The directory
+  `{publisher id → {reach-me-at, frontdoor?}}` is volatile, expired
+  on read, newer-by-`iat` wins, and holds only what was *published*
+  — never what the lighthouse merely saw. A client re-validates every
+  looked-up record: the lighthouse can withhold, not forge (open
+  problem 6).
 - **Relay** — an actor selling a `#relay` facet; forwards envelopes
   blindly for actors behind NAT. Relay-by-default; direct paths are an
   optimization.
 - **Frontdoor** — the default, revocable public-reachability facet an
   actor mints (`aud: "*"`, postage-caveated). The open-world default;
-  going dark = not re-minting it (≤ 24 h tail).
+  going dark = not re-minting it (≤ 24 h tail). **Built** (ADR-0007):
+  `Actor.Frontdoor(req, ttl)` mints the consent `{iss: me, aud: "*",
+  can: invoke, cav: {target: [me], facet: [#frontdoor], postage:
+  req}}` — refused without a requirement — and the owner installs it
+  beside its other consents and publishes it with its location. A
+  stranger presents an **empty** chain: the receiver's own consent
+  roots it (rule 1). `Send` therefore drops a held chain's first link
+  when the receiver signed it and reads the postage requirement off
+  the held links, so a frontdoor cert as a lookup returned it is the
+  caller's "grant" unchanged.
 - **Postage** — the per-message cost a stranger attaches so unsolicited
   delivery costs the sender more than the receiver. Pluggable: PoW
   placeholder, micropayments the goal. A single-use token bound to the
@@ -413,7 +437,16 @@ whose deployment-free form differs from the talos wording. Source:
   with it the chain admits any payer. Invariant 5 ("attenuation only")
   is about authority over named audiences; postage is the
   well-formedness condition of the open audience, not an attenuation.
-  _(Ruled 2026-09-12 errata §1; q-nlink OQ1.)_
+  _(Ruled 2026-09-12 errata §1; q-nlink OQ1.)_ **Enforced** (ADR-0007,
+  `protocol/postage`): the token is the envelope's `postage` key,
+  bound to `PostagePreimage` (canonical form with `sig` and `postage`
+  blanked) and covered by the signature; vocabulary v0 is `pow:<bits>`
+  (SHA-256(preimage ‖ nonce) with ≥ bits leading zeros, one hash to
+  check); an unknown scheme rejects on receipt and refuses to send.
+  The inbox checks after the chain folds, iff `eff.cav.postage` is
+  set, and replies `postage` before any handler. "Single-use" is the
+  seq high-water mark (a re-sent stamped envelope is a `replay`); a
+  fresh key pays afresh; there is no spent-token set.
 - **Intro nonce** — the one-time bearer token a parent injects when
   spawning; the child exchanges it immediately for real certs. The
   only bearer token in the system.
@@ -448,10 +481,13 @@ whose deployment-free form differs from the talos wording. Source:
   parse payloads); `from` is required because `ed:` signatures do not
   recover the key; `to.target` must equal the receiver (cheap check
   before the chain); `loc` is an optional piggybacked `reach-me-at`
-  cert. The envelope is **self-authenticating**: the transport peer
-  key is a hint, never an authority input. Verified in cost order:
-  `sig`, then `to.target`/`seq`, then the proof chain. _(Ruled
-  2026-09-12, `0bc.2`.)_
+  cert; `postage?` is the stranger's stamp — the one key **present
+  only when non-empty**, so unstamped traffic keeps the M2 wire form
+  (ADR-0007). The envelope is **self-authenticating**: the transport
+  peer key is a hint, never an authority input. Verified in cost
+  order: `sig`, then `to.target`/`seq`, then the proof chain, then
+  postage against the effective cert. _(Ruled 2026-09-12, `0bc.2`;
+  postage 2026-09-22.)_
 - **Invocation** — one capability invocation = one bidirectional
   transport stream: request envelope in, at most one Reply back,
   stream closed. Request/reply correlation comes from the stream, not

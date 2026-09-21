@@ -2,7 +2,14 @@
 
 <!-- Forward-looking for the protocol scope. ~20 lines. -->
 
-**Now:** **The verifier is complete for Phase 1; the talos hub becomes
+**Now:** **M3 is built (2026-09-22, ADR-0007 Proposed): the lighthouse
+is a plain actor, strangers pay PoW postage at the frontdoor.** The
+verifier gained nothing — `Actor.Verbs` binds `#publish → publish`
+through the existing fold; the envelope gained one optional signed key
+(`postage`). Next on the roadmap is M4 (`0bc.4`, spawn as funded
+enrollment), now unblocked. Below is the M2 state this builds on.
+
+**Before:** **The verifier is complete for Phase 1; the talos hub becomes
 the protocol's first real consumer.** `cert`, `clock`, `envelope`,
 `actor` are pinned to `authorize.qnt`/`clock.qnt` (model leads, Go
 follows 1:1). `xwu` (ADR-0002, verb = root consent's), `kau` (ADR-0003,
@@ -32,7 +39,7 @@ verifier for every verb), *Offline, receiver-rooted authorization*,
 adapter module that `protocol/` never imports).
 
 **Out of scope:**
-- M3–M5 enforcement: lighthouse, postage checking, spawn, money.
+- M4–M5: spawn, money. (M3 lighthouse + postage landed 2026-09-22.)
 - Real nodes: `0bc.2.7` is deferred on the Talos extension probe `359.1.3`.
 - Persistence, supervision, store-and-forward (invariant 12).
 - Windowed/out-of-order `seq` — per-edge serial `Send` is v0 (`zey`);

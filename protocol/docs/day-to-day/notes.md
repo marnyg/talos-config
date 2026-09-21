@@ -13,6 +13,12 @@
   ADR-0002). Callers name the verb the operation expects; `actor` binds
   `invoke` via `invokeChain`. A new facet that expects another verb
   (M3 `#publish`) must bind its own — there is no facet→verb table yet.
+  _Update 2026-09-22: there is — `Actor.Verbs[facet]`, absent ⇒
+  invoke; `lighthouse.New` sets `#publish → publish` (ADR-0007)._
+- 2026-09-22 — **Envelope canonical form has one optional key**:
+  `"postage"` is omitted when empty (ADR-0007). Every other key is
+  still always present. A decoder older than this rejects a *stamped*
+  envelope (unknown key) — only frontdoor traffic carries one.
 - 2026-09-18 — **`cert.VerifyChain` takes a `cert.Receiver`** (kau,
   ADR-0003): `{ID, Consents, SpeakAs}` — everything the receiver brings
   itself. `Receiver.SpeakAs` (held, trusted) and the caller's

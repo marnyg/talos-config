@@ -13,9 +13,10 @@ binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 **Next candidates** (owner to pick):
 - **HA sweep** (`9l67`) once networking is settled — w1 off takes
   every `*.gw` service down with the gateway's RWO volume.
-- **Sovereign-actor protocol v0** (`0bc`, M1–M5) — the mesh built its
-  transport, member cert and gateway; the protocol's own roadmap is
-  the next epic.
+- **Sovereign-actor protocol v0** (`0bc`, M1–M5) — picked up
+  2026-09-22: **M3 built** (`0bc.3`, protocol ADR-0007: lighthouse as
+  a plain actor, PoW postage at the frontdoor; talos wire unchanged).
+  M4 spawn (`0bc.4`) next. See `protocol/docs/day-to-day/`.
 - Small ops: cp1 hostname pin (`t7b2`), w1's provisioning MAC
   (`c4vd`), SA-issuer runbook (`etzl`).
 
