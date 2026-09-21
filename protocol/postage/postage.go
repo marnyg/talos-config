@@ -48,6 +48,20 @@ import (
 // from hanging a solver forever.
 const MaxPoWBits = 64
 
+// DefaultPoWBits is the recommended frontdoor requirement (ADR-0007,
+// chosen 2026-09-23): 2^22 ≈ 4M hashes — about 0.25 s of one laptop
+// core, ~1 s on a phone — against the receiver's ~50 µs to refuse an
+// unstamped envelope (one own-signature verify), so a stranger pays
+// ~5000× what it costs to turn them away and a 1000 msg/s flood needs
+// on the order of 250 cores. 20 bits (~60 ms) is the floor worth
+// stamping at; 24 (~1 s laptop, ~4 s phone) starts to hurt honest
+// phones. It is a default, not a law: the requirement is a string in
+// the frontdoor cert, chosen per receiver.
+const DefaultPoWBits = 22
+
+// DefaultRequire is Require(DefaultPoWBits).
+var DefaultRequire = Require(DefaultPoWBits)
+
 var (
 	// ErrUnknownScheme marks a requirement whose scheme is not in the
 	// vocabulary. Fail closed: the receiver rejects, the sender refuses

@@ -30,6 +30,13 @@
 // record (by iat) replaces an older one. Nothing is pushed: clients
 // look up, and the record's own signature is what they trust (open
 // problem 6 — a lying lighthouse can withhold, never forge).
+//
+// The directory is bounded (MaxRecords): a NEW publisher is refused
+// ErrDirectoryFull once the cap is reached, while re-publishing by a
+// member already listed always succeeds. Refusal, never eviction: an
+// evicting cap would let a founder who over-issues publish-caps (or a
+// captured founder) push live members out; refusal makes over-issuance
+// hurt only the newest member, and shows up as an error on its beat.
 package lighthouse
 
 import (
@@ -51,10 +58,21 @@ const (
 	FacetLookup  = "#lookup"
 )
 
+// DefaultMaxRecords is the directory cap New installs (ADR-0007,
+// chosen 2026-09-23). One record is a location cert plus an optional
+// frontdoor — a few hundred bytes — so 4096 is ~1 MB: generous for the
+// actor families and small networks v0 serves, small enough that a
+// founder must issue thousands of caps before the newest member is
+// refused. Set Lighthouse.MaxRecords before Listen to change it.
+const DefaultMaxRecords = 4096
+
 var (
 	// ErrBadRecord marks a published or looked-up record that fails
 	// its rule (issuer, verb, expiry, signature, frontdoor shape).
 	ErrBadRecord = errors.New("lighthouse: invalid record")
+	// ErrDirectoryFull marks a publish by a NEW publisher when the
+	// directory already holds MaxRecords live records.
+	ErrDirectoryFull = errors.New("lighthouse: directory full")
 )
 
 // Record is one directory entry: the actor's location and, if it
@@ -89,6 +107,10 @@ type LookupResponse struct {
 
 // Lighthouse is the directory behind one actor's #publish/#lookup.
 type Lighthouse struct {
+	// MaxRecords caps the number of publishers listed; DefaultMaxRecords
+	// from New. A value <= 0 means unbounded.
+	MaxRecords int
+
 	a   *actor.Actor
 	mu  sync.Mutex
 	dir map[cert.ActorID]Record
@@ -97,7 +119,7 @@ type Lighthouse struct {
 // New registers the two facets on a (and binds #publish to verb
 // publish) and returns the directory. Call before a.Listen.
 func New(a *actor.Actor) *Lighthouse {
-	l := &Lighthouse{a: a, dir: make(map[cert.ActorID]Record)}
+	l := &Lighthouse{a: a, dir: make(map[cert.ActorID]Record), MaxRecords: DefaultMaxRecords}
 	a.Verbs[FacetPublish] = cert.VerbPublish
 	a.AcceptTable[FacetPublish] = l.publish
 	a.AcceptTable[FacetLookup] = l.lookup
@@ -197,11 +219,30 @@ func (l *Lighthouse) publish(_ context.Context, inv *actor.Invocation) ([]byte, 
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if cur, ok := l.dir[inv.From]; ok && cur.Loc.Iat > rec.Loc.Iat {
-		return nil, nil // an older record does not replace a newer one
+	if cur, ok := l.dir[inv.From]; ok {
+		if cur.Loc.Iat > rec.Loc.Iat {
+			return nil, nil // an older record does not replace a newer one
+		}
+	} else if l.MaxRecords > 0 && len(l.dir) >= l.MaxRecords {
+		// A new publisher: make room only from expired entries, then
+		// refuse rather than evict a live member.
+		l.evictExpiredLocked(l.a.Now())
+		if len(l.dir) >= l.MaxRecords {
+			return nil, ErrDirectoryFull
+		}
 	}
 	l.dir[inv.From] = rec
 	return nil, nil
+}
+
+// evictExpiredLocked drops every record whose location has expired at
+// now. Caller holds l.mu.
+func (l *Lighthouse) evictExpiredLocked(now int64) {
+	for id, rec := range l.dir {
+		if rec.Loc.Exp <= now {
+			delete(l.dir, id)
+		}
+	}
 }
 
 // lookup serves #lookup over the published directory.

@@ -410,16 +410,23 @@ whose deployment-free form differs from the talos wording. Source:
   on read, newer-by-`iat` wins, and holds only what was *published*
   — never what the lighthouse merely saw. A client re-validates every
   looked-up record: the lighthouse can withhold, not forge (open
-  problem 6).
+  problem 6). The directory is **bounded** (`MaxRecords`, default
+  4096): a *new* publisher is refused `directory full` once the cap is
+  reached; a listed member always re-publishes. Refusal, never
+  eviction — an evicting cap would let an over-issuing or captured
+  founder push live members out.
 - **Relay** — an actor selling a `#relay` facet; forwards envelopes
   blindly for actors behind NAT. Relay-by-default; direct paths are an
   optimization.
 - **Frontdoor** — the default, revocable public-reachability facet an
   actor mints (`aud: "*"`, postage-caveated). The open-world default;
-  going dark = not re-minting it (≤ 24 h tail). **Built** (ADR-0007):
-  `Actor.Frontdoor(req, ttl)` mints the consent `{iss: me, aud: "*",
-  can: invoke, cav: {target: [me], facet: [#frontdoor], postage:
-  req}}` — refused without a requirement — and the owner installs it
+  going dark = not re-minting it; the **tail** is the minted `ttl`,
+  which the protocol does not fix — guidance: the same ttl as the
+  location record it is published beside, since a lighthouse evicts
+  both with the record. **Built** (ADR-0007): `Actor.Frontdoor(req,
+  ttl)` mints the consent `{iss: me, aud: "*", can: invoke, cav:
+  {target: [me], facet: [#frontdoor], postage: req}}` — refused
+  without a requirement or with `ttl ≤ 0` — and the owner installs it
   beside its other consents and publishes it with its location. A
   stranger presents an **empty** chain: the receiver's own consent
   roots it (rule 1). `Send` therefore drops a held chain's first link
@@ -443,6 +450,9 @@ whose deployment-free form differs from the talos wording. Source:
   blanked) and covered by the signature; vocabulary v0 is `pow:<bits>`
   (SHA-256(preimage ‖ nonce) with ≥ bits leading zeros, one hash to
   check); an unknown scheme rejects on receipt and refuses to send.
+  The recommended requirement is `postage.DefaultRequire` = `pow:22`
+  (~0.25 s of a laptop core, ~1 s on a phone, ≈ 5000× the receiver's
+  cost to refuse an unstamped envelope); a receiver chooses its own.
   The inbox checks after the chain folds, iff `eff.cav.postage` is
   set, and replies `postage` before any handler. "Single-use" is the
   seq high-water mark (a re-sent stamped envelope is a `replay`); a

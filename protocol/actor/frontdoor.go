@@ -18,6 +18,10 @@ const FacetFrontdoor = "#frontdoor"
 // it), so the mint refuses rather than issue an unusable cert.
 var ErrNoPostage = errors.New("actor: frontdoor requires a postage requirement")
 
+// ErrBadTTL marks a frontdoor minted with a non-positive lifetime: it
+// would be born expired.
+var ErrBadTTL = errors.New("actor: frontdoor ttl must be positive")
+
 // Frontdoor mints this actor's frontdoor consent — {iss: me, aud: "*",
 // can: invoke, cav: {target: [me], facet: [FacetFrontdoor], postage:
 // req}, exp: now+ttl} — the one chain root a stranger may present an
@@ -25,10 +29,22 @@ var ErrNoPostage = errors.New("actor: frontdoor requires a postage requirement")
 // to Consents (Hold) beside its other roots, registers a handler on
 // FacetFrontdoor, and publishes the cert wherever it publishes its
 // location (a lighthouse #publish carries both) so strangers can learn
-// the price. req is a postage requirement string (postage.Require).
+// the price. req is a postage requirement string (postage.Require;
+// postage.DefaultRequire is the recommended cost).
+//
+// ttl is the frontdoor's TAIL — how long a stranger who already holds
+// the cert may keep paying to knock after the owner stops re-issuing
+// it. The protocol fixes no number (delegation windows are the
+// deployment's, sketch open problem 9); the guidance is to mint it
+// with the same ttl as the location record it is published beside:
+// a lighthouse evicts both with the record, so a longer tail is dead
+// exposure and a shorter one is dropped before the record is.
 func (a *Actor) Frontdoor(req string, ttl int64) (cert.Cert, error) {
 	if req == "" {
 		return cert.Cert{}, ErrNoPostage
+	}
+	if ttl <= 0 {
+		return cert.Cert{}, ErrBadTTL
 	}
 	now := a.Now()
 	return cert.Sign(cert.Cert{

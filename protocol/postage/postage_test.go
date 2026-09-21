@@ -58,3 +58,10 @@ func TestPoWSolveHonoursCancel(t *testing.T) {
 		t.Fatalf("want Canceled, got %v", err)
 	}
 }
+
+func TestDefaultRequireIsInVocabulary(t *testing.T) {
+	bits, err := ParsePoW(DefaultRequire)
+	if err != nil || bits != DefaultPoWBits {
+		t.Fatalf("DefaultRequire %q: bits %d err %v", DefaultRequire, bits, err)
+	}
+}

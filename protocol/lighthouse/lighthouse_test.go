@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -310,5 +311,52 @@ func TestRecordsExpire(t *testing.T) {
 	}
 	if recs, _ = lighthouse.Lookup(ctx, n.B, n.L.ID(), n.A.ID()); len(recs) != 1 {
 		t.Fatalf("re-published record missing: %v", recs)
+	}
+}
+
+func TestDirectoryCapRefusesNewPublishersOnly(t *testing.T) {
+	n := setup(t)
+	ctx := n.w.ctx
+	n.lighthouse.MaxRecords = 1
+
+	if err := lighthouse.Publish(ctx, n.A, n.L.ID(), &n.fdA); err != nil {
+		t.Fatal(err)
+	}
+	// Full: B, a new publisher with a valid cap, is refused — no live
+	// member is evicted to make room.
+	err := lighthouse.Publish(ctx, n.B, n.L.ID(), nil)
+	if remoteCode(err) != actor.StatusError || !strings.Contains(err.Error(), lighthouse.ErrDirectoryFull.Error()) {
+		t.Fatalf("new publisher on a full directory: want %v, got %v", lighthouse.ErrDirectoryFull, err)
+	}
+	if recs := n.lighthouse.Records(); len(recs) != 1 || recs[n.A.ID()].Loc.Iss != n.A.ID() {
+		t.Fatalf("directory after refused publish: %v", recs)
+	}
+	// A, already listed, re-publishes freely.
+	n.w.clk.Advance(1)
+	if _, err := n.A.PublishLocation(hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := lighthouse.Publish(ctx, n.A, n.L.ID(), &n.fdA); err != nil {
+		t.Fatalf("re-publish by a listed member: %v", err)
+	}
+	// Once A's record expires its slot is free: B gets in.
+	n.w.clk.Advance(hour + 1)
+	if _, err := n.B.PublishLocation(hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := lighthouse.Publish(ctx, n.B, n.L.ID(), nil); err != nil {
+		t.Fatalf("publish after expiry freed a slot: %v", err)
+	}
+	if recs := n.lighthouse.Records(); len(recs) != 1 || recs[n.B.ID()].Loc.Iss != n.B.ID() {
+		t.Fatalf("directory after expiry: %v", recs)
+	}
+}
+
+func TestFrontdoorMintRefusesNonPositiveTTL(t *testing.T) {
+	n := setup(t)
+	for _, ttl := range []int64{0, -1} {
+		if _, err := n.A.Frontdoor(postage.DefaultRequire, ttl); !errors.Is(err, actor.ErrBadTTL) {
+			t.Fatalf("ttl %d: want %v, got %v", ttl, actor.ErrBadTTL, err)
+		}
 	}
 }

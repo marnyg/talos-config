@@ -133,9 +133,31 @@ envelope has no field for it and `payload` is opaque to the protocol.
   longer piggybacks it (`CurrentLocation` is nil past `exp`), so a
   missed beat degrades to "no piggyback", not to `bad-loc` everywhere.
   Re-publishing is still the beat's job.
-- Open (unchosen numbers, open problem 9): PoW bits, frontdoor tail,
-  directory size; `max_bytes` is not in the caveat vocabulary and the
-  sketch's frontdoor example is read without it.
+- Numbers chosen 2026-09-23 (were open under open problem 9):
+  - **PoW bits: `postage.DefaultPoWBits = 22`** (`DefaultRequire` =
+    `pow:22`). Measured ~15 MH/s single-thread Go SHA-256: 2^22 ≈
+    0.25 s on a laptop core, ~1 s on a phone, against ~50 µs for the
+    receiver to refuse an unstamped envelope (one own-signature
+    verify) — the stranger pays ≈ 5000× the cost of turning it away;
+    a 1000 msg/s flood needs ~250 cores. 20 bits (~60 ms, 1200×) is
+    the floor; 24 (~1 s laptop, ~4 s phone) hurts honest phones. A
+    default, not a law: the requirement is a per-receiver string.
+  - **Frontdoor tail: no protocol constant.** `Frontdoor` refuses
+    `ttl ≤ 0`; the guidance is the same ttl as the location record it
+    is published beside (a lighthouse evicts both with the record: a
+    longer tail is dead exposure, a shorter one is dropped early).
+    Delegation windows stay the deployment's choice, as for
+    `PublishLocation(ttl)`.
+  - **Directory size: `lighthouse.DefaultMaxRecords = 4096`**
+    (`Lighthouse.MaxRecords`, ≤ 0 unbounded), **refuse-when-full,
+    never evict**: a new publisher gets `ErrDirectoryFull` after
+    expired entries are swept; a listed member always re-publishes.
+    Eviction would let an over-issuing or captured founder push live
+    members out; refusal makes over-issuance hurt only the newest
+    member, visibly, on its beat. ~1 MB at a few hundred bytes per
+    record.
+- `max_bytes` is not in the caveat vocabulary and the sketch's
+  frontdoor example is read without it.
 
 ### Confirmation
 
@@ -146,3 +168,7 @@ unstamped is refused `postage` without reaching the handler → an
 no record → records expire and re-publish. `TestPostageWireLaw`
 (envelope) pins the wire rule: no key when unstamped, key inside the
 signature when stamped, preimage independent of the stamp.
+`TestDirectoryCapRefusesNewPublishersOnly` (a full directory refuses a
+new publisher, re-publish by a listed member succeeds, an expired slot
+is reused) and `TestFrontdoorMintRefusesNonPositiveTTL` pin the chosen
+numbers' rules; `TestDefaultRequireIsInVocabulary` pins the default.
