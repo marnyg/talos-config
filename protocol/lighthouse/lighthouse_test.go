@@ -360,3 +360,50 @@ func TestFrontdoorMintRefusesNonPositiveTTL(t *testing.T) {
 		}
 	}
 }
+
+// An unstamped envelope to a facet whose every consent demands postage
+// is refused before the mailbox (talos-config-jjti): the verdict is the
+// same `postage`, but the loop never sees it — the sender's seq mark
+// stays untouched. Once ANY consent to the facet admits someone for
+// free, the shortcut is off and the fold decides as before.
+func TestUnstampedIsRefusedBeforeTheMailbox(t *testing.T) {
+	n := setup(t)
+	ctx := n.w.ctx
+	S, _ := n.w.actor("S")
+	n.w.start(S)
+	S.Grant(n.A.ID(), actor.FacetFrontdoor, n.fdA)
+	S.UpdateLocation(n.A.ID(), n.A.CurrentLocation())
+	S.Postage = noStamp{}
+
+	// Frontdoor-only facet: refused in the transport goroutine.
+	_, err := S.Send(ctx, n.A.ID(), actor.FacetFrontdoor, []byte("free?"))
+	if remoteCode(err) != actor.StatusPostage {
+		t.Fatalf("unstamped stranger: want %s, got %v", actor.StatusPostage, err)
+	}
+	if mark := n.A.HWM().Peek(S.ID(), n.A.ID()); mark != 0 {
+		t.Fatalf("unstamped envelope reached the loop (mark %d)", mark)
+	}
+	if n.frontdoorHits.Load() != 0 {
+		t.Fatal("unstamped envelope reached the handler")
+	}
+
+	// A also lets B in for free on the same facet: the facet is no
+	// longer postage-only, so the stranger's unstamped envelope now
+	// takes the full path — same verdict, mark advanced — and B's free
+	// path works.
+	free := grant(t, n.A.Signer, cert.VerbInvoke, string(n.B.ID()), n.A.ID(), actor.FacetFrontdoor, false)
+	n.A.Hold(append(n.A.Consents, free), nil)
+	_, err = S.Send(ctx, n.A.ID(), actor.FacetFrontdoor, []byte("free now?"))
+	if remoteCode(err) != actor.StatusPostage {
+		t.Fatalf("unstamped stranger on a mixed facet: want %s, got %v", actor.StatusPostage, err)
+	}
+	if n.A.HWM().Peek(S.ID(), n.A.ID()) == 0 {
+		t.Fatal("mixed facet: the fold should have decided, not the shortcut")
+	}
+	n.B.Grant(n.A.ID(), actor.FacetFrontdoor, free)
+	n.B.UpdateLocation(n.A.ID(), n.A.CurrentLocation())
+	n.B.Postage = noStamp{}
+	if _, err := n.B.Send(ctx, n.A.ID(), actor.FacetFrontdoor, []byte("member")); err != nil || n.frontdoorHits.Load() != 1 {
+		t.Fatalf("free member path: err %v hits %d", err, n.frontdoorHits.Load())
+	}
+}

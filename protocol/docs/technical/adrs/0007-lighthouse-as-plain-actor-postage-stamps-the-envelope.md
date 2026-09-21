@@ -123,12 +123,34 @@ envelope has no field for it and `payload` is opaque to the protocol.
 - Good: the talos consumer's wire is unchanged; the hub's Phase-1
   "lighthouse as a view" (root ADR-0024) can be replaced by this
   package when a second network exists.
-- Cost: the postage check sits *after* the chain fold in the mailbox
-  loop, not in the transport goroutine — a flood of unstamped
-  envelopes still costs one own-signature verify each (an empty
-  chain's fold) before it is refused. Mailbox depth is the only
-  limiter. Recorded, not solved: moving it earlier needs the
-  requirement before the fold.
+- Cost (as decided): the postage check sits *after* the chain fold in
+  the mailbox loop — a flood of unstamped envelopes cost one
+  own-signature verify each (an empty chain's fold) and a mailbox
+  slot before refusal. **Resolved 2026-09-23 (`jjti`)** with a
+  refusal-only shortcut in the transport goroutine,
+  `Actor.refusesUnstamped`: an unstamped envelope to a facet whose
+  *every* candidate root consent (`iss == me`, `can == Verbs[facet]`,
+  `facet ∈ cav.facet`) carries `cav.postage` is answered `postage`
+  before the mailbox. Sound because postage is monotone in the fold,
+  so every effective cert would carry it; the candidate filter uses
+  only conditions the fold also requires (no signature, expiry or
+  target test), so a wider candidate set can only *disable* the
+  shortcut. This is a check outside the fold, accepted on the ground
+  that it can only refuse, never admit — the objection to rules
+  outside the fold (ADR-0001, `#renew`) is about granting. The moment
+  any consent to the facet admits someone for free, the shortcut is
+  off and the fold decides as before. Pinned by
+  `TestUnstampedIsRefusedBeforeTheMailbox` (the sender's seq mark
+  stays 0 — the loop never saw it).
+- Found and fixed while pinning the above: with a frontdoor **and** a
+  consent naming the caller both rooting one empty chain,
+  `VerifyChain` returned whichever accepting verdict came first in
+  `Consents` order — a *named* member could be charged postage (or
+  refused unstamped) by slice order. The model returns the set;
+  picking is Go's. Now: prefer the non-group verdict without
+  `cav.postage`, then any non-group, then group (`ErrGroupAud`). A
+  caller some consent names is not a stranger.
+  `TestVerifyChainPrefersPostageFreeVerdict` pins it in both orders.
 - Fixed in passing: an actor whose own location record has expired no
   longer piggybacks it (`CurrentLocation` is nil past `exp`), so a
   missed beat degrades to "no piggyback", not to `bad-loc` everywhere.

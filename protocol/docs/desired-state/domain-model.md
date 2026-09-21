@@ -454,7 +454,13 @@ whose deployment-free form differs from the talos wording. Source:
   (~0.25 s of a laptop core, ~1 s on a phone, ≈ 5000× the receiver's
   cost to refuse an unstamped envelope); a receiver chooses its own.
   The inbox checks after the chain folds, iff `eff.cav.postage` is
-  set, and replies `postage` before any handler. "Single-use" is the
+  set, and replies `postage` before any handler; an *unstamped*
+  envelope to a facet whose every root consent demands postage is
+  refused already in the transport goroutine, before the mailbox
+  (refusal-only shortcut, sound by postage's monotonicity). Among
+  several rooting consents the verifier hands back a postage-free
+  verdict when one exists — a caller some consent names is not a
+  stranger. "Single-use" is the
   seq high-water mark (a re-sent stamped envelope is a `replay`); a
   fresh key pays afresh; there is no spent-token set.
 - **Intro nonce** — the one-time bearer token a parent injects when

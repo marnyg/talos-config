@@ -19,8 +19,10 @@
 // Inbound processing is a two-stage pipeline:
 //
 //  1. Transport goroutines (one per accepted stream) do only the pure,
-//     cheap rejects — decode, envelope signature, to.target == me — and
-//     enqueue into a BOUNDED mailbox. When the mailbox is full the
+//     cheap rejects — decode, envelope signature, to.target == me, and
+//     an unstamped envelope to a facet whose every consent demands
+//     postage (see refusesUnstamped) — and enqueue into a BOUNDED
+//     mailbox. When the mailbox is full the
 //     invocation is dropped (invariant 12: at-most-once, best-effort;
 //     the sender retries). They never touch actor state.
 //  2. ONE goroutine (the mailbox loop) dequeues and does everything
@@ -59,7 +61,10 @@
 // cav.postage the envelope must carry a stamp the actor's Postage
 // scheme accepts; this is how the open frontdoor (aud "*") admits
 // strangers at a cost. Send stamps automatically when the chain it
-// holds for (to, facet) names a requirement.
+// holds for (to, facet) names a requirement. An unstamped envelope to
+// a facet whose every consent demands postage is refused in the
+// transport goroutine, before it costs a mailbox slot or a fold
+// (refusesUnstamped) — the same verdict the loop would reach, earlier.
 package actor
 
 import (
@@ -68,6 +73,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -436,6 +442,10 @@ func (a *Actor) serve(ctx context.Context, s Stream, peer cert.ActorID) {
 		a.replyStatus(ctx, s, env, Status{Code: StatusWrongTarget})
 		return
 	}
+	if a.refusesUnstamped(env) {
+		a.replyStatus(ctx, s, env, Status{Code: StatusPostage, Msg: postage.ErrMissing.Error()})
+		return
+	}
 	in := &inbound{env: env, peer: peer, done: make(chan []byte, 1)}
 	select {
 	case a.mail <- in:
@@ -495,6 +505,41 @@ func (a *Actor) loop(ctx context.Context) {
 // lighthouse's #publish roots in a publish consent (talos-config-xwu).
 func (a *Actor) chainRule(r cert.Receiver, chain, speakAs []cert.Cert, signer cert.ActorID, facet string, now int64) (cert.Cert, []cert.Cert, error) {
 	return cert.VerifyChain(r, a.verbFor(facet), chain, speakAs, signer, facet, now)
+}
+
+// refusesUnstamped is the pre-mailbox postage refusal (talos-config-jjti):
+// true when env carries no stamp and EVERY consent that could root a
+// chain to env.To.Facet demands postage — then, postage being monotone
+// in the fold, any effective cert would too and the loop's verdict
+// could only be StatusPostage. Refusing here spares the fold (the
+// receiver's own consent verify) and, more to the point, a mailbox
+// slot: an unstamped flood at the frontdoor must not starve #renew.
+//
+// This is refusal-only and can never widen authority: the candidate
+// set is filtered on exactly the conditions the fold ALSO requires
+// of a root (iss == me, can == the facet's verb, facet ∈ cav.facet)
+// and on nothing else — an unverified, expired or wildcard-target
+// consent is still a candidate, and a candidate without postage
+// disables the shortcut. No candidates ⇒ no shortcut (the fold
+// reports unauthorized). Reads Consents under a.mu like Send does.
+func (a *Actor) refusesUnstamped(env envelope.Envelope) bool {
+	if env.Postage != "" {
+		return false
+	}
+	verb := a.verbFor(env.To.Facet)
+	me := a.ID()
+	consents, _ := a.authority()
+	found := false
+	for _, c := range consents {
+		if c.Iss != me || c.Can != verb || !slices.Contains(c.Cav.Facet, env.To.Facet) {
+			continue
+		}
+		if c.Cav.Postage == "" {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 // checkPostage enforces the effective cert's cav.postage on the

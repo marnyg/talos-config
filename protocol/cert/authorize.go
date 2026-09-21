@@ -469,8 +469,14 @@ type chainVerdict struct {
 //
 // verified is the rooted certs for clock.Mark.ObserveAll — the same
 // signature-only provenance rule as Result.Verified — and is populated
-// on every path, error or not. When several consents root the chain
-// the first accepting one (in consents order) is returned; Authorize
+// on every path, error or not. When several consents root the chain,
+// the eff returned is the first accepting verdict (in consents order)
+// that neither resolves to a group nor demands postage; failing that,
+// the first non-group one; failing that, the group verdict with
+// ErrGroupAud. Postage-free wins because a caller some consent names
+// outright is not a stranger — the frontdoor (aud "*") is for those
+// nobody named, and which verdict the receiver's postage check sees
+// must not depend on the order Consents happen to be held in. Authorize
 // uses the full set internally for its group rule. err on rejection is
 // the failure of the consent that got furthest through the fold.
 func VerifyChain(r Receiver, verb Verb, chain, speakAs []Cert, signer ActorID, facet string, now int64) (eff Cert, verified []Cert, err error) {
@@ -480,10 +486,21 @@ func VerifyChain(r Receiver, verb Verb, chain, speakAs []Cert, signer ActorID, f
 	if err != nil {
 		return Cert{}, verified, err
 	}
-	for _, v := range vs {
-		if v.group == "" {
+	var direct *chainVerdict
+	for i := range vs {
+		v := &vs[i]
+		if v.group != "" {
+			continue
+		}
+		if v.eff.Cav.Postage == "" {
 			return v.eff, verified, nil
 		}
+		if direct == nil {
+			direct = v
+		}
+	}
+	if direct != nil {
+		return direct.eff, verified, nil
 	}
 	return vs[0].eff, verified, ErrGroupAud
 }

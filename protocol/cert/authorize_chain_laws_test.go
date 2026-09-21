@@ -1136,6 +1136,30 @@ func TestVerifyChainStarPostage(t *testing.T) {
 	}
 }
 
+// TestVerifyChainPrefersPostageFreeVerdict: when a frontdoor consent
+// (aud "*", postage) and a consent naming the caller both root the same
+// empty chain, the eff handed back demands no postage — whichever order
+// the receiver holds its consents in. A caller some consent names is
+// not a stranger. A caller only "*" admits still gets the postage eff.
+func TestVerifyChainPrefersPostageFreeVerdict(t *testing.T) {
+	f := detFixture(95)
+	id := f.id
+	frontdoor := f.build(certSpec{iss: "R", aud: AudAny, can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}, Endpoints: modelEndpoints, Postage: postagePoW}, exp: 10})
+	named := f.build(certSpec{iss: "R", aud: string(id["OWNER1"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}, Endpoints: modelEndpoints}, exp: 10})
+	for _, consents := range [][]Cert{{frontdoor, named}, {named, frontdoor}} {
+		eff, _, err := VerifyChain(Receiver{ID: id["R"], Consents: consents}, VerbInvoke, nil, nil, id["OWNER1"], "apid", testNOW)
+		if err != nil || eff.Cav.Postage != "" {
+			t.Fatalf("named caller beside a frontdoor: err=%v eff.postage=%q (consents %v)", err, eff.Cav.Postage, []string{consents[0].Aud, consents[1].Aud})
+		}
+		eff, _, err = VerifyChain(Receiver{ID: id["R"], Consents: consents}, VerbInvoke, nil, nil, id["ROGUE"], "apid", testNOW)
+		if err != nil || eff.Cav.Postage != postagePoW {
+			t.Fatalf("stranger beside a named consent: err=%v eff.postage=%q", err, eff.Cav.Postage)
+		}
+	}
+}
+
 // TestVerifyChainConsentOnly is the model's consentOnlyTest: an empty
 // caller chain is the consented sovereign presenting R's consent itself
 // — it binds as the consent's aud (or via its hot key), never to a
