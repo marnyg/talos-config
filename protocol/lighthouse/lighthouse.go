@@ -73,6 +73,9 @@ var (
 	// ErrDirectoryFull marks a publish by a NEW publisher when the
 	// directory already holds MaxRecords live records.
 	ErrDirectoryFull = errors.New("lighthouse: directory full")
+	// ErrNoIDs marks a #lookup that names nobody: the directory is
+	// queried by identity, never enumerated over the wire.
+	ErrNoIDs = errors.New("lighthouse: lookup names no ids")
 )
 
 // Record is one directory entry: the actor's location and, if it
@@ -245,11 +248,17 @@ func (l *Lighthouse) evictExpiredLocked(now int64) {
 	}
 }
 
-// lookup serves #lookup over the published directory.
+// lookup serves #lookup over the published directory. A caller must
+// name the ids it wants: the empty-ids form of Records (the whole
+// directory) is the owner's, never the wire's — on a public #lookup one
+// stamp must not buy the member list (open problem 5, metadata).
 func (l *Lighthouse) lookup(_ context.Context, inv *actor.Invocation) ([]byte, error) {
 	var req LookupRequest
 	if err := json.Unmarshal(inv.Envelope.Payload, &req); err != nil {
 		return nil, fmt.Errorf("lighthouse: payload: %w", err)
+	}
+	if len(req.IDs) == 0 {
+		return nil, ErrNoIDs
 	}
 	resp := LookupResponse{Records: make(map[cert.ActorID]wireRecord, len(req.IDs))}
 	for id, rec := range l.Records(req.IDs...) {

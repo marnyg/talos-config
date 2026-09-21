@@ -407,3 +407,21 @@ func TestUnstampedIsRefusedBeforeTheMailbox(t *testing.T) {
 		t.Fatalf("free member path: err %v hits %d", err, n.frontdoorHits.Load())
 	}
 }
+
+// #lookup names ids or gets nothing: the wire never enumerates the
+// directory (one stamp on a public lookup must not buy the member list).
+func TestLookupRefusesEnumeration(t *testing.T) {
+	n := setup(t)
+	ctx := n.w.ctx
+	if err := lighthouse.Publish(ctx, n.A, n.L.ID(), &n.fdA); err != nil {
+		t.Fatal(err)
+	}
+	_, err := lighthouse.Lookup(ctx, n.B, n.L.ID())
+	if remoteCode(err) != actor.StatusError || !strings.Contains(err.Error(), lighthouse.ErrNoIDs.Error()) {
+		t.Fatalf("lookup with no ids: want %v, got %v", lighthouse.ErrNoIDs, err)
+	}
+	// The owner-side form still sees everything.
+	if len(n.lighthouse.Records()) != 1 {
+		t.Fatal("owner-side Records() lost the directory")
+	}
+}

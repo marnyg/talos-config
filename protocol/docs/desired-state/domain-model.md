@@ -405,7 +405,8 @@ whose deployment-free form differs from the talos wording. Source:
   `{loc?, frontdoor?}` (loc defaults to the envelope's piggyback; both
   must be the signer's, verify, be live); `#lookup` is an ordinary
   `invoke` facet — members-only vs public is *which grant exists*
-  (per-member, or `aud "*"` + postage), never code. The directory
+  (per-member, or `aud "*"` + postage), never code; a lookup must
+  name ids — the wire never enumerates the directory. The directory
   `{publisher id → {reach-me-at, frontdoor?}}` is volatile, expired
   on read, newer-by-`iat` wins, and holds only what was *published*
   — never what the lighthouse merely saw. A client re-validates every

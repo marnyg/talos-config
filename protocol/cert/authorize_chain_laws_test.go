@@ -29,6 +29,9 @@ import (
 // Model constants: caveat vocabulary v2 values.
 var modelEndpoints = []string{"quic:a", "quic:b"}
 
+// Arbitrary vocabulary samples: the verifier treats the requirement as
+// an opaque string, so the bit count here is not postage.DefaultPoWBits
+// and need not be.
 const (
 	noPostage  = ""
 	postagePoW = "pow:20"
