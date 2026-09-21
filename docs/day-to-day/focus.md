@@ -13,14 +13,11 @@ binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 **Next candidates** (owner to pick):
 - **HA sweep** (`9l67`) once networking is settled — w1 off takes
   every `*.gw` service down with the gateway's RWO volume.
-- **Sovereign-actor protocol v0** (`0bc`, M1–M5) — picked up
-  2026-09-22: **M3 built** (`0bc.3`, protocol ADR-0007: lighthouse as
-  a plain actor, PoW postage at the frontdoor; talos wire unchanged);
-  2026-09-23: M3's threads closed. **2026-09-24: M4 spawn designed**
-  (ADR-0008/0009 Proposed; provisioner is an actor, passive leases,
-  k8s + docker drivers) — build `0bc.4.1` next. See
-  `protocol/docs/day-to-day/`. The talos Provisioner's split along
-  that design is thread `kckm`, not v0.
+- **Sovereign-actor protocol v0** (`0bc`, M1–M5) — M1–M3 built;
+  **M4 spawn designed 2026-09-24** (ADR-0008/0009 Proposed), build
+  `0bc.4.1` next; talos wire unchanged throughout. State and history
+  live in `protocol/docs/day-to-day/`. The talos Provisioner's split
+  along ADR-0009 is thread `kckm`, not v0.
 - Small ops: cp1 hostname pin (`t7b2`), w1's provisioning MAC
   (`c4vd`), SA-issuer runbook (`etzl`).
 

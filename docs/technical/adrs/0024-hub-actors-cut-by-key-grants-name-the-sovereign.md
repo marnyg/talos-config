@@ -14,7 +14,9 @@
   the Provisioner's mint facet waits for the Provisioner); the
   `hub-http` stream facet serving `/config`, `359.8.2.4` (2026-09-19),
   with the overlay route cut (decision `d3z3`). Outstanding:
-  Provisioner as an actor — accepted with that as the known remainder.)_
+  Provisioner as an actor — accepted with that as the known remainder;
+  tracked as thread `kckm`, to be built as the driver half of protocol
+  ADR-0009 rather than a fused spawner+provisioner.)_
 - Date: 2026-09-16
 - Refines: ADR-0018 (which named the actors and said "cut by state"
   without saying how many keys), ADR-0015 (where the boot token is

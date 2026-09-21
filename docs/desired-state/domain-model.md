@@ -235,7 +235,9 @@ Rules that fall out of the cut:
   Provisioner actor yet, so both ends live on the shell — the HTTP
   handler verifies with the master `hubManager` holds and calls
   `Issuer.Mint` directly; `Issuer#mint-machine` waits for the
-  Provisioner (ADR-0024 outstanding)._ A compromised Provisioner
+  Provisioner (ADR-0024's known remainder, tracked as thread `kckm`:
+  when built, it is the driver half of protocol ADR-0009, not a fused
+  one)._ A compromised Provisioner
   already hands blank machines any config; requesting machine certs
   adds no new power.
 - **Cold cache after a deploy:** a member lacks the new `hubkey`'s
