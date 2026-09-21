@@ -5,15 +5,19 @@
 
 ## Last session
 
-2026-09-23 — **protocol only**: M3's loose threads closed (numbers
-chosen, unstamped traffic refused before the mailbox, `VerifyChain`
-prefers a postage-free verdict, directory cap, no wire enumeration of
-the directory). Talos wire and deployment untouched; only the two
-`vendorHash`es moved (`f3d57a7`). Details in
+2026-09-24 — **protocol only, docs only**: M4 (spawn) designed by
+grill-design — protocol ADR-0008/0009 Proposed, protocol invariant
+13, sub-tasks `0bc.4.1–.6`. One cross-scope finding: the talos
+**Provisioner** is a Phase-1 fused spawner+provisioner for bare metal
+(boot token = intro nonce, `/enroll/machine` = `#birth`, Kit =
+starter kit) — noted in the root glossary, split filed as thread
+`kckm` (not v0). No code, no vendorHash. Details in
 `protocol/docs/day-to-day/handoff.md`. The deployment state below is
 from the 2026-09-21 session and still stands.
 
-## Previous session
+## Previous sessions
+
+2026-09-23 — protocol only: M3's loose threads closed (`f3d57a7`).
 
 2026-09-21 (nineteenth session) — **Mesh v3 Phase 4 closed: P4.3 +
 P4.4, the paper half of the deletion.**

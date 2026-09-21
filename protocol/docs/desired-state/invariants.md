@@ -91,6 +91,19 @@
     not survive a crash; supervisors restart from spec, not snapshot.
     No store-and-forward is mandated by the protocol.
 
+13. **Compute is rented from an actor, and the renter knows leases,
+    not actors.** A provisioner is an ordinary actor reached by an
+    ordinary chain (`#spawn`, `#extend`, `#kill`); there is no
+    library seam or platform credential on the spawning side. It
+    holds **leases** — image by digest, opaque params, a deadline —
+    and **never learns about birth**: the intro is an opaque blob to
+    it, identities and kits are between parent and child. Leases are
+    **passive**: every lease has a deadline that only the renewal
+    beat extends, so a parent that stops renewing (or dies) lets its
+    children lapse, and a well-behaved child exits itself once it
+    holds no live edge. The platform behind a provisioner (k8s,
+    docker, a market) changes the driver, never the contract.
+
 ## Structural trade-offs (consequences of 1–9, stated so they are not "fixed")
 
 These are the price of stateless, self-rooted, offline-verifiable

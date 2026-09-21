@@ -5,51 +5,54 @@
 
 ## Last session
 
-2026-09-23 — **M3's loose threads closed** (ADR-0007 consequences
-updated in place; decisions `gfyj`, `rpoe`; `jjti` closed).
+2026-09-24 — **M4 designed, not built** (grill-design on `0bc.4`;
+docs only, no Go touched, no vendorHash moved).
 
-- **Numbers chosen** (`4e6a63c`): `postage.DefaultPoWBits = 22`
-  (`DefaultRequire`; measured ~15 MH/s ⇒ ~0.25 s laptop, ~1 s phone,
-  ≈ 5000× the receiver's refusal cost); frontdoor tail is *no*
-  constant — `Frontdoor` refuses `ttl ≤ 0`, guidance is the location
-  record's ttl; `lighthouse.DefaultMaxRecords = 4096`,
-  **refuse-when-full, never evict** (`ErrDirectoryFull`; expired
-  entries swept first; a listed member always re-publishes).
-- **Quint** (`5506984`): `authorize.qnt` already covered the postage
-  caveat + `publish` verb; the header now records that `Scheme.Check`
-  and the inbox order are deliberately unmodelled (Go tests pin them).
-- **`jjti`** (`597c13c`): `Actor.refusesUnstamped` in the transport
-  goroutine — an unstamped envelope to a facet whose *every* candidate
-  root consent demands postage is answered `postage` before the
-  mailbox. Refusal-only; owner accepted the principle (a check outside
-  the fold is fine when it can only refuse). Pinned by
-  `TestUnstampedIsRefusedBeforeTheMailbox` (sender's seq mark stays 0).
-- **Found + fixed a real M3 gap**: `cert.VerifyChain` returned the
-  *first* accepting verdict in `Consents` order, so a member named by a
-  free consent could be charged postage if the frontdoor was held
-  first. Now prefers a non-group, postage-free verdict
-  (`TestVerifyChainPrefersPostageFreeVerdict`, both orders).
-- `#lookup` must name ids (`ErrNoIDs`, `587175d`): the wire never
-  enumerates the directory; `Records()` with no ids stays owner-side.
-- vendorHashes bumped (`f3d57a7`) and verified with `--rebuild`;
-  config-server and iroh-transport build unchanged.
+- **ADR-0008 (Proposed)** — birth is an ordinary envelope to a
+  dedicated `#birth` facet behind a **per-spawn** aud-`*` consent of
+  the frontdoor's shape (postage required; the child pays one PoW to
+  its parent); the nonce is correlation, **binds to the first key**
+  (same-key re-knock idempotent, others refused); the intro is
+  `{parent, location: P's signed reach-me-at, consent, nonce}`; the
+  starter kit `{grants, locations}` mandates exactly the `#renew`
+  chain; P→C authority is the child's own consent, never on the wire.
+- **ADR-0009 (Proposed) + invariant 13** — the **provisioner is an
+  actor** (`#spawn`/`#extend`/`#kill`) that knows leases and never
+  learns about birth; the Go `Driver{Start, Extend, Kill}` is *its*
+  per-platform seam, outside `protocol/`; leases are **passive**
+  (deadline = the renewed cert's `exp`, sent by a decorator on the
+  installed `#renew` handler via `AcceptTable`); a child
+  **self-lapses** on "no live edge". Spawner/Provisioner/Driver/Lease/
+  Self-lapse/Intro/Starter kit are glossary terms.
+- **Acceptance**: fake driver in protocol tests **plus k8s Job and
+  docker drivers** behind one provisioner binary — owner wants two
+  substrates so the child image is forced self-contained.
+- Cross-scope: the talos **Provisioner** is a Phase-1 fused
+  spawner+provisioner for bare metal (boot token = intro nonce,
+  `/enroll/machine` = `#birth`, Kit = starter kit); noted in the root
+  glossary, split filed as thread `kckm`.
+- Beads: decisions `1a0q`, `9fuo`, `3f41` (closed); sub-tasks
+  `0bc.4.1–.6`; threads `lm2a` (lighthouse lookup-cap in the intro),
+  `kckm`.
 
 ## Loose threads
 
-- `fh2y` (thread, P3): every pre-mailbox refusal (bad-sig, wrong
-  target, unstamped) still signs a reply — a flood costs one ed25519
-  sign per envelope, ≈ the verify it saved. "Errors are replies"
-  (ADR-0001) vs drop-without-reply is undecided.
-- Whether "refusal-only checks outside the fold are admissible" wants
-  its own ADR or stays an ADR-0007 amendment — owner to say.
-- No spent-token set (open problem 8) — by design, stated.
-- Carried: ADR-0001's ≈ 1 h `reach-me-at` text; held `speak-as` out of
-  `Result.Verified` (ADR-0003); `DefaultMailbox = 64`; open problem 9
-  still open for delegation windows / renewal beat / tranche sizes.
+- `Job.spec.activeDeadlineSeconds` mutability on a live Job is
+  asserted, not verified — check in `0bc.4.3`; fallback is the
+  docker-style label sweep.
+- The provisioner's consent to its customers is v0 = the parent's key;
+  frontdoor/negotiated offer (the market) is M5-adjacent, unmodelled.
+- `#extend` is I/O inside a serial-mailbox handler — synchronous in v0.
+- The `payment` argument of the sketch's `spawn` is absent in v0 (M5).
+- Carried from M3: `fh2y` (refusals still sign a reply); whether
+  "refusal-only checks outside the fold" wants its own ADR; open
+  problems 8 and 9.
 
 ## Suggested next steps
 
-- **M4 `0bc.4`** (spawn-as-k8s-Job) — unblocked; start with a
-  grill-design pass on the spawn/intro handshake and the provider seam.
-- Talos consumer: replace the Phase-1 "lighthouse as a view" (root
-  ADR-0024) with `protocol/lighthouse` when a second network exists.
+- Build `0bc.4.1` (`protocol/spawn` over `MemoryNetwork` with a fake
+  driver) — the test is the spec for ADR-0008.
+- Then `0bc.4.2` (provisioner wire + `#renew` decorator); drivers and
+  binaries after, in a module outside `protocol/`.
+- Promote ADR-0008/0009 to Accepted at `0bc.4.6`; then prune the
+  exploration-log §M4 like §M2 was.

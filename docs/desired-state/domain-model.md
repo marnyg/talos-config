@@ -776,7 +776,22 @@ provisioning or recovery path may depend on it.
   hot-key issuer. Enough to run the first beat; everything else comes
   from `#bundle`. On the wire (`issuer.EncodeKit`): JSON `{member,
   beat_grant, speak_as}`, each a cert in its JSON form — the whole
-  answer to an enrollment, direct or device-flow.
+  answer to an enrollment, direct or device-flow. _The protocol's
+  **Starter kit** (protocol ADR-0008) is this concept one layer up._
+- **Provisioner (talos)** — the hub actor that provisions *machines*:
+  serves `/config` with a boot token, verifies it at
+  `/enroll/machine`, asks the Issuer for `#mint-machine`. Named before
+  the protocol had words for it (M4, 2026-09-24): it is a **Phase-1,
+  fused instance of the protocol's spawner + provisioner** whose
+  driver is "serve a Talos machine config" — the boot token is its
+  intro nonce, the seen-set its pending-spawn table, `/enroll/machine`
+  its `#birth`, the Kit its starter kit. Protocol ADR-0009 splits the
+  two roles (a provisioner knows leases and never learns about birth;
+  the spawner knows actors); the talos consumer's eventual refactor is
+  along that line — hub = spawner of machines-as-actors, a machine
+  provisioner that only serves configs (thread, not v0). A machine is
+  an actor; a pod on it is another; nothing in the protocol relates
+  the layers except trust ("birth trust = compute trust" stacks).
 - **Bundle** — two related things, one word. (a) The *connect-time
   bundle* a caller presents **on connect** (`cert.Bundle {member,
   grants[], speak-as[]}`, wire `cert.EncodeBundle`), the input of

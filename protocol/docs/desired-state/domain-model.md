@@ -142,15 +142,22 @@ short expiry). Distribution is layered:
 
 ## Spawning
 
-Parent P spawns child C on a compute market: P signs a lease (paying
-from its own funds), injecting an `intro = {parent, endpoints, nonce}`.
-C boots, generates its keypair (private key born on C's compute, never
-travels), and sends its birth message; P matches the **one-time intro
-nonce** (the only bearer token in the system) and replies with C's
-starter kit (caps to invoke P + initial funding). `spawn` returns a
-*promise* — the parent learns the child's identity only when the birth
-message arrives. Supervision trees become **funding trees**; the
-`#renew` loop is child-initiated, and a missed beat is natural death.
+Parent P (a **spawner**) spawns child C by sending `#spawn {image@digest,
+params: intro, until}` to a **provisioner** — an ordinary actor that
+renders the lease into a running container through a platform
+**driver** and never learns about birth. The `intro = {parent,
+location, consent, nonce}` is opaque to it. C boots, generates its
+keypair (private key born on C's compute, never travels), and knocks
+on `P#birth` with `{nonce}` under the per-spawn birth consent; P
+matches the **one-time intro nonce** (the only bearer token in the
+system; binds to the first key) and replies with C's **starter kit**
+(at minimum the `#renew` chain). `Spawn` returns a *promise* — the
+parent learns the child's identity only when the birth message
+arrives. Supervision trees become **funding trees**: leases are
+**passive**, the `#renew` loop is child-initiated and each beat
+`#extend`s the lease; a missed beat is natural death, and a
+well-behaved child **self-lapses** once it holds no live edge.
+_(Designed 2026-09-24, protocol ADR-0008/0009; M4 `0bc.4`.)_
 
 ## Economics
 
@@ -173,13 +180,15 @@ classDiagram
     class Network["Network (a founder's bundle)"]
     class Lighthouse["Lighthouse (ordinary actor: #publish + #lookup)"]
     class Relay["Relay (actor selling #relay)"]
-    class Provider["Compute provider (leases machines)"]
+    class Provisioner["Provisioner (ordinary actor: #spawn #extend #kill; knows leases, not actors)"]
+    class Driver["Driver (k8s Job / docker / Akash)"]
     Actor --> Actor : delegates (cert chain, attenuating)
     Actor --> Network : joins (holds publish-cap)
     Network --> Lighthouse : rendezvous
     Actor ..> Relay : reaches (behind NAT)
-    Actor --> Provider : rents + spawns children
-    Actor --> Actor : funds child in tranches
+    Actor --> Provisioner : #spawn (intro opaque) / #extend on the beat
+    Provisioner --> Driver : renders a lease
+    Actor --> Actor : #birth {nonce} → starter kit; funds child in tranches
 ```
 
 ---
@@ -466,10 +475,98 @@ whose deployment-free form differs from the talos wording. Source:
   fresh key pays afresh; there is no spent-token set.
 - **Intro nonce** — the one-time bearer token a parent injects when
   spawning; the child exchanges it immediately for real certs. The
-  only bearer token in the system.
+  only bearer token in the system. _(Grill-design 2026-09-24:)_ on
+  the wire it is pure **correlation**, not authority — the birth
+  envelope's payload names it, the handler matches it against the
+  pending-spawn table; the envelope's own signature binds the child's
+  key to it (no separate `sign_C(nonce)`).
+- **Intro** — the bootstrap artifact a parent injects into a spawn:
+  `{parent, location, consent, nonce}` — P's id, P's current signed
+  reach-me-at record (cached like any correspondent's; invariant 11's
+  sanctioned exception, but signed and expiring rather than raw),
+  the per-spawn birth consent, and the intro nonce. Additive by
+  design: a lighthouse lookup-cap may join it later as the fallback
+  for a parent that moves inside the birth window (open thread).
+- **`#birth` facet** — the facet a newborn knocks on. Admitted by a
+  **birth consent**: an aud-`*` consent of the same shape as the
+  frontdoor (`cav.target: [P]`, `cav.facet: [#birth]`, postage
+  required — so `refusesUnstamped` guards it), **minted per spawn**
+  inside `spawn()` and carried in the intro; it grants only the right
+  to knock. The reply carries the starter kit, signed by P, which the
+  child checks against the parent id in the intro.
+- **Starter kit** — the `#birth` reply body: `{grants: [[cert…],
+  …], locations: [reach-me-at…]}` — root-first chains whose last
+  `aud` is the child, plus location records for the actors those
+  chains name. The protocol **mandates exactly one chain**:
+  `P→C invoke {target: P, facet: #renew}`; everything else (app
+  facets, a network's publish-cap + lighthouse location, siblings) is
+  the parent's choice and can also arrive later on the beat. The
+  child installs each chain under every `(target, facet)` its last
+  link names. No funding field in v0 (M5). The child's first
+  reach-me-at reaches the parent by the ordinary envelope piggyback,
+  so the birth payload is `{nonce}` alone. **P→C authority never
+  crosses the wire**: at birth the child mints and holds a consent
+  `{aud: P, target: C, facet: [app facets]}` itself; P sends with an
+  empty chain. No parent-facing facet is mandated on the child —
+  stopping goes through the lease handle.
+- **Birth window** — the birth consent's lifetime (`exp − iat`). One
+  number: when it passes the child can no longer knock, and the
+  pending-spawn entry is swept — expiry, not a separate nonce TTL.
+  Within the window the nonce **binds to the first key that presents
+  it**: the same key re-knocking gets the kit re-issued (idempotent),
+  any other key is refused. A newborn whose key does not survive a
+  restart is a dead newborn; surviving one is the actor's own state
+  to keep.
 - **Lease handle** — the provider's own lease object, distinct from the
   child's `id`: how you kill an actor (vs. how you talk to it). Relies
   on the provider honoring its termination API.
+- **Spawner** — the parent-side library (`protocol/spawn`) on an
+  actor: `Spawn(spec)` sends `#spawn` to a provisioner and returns the
+  promise; owns the pending-spawn table, the `#birth` handler, the
+  starter kit and the `#renew` decorator. It knows **actors** —
+  nonces, keys, kits, edges — and nothing about containers.
+  Provisioner selection is **optional and transparent by default**:
+  the spawner is configured with a default provisioner (id + chain)
+  and `spec` may name another; a provisioner is just another
+  correspondent reached by an ordinary chain to `#spawn` (a consent
+  from one you operate; later a frontdoor + postage or a negotiated
+  offer = the market). No special case for "my own cluster".
+- **Provisioner** — the platform-side **actor** that renders a lease
+  into a running container: facets `#spawn {image@digest, params,
+  until} → {lease}`, `#extend {lease, until}`, `#kill {lease}`. It
+  knows **leases** — image, opaque params, deadline, container state
+  (`pending → running → {lapsed, killed}`, the same machine on every
+  platform) — and nothing about actors: **a provisioner never learns
+  about birth**; the intro is an opaque param blob to it. A third
+  party can run one knowing only "be an actor with three facets".
+- **Driver** — the provisioner's per-platform seam,
+  `Driver{Start(spec, until) → Handle; Extend(Handle, until);
+  Kill(Handle)}`: k8s Job (`activeDeadlineSeconds`), docker, Akash
+  later. One generic provisioner, N drivers; drivers live outside the
+  protocol module (as `iroh-transport/` does), so `protocol/` never
+  imports a platform SDK.
+- **Lease** — what a provisioner holds for a spawner: **passive** —
+  every lease has a deadline, each renewal beat extends it, and a
+  parent that stops renewing (or dies) lets its children lapse: the
+  funding tree's semantics on a substrate with no money. The birth
+  window is the first deadline; the first `#renew` is the first
+  `#extend`; failed births are reaped by the provisioner. **Extension
+  rides on `#renew`**: the spawner decorates the actor's installed
+  `#renew` handler (via `AcceptTable`) and, for every cert re-issued
+  to a born child, sends `#extend {lease, until: fresh.exp}` — the
+  lease lifetime is the renew cert's ttl, not a new number, and the
+  wrapper is where tranche policy lives (M5). A failed `#extend`
+  leaves the reply untouched; the next beat retries. The **lease
+  handle** is `(provisioner id, lease id)`. On a platform without a
+  native deadline (docker) the guard is best-effort: the driver
+  sweeps orphans by label at the next start.
+- **Self-lapse** — a well-behaved child **exits when it holds no live
+  edge** (every renewable edge expired and renewal failed): "let the
+  lease lapse" from the inside, on every platform. "No live edge",
+  not "parent edge expired" — a grown-up child with other edges
+  survives its parent. A property of the child binary, not of the
+  runtime; the provisioner's deadline remains the guard against a
+  subverted child that refuses to exit.
 - **Tranche** — the small increment of funding a parent releases to a
   child on the renewal beat; bounds money exposure of a compromised
   child.
