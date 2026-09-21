@@ -293,14 +293,7 @@ func TestRecordsExpire(t *testing.T) {
 	}
 	// A's location was published for one hour; past it, A is gone
 	// from the directory (revocation is expiry, invariant 6).
-	n.w.clk.Advance(hour + 1)
-	// L and B renew their own records on their beat (an expired
-	// piggybacked loc rejects the whole message); A does not.
-	for _, a := range []*actor.Actor{n.L, n.B} {
-		if _, err := a.PublishLocation(hour); err != nil {
-			t.Fatal(err)
-		}
-	}
+	n.w.clk.Advance(hour + 1) // nobody re-published; expired own records are simply not piggybacked
 	recs, err := lighthouse.Lookup(ctx, n.B, n.L.ID(), n.A.ID())
 	if err != nil {
 		t.Fatal(err)

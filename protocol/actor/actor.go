@@ -632,7 +632,7 @@ func (a *Actor) Send(ctx context.Context, to cert.ActorID, facet string, payload
 	}
 	a.seqOut[to]++
 	seq := a.seqOut[to]
-	loc := a.loc
+	loc := a.currentLocationLocked(a.now())
 	hints := a.hintsLocked(to)
 	a.mu.Unlock()
 

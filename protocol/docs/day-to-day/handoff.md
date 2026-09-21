@@ -6,7 +6,7 @@
 ## Last session
 
 2026-09-22 — **M3 built: lighthouse as a plain actor, postage stamps
-the envelope** (ADR-0007, Proposed; `0bc.3`).
+the envelope** (ADR-0007, Accepted; `0bc.3`).
 
 - `envelope`: optional `Postage` field — canonical key `"postage"`
   present only when non-empty (unstamped traffic is byte-identical to
@@ -56,14 +56,13 @@ onto one canonical `seq` and the second was refused as a replay.
 
 ## Loose threads
 
-- ADR-0007 is **Proposed** — owner to accept. Numbers unchosen: PoW
+- ADR-0007 **Accepted** 2026-09-22 (owner). Numbers unchosen: PoW
   bits, frontdoor tail, directory size.
 - Postage is checked *after* the chain fold in the mailbox loop; an
   unstamped flood still costs one own-sig verify each. Mailbox depth is
   the limiter. Moving it earlier needs the requirement before the fold.
-- An actor whose own `reach-me-at` expires keeps piggybacking it and is
-  refused `bad-loc` everywhere until it re-publishes (pre-existing;
-  surfaced by `TestRecordsExpire`). Worth a guard in `Send`.
+- Fixed: an expired own `reach-me-at` is no longer piggybacked
+  (`CurrentLocation` nil past `exp`; `TestExpiredOwnLocationIsNotPiggybacked`).
 - No spent-token set: a stamped envelope's "single-use" is the seq
   high-water mark. Open problem 8 stands.
 - The Quint models do not cover postage checking or `Verbs` (the verb
@@ -73,7 +72,6 @@ onto one canonical `seq` and the second was refused as a replay.
 
 ## Suggested next steps
 
-- Accept ADR-0007; close `0bc.3` (user confirms).
 - M4 `0bc.4` (spawn-as-k8s-Job) is now unblocked on the protocol side.
 - Talos consumer: replace the Phase-1 "lighthouse as a view" (root
   ADR-0024) with `protocol/lighthouse` when a second network exists;

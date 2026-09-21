@@ -2,7 +2,7 @@
 
 <!-- Forward-looking for the protocol scope. ~20 lines. -->
 
-**Now:** **M3 is built (2026-09-22, ADR-0007 Proposed): the lighthouse
+**Now:** **M3 is built (2026-09-22, ADR-0007 Accepted): the lighthouse
 is a plain actor, strangers pay PoW postage at the frontdoor.** The
 verifier gained nothing — `Actor.Verbs` binds `#publish → publish`
 through the existing fold; the envelope gained one optional signed key

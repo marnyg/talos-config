@@ -1096,3 +1096,47 @@ func TestHoldWhileListening(t *testing.T) {
 		t.Fatal("re-sealed receiver admitted a caller")
 	}
 }
+
+// TestExpiredOwnLocationIsNotPiggybacked: an actor that missed its own
+// beat must not attach its expired reach-me-at — the receiver would
+// refuse the whole message as bad-loc. It degrades to "no piggyback";
+// the message still goes through; a fresh PublishLocation restores it.
+func TestExpiredOwnLocationIsNotPiggybacked(t *testing.T) {
+	w := newWorld(t)
+	now := w.clk.Now()
+	b, bs, _ := w.actor("b")
+	a, _, _ := w.actor("a")
+	B, A := b.ID(), a.ID()
+	b.AcceptTable["echo"] = echo
+	b.Consents = []cert.Cert{issue(t, bs, string(A), []cert.ActorID{B}, []string{"echo"}, false, now-1, now+7200)}
+	if _, err := a.PublishLocation(60); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.PublishLocation(60); err != nil {
+		t.Fatal(err)
+	}
+	w.start(b)
+	w.start(a)
+
+	w.clk.Advance(61) // both records expired; nobody re-published
+	if a.CurrentLocation() != nil {
+		t.Fatal("expired own record still current")
+	}
+	rep, err := a.Send(w.ctx, B, "echo", []byte("x"))
+	if err != nil {
+		t.Fatalf("send with an expired own record: %v", err)
+	}
+	if rep.Loc != nil || b.GetLocation(A) != nil {
+		t.Fatal("an expired record travelled")
+	}
+
+	if _, err := a.PublishLocation(60); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Send(w.ctx, B, "echo", []byte("y")); err != nil {
+		t.Fatal(err)
+	}
+	if b.GetLocation(A) == nil {
+		t.Fatal("fresh record not piggybacked after re-publish")
+	}
+}

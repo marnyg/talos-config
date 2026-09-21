@@ -1,7 +1,7 @@
 # ADR-0007: The lighthouse is a plain actor; postage is a stamp on the envelope
 
-- Status: Proposed
-- Date: 2026-09-22
+- Status: Accepted
+- Date: 2026-09-22 (Proposed and Accepted the same day, owner)
 - Builds: `talos-config-0bc.3` (M3). Amends: ADR-0001 (envelope
   canonical form gains an optional `postage` key; the sketch's
   `max_bytes` on the frontdoor is not adopted), glossary **Lighthouse**,
@@ -129,10 +129,10 @@ envelope has no field for it and `payload` is opaque to the protocol.
   chain's fold) before it is refused. Mailbox depth is the only
   limiter. Recorded, not solved: moving it earlier needs the
   requirement before the fold.
-- Cost: an actor whose own location record expires keeps piggybacking
-  it and every message it sends is refused `bad-loc` until it
-  re-publishes; the beat is the actor's job. (Pre-existing; surfaced
-  by the expiry test.)
+- Fixed in passing: an actor whose own location record has expired no
+  longer piggybacks it (`CurrentLocation` is nil past `exp`), so a
+  missed beat degrades to "no piggyback", not to `bad-loc` everywhere.
+  Re-publishing is still the beat's job.
 - Open (unchosen numbers, open problem 9): PoW bits, frontdoor tail,
   directory size; `max_bytes` is not in the caveat vocabulary and the
   sketch's frontdoor example is read without it.

@@ -37,7 +37,7 @@ this scope.
   `Actor.Verbs`, `#lookup` is ordinary `invoke`); a stranger's postage
   is an optional signed `postage` key on the envelope, bound to a
   preimage that excludes it; `pow:<bits>` is vocabulary v0 behind a
-  pluggable `postage.Scheme`. _Proposed 2026-09-22 (M3, `0bc.3`)._
+  pluggable `postage.Scheme`. _Accepted 2026-09-22 (M3, `0bc.3`)._
 
 The protocol's **founding** decisions are root ADRs, referenced here,
 not copied:

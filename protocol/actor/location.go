@@ -117,12 +117,21 @@ func (a *Actor) hintsLocked(id cert.ActorID) []string {
 }
 
 // CurrentLocation returns the actor's own current reach-me-at record
-// (nil until PublishLocation / SetLocation), the value piggybacked on
-// every outbound Envelope and Reply.
+// (nil until PublishLocation / SetLocation, and nil again once it has
+// expired under the effective clock), the value piggybacked on every
+// outbound Envelope and Reply. An expired record is never attached:
+// the receiver would reject the whole message as bad-loc (one
+// fail-closed rule), so a missed beat degrades to "no piggyback", not
+// to "unreachable everywhere". Re-publishing is still the beat's job.
 func (a *Actor) CurrentLocation() *cert.Cert {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.loc == nil {
+	return a.currentLocationLocked(a.now())
+}
+
+// currentLocationLocked is CurrentLocation's body; caller holds mu.
+func (a *Actor) currentLocationLocked(now int64) *cert.Cert {
+	if a.loc == nil || a.loc.Exp <= now {
 		return nil
 	}
 	out := *a.loc
