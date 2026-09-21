@@ -1,6 +1,13 @@
 # ADR-0002: Nebula mesh replaces the WireGuard hub-and-spoke control channel
 
-- Status: Accepted _(2026-07-29: gate spike passed — see Confirmation)_
+- Status: Superseded by [ADR-0016](0016-identity-native-mesh-replaces-nebula.md)
+  _(Accepted 2026-07-29 when the gate spike passed — see Confirmation.
+  Superseded 2026-09-21 when Mesh v3 Phase 4 deleted nebula from the
+  code and the hub: `config-server/{mesh,nebderive,nebstack,nebtest}`,
+  `cmd/nebup`, the `slackhq/nebula` dependency, `talos/mesh-policy.yaml`,
+  the fly `udp/4242` service — commit `600d2d4`, bead `359.11.2`. Mesh v2
+  ran 2026-07-29 → 2026-09-21; its design record `docs/mesh-v2-nebula.md`
+  is history.)_
 - Date: 2026-07-29
 - Amended by: ADR-0005 — refines this record's "TCP-only `nebula/service`"
   diagnosis (the body below is left as written; ADR-0005 has the accurate

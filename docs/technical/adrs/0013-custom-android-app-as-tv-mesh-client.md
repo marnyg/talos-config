@@ -1,7 +1,23 @@
 # ADR-0013: Custom Android app as the TV mesh client
 
-- Status: Proposed
+- Status: Proposed _(the Confirmation below — the parents' TV playing
+  over the relayed path, a renewal from the couch — is still unmet;
+  `talos-config-4te`)_
 - Date: 2026-08-15
+- Revised by: ADR-0016 (in force 2026-09-21, Mesh v3 Phase 4) — **app
+  internals only**: the nebula AAR is replaced by `config-server/mobile`
+  (the `nodeagent` runtime + `meshtun` on the `VpnService` fd, fake-IP
+  `198.18/15` split routes, split DNS) through the same gomobile
+  pipeline (`android/build-aar.sh`); enrollment is the device flow
+  through Go, minting an iroh NodeId instead of a nebula key (P2.4,
+  `359.9.4`, verified on the owner's phone 2026-09-20). Option C and
+  its drivers stand. Two Consequences below are overtaken: `GET /hosts`
+  was deleted with the policy overlay (ADR-0014 revision `ri3b`) — the
+  app reads the name map from the identity plane; and "no DNS is pushed
+  to the tun" is resolved by split DNS — the app answers the mesh zone
+  itself and forwards everything else to the underlay, so
+  `jellyfin.gw.mesh.internal` Host-header routing works without a hub
+  upstream-forwarding mode.
 
 ## Context and Problem Statement
 

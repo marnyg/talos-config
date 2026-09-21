@@ -4,11 +4,15 @@
   gated on the Phase 0 spike in `docs/mesh-v3-iroh.md`. **Gate passed
   2026-09-16** — all four probes (self-hosted relay, Android
   feasibility/battery/throughput, Talos extension, API churn) passed,
-  no kill criterion fired; decision bead `talos-config-359.1.5`. Phase 1
-  may begin. Nebula remains the deployed mesh until Phase 4.)_
+  no kill criterion fired; decision bead `talos-config-359.1.5`.
+  **Phase 4 complete 2026-09-21** — nebula deleted from nodes (P4.1,
+  `359.11.1`), code and hub (P4.2, `600d2d4`, `359.11.2`); the hub runs
+  the identity plane alone, hubkey `a65c301d…`. No kill criterion fired
+  during migration; no consumer needed fleet-coordinated addressing.
+  The supersessions and revisions below are now in force.)_
 - Date: 2026-09-03
-- Supersedes (on Phase 4 completion): ADR-0002, ADR-0005
-- Revises (on Phase 4 completion): ADR-0006 (relay-by-default carries
+- Supersedes: ADR-0002, ADR-0005 _(in force 2026-09-21)_
+- Revises _(in force 2026-09-21)_: ADR-0006 (relay-by-default carries
   over verbatim), ADR-0007 (per-request identity header replaces
   cert-group + source-IP inference), ADR-0009 (in-cluster gateway is
   the mesh side of ingress), ADR-0013 (app internals: iroh + fake-IP

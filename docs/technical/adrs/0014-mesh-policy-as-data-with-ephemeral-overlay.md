@@ -2,10 +2,16 @@
 
 - Status: Accepted
 - Date: 2026-08-16
-- Revised by: ADR-0017 (Proposed, 2026-09-03) — policy stays git
-  data with the ephemeral overlay, but under Mesh v3 it compiles to
-  `invoke` grants carried by callers, not to firewall stanzas held by
-  receivers. The three render sites collapse into one.
+- Revised by: ADR-0017 (Accepted 2026-09-21; in force with Mesh v3
+  Phase 4) — policy stays git data, but it compiles to `invoke` grants
+  carried by callers, not to firewall stanzas held by receivers. The
+  three render sites collapsed into one compiler, `config-server/policy`
+  (`359.8.5`), and then the nebula render itself was deleted 2026-09-21
+  (`600d2d4`) along with `talos/mesh-policy.yaml` and
+  `nickel/mesh-policy.ncl`; `talos/mesh-policy-v3.yaml` (ADR-0017's
+  shape) is the only recipe. "Policy as git data" stands; the
+  render-to-receivers half and (per the 2026-09-20 revision below) the
+  overlay half are both gone.
 - Revision 2026-09-20 (`ri3b`): the ephemeral overlay half is
   **removed from code** — the hub's `/policy` page, the overlay
   set/clear API, the device-facing `GET /policy` poll and

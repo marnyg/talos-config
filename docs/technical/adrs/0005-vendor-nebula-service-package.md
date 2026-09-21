@@ -1,6 +1,11 @@
 # ADR-0005: Vendor nebula's service package instead of importing it
 
-- Status: Proposed _(records a decision implemented 2026-07-29)_
+- Status: Superseded by [ADR-0016](0016-identity-native-mesh-replaces-nebula.md)
+  _(Proposed 2026-07-29, recording a decision implemented the same day;
+  never formally promoted. Superseded 2026-09-21: the vendored
+  `nebstack` package, the hub's gvisor netstack over `overlay.UserDevice`
+  and the overlay DNS listener it existed for were all deleted with
+  nebula — commit `600d2d4`, bead `359.11.2`.)_
 - Date: 2026-07-29
 
 ## Context and Problem Statement

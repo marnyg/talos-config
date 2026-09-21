@@ -2,11 +2,19 @@
 
 - Status: Accepted _(supersedes ADR-0003; implemented with phase 2 step 3)_
 - Date: 2026-07-30
-- Revised by: ADR-0016 / ADR-0017 (Proposed, 2026-09-03) — under
-  Mesh v3 the group + derived-source-address inference is replaced by
-  `authorize()` over the caller's presented cert chain; the gateway
-  injects the verified identity as a header. Network-layer only; app
-  sessions stay on ADR-0010.
+- Revised by: ADR-0016 / ADR-0017 / ADR-0026 (in force 2026-09-21,
+  Mesh v3 Phase 4) — the group + derived-source-address **mechanism is
+  retired**: there is no overlay address to derive from. The property
+  this ADR established survives — admin routes are authenticated by
+  mesh identity at the network layer, app sessions stay on ADR-0010 —
+  but identity is now `authorize()` over the caller's presented member
+  cert + grants, once per stream, at the receiver (node agent for
+  `apid`/`kube-api`; gateway for `ingress-http`, which injects
+  `X-Mesh-Node` / `X-Mesh-Name` / `X-Mesh-Groups` and drops any forged
+  copy, `config-server/gateway`). The hub's own admin dial is an
+  ordinary caller with a self-minted kit. The `nebderive` address
+  derivation and the hub `mesh.internal` resolver this ADR relied on
+  were deleted 2026-09-21 (`600d2d4`).
 
 ## Context and Problem Statement
 

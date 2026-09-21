@@ -2,6 +2,20 @@
 
 - Status: Accepted
 - Date: 2026-07-31
+- Revised by: ADR-0016 / ADR-0026 (in force 2026-09-21, Mesh v3
+  Phase 4) — the *nebula-native* half is gone: no overlay IP on cp1,
+  no hub resolver answering `<svc>.cp1.mesh.internal`, no nebula
+  firewall admitting member→cp1:80. The mesh side of ingress is the
+  in-cluster gateway's `ingress-http` facet, which reverse-proxies to
+  ingress-nginx with the verified identity as a header; names are
+  `http://<svc>.gw.mesh.internal/`, resolved by each device's own
+  fake-IP zone rule (the last `<svc>.cp1` host, `jellyfin.cp1`, was cut
+  2026-09-20). What stands from this ADR: scoped names as a resolution
+  *rule* rather than declared data; a new service appears by merging an
+  Ingress alone; the tailscale account is out of the access path;
+  per-service authorization is the SSO layer's job (ADR-0010). The
+  "invalidated if a second machine hosts services" clause is moot —
+  naming is per-gateway, not per-machine.
 
 ## Context and Problem Statement
 

@@ -4,6 +4,15 @@
 - Date: 2026-07-30
 - Amends: ADR-0002 — replaces kill criterion 2 ("punch rate") with a
   parity-plus-LAN test. Does not disturb criteria 1, 3, 4.
+- Revised by: ADR-0016 (in force 2026-09-21, Mesh v3 Phase 4) —
+  **relay-by-default carries over verbatim.** The relay is now iroh's,
+  embedded in the hub behind its TLS terminator (ADR-0022); remote
+  members reach home through it, same-LAN paths hole-punch direct
+  (phone on Wi-Fi measured LAN-direct `10.0.0.67`, on 5G `*relay`,
+  2026-09-20, `359.9.4`). Criterion 2 (amended) is the standing
+  property of the mesh; the nebula measurements and ADR-0002's
+  criterion numbering below are history. "Revisit when" (native IPv6)
+  stands unchanged — iroh punches on v6 exactly as described.
 
 ## Context and Problem Statement
 

@@ -17,8 +17,8 @@ See `AGENTS.md` for how agents use this tree.
 Pre-scaffold documents (authoritative, being gradually absorbed):
 
 - [`vision.md`](vision.md) — north star + trust model narrative
-- [`mesh-v2-nebula.md`](mesh-v2-nebula.md) — mesh design record (source for ADR-0002)
-- [`mesh-v3-iroh.md`](mesh-v3-iroh.md) — Mesh v3 (iroh) design record + migration plan; direction as of 2026-09-03 (`talos-config-359`)
+- [`mesh-v2-nebula.md`](mesh-v2-nebula.md) — **history**: Mesh v2 (nebula) design record, source for ADR-0002; superseded by ADR-0016, nebula deleted 2026-09-21
+- [`mesh-v3-iroh.md`](mesh-v3-iroh.md) — Mesh v3 (iroh) design record + migration plan (`talos-config-359`); Phase 4 landed 2026-09-21, outcome to be folded into the exploration log (`359.11.4`)
 
 ## Sub-scopes
 

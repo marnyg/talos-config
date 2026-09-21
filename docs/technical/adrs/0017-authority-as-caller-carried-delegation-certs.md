@@ -1,7 +1,18 @@
 # ADR-0017: Authority is caller-carried delegation certs; policy compiles to grants
 
-- Status: Proposed _(2026-09-03, from spike `talos-config-359.2`;
-  promote when Mesh v3 Phase 1.1/1.5 land against it)_
+- Status: Accepted _(Proposed 2026-09-03 from spike `talos-config-359.2`;
+  accepted 2026-09-21 with Mesh v3 Phase 4. Built against it:
+  `protocol/cert.Authorize` (`authorize.qnt` + property suite), the
+  policy compiler `config-server/policy` (`359.8.5`), the gateway's
+  per-stream `authorize()` with `X-Mesh-Node/Name/Groups` injection
+  (P2.3, `3e9fdef`, ADR-0026), the node agent's `apid`/`kube-api`
+  facets. Option A's residue — the nebula firewall tables and
+  `talos/mesh-policy.yaml` — was deleted 2026-09-21 (`600d2d4`);
+  `talos/mesh-policy-v3.yaml` is the only recipe. Confirmation status:
+  the property suite / Quint check holds; the one-poll-interval
+  policy-propagation and the 6-day-starvation checks have not yet been
+  observed on the deployed system — they stay open items under
+  Confirmation below, not blockers to acceptance.)_
 - Date: 2026-09-03
 - Revises: ADR-0014 (policy stays data in git, but it renders to
   grants carried by callers, not to firewall stanzas held by
@@ -164,10 +175,13 @@ amendment was built (`git log -S"Policy compiler \`359.8.5\`"`).
   *verb* stays reserved for the protocol's envelope relay (M3).
 - **Hub → node `apid` stays on nebula until Phase 4** (`359.11.2`);
   then the hub is an ordinary caller with a self-minted kit and one
-  recipe row `{facet: apid, host: hub}`. No special path.
+  recipe row `{facet: apid, host: hub}`. No special path. _(Done
+  2026-09-21: auto-bootstrap read `etcd-running` off cp1 over the
+  identity plane 8 s after unseal.)_
 - **Two recipe files during the dual plane**: `talos/mesh-policy.yaml`
   (v2, frozen, nebula render) beside `talos/mesh-policy-v3.yaml` (this
-  ADR's shape; the compiler's input). Phase 4 deletes v2.
+  ADR's shape; the compiler's input). Phase 4 deletes v2. _(Done
+  2026-09-21, `600d2d4`; `nickel/mesh-policy.ncl` went with it.)_
 - **"(b) per-receiver accept tables" restated**: the recipe carries no
   forward address, so the hub renders no table for anyone. What hub
   and receivers share is the **vocabulary** — kinds, the closed facet
@@ -189,7 +203,7 @@ amendment was built (`git log -S"Policy compiler \`359.8.5\`"`).
   amendment); the hub may log issuance for a projection.
 - The domain model's §2 policy diagram (receiver-side render sites)
   describes the nebula-era implementation and must be redrawn when
-  Phase 1 lands.
+  Phase 1 lands. _(Redrawn as recipe→grants 2026-09-21, `22a84de`.)_
 
 ### Confirmation
 
