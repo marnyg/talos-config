@@ -27,11 +27,16 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   build-out); **Phase 0 gate passed 2026-09-16** (decision
   `talos-config-b2t`; relay, Android, Talos extension, API churn all
   probed); Phases 1–3 landed 2026-09-17 → 09-20 (dual plane, admin
-  and media consumers migrated, soak on event coverage); **Phase 4
-  P4.1/P4.2 done 2026-09-21** — no nebula extension, package, port or
-  document anywhere; the identity plane is the only plane. Remaining
-  before "reached": ADR promotions (P4.3) and this doc set (P4.4).
-  Record in [`../mesh-v3-iroh.md`](../mesh-v3-iroh.md).
+  and media consumers migrated, soak on event coverage); **reached
+  2026-09-21** with Phase 4 — no nebula extension, package, port or
+  document anywhere; the identity plane is the only plane; ADR-0002/
+  0005 superseded, ADR-0017 accepted. No kill criterion fired; no
+  consumer needed fleet-coordinated addressing. Still open under the
+  epic, not the goal: the parents' TV in the field (`4te`, ADR-0013's
+  gate), stale-binary clients re-enrolling with `enrollmsg` v2 (P3),
+  relay access gating (`5gz`). Record in
+  [`../mesh-v3-iroh.md`](../mesh-v3-iroh.md); outcome in the
+  exploration log.
 - **Sovereign-actor protocol at the center** (decision `talos-config-5w1`,
   2026-09-03): this repo becomes a monorepo around a reusable protocol
   — actors as keypair+wallet, authority as delegation certs,

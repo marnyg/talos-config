@@ -3,21 +3,21 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** **Mesh v3 Phase 4 — deletion (`359.11`).** P4.1 (nodes) and
-P4.2 (code + hub, 2026-09-21) are done: no nebula package, dependency,
-flag, port or document anywhere; the hub runs the identity plane
-alone. What remains is paper: P4.3 ADR promotions/revisions
-(`359.11.3`), P4.4 desired-state + deployed-state docs (`359.11.4`).
-Then Phase 4 — and the Mesh v3 goal — reads "reached".
+**Now:** **Mesh v3 is reached** (2026-09-21, Phase 4 closed). No
+nebula anywhere; the identity plane is the only plane; ADRs and the
+desired-state/deployed-state docs describe what runs. The epic
+`talos-config-359` stays open only for field items that are not the
+goal: parents' TV (`4te`, ADR-0013's gate), stale `enrollmsg` v2
+binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 
-**Toward goal:** **Mesh v3** in `desired-state/goals.md` (ADR-0016):
-members dialed by key, IP as device-local fiction, hub as actors
-(ADR-0024), per-request device identity at the gateway (ADR-0026).
-Phase 4 is what lets the goal read "reached".
+**Next candidates** (owner to pick):
+- **HA sweep** (`9l67`) once networking is settled — w1 off takes
+  every `*.gw` service down with the gateway's RWO volume.
+- **Sovereign-actor protocol v0** (`0bc`, M1–M5) — the mesh built its
+  transport, member cert and gateway; the protocol's own roadmap is
+  the next epic.
+- Small ops: cp1 hostname pin (`t7b2`), w1's provisioning MAC
+  (`c4vd`), SA-issuer runbook (`etzl`).
 
-**Out of scope:**
-- Wallet-native app sign-in (`95la` behind spike `i1il`); the TV's
-  admin session; the Tailscale-vs-mesh VPN-slot conflict on the TV.
-- The daemon's control socket (`fgr`); cp1 hostname pin (`t7b2`);
-  relay gating (`5gz`); Parents'-TV (`4te`); `bh74`; `jlgz` unless it
-  recurs.
+**Out of scope:** wallet-native app sign-in (`95la` behind spike
+`i1il`); KMS onto 443 (`os8s`); the daemon's control socket (`fgr`).

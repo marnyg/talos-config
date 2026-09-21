@@ -1,289 +1,165 @@
 # Deployed state
 
-Where the running system stood when last verified. Rehomed from the
-legacy `docs/handover.md` so it survives that file's deletion. Facts here
-decay — each block carries the date it was last confirmed. If you verify
-or change something, update the date.
+Where the running system stood when last verified. Facts here decay —
+each block carries the date it was last confirmed. If you verify or
+change something, update the date.
 
-> **2026-09-03 delta, not a re-verification:** no runtime change since
-> the last dated blocks except: w1 down since 2026-08-04 (media volumes
-> faulted); hub redeployed 2026-08-15 with `/hosts` + media :80 rule;
-> Android app shipped (ADR-0013). **Mesh v3 / ADR-0017 are not
-> deployed** — nebula, as described below, is what runs.
->
-> **2026-09-20:** the banner above is itself stale — Mesh v3 Phase 2
-> is complete and live (irohup tun, gateway, app, and P2.5's LAN
-> endpoint; see `mesh-v3-iroh.md` Phase 2 and the cluster-endpoint
-> bullet below). Only the two endpoint/etcd bullets were re-verified
-> today; the rest of this file still describes the nebula era.
->
-> **2026-09-20 (late), Phase 4 P4.1:** the nebula extension is **off
-> both nodes**. Fleet image
-> `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc3…`
-> (stock Talos + `iscsi-tools` v0.2.0 + `util-linux-tools` 2.41.2 +
-> `p0agent` 0.1.5) on cp1 (`10.0.0.68`, static) and w1 (`10.0.0.71`);
-> no `nebula0`, no `ext-nebula`; NodeIds unchanged (cp1 `7dd90eb3…`,
-> w1 `40c9d1ca…`). kube-apiserver cert SANs: `cp1, cp1.mesh.internal,
-> talos-wu6-eib, 10.0.0.68, 10.96.0.1` — no overlay address. apid's
-> `<name>.mesh.internal` SAN is served by the identity-plane render.
-> The hub still runs its nebula lighthouse on udp/4242 with zero
-> members until P4.2. The "Mesh (nebula)" section below is history;
-> P4.4 (`359.11.4`) rewrites this file.
+**Rewritten 2026-09-21 (Mesh v3 Phase 4, `359.11.4`)** against the
+live system over the identity plane. Nothing nebula-era runs or exists
+in the tree; the previous revision of this file (nebula lighthouse,
+`10.42/16`, `MESH_CA_PIN`, phase-1 punch/iperf measurements) is in git
+history and, where the numbers still matter, in ADR-0006 and
+`docs/mesh-v2-nebula.md`.
 
-## Cluster — _last verified 2026-07-31_
+## Summary — _verified 2026-09-21_
 
-- Two nodes, Talos v1.12.6, k8s v1.32.3:
-  - **cp1** — control plane `b0:41:6f:15:3b:8f`, node `talos-wu6-eib`,
-    LAN lease `10.0.0.41` (drifts — `.33 → .21 → .35 → .41` in one day;
-    was `talos-ezw-edv`/`10.0.0.32` before the second reprovision the
-    same day — generated names are not stable across reinstalls, and
-    cp1's hostname is **not** pinned the way w1's is).
-  - **w1** — worker `98:e7:43:11:97:b8` (the *provisioning* MAC: Dell's
-    pass-through address, only a Dell dock carries it; the box has no
-    wired PCI NIC), node `w1` (**hostname pinned**, so reinstalls stop
-    stranding NotReady node objects), LAN `10.0.0.71` declared on the
-    r8152 USB dongle `0c:37:96:5d:26:c4` (`deviceSelector` by *that*
-    MAC, 2026-09-20 — the P2.5 selector on the dir MAC matched nothing
-    and the node silently ran on DHCP; a reinstall needs the dock or a
-    renamed dir, `c4vd`), mesh `10.42.227.66`. Alienware x15 R1,
-    i9-11900H, 1TB SK hynix PC711 NVMe. Disk: STATE (LUKS2) +
-    EPHEMERAL 200GiB (LUKS2, capped) + `u-longhorn` 700GiB (xfs,
-    **unencrypted** — decision pending, thread `8e46f3a5`) at
-    `/var/mnt/longhorn`, **in service as w1's Longhorn disk** since
-    2026-07-31 (751GB max / 736GB available, `storageReserved: 0`).
-    Beware `sda`: a 2.1GB USB boot stick, which is why the install disk
-    is pinned rather than left at the role template's `/dev/sda`.
-  - Worker configs take `clusters/homelab/worker-{cluster,secrets}.yaml`
-    — the control-plane cluster layer fails validation on a worker.
-- **Scheduling hazard while both nodes run hostPath media PVs**: the PVs
-  have no `nodeAffinity`, so a media pod landing on w1 gets an empty
-  `DirectoryOrCreate` mount. Safe only because the library is empty and
-  declared disposable; must be fixed or superseded before refilling
-  (bug `0b374653`).
-- Disk layout (since the 2026-07-31 reprovision): EFI + META +
-  STATE (LUKS2) + EPHEMERAL 160GiB (LUKS2, capped) + `u-media`
-  300GiB (xfs, **unencrypted** — ADR-0004 posture, re-downloadable
-  content) mounted at `/var/mnt/media`; media PVs hostPath into it.
-- **Reinstall**: the procedure lives in
-  [`guides/reinstall.md`](guides/reinstall.md). Short form: the
-  label-scoped reset (`--system-labels-to-wipe STATE
-  --system-labels-to-wipe EPHEMERAL`) keeps the bootloader and
-  `u-media`; a **plain `talosctl reset` wipes the entire disk including
-  the media library** and needs USB/PXE to recover — don't.
-- **Cluster endpoint `https://10.0.0.68:6443` — cp1's declared static
-  LAN address** _(2026-09-20, mesh v3 P2.5 `359.9.5`)_. Both nodes
-  declare their LAN address in `talos/machines/<mac>/patch.yaml`
-  (`deviceSelector.hardwareAddr`, `dhcp: false`, default via
-  `10.0.0.1`, resolver `10.0.0.1`): cp1 `10.0.0.68` on `eno1`, w1
-  `10.0.0.71` on its USB dongle (selector: the dongle's MAC, not the
-  dir's — see the node list). **The hub image still serves the old w1
-  selector until the next deploy**; w1 was patched live. Changing the
-  endpoint also rotated the SA issuer — 14 cp1 control-loop pods had
-  to be recreated (notes.md 2026-09-20). The router's DHCP pool is deliberately
-  not edited (decision `ebis`). Predecessors: DHCP lease (drifted four
-  times in one day) → wg0 → nebula `10.42.218.125` (mesh-v2 phase 2
-  step 2, until 2026-09-20).
-- **etcd advertises `10.0.0.68:2380/2379`** — now a declared address,
-  which resolves `talos-config-6gq` by construction (it used to
-  advertise the DHCP lease, and a lease drift between reboots left a
-  member advertising a dead address — failed `talosctl upgrade`
-  pre-flight on 2026-07-31). `advertisedSubnets` was never set; it is
-  not needed now.
-- cp1's `machined` kept a few pre-P2.5 ESTABLISHED sockets to
-  `10.42.218.125:6443` (loopback-local on `nebula0`); they die at the
-  next reboot or when nebula stops. Nothing depends on them.
-- Media stack Running. SealedSecrets (`newshosting`, `nzbgeek`)
-  unseal via the inlineManifest-provisioned key pair.
-- Admin access is mesh-only: `talos/talosconfig` + `kubeconfig` (local,
-  gitignored) point at 10.42.218.125. **`-e` takes the hostname, `-n`
-  must be an IP** _(diagnosed 2026-08-01)_:
-  `talosctl -e cp1.mesh.internal -n 10.42.218.125 …` works, while any
-  `-n cp1.mesh.internal` fails with
-  `dns: A record lookup error … on 127.0.0.53:53: server misbehaving`.
-  That 127.0.0.53 is the **node's** host DNS, not the laptop's stub of
-  the same address — apid resolves the `-n` node name itself, and the
-  node's `resolvers` upstream is the LAN router `10.0.0.1` with no
-  `.mesh.internal` zone and no search domains. Laptop-side split-DNS is
-  fine (link `nebula0`, DNS `10.42.0.1`); `dig`, `curl` and `kubectl`
-  all resolve mesh names. Fixable node-side by pointing the node's
-  resolver at `10.42.0.1`, not yet done. Services are reached by hostname
-  over the identity plane — `http://<service>.gw.mesh.internal/` via
-  the gateway pod and a ClusterIP-only ingress-nginx (ADR-0026; the
-  last `*.cp1` name and the hostNetwork controller went 2026-09-20,
-  `vftt`/`xnat`); the only web NodePort left is Jellyfin's
-  30096 for LAN-direct clients (TV), plus transmission's peer ports.
-  Recovery path: LAN address SANs (`talosctl -e 10.0.0.<lease>`) with
-  owner keys.
-- Every web UI authenticates against the wallet _(since 2026-07-31)_:
-  the SIWE→OIDC bridge at `http://auth.cp1.mesh.internal` (sso ns) is
-  the only IdP — ArgoCD native OIDC (dex deleted, local `admin` =
-  break-glass), sonarr/radarr/nzbget/jackett/transmission behind
-  oauth2-proxy `auth_request` (one cookie for all five), Jellyfin via
-  jellyfin-plugin-sso ("Sign in with wallet"; local login stays for
-  the TV). A bridge restart rotates the JWKS — re-sign, nothing lost.
-- The node's only overlay link is `nebula0` (`ext-nebula` extension);
-  wg0 was removed by the 2026-07-30 apply.
-- _2026-07-29_: upgraded in place to the nebula schematic (see Mesh
-  below). EPHEMERAL survived, as expected since Talos 1.5 — etcd and
-  the then-`/var/media` intact, media stack unaffected.
-- _2026-07-31_: wiped and reprovisioned onto the capped layout above;
-  the media library restarted empty (pre-migration contents were on
-  EPHEMERAL and went with it, by design).
-- _2026-09-15_ (Mesh v3 P0.3): **cp1 now boots an imager-built
-  installer**, `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3`
-  — the same three official extensions plus `p0agent` 0.0.3
-  (`ext-p0agent`, iroh node agent, NodeId `7dd90eb3…`, key on
-  EPHEMERAL at `/var/lib/p0agent/key`, dials the scratch relay).
-  Three upgrades and one reboot that day; EPHEMERAL intact throughout.
-  LAN lease drifted `.42 → .58` across them.
-- _2026-09-16_ (Phase 0 gate, ruling on bead `5cz`, ADR-0023): **the imager image
-  is now the declared one** — `talos/hardware/minipc.yaml` pins
-  `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3@sha256:6b4337…`;
-  git and the node agree again. w1 (`alienware-x15.yaml`) stays on the
-  factory `6a9acc…`. The agent still dials the scratch fly relay
-  (`kql`) until Phase 1.2 embeds the relay in the hub.
+- **One plane.** Members (cp1, w1, the in-cluster gateway, the owner's
+  Mac, phone) are dialed by Ed25519 NodeId over iroh/QUIC; the hub on
+  fly is the relay and the issuer; per-request identity reaches apps as
+  a header from the gateway. IP survives only as each device's own
+  fake-IP zone (`198.18/15`, `*.mesh.internal`).
+- **Cluster endpoint is a LAN address** (`https://10.0.0.68:6443`); the
+  cluster needs no mesh to be a cluster (invariant 4 unqualified).
+- **w1 is off** (owner closed it 2026-09-21 ~07:20Z). With it, the
+  gateway pod and every `*.gw.mesh.internal` service are down until
+  Longhorn releases the gateway's RWO volume to cp1 — filed as the HA
+  sweep `talos-config-9l67`; not being fixed by hand.
 
-## Mesh (nebula) — _last verified 2026-07-30_
+## Cluster — _verified 2026-09-21_
 
-**The mesh is the only overlay and the control channel** (phase 2
-complete 2026-07-30): talosconfig, `nix run .#apply` (over
-`http://10.42.0.1`), auto-bootstrap dials, and mesh DNS all ride it.
-wg0 is deleted — hub code, udp/51820, and the node interface.
+- Two nodes, Talos v1.12.6 (kernel 6.18.18), k8s v1.32.3, containerd
+  2.1.6. **One fleet image** declared in both `talos/hardware/*.yaml`
+  and running on both nodes:
+  `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc3…`
+  (imager-built, ADR-0023: stock Talos + `iscsi-tools` v0.2.0 +
+  `util-linux-tools` 2.41.2 + `p0agent` 0.1.5). Extensions on cp1
+  confirmed exactly those three; `ext-p0agent` Running (restarted by
+  the 2026-09-21 apply, no reboot), `ext-iscsid` Running. No `nebula0`,
+  no `ext-nebula`.
+  - **cp1** — control plane, dir `talos/machines/b0-41-6f-15-3b-8f`,
+    node name `talos-wu6-eib` (generated; **hostname not pinned**, `t7b2`
+    pins it at the next reinstall), **static `10.0.0.68` on `eno1`**
+    (`deviceSelector.hardwareAddr`, `dhcp: false`, gw/resolver
+    `10.0.0.1`). NodeId `7dd90eb3…`, key on EPHEMERAL at
+    `/var/lib/p0agent/key`. Mini-PC; STATE + EPHEMERAL (LUKS2, capped)
+    + former `u-media` partition now Longhorn's (322GB).
+  - **w1** — worker, dir `talos/machines/98-e7-43-11-97-b8` (Dell
+    pass-through MAC: only a dock carries it; the box has no wired PCI
+    NIC — a reinstall needs the dock or a renamed dir, `c4vd`), node
+    name `w1` (**pinned**), **static `10.0.0.71`** on the r8152 USB
+    dongle `0c:37:96:5d:26:c4` (selector by *that* MAC). NodeId
+    `40c9d1ca…`. Alienware x15 R1, i9-11900H, 1TB NVMe: STATE (LUKS2) +
+    EPHEMERAL 200GiB (LUKS2) + `u-longhorn` 700GiB (xfs, unencrypted —
+    ADR-0004 posture) at `/var/mnt/longhorn`. Beware `sda`, a USB boot
+    stick — install disk is pinned. Worker configs take
+    `clusters/homelab/worker-{cluster,secrets}.yaml`.
+    **Off since 2026-09-21 07:23Z** (`Ready=Unknown`, no ping, no apid).
+- **Cluster endpoint `https://10.0.0.68:6443`** _(P2.5, `359.9.5`,
+  2026-09-20)_: kube-apiserver SANs `cp1, cp1.mesh.internal,
+  talos-wu6-eib, 10.0.0.68, 10.96.0.1` — no overlay address. etcd
+  advertises `10.0.0.68:2380/2379` (declared, so `6gq`'s lease-drift
+  failure cannot recur). The router's DHCP pool is deliberately not
+  edited (decision `ebis`); a pool collision is accepted risk.
+  Changing the endpoint rotated the SA issuer — 14 control-loop pods
+  had to be recreated by hand (`etzl` for the runbook). Predecessors:
+  DHCP lease → wg0 → nebula `10.42.218.125` → LAN static.
+- **Admin access** is over the identity plane from the Mac's
+  `irohup -tun` daemon (`talos-mesh`, `/var/lib/talos-mesh/marius-mac.iroh`,
+  utun `198.18.0.1`, ADR-0025): `talos/talosconfig` + `kubeconfig`
+  (local, gitignored) use `-e cp1.mesh.internal`; **`-n` must be the
+  LAN IP** (`-n 10.0.0.68`) — apid resolves `-n` names with the node's
+  own resolver, which has no mesh zone (gotchas.md; goes away with
+  `t7b2`). `nix run .#apply` reaches both nodes and the hub this way.
+  Recovery path: LAN address SANs + owner keys, no hub needed.
+- **Service exposure** (ADR-0026): the `gateway` Deployment (ns
+  `gateway`, a `nodeagent` member of kind gateway, key + Kit on the
+  64Mi RWO PVC `gateway-state`) terminates `ingress-http` and
+  reverse-proxies to a ClusterIP-only ingress-nginx (no hostNetwork,
+  PSS baseline), injecting `X-Mesh-Node/Name/Groups`; `jellyfin` is a
+  raw TCP splice to :8096. Ingress hosts, all `<svc>.gw.mesh.internal`:
+  argocd, auth, oauth2, jackett, jellyfin, nzbget, radarr, sonarr,
+  transmission. No `*.cp1` names remain. The only web NodePort left is
+  Jellyfin's 30096 for LAN-direct clients, plus transmission's peer
+  ports.
+- **Every web UI authenticates against the wallet** _(since
+  2026-07-31)_: SIWE→OIDC bridge `auth.gw.mesh.internal` (ns `sso`) is
+  the only IdP — ArgoCD native OIDC (local `admin` = break-glass), the
+  five media UIs behind oauth2-proxy `auth_request`, Jellyfin via
+  jellyfin-plugin-sso (local login kept for the TV). A bridge restart
+  rotates the JWKS — re-sign, nothing lost. Known gap: the bridge
+  hardcodes `groups: ["admins"]` (`5kh`).
+- Media stack pods split across both nodes on Longhorn RWX volumes;
+  SealedSecrets (`newshosting`, `nzbgeek`) unseal via the
+  inlineManifest-provisioned key pair. **Reinstall**:
+  [`guides/reinstall.md`](guides/reinstall.md) — label-scoped reset
+  only; a plain `talosctl reset` wipes the Longhorn disk.
+- Provenance of the image line: 2026-09-15 cp1 first booted an
+  imager build (`p0agent` 0.0.3, scratch relay); 2026-09-16 it became
+  the declared image (ADR-0023); 2026-09-19/20 w1 followed and both
+  moved to 0.1.5 without nebula (P4.1, `359.11.1`).
 
-- Hub is lighthouse + relay on `10.42.0.1`, fly udp/4242, dedicated
-  IPv4 `213.188.219.215`.
-- Both nodes run `siderolabs/nebula` 1.10.3 from factory schematic
-  `6a9acceefb4231ee98d04df0a3172479299cf51a36cda05f7ff817ab6d0d4735`
-  (cp1: the same extension set rebuilt by imager since 2026-09-15, see
-  Cluster above)
-  (nebula + `iscsi-tools` v0.2.0 + `util-linux-tools` 2.41.2; upgraded
-  from the nebula-only `011ccc…` on 2026-07-31 for Longhorn),
-  service `ext-nebula`, interface `nebula0`, overlay `10.42.218.125/16`.
-- Verified handshake in both directions, node WAN endpoint seen by the
-  hub as `80.212.67.203:4242` — so NAT mapping is visible and direct
-  punching is possible.
-- Node inbound firewall: icmp from any member, everything from cert name
-  `hub`, everything from group `admins`, and — since the 2026-07-29
-  re-apply — Jellyfin's NodePort (tcp/30096) from group `media`.
-  Machines are not in that list.
-- **Mesh certSANs live** _(phase 2 step 1, verified 2026-07-31)_: apid
-  and kube-apiserver certs carry `cp1.mesh.internal` + `10.42.218.125`.
-  `talosctl -e 10.42.218.125` and the kube API verify over the mesh.
-  `-e cp1.mesh.internal` works too _(2026-08-01)_: the laptop resolver
-  does split-DNS `.mesh.internal` → `10.42.0.1` via the `nebula0` link,
-  so the earlier "local resolution is the missing piece" note was
-  wrong. The remaining gap is node-side — see the `-n` caveat under
-  Cluster.
-- The CA fingerprint is re-derived on every unseal and is the value
-  members pin; it was `b881d6ff…` on the 2026-07-29 unseal. A *different*
-  fingerprint after an unseal means a different wallet signed — not a
-  rotation.
+## Mesh (identity plane) — _verified 2026-09-21_
 
-### Phase-1 measurements — _2026-07-29, laptop ↔ cp1 on the same LAN_
+- **Members and kits.** Each member holds a Kit: its member cert
+  (`aud` = its NodeId, `cav.name`, `cav.groups`, 90 d) + `invoke`
+  grants compiled from `talos/mesh-policy-v3.yaml` (7 d, renewed on
+  the daily beat) + its own self-issued `reach-me-at` (1 h). Groups in
+  use: `admins`, `machines`, `media`. Enrolled: cp1, w1 (machines,
+  auto at boot via single-use token), gateway (headless device flow),
+  `marius-mac` (admins), `phone` (media; Sony XQ-BQ52, 2026-09-20).
+  Name→NodeId is witnessed from the beat, not compiled (ADR-0024).
+- **Paths.** Remote members relay through the hub (ADR-0006/0022);
+  same-LAN members hole-punch direct — phone on home Wi-Fi measured
+  LAN-direct to the gateway (`*ip:10.0.0.67`), on 5G `*relay`, HTTP
+  200 in 0.10 s (2026-09-20). Throughput/4K playback over the relay is
+  **not yet measured** on the new plane (P0.2 spike figures only;
+  ADR-0013's TV gate `4te`).
+- **Presentation.** `config-server/fakeip` + `meshtun` on every device
+  — utun on macOS (`irohup -tun`), `VpnService` fd on Android — answer
+  `*.mesh.internal` from the witnessed name map with per-device fake
+  IPs in `198.18/15`, split-route only that range, forward all other
+  DNS to the underlay. Zone rule: `<svc>.<member>` resolves only when
+  `<member>` is a gateway (kind read from `reach-me-at`'s facets).
+  Known wart: presentations advertise their own tun address as a
+  direct endpoint (`bh74`).
+- **Policy.** One recipe, `talos/mesh-policy-v3.yaml` (ADR-0017;
+  Nickel contract `verification/nickel/mesh-policy-v3.ncl`): node
+  `apid`/`kube-api` for admins + the hub's own `apid` row; gateway
+  `ingress-http` for admins and media, `jellyfin` for media; hub
+  `hub-http`. No receiver holds a table; the blocklist is the git list.
+- **Stale binaries** (`5q33`, P3): phone/TV APK, gateway image and the
+  Mac daemon still send `enrollmsg` v2; harmless while every member
+  holds a kit, fails only at a *new* enrollment.
 
-- **Kill criterion 2 (LAN case): passes.** Steady state 0% loss, min
-  1.785ms / avg 3.3ms. The hub is ~20ms away, so sub-20ms RTT is proof
-  the path is direct and not relayed. First tunnel takes ~6s to converge
-  (drops, then ~27ms relayed, then direct).
-- Mesh DNS answers clients: `cp1.mesh.internal` → `10.42.218.125`, the
-  same address as the cert. Out-of-zone → REFUSED, in-zone unknown →
-  NXDOMAIN.
-- Jellyfin reachable over the overlay: 302 in 5.4ms on
-  `10.42.218.125:30096`.
-- **Kill criterion 2 (remote case): RESOLVED 2026-07-30 — relayed, and
-  the criterion is AMENDED not fired (ADR-0006).** NAT behaviour was
-  classified at both ends by STUN binding requests from one socket to
-  several distinct destination IPs (same external port ⇒
-  endpoint-independent "cone"; differing ⇒ symmetric):
+## Hub on fly — _verified 2026-09-21_
 
-  | Endpoint | NAT behaviour | Punch |
-  |---|---|---|
-  | Home (cp1) | endpoint-independent + port-preserving (cone) | not the blocker |
-  | Cellular hotspot | symmetric CGNAT | relayed |
-  | Office Wi-Fi | symmetric, **random** ports (3 dests → 19586/51810/64036) | relayed |
-
-  Punching needs one predictable side. Home is predictable; neither
-  remote network is, and the office NAT's random allocation rules out
-  port prediction too. So remote relay is a property of the networks,
-  not of our config or our router — wg0 would not have punched either.
-  Hence parity, not regression. The office run's validity was confirmed
-  before drawing conclusions: Tailscale was up but split-tunnel with no
-  exit node, and `route get` for both cp1's WAN and fly showed egress on
-  the physical `en0`.
-
-  **Pre-flight for any future punch test** (portable — the old `ip link`
-  check silently no-ops on macOS, where these tests actually run):
-
-  ```bash
-  netstat -rn | head -5              # default route on a physical NIC?
-  route get <peer-wan-ip>            # macOS: "interface:" must not be utun/tun
-  ip route get <peer-wan-ip>         # Linux equivalent
-  ```
-
-  Any overlay (wg0, Tailscale exit node, corporate VPN) that carries the
-  route to the peer poisons the measurement — nebula will use it as
-  underlay and hairpin.
-
-  <details><summary>Original 2026-07-29 hotspot measurement</summary>
-  Laptop on a phone hotspot (carrier CGNAT + tether NAT) against the
-  home router: handshake completed `from="213.188.219.215:4242
-  (relayed)"`, no roam to direct over several minutes, and a packet
-  capture on the Wi-Fi interface showed **all** overlay traffic
-  laptop↔fly, zero packets to the home WAN. Steady-state RTT ~59ms min
-  (= 40ms hotspot→fly baseline + fly→home leg), i.e. exactly today's
-  wg0 hairpin. Not a config gap: `punchy.punch`/`respond` are on for
-  both laptop and node, and the hub's punch rendezvous is unconditional.
-  **Caveats bounding the result:** (a) the first two attempts were
-  invalidated by wg0 being up — nebula used the wireguard tunnel as
-  underlay (`from="10.99.0.54:4242"`) and hairpinned through fly, so
-  any dual-overlay measurement with wg0 up is poisoned; (b) this pair
-  stacks tether NAT on carrier CGNAT — blame (home NAT vs cellular
-  CGNAT) is unresolved, and a punch test from ordinary foreign Wi-Fi
-  (café/office) would discriminate. Cellular CGNATs are typically
-  symmetric, which no amount of punching defeats.
-  </details>
-- **Kill criterion 3 (throughput): passes.** iperf3 against a temporary
-  NodePort pod, laptop ↔ cp1:
-
-  | Direction | Mesh | Bare LAN | Ratio |
-  |---|---|---|---|
-  | laptop → node | 229 Mbit/s | 326 Mbit/s | 70% |
-  | node → laptop | 168 Mbit/s | 182 Mbit/s | 92% |
-
-  2.1–2.9× the ~80 Mbit/s 4K-remux floor. Userspace nebula on the node
-  costs 8–30% versus the raw LAN path. Caveat: the 326 Mbit/s baseline is
-  low for wired gigabit, so the underlay was probably Wi-Fi — the ratio
-  is the meaningful number, not the absolutes. The LAN reverse run had 93
-  retransmits against the mesh's 4 and came out *slower*, which is
-  underlay noise rather than the overlay winning.
-
-## Hub on fly — _last verified 2026-07-30; identity plane 2026-09-18_
-
-- _2026-09-18_ (`e8d`): **image `registry.fly.io/marnyg-talos-config:2767808`**,
-  nix-built (`fly/image.nix`: static musl `config-server -tags iroh` +
-  static `iroh-relay` 1.1.0 + tracked `talos/` + busybox), deployed via
-  `fly/deploy.sh`. Unsealed both planes the same day: hubkey
-  `f855ca55…` speaks for `0xf568…9406` (speak-as until +119 d), relay
-  child on loopback `:3340` proxied on 443, the hub's own iroh endpoint
-  homed on it and advertised as `iroh:relay=https://marnyg-talos-config.fly.dev`;
-  `/.well-known/talos-hub/{speak-as,reach-me-at}` serve. Verified from
-  a laptop: an envelope to `Owner#bundle` at the hubkey over iroh
-  answered in 164 ms with a signed `unauthorized` (no kit). RSS 19 MB
-  sealed in the image smoke (256 MB VM). No member has a Kit yet
-  (`359.8.3`/`359.8.4`); nebula is still the mesh that carries traffic.
-
-- `fly secrets list` is **empty**. Everything derives from the wallet
-  signature at unseal: the nebula mesh CA and all mesh identities, KMS
-  seal keys, recovery passphrases, and the age identity that decrypts
-  `clusters/**/*.age` into tmpfs (`masterderive` + `nebderive`).
-- `MESH_CA_PIN` (fly.toml, public) pins the derived CA fingerprint
-  `b881d6ff…`; a wrong-wallet unseal fails loudly. `/sealed` returns
-  503 while sealed **or** when the mesh failed to start.
-- Public age recipient is committed at `talos/age-recipient.txt`
-  (re-derive with `recover -age-recipient -sig <unseal-sig>`). The SSH key
-  remains a break-glass recipient.
-- An unseal that cannot decrypt the secrets fails loudly rather than
-  serving broken configs.
+- App `marnyg-talos-config`, region `arn`, one `shared-cpu-1x`/256 MB
+  machine (`7817426a194968`), **image `registry.fly.io/marnyg-talos-config:0e67661`**
+  (nix-built `fly/image.nix`: static `config-server -tags iroh` +
+  static `iroh-relay` + tracked `talos/` + busybox), deployed
+  2026-09-20 22:20Z via `fly/deploy.sh` — the first nebula-free image.
+  Unsealed 22:20:27Z with both signatures (`speak-as` + `MasterMessage`).
+- **hubkey `a65c301d…`** speaks for `0xf568…9406` (`speak-as` cert,
+  groups `admins machines media`, verbs `member invoke`), served at
+  `/.well-known/talos-hub/{speak-as,reach-me-at}`. `/sealed` → 200.
+  Auto-bootstrap read `etcd-running` off cp1 over the plane 8 s after
+  unseal, the hub calling as an ordinary member (`HubMemberName`).
+- **Ports** (invariant 5): `http_service` 443→8080 (web + `hub-http`
+  facet + the iroh relay child on loopback `:3340`, proxied by fly's
+  TLS, ADR-0022 — `IROH_RELAY_URL=https://marnyg-talos-config.fly.dev`);
+  `tcp/8443` → 8081 for KMS disk unseal (`KMS_ADVERTISE`). **No UDP.**
+  The dedicated IPv4 `213.188.219.215` stays only because fly's shared
+  v4 carries 80/443 alone and KMS is on 8443 (`os8s` to fold it).
+  `auto_stop_machines = "stop"`, `min_machines_running = 1`.
+- `fly secrets list` is **empty**. Everything derives from the two
+  unseal signatures: the ephemeral hubkey's authority (`speak-as`),
+  KMS seal keys, recovery passphrases, and the age identity that
+  decrypts `clusters/**/*.age` into tmpfs (`masterderive`). A wrong
+  wallet fails at the age decrypt (no CA pin any more). Public age
+  recipient committed at `talos/age-recipient.txt`; the SSH key remains
+  a break-glass recipient. An unseal that cannot decrypt fails loudly.
+- The relay runs while the hub is sealed (it holds no key); relay
+  access gating beyond the blocklist is `5gz`.
 
 ## Disk encryption posture — _decision, closed 2026-07-24_
 
@@ -299,55 +175,35 @@ plaintext META.
 - Going KMS-only would first require break-glass tooling for slot-0
   blobs.
 
-> Now recorded properly in **ADR-0004**, including the consequence that
-> matters most: wipe META before a *machine* (not just a disk) leaves the
+> Recorded in **ADR-0004**, including the consequence that matters
+> most: wipe META before a *machine* (not just a disk) leaves the
 > owner's hands, because the slot-1 passphrase travels with it.
 
-## Storage — _last verified 2026-07-31_
+## Storage — _verified 2026-07-31; state 2026-09-21_
 
-Longhorn 1.12.0 via ArgoCD (`k8s/apps/longhorn/application.yaml`),
-Synced/Healthy. ADR-0011.
+Longhorn 1.12.0 via ArgoCD (`k8s/apps/longhorn/application.yaml`).
+ADR-0011.
 
-- **Disks are opt-in per node** (`createDefaultDiskLabeledNodes: true`).
-  Only nodes carrying `node.longhorn.io/create-default-disk=true` get
-  one. This is a safety property, not tidiness: without it Longhorn
-  creates a disk on every node at `/var/mnt/longhorn`, and on a node
-  lacking that user volume the path is an ordinary directory on
-  EPHEMERAL — replicas would land on scratch and die with the next
-  reinstall.
-  - `w1` — labeled. Disk `default-disk-1030500000000` at
-    `/var/mnt/longhorn`, 751GB max / 727GB available.
-  - `talos-wu6-eib` (cp1) — labeled. Disk `default-disk-1030400000000`
-    at `/var/mnt/longhorn`, 322GB max / 316GB available. This is the
-    former `u-media` partition, handed over 2026-07-31 (task
-    `214661d2`); it renumbered `nvme0n1p5` → `nvme0n1p4` on reprovision.
-  - **Total raw 1073GB**, `storageReserved: 0` on both.
-- Two StorageClasses, split by data class (ADR-0011):
-  - `longhorn` (default) — RWO, `numberOfReplicas: 2`, `dataLocality:
-    best-effort`, reclaim `Delete`. For app state. **No users yet**:
-    every app still keeps its config on `emptyDir`, so nothing on this
-    cluster is replicated today.
-  - `longhorn-bulk` — RWX, `numberOfReplicas: 1`, `dataLocality:
-    disabled`, reclaim `Retain`. For the media library.
-- Media is `media/{tv,movies,downloads}` (200/200/50Gi, RWX), renamed
-  from `media-*` because storageClassName and volumeName are immutable.
-  All three `attached` / `healthy`.
-- **Volume mobility verified deliberately** 2026-07-31, per ADR-0011's
-  confirmation criterion: a file written from a sonarr pod on cp1 was
-  read back intact after cordoning cp1 and letting the pod reschedule
-  onto w1. Media pods now run split across both nodes sharing the same
-  volumes — impossible under hostPath.
-- Handover gotcha: plain `talosctl wipe disk nvme0n1p5` is **not enough**
-  to free a user volume's space, despite the docs saying it makes the
-  disk allocatable. It clears the filesystem but leaves the partition
-  entry, and the replacement volume stays `failed` with `no disks
-  matched for volume (1 matched selector): 1 have not enough space`.
-  `--drop-partition` is what actually frees it.
-- The chart's `preUpgradeChecker` job is **disabled**: ArgoCD maps the
-  Helm pre-upgrade hook to PreSync, which runs before the main wave
-  creates `longhorn-service-account`, wedging the sync. Chart version is
-  pinned exactly to compensate.
+- **Disks are opt-in per node** (`createDefaultDiskLabeledNodes: true`),
+  only nodes labeled `node.longhorn.io/create-default-disk=true` get
+  one — without it Longhorn would put replicas on EPHEMERAL scratch.
+  - `w1` — `default-disk-1030500000000` at `/var/mnt/longhorn`, 751GB.
+  - `talos-wu6-eib` (cp1) — `default-disk-1030400000000`, 322GB (the
+    former `u-media` partition, handed over 2026-07-31).
+  - Total raw 1073GB, `storageReserved: 0` on both.
+- StorageClasses: `longhorn` (default; RWO, 2 replicas, `Delete`) for
+  app state — **users: `gateway-state` (64Mi)** and nothing else, every
+  media app still keeps config on `emptyDir`; `longhorn-bulk` (RWX, 1
+  replica, `Retain`) for `media/{tv,movies,downloads}` (200/200/50Gi).
+- **2026-09-21 with w1 off**: Longhorn node `w1` not ready; the three
+  media volumes `faulted` (single replica, on w1), `gateway-state` and
+  two others `attaching` — the gateway's replacement pod on cp1 sits in
+  `Multi-Attach error` until the old attachment is released. Expected
+  to self-heal when w1 returns; the structural fix is `9l67`.
+- Volume mobility was verified 2026-07-31 (write on cp1, read after
+  reschedule to w1). `talosctl wipe disk` needs `--drop-partition` to
+  actually free a user volume. The chart's `preUpgradeChecker` job is
+  disabled (ArgoCD PreSync ordering); chart version pinned exactly.
 - **No backup target configured.** Replication is not backup, and
-  invariant 2 makes Longhorn's own bookkeeping a backup problem — so
-  until this exists, a cp1 wipe is not the routine act `reinstall.md`
-  describes.
+  invariant 2 makes Longhorn's own bookkeeping a backup problem — so a
+  cp1 wipe is not yet the routine act `reinstall.md` describes.

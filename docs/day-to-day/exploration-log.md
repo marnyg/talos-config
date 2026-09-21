@@ -4,6 +4,56 @@
      Granularity: strategy-level pivots only. Not "used ripgrep instead of sed".
      Yes: "tried library X, ruled out for reason Y." -->
 
+## Mesh v3 — outcome (2026-08-17 → 2026-09-21)
+
+The plan in `docs/mesh-v3-iroh.md` was written 2026-08-17 and
+deferred as migration-for-elegance; picked up 2026-09-03 when the
+sovereign-actor build made its four components (transport, member
+cert, gateway, device apps) work we were doing anyway (ADR-0016).
+Gate 2026-09-16, Phases 1–4 2026-09-17 → 09-21, no kill criterion
+fired. Strategy-level lessons, so the next migration does not re-learn
+them:
+
+- **Gate on a spike with kill criteria, then dual-plane, then
+  per-consumer cutover, then event-based soak, then delete** — the
+  mesh-v2 recipe held a second time. Every phase left the system
+  working; nothing was rolled back. The soak exit was event coverage
+  (one re-seal, one reboot, one remote-media session), not a calendar.
+- **Tried: factory schematic for the node agent.** Ruled out at P0.3 —
+  the Image Factory carries official extensions only. Landed on an
+  imager-built installer we publish and digest-pin (ADR-0023). Cost:
+  a public ghcr image we build is now the install image.
+- **Considered: an iroh sidecar process with bespoke IPC.** Never
+  built — the in-house uniffi bindgen produced a working Go package
+  inside the P0.4 time-box, so the sidecar proof was skipped
+  (ADR-0021).
+- **Tried: TCP bridges (`irohup -bridge`) as the desktop
+  presentation.** Proved the plane in Phase 1, did not scale to names;
+  the fake-IP utun (ADR-0025) replaced it in Phase 2.0 and the same
+  `fakeip`/`meshtun` code became the Android internals. SOCKS/PAC was
+  never built.
+- **Tried: receiver-side policy tables (nebula's model) on the new
+  plane.** Ruled out at spike `359.2` — a second authority mechanism
+  with its own sync and unseal-reconciliation; landed on caller-
+  carried grants compiled from the git recipe (ADR-0017, amendment
+  2026-09-18 for the four compiler pins).
+- **Tried: the ephemeral policy overlay on the identity plane.** Ruled
+  out 2026-09-20 (`ri3b`) — no live consumer once the app moved; the
+  overlay half of ADR-0014 was deleted rather than ported.
+- **Tried: the cluster endpoint on the mesh (mesh-v2's step).**
+  Reversed at P2.5 — k8s is IP-native and leaves the mesh onto
+  declared static LAN addresses; invariant 4's accepted wart closed
+  instead of being ported. Cost: an SA-issuer rotation that bounced 14
+  control-loop pods (`etzl`), and a router DHCP pool we deliberately
+  do not edit (`ebis`).
+- **Tried: relaying through n0's infrastructure / QAD on our relay.**
+  Ruled out (invariants 3/5; ADR-0022) — remote is relay-by-default,
+  as ADR-0006 already accepted for nebula; no remote-direct data point
+  exists and none is sought (`0pq`).
+- **Not proven on the new plane:** 4K playback / throughput through
+  the relay (only P0.2 spike figures), and the parents' TV in the
+  field (`4te`). The nebula-era measurements live in ADR-0006.
+
 ## Mesh v3 P0.2 — Android (2026-09-16)
 
 - 2026-09-16 — Tried measuring the ≥ 80 Mbps throughput check with

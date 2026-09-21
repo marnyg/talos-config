@@ -5,58 +5,42 @@
 
 ## Last session
 
-2026-09-21 (eighteenth session) — **P4.2 landed: nebula is out of the
-code and off the hub (`359.11.2` ready to close).**
+2026-09-21 (nineteenth session) — **Mesh v3 Phase 4 closed: P4.3 +
+P4.4, the paper half of the deletion.**
 
-- `600d2d4` — deleted `config-server/{mesh,nebderive,nebstack,nebtest,
-  devkey}/`, `cmd/nebup`, `nebenroll*.go` (→ `deviceenroll.go`),
-  `slackhq/nebula` + ~30 transitive deps, `talos/mesh-policy.yaml`,
-  `mesh-blocklist.txt`, `nickel/mesh-policy.ncl`, the fly `udp/4242`
-  service, `MESH_ENDPOINT`/`MESH_CA_PIN`, `--mesh-*`, `recover
-  -ca-fingerprint`. −7,400 lines. `enrollmsg.V3(name, group, node,
-  nonce)` is the one enrollment message (no pubkey line); the hub
-  answers with the bare Kit JSON; the hub is gated on `--iroh-relay`;
-  unseal no longer pins a CA fingerprint (wrong wallet fails at the
-  age decrypt); `mesh.MachineDNSName` → `machines.DNSName`; `meta.yaml`
-  `ip:` gone. New guard: a device name equal to a declared machine or
-  `hub` is refused (409 at challenge, 403 at mint) — the nebula render
-  used to do this, the witnessed name map would not.
-- `737ea8c`/`+1` — `irohup -dns-upstream` dropped (its only reason was
-  nebula's DNS beside the tun); `fly.toml` records why the dedicated
-  IPv4 stays (KMS `:8443`).
-- Hub redeployed 22:20Z on the nebula-free image, hubkey `a65c301d…`,
-  unsealed 22:20:27Z (both signatures); auto-bootstrap read
-  `etcd-running` off cp1 over the identity plane 8 s later.
-  `nix run .#apply` to both nodes without reboot: the inert `nebula`
-  ExtensionServiceConfig is gone, `p0agent` doc at v3, `ext-p0agent`
-  Running.
-- Closed `06j0` (status DNS column via `machineSAN`) and `qoak` (PEM
-  carve-out) — both fell out of the deletion.
+- `178d415` P4.3 — ADR-0002/0005 `Superseded by ADR-0016`; ADR-0016
+  supersessions/revisions in force; **ADR-0017 Accepted** (two of its
+  Confirmation checks — one-poll-interval propagation, 6-day
+  starvation — are stated as not yet observed, not blockers);
+  revision notes on 0006 (relay carries over), 0007 (mechanism
+  retired, property survives via `authorize()` + `X-Mesh-*`), 0009
+  (gateway zone), 0013 (internals swapped; stays Proposed on the TV
+  gate), 0014 (v3 recipe only).
+- P4.4 — `goals.md`: Mesh v3 **reached**; `invariants.md` #5 reworded
+  (HTTPS 443 + KMS 8443, no UDP, dedicated v4 is KMS's);
+  `deployed-state.md` **rewritten** against the live system (hub
+  `0e67661`/hubkey `a65c301d…`, fleet image `p0agent-0.1.5`, one
+  plane, policy rows, ports); punch-test pre-flight moved to
+  `gotchas.md`; `mesh-v3-iroh.md` banner + Phase 4 data block +
+  last open question closed; exploration-log "Mesh v3 — outcome"
+  entry (strategy lessons, tried/ruled-out); `docs/README.md` marks
+  mesh-v2 record as history.
+- Live check found **w1 off** (owner closed it ~07:20Z) and the
+  gateway's replacement pod on cp1 stuck on `Multi-Attach` for its
+  RWO Longhorn PVC → every `*.gw.mesh.internal` down. Owner: leave to
+  self-heal; filed the structural fix as **`9l67`** (HA sweep, P3).
 
 ## Loose threads
 
-- **Clients speak v2 until rebuilt** (`bd` task filed, P3): phone/TV
-  APK, gateway pod image, Mac daemon. Harmless while every member
-  holds a kit; only the *next enrollment* from a stale binary fails.
-- **Dedicated IPv4 `213.188.219.215` kept**: fly shared v4s carry
-  80/443 only and KMS disk-unseal is `:8443` (invariant 4). Moving KMS
-  onto 443 so the IP can go is `talos-config-os8s`.
-- Docs still describe the nebula era in places the code no longer
-  does: `desired-state/domain-model.md` (Key = X25519, Runner =
-  ext-nebula/nebup, `{config, kit}` envelope, `enrollmsg` v1/v2,
-  lighthouse/rendezvous, `mesh-policy.yaml` frozen recipe),
-  `invariants.md` #5 ("HTTPS + its UDP overlay port"),
-  `technical/deployed-state.md` (`MESH_CA_PIN`, `10.42.0.1`
-  lighthouse), `docs/mesh-v3-iroh.md` Phase 4 checklist. All P4.4.
-- `-n cp1` still fails by name from the tun (`t7b2`, cp1's generated
-  hostname `talos-wu6-eib`); `apply` already routes around it.
+- `*.gw` services stay down until w1 returns or Longhorn releases
+  `gateway-state`; three media volumes `faulted` meanwhile.
+- Clients speak `enrollmsg` v2 until rebuilt (`5q33`, P3).
+- Not measured on the new plane: 4K/throughput through the relay;
+  the parents' TV (`4te`).
+- `-n cp1` by name still fails from the tun (`t7b2`).
 
 ## Suggested next steps
 
-- Close `359.11.2` (user confirms), then **P4.3** (`359.11.3`): promote
-  ADR-0016's supersession of 0002/0005 and ADR-0017 to Accepted;
-  revision notes on 0006/0007/0009/0013/0014.
-- **P4.4** (`359.11.4`): the doc rewrite listed above — goals (Mesh v2
-  entry becomes history, Mesh v3 "reached"), invariant 5 wording,
-  domain-model nebula-era sections, deployed-state, fold
-  `mesh-v3-iroh.md` into the exploration log.
+- Close `359.11` (Phase 4) — user confirms. Decide whether the epic
+  `359` closes now (goal reached) or waits for `4te`.
+- Pick the next epic: HA sweep (`9l67`) or protocol v0 (`0bc`).

@@ -104,12 +104,18 @@ this list is the checkable form.
    identity plane carries only the admin CLI path (`cp1.mesh.internal`
    SAN)._ Provisioning
    a replacement node still needs nothing but HTTPS + the wallet.
-5. **Single public entrypoint.** The hub is the only public surface
-   (HTTPS + its UDP overlay port). No second entrypoint, no home-IP
-   pinning into device configs.
-   _(The phase-1 dual-overlay exception — wg0 51820 beside nebula 4242
-   — closed 2026-07-30 when phase 2 step 3 stripped wg0; the invariant
-   holds unqualified again.)_
+5. **Single public entrypoint.** The hub is the only public surface:
+   HTTPS on 443 (the web surface and, behind the same TLS terminator,
+   the iroh relay — ADR-0022) and the KMS disk-unseal listener on
+   `:8443`. No UDP port, no second entrypoint, no home-IP pinning into
+   device configs. Every remote member path is relay-by-default
+   through this one surface (ADR-0006); LAN paths hole-punch direct
+   and are not public.
+   _(History: the phase-1 dual-overlay exception — wg0 51820 beside
+   nebula 4242 — closed 2026-07-30; nebula's `udp/4242` itself left the
+   hub 2026-09-21 with Mesh v3 Phase 4, so the surface is TCP-only.
+   The hub's dedicated IPv4 stays only because fly's shared v4 carries
+   80/443 alone and KMS is on 8443; folding KMS onto 443 is `os8s`.)_
 6. **Machine configuration is hardware-selected and human-ratified.**
    Hardware anchors *configuration*, not key material: the MAC selects
    the node's declared config (`talos/machines/<mac>/`), and approval

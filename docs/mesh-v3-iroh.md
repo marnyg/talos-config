@@ -1,6 +1,15 @@
 # Mesh v3 — identity-native networking (iroh) replaces nebula
 
-_Design record + migration plan, 2026-08-17. Status: **deferred by
+> **Landed 2026-09-21.** Picked up 2026-09-03 (ADR-0016, trigger: the
+> sovereign-actor build), gate passed 2026-09-16, Phases 1–4 done
+> 2026-09-17 → 09-21; no kill criterion fired. This file is now the
+> **historical record** of the design and how the migration actually
+> went (dated `_data_` blocks under each phase). The outcome is
+> summarised in `day-to-day/exploration-log.md` ("Mesh v3 — outcome");
+> what runs today is `technical/deployed-state.md`; the design's
+> standing pins are ADR-0016/0017/0022–0026 and the domain model.
+
+_Design record + migration plan, 2026-08-17. Status at writing: **deferred by
 decision — do not build**. Product of a design conversation exploring
 whether iroh-style identity addressing fits this project better than
 an IP overlay. Conclusion: the architecture is coherent and has no
@@ -725,6 +734,16 @@ LTE→Wi-Fi return 8 s (was 28 s). **Phase 3 closed 2026-09-20**
   `deployed-state.md`; fold this file's outcome into an exploration-
   log entry.
 
+_2026-09-20/21:_ P4.1 — fleet image `v1.12.6-p0agent-0.1.5` (imager,
+not a factory schematic; ADR-0023) on both nodes, no `ext-nebula`.
+P4.2 (`600d2d4`, −7,400 lines) — everything listed plus `nebtest`,
+`devkey`, the fly `udp/4242` service, `MESH_CA_PIN`, `--mesh-*`,
+`talos/mesh-policy.yaml`, `nickel/mesh-policy.ncl`; `enrollmsg` v3 is
+the one enrollment message; hub redeployed nebula-free 22:20Z. P4.3 —
+ADR-0016 (written 2026-09-03, not "new" at Phase 4) supersedes
+0002/0005, ADR-0017 accepted, revision notes on 0006/0007/0009/0013/
+0014. P4.4 — this doc set. **Phase 4 closed 2026-09-21** (`359.11`).
+
 ## Kill criteria (any one fires ⇒ stop, keep nebula, close the spike)
 
 1. Spike check 1 fails: relay cannot be fully self-hosted / n0 infra
@@ -773,9 +792,12 @@ LTE→Wi-Fi return 8 s (was 28 s). **Phase 3 closed 2026-09-20**
   in `359.8.1` / `runway.qnt`: member cert `exp` 90 d, speak-as 120 d,
   invoke grants 7 d; revocation latency ≥ runway is a stated trade-off
   (invariants.md).
-- Desktop presentation: SOCKS/PAC (less code) vs same fake-IP TUN as
-  mobile (UX symmetry). Leaning: start SOCKS/PAC, upgrade if friction.
-  **Deferred to Phase 2** — Phase 1's `irohup` ships TCP bridges only.
+- ~~Desktop presentation: SOCKS/PAC (less code) vs same fake-IP TUN as
+  mobile (UX symmetry). Leaning: start SOCKS/PAC, upgrade if friction.~~
+  Phase 1's `irohup` shipped TCP bridges; Phase 2.0/2.1 went straight
+  to the fake-IP utun (ADR-0025) — bridges did not scale to names, and
+  one `fakeip`/`meshtun` implementation now serves desktop and
+  Android. SOCKS/PAC was never built.
 - ~~Gateway placement~~: single gateway pod (`359.9.3`), node agents
   only for apid/kube-api.
 - ~~Hub's mesh HTTP surface: ALPN class or HTTPS-only?~~ Ruled `itb`

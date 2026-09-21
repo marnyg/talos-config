@@ -51,9 +51,22 @@ these are properties of the tools, not current weather (that lives in
   only. Fixed with `proxy.extraArgs.nodeport-addresses` plus a live
   DaemonSet patch — Talos renders bootstrap manifests once, so config
   changes do not reconcile them on a live cluster.
-- **Nebula cert versions.** `nebula-cert` ≥1.10 emits V2 certs by
-  default and nebula ≤1.9 cannot parse them. Anything minting or
-  consuming mesh certs must be ≥1.10. See ADR-0002.
+- **Any overlay under the test poisons a path measurement.** A VPN,
+  Tailscale exit node or second mesh that carries the route to the peer
+  becomes the underlay and hairpins the "direct" path (bit twice in the
+  nebula era: wg0 up, then Tailscale). Pre-flight before believing a
+  direct/relay verdict — portable, because `ip link` silently no-ops on
+  macOS where these tests actually run:
+
+  ```bash
+  netstat -rn | head -5              # default route on a physical NIC?
+  route get <peer-wan-ip>            # macOS: "interface:" must not be utun/tun
+  ip route get <peer-wan-ip>         # Linux equivalent
+  ```
+
+  NAT type is classified by STUN binding requests from one socket to
+  several destination IPs: same external port ⇒ cone, differing ⇒
+  symmetric (relay is then a property of the network, ADR-0006).
 
 ## Kubernetes / Talos
 
