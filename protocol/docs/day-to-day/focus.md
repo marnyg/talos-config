@@ -2,12 +2,15 @@
 
 <!-- Forward-looking for the protocol scope. ~20 lines. -->
 
-**Now:** **M3 is built (2026-09-22, ADR-0007 Accepted): the lighthouse
-is a plain actor, strangers pay PoW postage at the frontdoor.** The
-verifier gained nothing — `Actor.Verbs` binds `#publish → publish`
-through the existing fold; the envelope gained one optional signed key
-(`postage`). Next on the roadmap is M4 (`0bc.4`, spawn as funded
-enrollment), now unblocked. Below is the M2 state this builds on.
+**Now:** **M3 is built and its threads are closed (2026-09-23):** the
+lighthouse is a plain actor, strangers pay `pow:22` postage at the
+frontdoor, unstamped traffic to a postage-only facet is refused before
+the mailbox, the directory is capped (4096, refuse-when-full), and the
+verifier prefers a postage-free verdict for a caller some consent
+names. `Actor.Verbs` binds `#publish → publish` through the existing
+fold; the envelope has one optional signed key (`postage`). **Next on
+the roadmap is M4 (`0bc.4`, spawn as funded enrollment)** — unblocked.
+Below is the M2 state this builds on.
 
 **Before:** **The verifier is complete for Phase 1; the talos hub becomes
 the protocol's first real consumer.** `cert`, `clock`, `envelope`,
@@ -39,7 +42,8 @@ verifier for every verb), *Offline, receiver-rooted authorization*,
 adapter module that `protocol/` never imports).
 
 **Out of scope:**
-- M4–M5: spawn, money. (M3 lighthouse + postage landed 2026-09-22.)
+- M4–M5: spawn, money. (M3 lighthouse + postage landed 2026-09-22;
+  threads closed 2026-09-23.)
 - Real nodes: `0bc.2.7` is deferred on the Talos extension probe `359.1.3`.
 - Persistence, supervision, store-and-forward (invariant 12).
 - Windowed/out-of-order `seq` — per-edge serial `Send` is v0 (`zey`);

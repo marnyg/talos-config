@@ -67,3 +67,14 @@
   same is not true of anything nanosecond-scaled. When adding a numeric
   field, round-trip it through `Encode`/`Decode` in a test, not just
   through the struct.
+- 2026-09-23 — **Consumers do not vendor `protocol/lighthouse`**: a
+  change confined to it (or to `_test.go` files) leaves both
+  `vendorHash`es unchanged; a change to `actor`, `cert`, `envelope`,
+  `postage` or `clock` does not. The pre-push hook's `--rebuild` is
+  still the arbiter — `nix build .#<attr>.goModules` alone is a cache
+  hit even when stale.
+- 2026-09-23 — `cert.VerifyChain` with several rooting consents now
+  prefers a postage-free non-group verdict; a test that asserts
+  `eff.Cav.Postage` on a receiver holding both a frontdoor and a named
+  consent must present a signer only `"*"` admits to see the stamp
+  requirement.
