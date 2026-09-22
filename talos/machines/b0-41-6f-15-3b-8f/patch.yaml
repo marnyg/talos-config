@@ -25,6 +25,15 @@ machine:
     # DHCP no longer supplies resolvers; the router forwards upstream.
     nameservers:
       - 10.0.0.1
+  # Longhorn only gives a default disk to nodes carrying this label
+  # (k8s/apps/longhorn: createDefaultDiskLabeledNodes=true fails closed).
+  # Declared 2026-09-22, following nas1: it was applied by hand with
+  # kubectl when Longhorn landed, so a reinstall would have come back
+  # with the u-longhorn partition mounted and Longhorn ignoring it.
+  # Git is the source of truth for it now (invariant 2). Applying this
+  # is a no-op on the running node — the label is already there.
+  nodeLabels:
+    node.longhorn.io/create-default-disk: "true"
   kubelet:
     # Longhorn's data path, bind-mounted into the kubelet container with
     # `rshared` propagation — same reasoning as w1's patch: Talos

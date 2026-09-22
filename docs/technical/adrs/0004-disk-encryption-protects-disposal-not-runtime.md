@@ -101,6 +101,21 @@ against someone who takes the machine.
   static slot is the effective boot path: the window grants nothing the
   disk does not already grant. Revisit if KMS-only ever lands.
   _(Refiled from the running code, not a new decision.)_
+- _(Noted 2026-09-22, nas1.)_ **A node UUID need not be unique, and one
+  allowlist entry can cover several machines.** nas1 (TerraMaster
+  F4-425 Plus) ships the OEM's unprogrammed SMBIOS: serial `Default
+  string`, UUID `03000200-0400-0500-0006-000700080009` — a value every
+  never-programmed board of that line presents. Consequences, none of
+  which change this ADR's posture: the seal key `KDF(master, uuid)` is
+  shared by any such board, so a second one would have to be declared
+  under the same value and **deleting it would revoke both**; and the
+  UUID is that much weaker as a label for "which machine". None of this
+  weakens the decision itself, because the UUID was never an
+  authenticator — it is a string the caller claims in the gRPC request,
+  which is exactly why the bullet above says it is not access control.
+  The rule that does the work is unchanged: **wipe META before a machine
+  leaves the owner's hands.** Recorded in that machine's `meta.yaml`;
+  do not read a node UUID as an identity anywhere else.
 
 ### Confirmation
 

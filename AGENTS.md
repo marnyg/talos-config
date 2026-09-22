@@ -24,6 +24,21 @@ refuses a push whose range touches a vendored tree (`protocol/`,
 just delegate to beads' shims in `.beads/hooks/`, so `bd hooks` keep
 working. `SKIP_VENDOR_HASH=1 git push` bypasses the check.
 
+## Quality gate: the iroh-tagged tests
+
+`go test ./...` under `config-server/` is **C-free and does not gate the
+hub**: the iroh binding sits behind build tag `iroh`, so the tagged
+suite can be red while the untagged one is green. Only
+`nix build .#config-server-bin` (and so the hub image, and so a deploy)
+ran it — which is how `main` went undeployable for three commits and a
+broken node beat was found by a live provisioning run
+(`talos-config-ydq0`, 2026-09-22).
+
+**After touching `protocol/`, `config-server/` or `iroh-transport/`, run
+`scripts/test-iroh.sh` before pushing.** It is the nix build's test
+phase without the sandbox (~40 s warm). This is separate from the
+pre-push `vendorHash` check — same trees, different failure.
+
 <!-- docs-skill:start -->
 ## Documentation contract
 

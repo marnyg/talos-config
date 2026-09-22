@@ -80,8 +80,15 @@ spec:
           #
           # Expect volumes to sit Degraded until cp1's partition is
           # handed over (task 214661d2) — degraded is functional, and it
-          # self-heals when the second disk appears. Revisit when node
-          # three lands.
+          # self-heals when the second disk appears.
+          #
+          # Node three (nas1) landed 2026-09-22 and this DELIBERATELY
+          # stays 2: three replicas would put a copy on every node and
+          # make the smallest disk the fleet's capacity ceiling, for one
+          # more simultaneous-failure of headroom than a homelab needs.
+          # Two replicas across three nodes is also strictly better than
+          # two across two — Longhorn now has somewhere to rebuild when
+          # a node goes (which w1 does; `9l67`).
           defaultClassReplicaCount: 2
           defaultDataLocality: best-effort
   destination:

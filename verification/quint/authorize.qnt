@@ -169,6 +169,8 @@
 //                             roots nothing — decision (a), 2026-09-19)
 //   witness                   chainHappyPathTest (3 links, hub-signed, aud-side
 //                             speak-as), starPostageTest, consentOnlyTest,
+//                             ownConsentPresentedTest (the caller presents R's
+//                             own consent as link 0; ydq0),
 //                             publishChainTest (a non-invoke chain),
 //                             answersForTest (grant names P; R holds P→R),
 //                             wildcardTargetTest (every link `*` ⇒ eff = consent's)
@@ -417,10 +419,21 @@ module authorize {
   // The chain's verb is the ROOT CONSENT's `can` (xwu): the fold and the
   // aud binding read it off `c`, never a literal.
   type Verdict = { eff: Cert, consent: Cert, aud: AudVerdict }
+  // A chain that BEGINS with the consent being folded under is folded
+  // without it (protocol ADR-0007 revision 2026-09-22, talos-config-ydq0).
+  // The caller presents what it holds — a frontdoor cert a lookup handed
+  // it, a consent it was named in — and cannot tell a receiver's own
+  // consent from a link the receiver signed AS its sovereign (ADR-0018's
+  // hot key: same `iss`, different role). Only the receiver knows its
+  // consents, so only the receiver strips. Per consent and exact: a
+  // consent R no longer holds roots nothing (the grant is the record), and
+  // a receiver-signed link that is not one of R's consents stays a link.
+  // Go compares `sig` bytes; a Cert here is its own identity.
   pure def chainUnder(c: Cert, chain: List[Cert], held: Set[Cert], speakAs: Set[Cert], r: int,
                       signer: int, facet: str, now: int): { ok: bool, v: Verdict } = {
     val verb = c.can
-    val f = chain.foldl({ ok: true, eff: c }, (acc, l) => linkStep(acc, l, speakAs, verb, now))
+    val rest = if (chain.length() > 0 and chain.nth(0) == c) chain.slice(1, chain.length()) else chain
+    val f = rest.foldl({ ok: true, eff: c }, (acc, l) => linkStep(acc, l, speakAs, verb, now))
     { ok: f.ok and effAdmits(f.eff, r, held, facet, now),
       v: { consent: c, eff: f.eff, aud: audBinding(f.eff, signer, speakAs, verb, now) } }
   }
@@ -1384,7 +1397,15 @@ module authorize {
   // root matters, over every consent); "shape" laws quantify over the
   // verdicts, whose `consent` field pins the root they were folded under.
 
-  def links(v: Verdict): List[Cert] = [v.consent].concat(chain)
+  // The full fold R actually performed: its consent, then the caller's
+  // chain minus a first link that IS that consent (ydq0 — the strip in
+  // `chainUnder`). Restated from raw fields, not called out of the
+  // verifier, per the law discipline above: if the two ever disagree the
+  // laws must fail, which is the point. `gen` can produce such a chain,
+  // so this is not only about `ownConsentPresentedTest`.
+  def links(v: Verdict): List[Cert] =
+    [v.consent].concat(
+      if (chain.length() > 0 and chain.nth(0) == v.consent) chain.slice(1, chain.length()) else chain)
   pure def lastOf(l: List[Cert]): Cert = l.nth(l.length() - 1)
   def chainAccepted: bool = chainRes != Set()
   // What a chain link's signer could POSSIBLY be attributed to (loosest reading).
@@ -1671,6 +1692,29 @@ module authorize {
     assert(verifyChain(R, Invoke, consents, held, [], Set(mkSpeakAs(OWNER1, HUB_A, Set(Invoke), Set(), false, 10, false)),
                        HUB_A, cfacet, NOW) != Set()),
     assert(verifyChain(R, Invoke, consents, held, [], Set(), OWNER2, cfacet, NOW) == Set()),
+    step,
+  })
+
+  // ydq0 witness (protocol ADR-0007 revision): a chain that BEGINS with
+  // R's own consent folds as that chain without it — the caller presents
+  // what it holds and R, which roots with the consent anyway, drops the
+  // duplicate. Same scenario as consentOnlyTest, with the consent moved
+  // onto the wire: identical verdicts. The strip is per consent and
+  // exact — a stranger presenting it is still unbound, and a consent R
+  // does not hold roots nothing. And the shape that made this necessary:
+  // an R-signed cert that is NOT one of R's consents (R's hot key
+  // signing as its sovereign, ADR-0018) stays a link and needs the
+  // speak-as to fold.
+  run ownConsentPresentedTest = initMixedEpoch.then(all {
+    // R's consent on the wire as link 0 == the empty chain (consentOnlyTest)
+    assert(verifyChain(R, Invoke, consents, held, [CONSENT1], Set(), OWNER1, cfacet, NOW)
+           == verifyChain(R, Invoke, consents, held, [], Set(), OWNER1, cfacet, NOW)),
+    assert(verifyChain(R, Invoke, consents, held, [CONSENT1], Set(), OWNER1, cfacet, NOW)
+           .forall(v => v.eff == CONSENT1 and v.aud == AudBound)),
+    // ...and it binds no stranger
+    assert(verifyChain(R, Invoke, consents, held, [CONSENT1], Set(), OWNER2, cfacet, NOW) == Set()),
+    // ...and roots nothing once R stops holding it (the grant is the record)
+    assert(verifyChain(R, Invoke, Set(), held, [CONSENT1], Set(), OWNER1, cfacet, NOW) == Set()),
     step,
   })
 
