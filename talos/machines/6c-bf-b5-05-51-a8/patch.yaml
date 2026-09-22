@@ -1,0 +1,107 @@
+# Pin the hostname. Talos' generated names are NOT stable across a
+# reinstall (cp1 came back as talos-wu6-eib having been talos-ezw-edv),
+# so without this every wipe leaves a NotReady Node object behind.
+machine:
+  network:
+    hostname: nas1
+    # Declared LAN address (invariant 7): the lease this MAC held while
+    # waiting in the device flow (2026-09-22), declared so the kubelet's
+    # path to the control plane is git-derived, not leased. No router
+    # DHCP exclusion on purpose (decision talos-config-ebis) — a pool
+    # collision is a risk we accept, not one we prevent.
+    #
+    # Selected by MAC, never by interface name (names are enumeration
+    # order; w1's NIC has been renamed by a reboot). This is the
+    # directory MAC — the port that provisioned. The box has a second
+    # 2.5GbE port with its own MAC; it is undeclared and unplugged.
+    interfaces:
+      - deviceSelector:
+          hardwareAddr: 6c:bf:b5:05:51:a8
+        dhcp: false
+        addresses:
+          - 10.0.0.74/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: 10.0.0.1
+    nameservers:
+      - 10.0.0.1
+  # Longhorn's default disk lives here (k8s/apps/longhorn:
+  # createDefaultDiskLabeledNodes=true fails closed, so an unlabeled
+  # node gets no disk). cp1 and w1 were labeled by hand with kubectl;
+  # this one declares it, so the node comes back labeled after a
+  # reinstall (invariant 2). NodeRestriction lets a worker self-label
+  # under node.longhorn.io/. When the SATA bays are populated this
+  # switches to "config" plus a node.longhorn.io/default-disks-config
+  # annotation listing every /var/mnt/longhorn* path.
+  nodeLabels:
+    node.longhorn.io/create-default-disk: "true"
+  kubelet:
+    # Longhorn's data path, bind-mounted into the kubelet container with
+    # `rshared` propagation — same reasoning as w1's patch: Talos
+    # propagates user volumes into kubelet, but not as *shared* mounts,
+    # and Longhorn's instance-manager mounts replica devices under this
+    # path from another mount namespace.
+    #
+    # The source path must exist as the u-longhorn mount or kubelet
+    # fails to start — which is why the volume below is sized to
+    # provision on any NVMe >= 128GB. One entry per Longhorn disk: add
+    # a /var/mnt/longhorn-<n> line alongside each SATA UserVolumeConfig.
+    extraMounts:
+      - destination: /var/mnt/longhorn
+        type: bind
+        source: /var/mnt/longhorn
+        options:
+          - bind
+          - rshared
+          - rw
+---
+# Cap EPHEMERAL so it does not swallow the whole NVMe, leaving the rest
+# for Longhorn below. Takes effect only when the partition is created —
+# a fresh install, not an upgrade or reboot.
+#
+# 80GiB: a storage node runs Longhorn's own pods and whatever gets
+# scheduled here; EPHEMERAL holds images, logs and scratch, nothing
+# durable. Sized blind (the NVMe's capacity was not inspectable before
+# install) so that EPHEMERAL + the volume's minSize fit a 128GB stick;
+# revisit both numbers once `talosctl get disks` has measured it — but
+# note that means a reinstall, so do it while the node is empty.
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  maxSize: 80GiB
+  grow: false
+---
+# Longhorn's NVMe disk (mounts at /var/mnt/longhorn) — the fast tier,
+# and the node's only Longhorn disk until the SATA bays are populated.
+# Same name as cp1's and w1's so the default data path is uniform.
+#
+# No maxSize and grow: the volume takes whatever the NVMe has left
+# after EPHEMERAL, whatever size the NVMe turns out to be. minSize is
+# only the floor below which provisioning refuses (and kubelet then
+# fails on the extraMount above).
+#
+# SATA bays, when populated: each drive becomes its own document —
+#   kind: UserVolumeConfig, name: longhorn-<n>,
+#   provisioning.diskSelector.match: disk.serial == "<serial>"
+#   (serial from `talosctl get disks -o yaml`; transport alone is
+#   ambiguous across four bays), filesystem xfs, grow: true
+# — applied live: a user volume on a NEW disk provisions without a
+# reinstall; only the NVMe's split is fixed at install. Then add the
+# kubelet extraMount and switch the Longhorn label to "config" as the
+# comment above says.
+#
+# UNENCRYPTED, matching cp1's and w1's Longhorn volumes and inheriting
+# the same open decision (thread `8e46f3a5`): ADR-0004 cleared public
+# re-downloadable media, which stops describing a disk that holds app
+# state; the hub only derives keys for systemDiskEncryption today.
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: longhorn
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 30GiB
+  grow: true
+filesystem:
+  type: xfs

@@ -1,0 +1,28 @@
+# TerraMaster F4-425 Plus NAS (OUI 6c:bf:b5, Noon Technology). Four
+# SATA bays, M.2 NVMe slot(s), 2x 2.5GbE. Declared BEFORE first boot
+# from the hub's device-flow log alone — like w1 it sat in the
+# device-flow wait with no apid, so nothing was inspectable. SMBIOS is
+# the board's factory placeholder (serial "Default string", UUID
+# 03000200-0400-0500-0006-000700080009 — see the machine's meta.yaml
+# for what that does to the KMS allowlist).
+machine:
+  install:
+    # NEVER /dev/sda here. The box booted the installer from a USB
+    # stick, and TerraMaster boards also carry TOS on an internal USB
+    # flash module — both enumerate as sdX ahead of any SATA bay. The
+    # base template's /dev/sda default would install onto one of those,
+    # the same trap w1's boot stick set (hardware/alienware-x15.yaml).
+    #
+    # Only one NVMe is fitted at first install and the SATA bays are
+    # empty, so `type: nvme` is unambiguous. Pin `disk: /dev/nvme0n1`
+    # once measured (talosctl get disks); if a second M.2 is ever
+    # added, pin BEFORE it goes in — the selector is only safe while
+    # it matches exactly one device. Install-time only either way.
+    diskSelector:
+      type: nvme
+    # The fleet image — stock Talos + iscsi-tools + util-linux-tools
+    # (Longhorn, ADR-0011) + our p0agent extension (the node's mesh
+    # identity). hardware/minipc.yaml has the full account; keep tag
+    # AND digest in step with minipc.yaml and alienware-x15.yaml — one
+    # fleet image, change all three together.
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc32093fa80250a2d40d2b095c3c96e09b2d1daace3830e33df7eb0dedb

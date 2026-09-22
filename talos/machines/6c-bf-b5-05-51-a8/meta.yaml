@@ -1,0 +1,36 @@
+# Mesh name: nas1.mesh.internal — the member cert's name, apid's
+# certSAN, resolved by the name map on the tun. Also the hostname
+# (patch.yaml pins it), so it is apid's -n target and cert SAN as-is.
+#
+# Role: the storage node. A worker by config (it can schedule pods),
+# but its purpose is Longhorn capacity — the NVMe now, the four SATA
+# bays as they are populated (patch.yaml explains how those are added
+# without a reinstall).
+name: nas1
+# SMBIOS UUID, read from the hub's device-flow log before the first
+# approval (2026-09-22, user_code JFCR-MFXC). Recorded up front so the
+# node never depends on the session-scoped "sealed this lifetime"
+# grace window — a hub restart before the UUID was written down would
+# leave an encrypted disk that cannot unlock.
+#
+# CAVEAT: this is the board's factory PLACEHOLDER UUID (serial reads
+# "Default string"), not a per-unit value — every board from this OEM
+# that never had SMBIOS programmed presents the same one. The KMS seal
+# key is KDF(master, uuid) and the unseal allowlist is this declared
+# value, so the binding is "some placeholder-UUID board holding this
+# node's sealed blob", weaker than cp1/w1's per-unit UUIDs. Acceptable
+# under ADR-0004 (encryption protects disposal, not runtime) and the
+# blob is still bound to this fleet's master; but a second board with
+# the same placeholder shares this allowlist entry — declare it in
+# both meta.yaml files if that ever happens, and don't read the UUID as
+# an identity for anything else.
+uuid: 03000200-0400-0500-0006-000700080009
+diskEncryption: true
+config: base/worker.yaml
+# No sealed-secrets.yaml: that patch provisions the controller's key
+# pair via an inlineManifest, which is a control-plane concern.
+patches:
+  - clusters/homelab/time.yaml
+  - clusters/homelab/worker-cluster.yaml
+  - clusters/homelab/worker-secrets.yaml
+  - hardware/terramaster-f4-425-plus.yaml
