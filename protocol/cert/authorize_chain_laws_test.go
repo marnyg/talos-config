@@ -1194,6 +1194,64 @@ func TestVerifyChainConsentOnly(t *testing.T) {
 	}
 }
 
+// TestVerifyChainOwnConsentPresented: a chain that BEGINS with the
+// rooting consent itself folds as the chain without it — the caller
+// presents what it holds (a frontdoor cert as a lookup handed it out, a
+// consent it was named in) and the receiver, which roots with that
+// consent regardless, drops the duplicate. The strip is per consent and
+// byte-exact: a receiver-signed first link that is NOT one of R's
+// consents stays a link — the talos hub's beat grant, signed by the hot
+// key as the sovereign (ADR-0018), links through the speak-as; a
+// stranger presenting R's consent to OWNER1 still fails aud binding;
+// and a consent R no longer holds roots nothing (the grant is the
+// record: going dark is dropping the consent).
+func TestVerifyChainOwnConsentPresented(t *testing.T) {
+	f := detFixture(101)
+	id := f.id
+	consent := f.build(certSpec{iss: "R", aud: string(id["OWNER1"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid", "kube-api"}, Delegable: true, Endpoints: modelEndpoints}, exp: 10})
+	r := Receiver{ID: id["R"], Consents: []Cert{consent}}
+
+	// OWNER1 presents R's consent as its first (and only) link.
+	eff, verified, err := VerifyChain(r, VerbInvoke, []Cert{consent}, nil, id["OWNER1"], "kube-api", testNOW)
+	if err != nil {
+		t.Fatalf("own consent presented by its aud: %v", err)
+	}
+	if certKey(eff) != certKey(consent) || len(verified) != 1 {
+		t.Fatalf("eff/verified after strip: eff==consent %v, verified %d", certKey(eff) == certKey(consent), len(verified))
+	}
+	// ...followed by its own delegation to CALLER.
+	link := f.build(certSpec{iss: "OWNER1", aud: string(id["CALLER_HOT"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}, Endpoints: modelEndpoints}, exp: 10})
+	if _, _, err := VerifyChain(r, VerbInvoke, []Cert{consent, link}, nil, id["CALLER_HOT"], "apid", testNOW); err != nil {
+		t.Fatalf("own consent + link: %v", err)
+	}
+	// A stranger presenting the consent gains nothing.
+	if _, _, err := VerifyChain(r, VerbInvoke, []Cert{consent}, nil, id["OWNER2"], "kube-api", testNOW); !errors.Is(err, ErrAudUnbound) {
+		t.Fatalf("own consent presented by a stranger: err = %v, want ErrAudUnbound", err)
+	}
+	// A consent R no longer holds is not stripped and links nowhere.
+	if _, _, err := VerifyChain(Receiver{ID: id["R"], Consents: nil}, VerbInvoke, []Cert{consent}, nil, id["OWNER1"], "kube-api", testNOW); !errors.Is(err, ErrChainUnrooted) {
+		t.Fatalf("dropped consent presented: err = %v, want ErrChainUnrooted", err)
+	}
+
+	// The hub shape (ADR-0018): R's consent is to OWNER1; R's own hot key
+	// HUB_A signs the beat grant AS OWNER1. That grant is R-signed only
+	// if R == HUB_A — model it as R itself being the hot key: R consents
+	// to OWNER1, OWNER1 speaks-as R, R signs a grant to CALLER. The
+	// R-signed first link is a LINK (not in Consents), resolved to OWNER1
+	// through the speak-as; it must not be stripped.
+	sa := f.build(certSpec{iss: "OWNER1", aud: string(id["R"]), can: VerbSpeakAs, cav: Caveats{Verbs: []string{"invoke"}}, exp: 10})
+	beat := f.build(certSpec{iss: "R", aud: string(id["CALLER_HOT"]), can: VerbInvoke,
+		cav: Caveats{Target: []ActorID{id["R"]}, Facet: []string{"apid"}, Endpoints: modelEndpoints}, exp: 10})
+	if _, _, err := VerifyChain(r, VerbInvoke, []Cert{beat}, []Cert{sa}, id["CALLER_HOT"], "apid", testNOW); err != nil {
+		t.Fatalf("receiver-signed grant AS the sovereign: %v", err)
+	}
+	if _, _, err := VerifyChain(r, VerbInvoke, []Cert{beat}, nil, id["CALLER_HOT"], "apid", testNOW); !errors.Is(err, ErrChainLinkage) {
+		t.Fatalf("receiver-signed grant without the speak-as: err = %v, want ErrChainLinkage", err)
+	}
+}
+
 // TestVerifyChainPublish is the model's publishChainTest (xwu): the
 // happy-path shape with every link and speak-as carrying `publish`
 // under a `publish` consent verifies for a receiver expecting `publish`,

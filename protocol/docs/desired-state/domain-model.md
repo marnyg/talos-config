@@ -439,10 +439,13 @@ whose deployment-free form differs from the talos wording. Source:
   without a requirement or with `ttl ≤ 0` — and the owner installs it
   beside its other consents and publishes it with its location. A
   stranger presents an **empty** chain: the receiver's own consent
-  roots it (rule 1). `Send` therefore drops a held chain's first link
-  when the receiver signed it and reads the postage requirement off
-  the held links, so a frontdoor cert as a lookup returned it is the
-  caller's "grant" unchanged.
+  roots it (rule 1). A frontdoor cert as a lookup returned it is the
+  caller's "grant" unchanged, presented as held; `VerifyChain` folds
+  a chain that begins with the rooting consent without it (a caller
+  cannot tell a receiver's consent from a link the receiver signed AS
+  its sovereign — ADR-0018's hot key — so the receiver decides; ADR-0007
+  revision 2026-09-22), and `Send` reads the postage requirement off
+  the held links.
 - **Postage** — the per-message cost a stranger attaches so unsolicited
   delivery costs the sender more than the receiver. Pluggable: PoW
   placeholder, micropayments the goal. A single-use token bound to the

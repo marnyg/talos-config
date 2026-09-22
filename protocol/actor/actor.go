@@ -620,19 +620,19 @@ func rejectStatus(err error) Status {
 
 // proofFor assembles the caller-carried proof for (to, facet): the held
 // chain links (with any issuer-resolving speak-as they were stored
-// with) plus every speak-as that names this actor's signer. A held
-// chain whose first link is the receiver's own consent (a frontdoor
-// cert, as a lookup hands it out) has that link dropped — the receiver
-// prepends its consents itself and would refuse it as a link — and
+// with) plus every speak-as that names this actor's signer, and
 // returns the postage requirement the held links name ("" if none).
+// The chain is presented as held, receiver-signed first link included:
+// the caller cannot tell the receiver's own consent (a frontdoor cert
+// as a lookup hands it out) from a link the receiver signed AS its
+// sovereign (a hub's hot key minting a member's beat grant, ADR-0018),
+// so it does not try — VerifyChain folds a chain that begins with the
+// rooting consent without it.
 func (a *Actor) proofFor(to cert.ActorID, facet string) (proof []cert.Cert, req string) {
 	held := a.Grants[GrantKey{Target: to, Facet: facet}]
-	for i, c := range held {
+	for _, c := range held {
 		if req == "" {
 			req = c.Cav.Postage
-		}
-		if i == 0 && c.Iss == to && c.Can != cert.VerbSpeakAs {
-			continue
 		}
 		proof = append(proof, c)
 	}

@@ -99,11 +99,21 @@ envelope has no field for it and `payload` is opaque to the protocol.
   me, aud: "*", can: invoke, cav: {target: [me], facet: [#frontdoor],
   postage: req}}`; the mint refuses an empty requirement (aud `"*"`
   without postage binds nobody). A stranger presents an **empty**
-  chain — the receiver's own consent roots it (rule 1) — so the
-  caller-side rule is: `Send` drops a held chain's first link when the
-  receiver signed it, and reads the postage requirement from the held
-  links. A frontdoor cert as a lookup returned it is therefore stored
-  as the caller's "grant" unchanged.
+  chain — the receiver's own consent roots it (rule 1). A frontdoor
+  cert as a lookup returned it is stored as the caller's "grant"
+  unchanged and presented as held; `Send` reads the postage
+  requirement off the held links. _Revised 2026-09-22 (bug `ydq0`):_
+  the rule was first written caller-side — `Send` dropped a held
+  chain's first link when the receiver signed it — which broke the
+  talos hub's beat: its hot key signs the member's grant AS the wallet
+  (ADR-0018), so that grant is receiver-signed yet a link, and the
+  caller cannot tell the two apart. Only the receiver knows what it
+  holds as consents, so the rule now lives in `VerifyChain`: under
+  consent C, a chain that begins with C itself folds without it
+  (`chainUnder`; law `TestVerifyChainOwnConsentPresented`). Byte-exact
+  and per consent — a frontdoor the receiver has since dropped roots
+  nothing (the grant is the record), and a receiver-signed link that
+  is not a held consent stays a link.
 - **Lighthouse** (`protocol/lighthouse`): `New(a)` registers
   `#publish` (payload `{loc?, frontdoor?}`; `loc` defaults to the
   envelope's piggybacked record; both must be the *signer's*, verify

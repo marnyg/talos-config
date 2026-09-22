@@ -1,6 +1,7 @@
 package cert
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"slices"
@@ -543,6 +544,19 @@ func (a *authCtx) verifyChain(r Receiver, verb Verb, chain, speakAs []Cert, sign
 func (a *authCtx) chainUnder(consent Cert, chain, speakAs []Cert, r Receiver, signer ActorID, facet string, now int64) (chainVerdict, int, error) {
 	verb := consent.Can
 	eff := consent
+	// A chain that begins with THIS consent is folded without it: the
+	// receiver roots with it regardless, and as a link it could only
+	// fail rule 2 (its signer is the receiver, its aud is not). This is
+	// what lets a caller present what it holds — a frontdoor cert as a
+	// lookup handed it out, or a consent it was named in — without
+	// guessing which receiver-signed certs are consents and which are
+	// links the receiver signed AS someone else (a hot key signing as
+	// its sovereign, ADR-0018): only the receiver knows, so only the
+	// receiver decides. Same cert means same signature: sig is over the
+	// canonical bytes, so byte-equal sigs are byte-equal certs.
+	if len(chain) > 0 && bytes.Equal(chain[0].Sig, consent.Sig) {
+		chain = chain[1:]
+	}
 	for i, l := range chain {
 		switch {
 		case l.Can != verb:
