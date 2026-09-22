@@ -5,56 +5,51 @@
 
 ## Last session
 
-2026-09-24 — **protocol only, docs only**: M4 (spawn) designed by
-grill-design — protocol ADR-0008/0009 Proposed, protocol invariant
-13, sub-tasks `0bc.4.1–.6`. One cross-scope finding: the talos
-**Provisioner** is a Phase-1 fused spawner+provisioner for bare metal
-(boot token = intro nonce, `/enroll/machine` = `#birth`, Kit =
-starter kit) — noted in the root glossary, split filed as thread
-`kckm` (not v0). No code, no vendorHash. Details in
-`protocol/docs/day-to-day/handoff.md`. The deployment state below is
-from the 2026-09-21 session and still stands.
+2026-09-22 — **nas1 provisioned (node three, the storage node), and a
+protocol regression fixed on the way.**
 
-## Previous sessions
-
-2026-09-23 — protocol only: M3's loose threads closed (`f3d57a7`).
-
-2026-09-21 (nineteenth session) — **Mesh v3 Phase 4 closed: P4.3 +
-P4.4, the paper half of the deletion.**
-
-- `178d415` P4.3 — ADR-0002/0005 `Superseded by ADR-0016`; ADR-0016
-  supersessions/revisions in force; **ADR-0017 Accepted** (two of its
-  Confirmation checks — one-poll-interval propagation, 6-day
-  starvation — are stated as not yet observed, not blockers);
-  revision notes on 0006 (relay carries over), 0007 (mechanism
-  retired, property survives via `authorize()` + `X-Mesh-*`), 0009
-  (gateway zone), 0013 (internals swapped; stays Proposed on the TV
-  gate), 0014 (v3 recipe only).
-- P4.4 — `goals.md`: Mesh v3 **reached**; `invariants.md` #5 reworded
-  (HTTPS 443 + KMS 8443, no UDP, dedicated v4 is KMS's);
-  `deployed-state.md` **rewritten** against the live system (hub
-  `0e67661`/hubkey `a65c301d…`, fleet image `p0agent-0.1.5`, one
-  plane, policy rows, ports); punch-test pre-flight moved to
-  `gotchas.md`; `mesh-v3-iroh.md` banner + Phase 4 data block +
-  last open question closed; exploration-log "Mesh v3 — outcome"
-  entry (strategy lessons, tried/ruled-out); `docs/README.md` marks
-  mesh-v2 record as history.
-- Live check found **w1 off** (owner closed it ~07:20Z) and the
-  gateway's replacement pod on cp1 stuck on `Multi-Attach` for its
-  RWO Longhorn PVC → every `*.gw.mesh.internal` down. Owner: leave to
-  self-heal; filed the structural fix as **`9l67`** (HA sweep, P3).
+- **`talos/machines/6c-bf-b5-05-51-a8/` + `hardware/terramaster-f4-425-plus.yaml`**
+  (`72f9038`): TerraMaster F4-425 Plus, worker, `diskEncryption: true`.
+  Install by `diskSelector: type: nvme` (never `/dev/sda` — a 2.1GB USB
+  stick); EPHEMERAL 86GB, `u-longhorn` grew to **912GB**. Longhorn's
+  `create-default-disk` label is declared in `nodeLabels` — the first
+  node where it is git-derived rather than `kubectl label`.
+  Verified live: `Ready`, Longhorn node schedulable, KMS sealed *and*
+  unsealed under the declared UUID, member `ed:90cf67ec…` minted on the
+  machine, `beat ok`. Details in `technical/deployed-state.md`.
+- **Protocol bug `ydq0`, found by the deploy** (`32ef88c`, hashes
+  `4518c2f`): the hub image builds its test suite, and M3 (`5c2bf7d`)
+  had broken `TestHubBeatOverIroh` + `TestNodeAgentEndToEnd` three
+  commits back — `main` was undeployable and nobody knew. `Send`
+  dropped a held chain's first link whenever the receiver signed it,
+  assuming receiver-signed ⇒ the receiver's own consent; the hub's beat
+  grant is receiver-signed *and* a link (its hot key signs as the
+  wallet, ADR-0018), so every node's chain was emptied and answered
+  `ErrAudUnbound`. Moved receiver-side into `VerifyChain.chainUnder`.
+  Protocol handoff has the detail.
+- **Hub `4518c2f` deployed**, unsealed, nas1 approved.
 
 ## Loose threads
 
-- `*.gw` services stay down until w1 returns or Longhorn releases
-  `gateway-state`; three media volumes `faulted` meanwhile.
-- Clients speak `enrollmsg` v2 until rebuilt (`5q33`, P3).
-- Not measured on the new plane: 4K/throughput through the relay;
-  the parents' TV (`4te`).
-- `-n cp1` by name still fails from the tun (`t7b2`).
+- **The Quint model does not carry the own-consent strip**
+  (`verification/quint/authorize.qnt:420`) — Go and model diverge until
+  it does. Standing rule is "change the model before the Go"; this
+  session went the other way, under deploy pressure.
+- `-tags iroh` tests run only inside the nix build; `go test ./...` in
+  `config-server/` skips them silently. That is how `main` sat broken.
+- nas1's four SATA bays are empty — capacity is one NVMe partition.
+- Longhorn StorageClass is still `defaultClassReplicaCount: 2` with
+  three nodes now present (the chart comment says "revisit when node
+  three lands"). Undecided on purpose.
+- Carried: w1 off since 2026-09-21 (`9l67`); `*.gw` services and three
+  media volumes follow it. Clients on `enrollmsg` v2 (`5q33`). TV not
+  measured (`4te`). `-n cp1` by name fails from the tun (`t7b2`).
 
 ## Suggested next steps
 
-- Close `359.11` (Phase 4) — user confirms. Decide whether the epic
-  `359` closes now (goal reached) or waits for `4te`.
-- Pick the next epic: HA sweep (`9l67`) or protocol v0 (`0bc`).
+- Populate nas1's SATA bays: one `UserVolumeConfig` per disk by serial
+  + kubelet `extraMounts` + switch the Longhorn label to `config`.
+  Applies live, no reinstall.
+- Port the own-consent strip into `authorize.qnt` and re-run the model.
+- Decide the replica count now that node three exists, and whether cp1
+  and w1 should declare their Longhorn label like nas1 does.

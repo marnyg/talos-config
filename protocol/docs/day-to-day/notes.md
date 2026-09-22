@@ -3,6 +3,23 @@
 <!-- "Weather, not climate" for the protocol scope. Each entry
      `YYYY-MM-DD — <note>`. Deployment weather lives in the root notes. -->
 
+- 2026-09-22 — **The protocol's real consumer is a build away, and it
+  is not in `go test ./...`.** `config-server`'s iroh suite (`-tags
+  iroh`, cgo) is what exercises a real chain end to end, and it runs
+  only inside `nix build .#config-server-bin` / the hub image — so a
+  protocol change can pass everything under `protocol/` and still
+  break the fleet (`ydq0` did, for three commits). After touching
+  `cert/` or `actor/`, run it: `CGO_ENABLED=1
+  CGO_LDFLAGS=-L$(nix build .#iroh-ffi-static --print-out-paths)/lib
+  IROH_RELAY_BIN=$(nix build .#iroh-relay --print-out-paths)/bin/iroh-relay
+  go test -tags iroh -count=1 ./...` from `config-server/`.
+- 2026-09-22 — **"Receiver-signed" does not mean "the receiver's
+  consent."** An actor whose hot key speaks as its sovereign
+  (ADR-0018) signs ordinary *links* with the same key it signs
+  consents with. Any rule of the form "treat a receiver-signed cert
+  as X" is therefore only decidable by the receiver, which alone knows
+  its `Consents`. `ydq0` is the worked example; suspect the same shape
+  in anything else that inspects `c.Iss` caller-side.
 - 2026-09-13 — **ADR-0001 is Accepted and built** (`0bc.2.1–.6`).
   `cert.VerifyChain` is the one verifier; `Authorize` calls it per
   grant. **Still change `verification/quint/authorize.qnt` before the

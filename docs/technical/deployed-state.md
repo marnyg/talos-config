@@ -11,13 +11,15 @@ in the tree; the previous revision of this file (nebula lighthouse,
 history and, where the numbers still matter, in ADR-0006 and
 `docs/mesh-v2-nebula.md`.
 
-## Summary — _verified 2026-09-21_
+## Summary — _verified 2026-09-22_
 
-- **One plane.** Members (cp1, w1, the in-cluster gateway, the owner's
-  Mac, phone) are dialed by Ed25519 NodeId over iroh/QUIC; the hub on
-  fly is the relay and the issuer; per-request identity reaches apps as
-  a header from the gateway. IP survives only as each device's own
-  fake-IP zone (`198.18/15`, `*.mesh.internal`).
+- **One plane.** Members (cp1, w1, nas1, the in-cluster gateway, the
+  owner's Mac, phone) are dialed by Ed25519 NodeId over iroh/QUIC; the
+  hub on fly is the relay and the issuer; per-request identity reaches
+  apps as a header from the gateway. IP survives only as each device's
+  own fake-IP zone (`198.18/15`, `*.mesh.internal`).
+- **Three nodes since 2026-09-22**: nas1 (storage) joined; hub runs
+  `4518c2f`.
 - **Cluster endpoint is a LAN address** (`https://10.0.0.68:6443`); the
   cluster needs no mesh to be a cluster (invariant 4 unqualified).
 - **w1 is off** (owner closed it 2026-09-21 ~07:20Z). With it, the
@@ -25,11 +27,11 @@ history and, where the numbers still matter, in ADR-0006 and
   Longhorn releases the gateway's RWO volume to cp1 — filed as the HA
   sweep `talos-config-9l67`; not being fixed by hand.
 
-## Cluster — _verified 2026-09-21_
+## Cluster — _verified 2026-09-22_
 
-- Two nodes, Talos v1.12.6 (kernel 6.18.18), k8s v1.32.3, containerd
-  2.1.6. **One fleet image** declared in both `talos/hardware/*.yaml`
-  and running on both nodes:
+- Three nodes, Talos v1.12.6 (kernel 6.18.18), k8s v1.32.3, containerd
+  2.1.6. **One fleet image** declared in all three `talos/hardware/*.yaml`
+  and running on every node:
   `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc3…`
   (imager-built, ADR-0023: stock Talos + `iscsi-tools` v0.2.0 +
   `util-linux-tools` 2.41.2 + `p0agent` 0.1.5). Extensions on cp1
@@ -54,6 +56,28 @@ history and, where the numbers still matter, in ADR-0006 and
     stick — install disk is pinned. Worker configs take
     `clusters/homelab/worker-{cluster,secrets}.yaml`.
     **Off since 2026-09-21 07:23Z** (`Ready=Unknown`, no ping, no apid).
+  - **nas1** — worker, the storage node, dir
+    `talos/machines/6c-bf-b5-05-51-a8`, node name `nas1` (**pinned**),
+    **static `10.0.0.74`** (selector by the directory MAC). NodeId
+    `90cf67ec…`, enrolled at first boot (`beat ok`, facets
+    `[apid kube-api]`). TerraMaster F4-425 Plus, 4x800MHz / 7.5GiB RAM,
+    1.0TB Kingston SNV3S1000G NVMe: STATE 105MB + EPHEMERAL 86GB (both
+    LUKS2) + `u-longhorn` **912GB** (xfs, unencrypted — ADR-0004
+    posture, same open thread `8e46f3a5`) at `/var/mnt/longhorn`.
+    Install disk is `diskSelector: type: nvme` — `sda` is a 2.1GB USB
+    "Flash Disk", the same trap w1 has. **Four SATA bays are empty**;
+    each becomes its own `UserVolumeConfig` by disk serial, applied
+    live (no reinstall). Longhorn's
+    `node.longhorn.io/create-default-disk=true` is declared in
+    `nodeLabels` — cp1's and w1's were applied by hand and still are.
+    **Both 2.5GbE ports matter**: `:a8` and `:a9` are consecutive, the
+    device flow reports `${mac}` from the first (`:a8`) regardless of
+    where the cable is, so the cable must stay in `:a8` — see
+    `notes.md` 2026-09-22.
+    SMBIOS is the OEM placeholder (serial `Default string`, UUID
+    `03000200-0400-…-000700080009`), declared in `meta.yaml` with its
+    KMS-allowlist caveat; seal/unseal work and no `UNDECLARED` warning
+    was raised.
 - **Cluster endpoint `https://10.0.0.68:6443`** _(P2.5, `359.9.5`,
   2026-09-20)_: kube-apiserver SANs `cp1, cp1.mesh.internal,
   talos-wu6-eib, 10.0.0.68, 10.96.0.1` — no overlay address. etcd

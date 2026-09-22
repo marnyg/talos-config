@@ -3,16 +3,21 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** **Mesh v3 is reached** (2026-09-21, Phase 4 closed). No
-nebula anywhere; the identity plane is the only plane; ADRs and the
-desired-state/deployed-state docs describe what runs. The epic
-`talos-config-359` stays open only for field items that are not the
-goal: parents' TV (`4te`, ADR-0013's gate), stale `enrollmsg` v2
+**Now:** **Mesh v3 is reached** (2026-09-21, Phase 4 closed) and the
+fleet is **three nodes** since 2026-09-22: nas1, the storage node,
+provisioned end-to-end through the declared path (MAC-selected config,
+one wallet approval, key minted on the machine) with no step done by
+hand. No nebula anywhere; the identity plane is the only plane. The
+epic `talos-config-359` stays open only for field items that are not
+the goal: parents' TV (`4te`, ADR-0013's gate), stale `enrollmsg` v2
 binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 
 **Next candidates** (owner to pick):
+- **Fill nas1's four SATA bays** — live `UserVolumeConfig` per disk;
+  the reason the node exists, and it makes the HA sweep affordable.
 - **HA sweep** (`9l67`) once networking is settled — w1 off takes
-  every `*.gw` service down with the gateway's RWO volume.
+  every `*.gw` service down with the gateway's RWO volume. Three
+  nodes make a real replica spread possible for the first time.
 - **Sovereign-actor protocol v0** (`0bc`, M1–M5) — M1–M3 built;
   **M4 spawn designed 2026-09-24** (ADR-0008/0009 Proposed), build
   `0bc.4.1` next; talos wire unchanged throughout. State and history

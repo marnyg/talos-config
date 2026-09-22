@@ -14,6 +14,33 @@
 
 ## Read first
 
+- 2026-09-22 — **`go test ./...` in `config-server/` does not gate the
+  hub.** The iroh half is behind `-tags iroh` and only the nix build
+  runs it, so `main` sat undeployable for three commits (M3 broke the
+  node beat; `ydq0`) and the *deploy* was what noticed — at the worst
+  moment, mid-provisioning, with the hub already sealed. Run the
+  tagged suite by hand before pushing anything under `protocol/`,
+  `config-server/` or `iroh-transport/` (incantation: notes 2026-09-18
+  below, or `nix build .#config-server-bin`). Wrapping it in a script
+  and naming it a quality gate is filed but not done.
+- 2026-09-22 — **nas1's two 2.5GbE ports are a trap.** `:a8` and `:a9`
+  are consecutive; Talos reports `${mac}` — the identity the device
+  flow selects `talos/machines/<mac>/` by — from the **first** port,
+  `:a8`, no matter which one has the cable. Provisioned with the cable
+  in `:a9`: the hub served the config under `:a8`, whose
+  `deviceSelector` then pinned `10.0.0.74` onto a port with no link.
+  Symptom is not obvious — the console shows the address and
+  `CONNECTIVITY OK`, while DNS times out, `trustd` on `10.0.0.68:50001`
+  is "no route to host", and the install wedges at `Installing` with no
+  apid ever appearing. **Keep the cable in `:a8`.** Diagnose from the
+  LAN with `arp -n 10.0.0.74`: it shows the MAC that actually answers.
+- 2026-09-22 — **nas1's SMBIOS is the OEM placeholder** (serial
+  `Default string`, UUID `03000200-0400-0500-0006-000700080009`). It is
+  declared in `meta.yaml` and seal/unseal work, but the UUID is not
+  per-unit: a second board from the same OEM would share the KMS
+  allowlist entry, so deleting it would revoke both. ADR-0004 already
+  says UUID deletion is not access control; this makes that concrete.
+  Do not read that UUID as an identity anywhere else.
 - 2026-09-20 — **Changing `cluster.controlPlane.endpoint` rotates the
   service-account issuer.** Talos sets `--service-account-issuer` and
   `--api-audiences` to the endpoint URL. Every projected SA token

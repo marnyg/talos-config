@@ -5,6 +5,34 @@
 
 ## Last session
 
+2026-09-22 — **`ydq0`: M3 broke the node beat; fixed receiver-side.**
+Not planned work — a talos deploy surfaced it (the hub image runs this
+suite), and `main` had been undeployable since `5c2bf7d`.
+
+- **Symptom**: `TestHubBeatOverIroh` and `TestNodeAgentEndToEnd` failed
+  with `ErrAudUnbound` on `#bundle`. A hub built from `main` would have
+  refused every node's renewal beat — the whole fleet, silently, on
+  the next deploy.
+- **Cause**: M3 gave `Send` a caller-side rule — drop a held chain's
+  first link when the receiver signed it — for the frontdoor case (a
+  stranger presents an empty chain; the receiver roots with its own
+  consent). But *receiver-signed* does not imply *the receiver's own
+  consent*: the talos hub's beat grant is signed by its hot key **as
+  the wallet** (ADR-0018), so it is a link, and it was being stripped.
+  The caller cannot tell the two shapes apart — only the receiver
+  knows what it holds as consents.
+- **Fix**: the rule moved into the verifier. `chainUnder` folds a chain
+  whose first link is byte-equal (by `sig`) to the consent it is
+  folding under *without* that link — per consent, so a frontdoor the
+  receiver has since dropped roots nothing (the grant is the record).
+  `proofFor` now presents the held chain unchanged. Law:
+  `TestVerifyChainOwnConsentPresented`. ADR-0007 carries a revision
+  note; domain-model updated.
+- Verified on the real hub afterwards: a fresh node enrolled and
+  logged `beat ok`.
+
+## Previous session
+
 2026-09-24 — **M4 designed, not built** (grill-design on `0bc.4`;
 docs only, no Go touched, no vendorHash moved).
 
@@ -37,6 +65,12 @@ docs only, no Go touched, no vendorHash moved).
 
 ## Loose threads
 
+- **`verification/quint/authorize.qnt` does not carry the own-consent
+  strip** (`chainUnder`, line ~420). The standing rule is *change the
+  model before the Go*; `ydq0` went the other way under deploy
+  pressure, so model and implementation disagree until it is ported.
+  The 18 chain laws still pass — the strip is a new law, not a changed
+  one.
 - `Job.spec.activeDeadlineSeconds` mutability on a live Job is
   asserted, not verified — check in `0bc.4.3`; fallback is the
   docker-style label sweep.

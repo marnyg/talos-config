@@ -12,8 +12,19 @@ machine:
     #
     # Selected by MAC, never by interface name (names are enumeration
     # order; w1's NIC has been renamed by a reboot). This is the
-    # directory MAC — the port that provisioned. The box has a second
-    # 2.5GbE port with its own MAC; it is undeclared and unplugged.
+    # directory MAC.
+    #
+    # The two 2.5GbE ports are consecutive: :a8 and :a9. Talos reports
+    # ${mac} — the identity the device flow selects this directory by —
+    # from the FIRST interface, :a8, whichever one carries the cable. It
+    # provisioned with the cable in :a9, so the hub served this config
+    # under :a8 and then pinned 10.0.0.74 to :a8, which had no link: DNS
+    # and trustd (10.0.0.68:50001) timed out and the install wedged at
+    # `Installing` with no apid. Fixed by moving the cable to :a8, so
+    # directory MAC == selector MAC == the live port. KEEP IT THERE — a
+    # cable in :a9 is silent until the node is unreachable. (w1 has the
+    # same class of wart from the other side: its directory MAC is a
+    # dock's pass-through, not its NIC.)
     interfaces:
       - deviceSelector:
           hardwareAddr: 6c:bf:b5:05:51:a8
