@@ -5,15 +5,22 @@
 
 ## Last session
 
-2026-09-23 — **Protocol only: M4.1 `protocol/spawn` built** (`25e7dd0`)
-— the birth handshake and the spawner's `#spawn` client. Nothing under
+2026-09-23 (second) — **Protocol only: M4.2 built** (`2dafea6`) —
+`protocol/provisioner` (the provisioner actor: lease machine behind
+`Driver{Start, Extend, Kill}`) and the spawner's `#renew` → `#extend`
+decorator. The protocol half of M4 is complete; what remains (`0bc.4.3–
+.6`) is drivers and binaries outside `protocol/`. Nothing under
 `talos/`, `config-server/` or `k8s/` moved; `scripts/test-iroh.sh`
-green. Detail and findings (incl. `6sax`, a renewal bug found and fixed
-the same session) are in
-`protocol/docs/day-to-day/handoff.md`. The stale "Quint divergence"
-loose thread below was found already fixed (`08efe79`) and struck.
+green; vendorHashes bumped for the new package. Detail in
+`protocol/docs/day-to-day/handoff.md`.
 
-## Previous session
+## Previous sessions
+
+2026-09-23 — **Protocol only: M4.1 `protocol/spawn` built** (`25e7dd0`)
+— the birth handshake and the spawner's `#spawn` client. `6sax`, a
+renewal bug, found and fixed the same session. The stale "Quint
+divergence" loose thread below was found already fixed (`08efe79`) and
+struck.
 
 2026-09-22 — **nas1 provisioned (node three, the storage node), and a
 protocol regression fixed on the way.**
