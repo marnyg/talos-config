@@ -31,7 +31,23 @@
 //     the child's OWN consent to its parent over the app facets it
 //     serves: P→C authority never crosses the wire (invariant 3).
 //  5. The promise resolves {id, location, lease} once the birth has
-//     arrived AND the provisioner has answered.
+//     arrived AND the provisioner has answered. The child is now BORN:
+//     the spawner remembers child → lease for as long as the child
+//     holds a cert it re-issued (the born table).
+//
+// # The lease rides the beat (ADR-0009)
+//
+// The spawner decorates the actor's installed #renew handler. After
+// the handler answers, for a caller in the born table, the latest exp
+// among the certs just re-issued to it becomes the lease's new
+// deadline: #extend {lease, until} to the lease's provisioner,
+// synchronously, inside the handler. Lease lifetime is the renew
+// cert's ttl — one number, not two. A failed #extend never touches
+// the reply (logged; the next beat retries), so a provisioner outage
+// costs the child nothing but lease slack. A parent that stops
+// re-issuing stops extending, and the child lapses at the
+// provisioner: funding-tree semantics without money. Kill sends
+// #kill and forgets the child.
 //
 // # What the kit mandates
 //
@@ -62,6 +78,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sync"
 
@@ -101,6 +118,9 @@ var (
 	ErrBadKit = errors.New("spawn: invalid starter kit")
 	// ErrNoRenewChain marks a kit without the mandated #renew chain.
 	ErrNoRenewChain = errors.New("spawn: kit lacks the #renew chain to the parent")
+	// ErrUnknownChild marks a Kill of an actor this spawner did not
+	// bear (or has already forgotten).
+	ErrUnknownChild = errors.New("spawn: unknown child")
 )
 
 // Refusals the #birth handler answers with (actor.StatusError text).
@@ -219,6 +239,11 @@ type SpawnReply struct {
 type ExtendRequest struct {
 	Lease string `json:"lease"`
 	Until int64  `json:"until"`
+}
+
+// ExtendReply is the #extend reply body: the deadline now in force.
+type ExtendReply struct {
+	Until int64 `json:"until"`
 }
 
 // KillRequest is the #kill payload.
@@ -384,8 +409,9 @@ type Spec struct {
 }
 
 // Spawner is the parent-side library on one actor: it owns the
-// pending-spawn table, the #birth handler, the starter kit and (M4.2)
-// the #renew decorator. Configure the exported fields before Listen.
+// pending-spawn table, the born table, the #birth handler, the starter
+// kit and the #renew decorator. Configure the exported fields before
+// Listen.
 type Spawner struct {
 	// Provisioner is the default provisioner (an actor this spawner
 	// holds a chain to (Provisioner, #spawn) for — or whose consent
@@ -397,13 +423,26 @@ type Spawner struct {
 	// Window is the default birth window in seconds; 0 ⇒ DefaultWindow.
 	Window int64
 	// KitTTL is the lifetime of the mandated #renew chain in seconds;
-	// 0 ⇒ the birth window. It is the child's first renewal beat and
-	// (M4.2) the lease's deadline after birth.
+	// 0 ⇒ the birth window. It is the child's first renewal beat and,
+	// through the decorator, the lease's deadline after each one.
 	KitTTL int64
+	// Log receives what is not surfaced on the wire: a failed #extend.
+	// nil ⇒ slog.Default().
+	Log *slog.Logger
 
 	a       *actor.Actor
 	mu      sync.Mutex
 	pending map[string]*record // nonce → spawn
+	born    map[cert.ActorID]*child
+}
+
+// child is one born child: its lease and the deadline the provisioner
+// holds as far as this spawner knows — #spawn's until at birth, then
+// each acknowledged #extend. Dropped by Sweep once until passes (the
+// lease has lapsed there) or by Kill. Guarded by Spawner.mu.
+type child struct {
+	lease Lease
+	until int64
 }
 
 // record is one pending spawn. Guarded by Spawner.mu.
@@ -422,12 +461,23 @@ type record struct {
 	leased bool
 }
 
-// New registers the #birth handler on a and returns the spawner.
-// Call before a.Listen.
+// New registers the #birth handler on a, decorates its #renew handler
+// (the one actor.New installed, or whatever is there) and returns the
+// spawner. Call before a.Listen.
 func New(a *actor.Actor) *Spawner {
-	s := &Spawner{a: a, pending: make(map[string]*record)}
+	s := &Spawner{a: a, pending: make(map[string]*record), born: make(map[cert.ActorID]*child)}
 	a.AcceptTable[FacetBirth] = s.birth
+	if inner, ok := a.AcceptTable[actor.FacetRenew]; ok {
+		a.AcceptTable[actor.FacetRenew] = s.renew(inner)
+	}
 	return s
+}
+
+func (s *Spawner) log() *slog.Logger {
+	if s.Log != nil {
+		return s.Log
+	}
+	return slog.Default()
 }
 
 func (s *Spawner) postage() string {
@@ -460,6 +510,19 @@ func (s *Spawner) Pending() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.pending)
+}
+
+// Child reports a born child's lease and the deadline its provisioner
+// holds as far as this spawner knows; ok is false for an actor this
+// spawner did not bear or has forgotten.
+func (s *Spawner) Child(id cert.ActorID) (lease Lease, until int64, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.born[id]
+	if !ok {
+		return Lease{}, 0, false
+	}
+	return c.lease, c.until, true
 }
 
 func newNonce() (string, error) {
@@ -607,6 +670,7 @@ func (s *Spawner) resolveLocked(rec *record) {
 	select {
 	case <-rec.promise.done:
 	default:
+		s.born[rec.bound] = &child{lease: rec.lease, until: rec.consent.Exp}
 		rec.promise.birth = Birth{ID: rec.bound, Location: rec.loc, Lease: rec.lease}
 		close(rec.promise.done)
 	}
@@ -623,8 +687,9 @@ func (s *Spawner) failLocked(rec *record, err error) {
 
 // Sweep drops every spawn whose birth window has passed under the
 // actor's effective clock — the record and its consent — failing an
-// unresolved promise with ErrBirthWindow. Spawn and the #birth handler
-// call it; the owner may call it on its beat.
+// unresolved promise with ErrBirthWindow, and forgets every born child
+// whose last asked deadline has passed (its lease lapsed there). Spawn
+// and the #birth handler call it; the owner may call it on its beat.
 func (s *Spawner) Sweep() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -643,6 +708,11 @@ func (s *Spawner) sweepLocked(now int64) {
 	}
 	if len(drop) > 0 {
 		s.editConsents(nil, drop)
+	}
+	for id, c := range s.born {
+		if c.until <= now {
+			delete(s.born, id)
+		}
 	}
 }
 
@@ -717,6 +787,94 @@ func (s *Spawner) mintKit(rec *record, child cert.ActorID, now int64) ([]byte, e
 	}
 	s.editConsents([]cert.Cert{renew}, nil)
 	return raw, nil
+}
+
+// renew decorates the installed #renew handler (ADR-0009): after it
+// answers, a born caller's lease is extended to the latest exp among
+// the certs just re-issued to it. The reply is returned as the inner
+// handler made it whatever #extend does.
+func (s *Spawner) renew(inner actor.Handler) actor.Handler {
+	return func(ctx context.Context, inv *actor.Invocation) ([]byte, error) {
+		body, err := inner(ctx, inv)
+		if err != nil {
+			return body, err
+		}
+		s.extendFor(ctx, inv.From, body)
+		return body, nil
+	}
+}
+
+// extendFor sends #extend {lease, until} for id when body (a #renew
+// reply) re-issued it a cert whose exp is beyond the deadline last
+// asked. Not in the born table, nothing fresh, or a failed send: no
+// extension, and the failure is logged, not surfaced — the next beat
+// retries. Synchronous inside the handler (ADR-0009 consequences).
+func (s *Spawner) extendFor(ctx context.Context, id cert.ActorID, body []byte) {
+	s.mu.Lock()
+	c, ok := s.born[id]
+	var lease Lease
+	var have int64
+	if ok {
+		lease, have = c.lease, c.until
+	}
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+	certs, _, err := actor.DecodeRenewResponse(body)
+	if err != nil {
+		return
+	}
+	until := have
+	for _, fresh := range certs {
+		if fresh.Aud == string(id) && fresh.Exp > until {
+			until = fresh.Exp
+		}
+	}
+	if until <= have {
+		return
+	}
+	payload, err := json.Marshal(ExtendRequest{Lease: lease.ID, Until: until})
+	if err != nil {
+		return
+	}
+	if _, err := s.a.Send(ctx, lease.Provisioner, FacetExtend, payload); err != nil {
+		s.log().Warn("spawn: #extend failed", "child", id, "lease", lease.ID, "provisioner", lease.Provisioner, "until", until, "err", err)
+		return
+	}
+	s.mu.Lock()
+	if c, ok := s.born[id]; ok && c.until < until {
+		c.until = until
+	}
+	s.mu.Unlock()
+}
+
+// Kill ends a born child's lease: #kill {lease} to its provisioner,
+// then the child is forgotten. The provisioner's refusal is returned
+// and the child kept (retry). P's consent to the child's #renew is
+// left to expire — revocation is expiry.
+func (s *Spawner) Kill(ctx context.Context, id cert.ActorID) error {
+	s.mu.Lock()
+	c, ok := s.born[id]
+	var lease Lease
+	if ok {
+		lease = c.lease
+	}
+	s.mu.Unlock()
+	if !ok {
+		return ErrUnknownChild
+	}
+	payload, err := json.Marshal(KillRequest{Lease: lease.ID})
+	if err != nil {
+		return err
+	}
+	if _, err := s.a.Send(ctx, lease.Provisioner, FacetKill, payload); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	delete(s.born, id)
+	s.mu.Unlock()
+	return nil
 }
 
 // ---- child side --------------------------------------------------------------

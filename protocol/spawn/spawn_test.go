@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,8 +16,12 @@ import (
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/postage"
+	"github.com/marnyg/talos-config/protocol/provisioner"
 	"github.com/marnyg/talos-config/protocol/spawn"
 )
+
+// image is a digest-form image name (the only shape a provisioner takes).
+var image = "img@sha256:" + strings.Repeat("a", 64)
 
 const t0 int64 = 1_700_000_000
 const hour int64 = 3600
@@ -114,46 +120,85 @@ type hatch struct {
 	err error
 }
 
-// fakeDriver is the M4.1 stand-in for a provisioner: an actor with a
-// #spawn handler that "starts the container" by running a child actor
-// in-process — a new key, a bound endpoint, a published location,
-// Born(intro) — and answers {lease}. It reads the params only to hand
-// them to the child, as a real provisioner would via env.
+// fakeDriver is the protocol tests' provisioner.Driver behind a REAL
+// provisioner actor (ADR-0009's fake-driver acceptance): Start "runs
+// the container" by running a child actor in-process — a new key, a
+// bound endpoint, a published location, Born(intro) — reading the
+// params only to hand them to the child, as a real driver would via
+// env. Extend and Kill are recorded.
 type fakeDriver struct {
 	w       *world
-	a       *actor.Actor
-	leases  atomic.Int64
+	a       *actor.Actor // the provisioner actor
+	p       *provisioner.Provisioner
 	hatched chan hatch
 	// facets the child consents to its parent over; refuse makes
-	// #spawn fail instead of starting anything.
+	// Start fail instead of starting anything.
 	facets []string
 	refuse bool
 	// born, when set, replaces the child's Born call (a driver that
 	// runs something other than an honest child).
 	born func(child *actor.Actor, in spawn.Intro) (spawn.Kit, error)
+
+	mu        sync.Mutex
+	extendErr error
+	extends   []int64
+	kills     []provisioner.Handle
 }
 
 func newFakeDriver(w *world, parent cert.ActorID) *fakeDriver {
 	d := &fakeDriver{w: w, a: w.actor("prov"), hatched: make(chan hatch, 8), facets: []string{"app"}}
-	d.a.Consents = []cert.Cert{consent(w.t, d.a, parent, spawn.FacetSpawn)}
-	d.a.AcceptTable[spawn.FacetSpawn] = d.spawn
+	// The provisioner's consent to its customer: one delegable root over
+	// all three facets (v0: the parent's key, ADR-0009 open item).
+	c, err := cert.Sign(cert.Cert{
+		Aud: string(parent),
+		Can: cert.VerbInvoke,
+		Cav: cert.Caveats{Target: []cert.ActorID{d.a.ID()}, Facet: []string{spawn.FacetSpawn, spawn.FacetExtend, spawn.FacetKill}},
+		Iat: t0,
+		Exp: t0 + 24*hour,
+	}, d.a.Signer)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	d.a.Consents = []cert.Cert{c}
+	d.p = provisioner.New(d.a, d)
 	return d
 }
 
-func (d *fakeDriver) spawn(_ context.Context, inv *actor.Invocation) ([]byte, error) {
+func (d *fakeDriver) Start(_ context.Context, spec provisioner.StartSpec) (provisioner.Handle, error) {
 	if d.refuse {
-		return nil, errors.New("no capacity")
+		return "", errors.New("no capacity")
 	}
-	var req spawn.SpawnRequest
-	if err := json.Unmarshal(inv.Envelope.Payload, &req); err != nil {
-		return nil, err
+	go d.run(spec.Params)
+	return provisioner.Handle("ctr-" + spec.Lease), nil
+}
+
+func (d *fakeDriver) Extend(_ context.Context, _ provisioner.Handle, until int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.extendErr != nil {
+		return d.extendErr
 	}
-	if !strings.HasPrefix(req.Image, "img@sha256:") {
-		return nil, errors.New("image not by digest")
-	}
-	n := d.leases.Add(1)
-	go d.run(req.Params)
-	return json.Marshal(spawn.SpawnReply{Lease: "lease-" + string(rune('0'+n))})
+	d.extends = append(d.extends, until)
+	return nil
+}
+
+func (d *fakeDriver) Kill(_ context.Context, h provisioner.Handle) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.kills = append(d.kills, h)
+	return nil
+}
+
+func (d *fakeDriver) seen() (extends []int64, kills []provisioner.Handle) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]int64(nil), d.extends...), append([]provisioner.Handle(nil), d.kills...)
+}
+
+func (d *fakeDriver) setExtendErr(err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.extendErr = err
 }
 
 func (d *fakeDriver) run(params []byte) {
@@ -209,7 +254,28 @@ func setup(t *testing.T) *rig {
 	if err := p.UpdateLocation(drv.a.ID(), drv.a.CurrentLocation()); err != nil {
 		t.Fatal(err)
 	}
-	return &rig{w: w, parent: p, sp: sp, drv: drv, spec: spawn.Spec{Image: "img@sha256:abc"}}
+	return &rig{w: w, parent: p, sp: sp, drv: drv, spec: spawn.Spec{Image: image}}
+}
+
+// logSink captures the spawner's slog records.
+type logSink struct {
+	mu   sync.Mutex
+	msgs []string
+}
+
+func (s *logSink) Enabled(context.Context, slog.Level) bool { return true }
+func (s *logSink) Handle(_ context.Context, r slog.Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.msgs = append(s.msgs, r.Message)
+	return nil
+}
+func (s *logSink) WithAttrs([]slog.Attr) slog.Handler { return s }
+func (s *logSink) WithGroup(string) slog.Handler      { return s }
+func (s *logSink) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.msgs)
 }
 
 func (r *rig) waitPromise(t *testing.T, pr *spawn.Promise) spawn.Birth {
@@ -242,8 +308,15 @@ func TestSpawnBirth(t *testing.T) {
 	if b.ID != h.a.ID() {
 		t.Fatalf("promise id %s, want child %s", b.ID, h.a.ID())
 	}
-	if b.Lease.Provisioner != r.drv.a.ID() || b.Lease.ID != "lease-1" {
+	if b.Lease.Provisioner != r.drv.a.ID() || b.Lease.ID == "" {
 		t.Fatalf("lease %+v", b.Lease)
+	}
+	l, ok := r.drv.p.Lease(b.Lease.ID)
+	if !ok || l.State != provisioner.StateRunning || l.Owner != r.parent.ID() || l.Until != t0+r.sp.Window || l.Image != image {
+		t.Fatalf("provisioner lease %+v (ok=%v)", l, ok)
+	}
+	if _, until, ok := r.sp.Child(b.ID); !ok || until != t0+r.sp.Window {
+		t.Fatalf("born table: ok=%v until=%d", ok, until)
 	}
 	if b.Location == nil || b.Location.Iss != b.ID {
 		t.Fatalf("promise location %+v", b.Location)
@@ -286,6 +359,15 @@ func TestSpawnBirth(t *testing.T) {
 	}
 	if string(fresh[0].Sig) == string(renew.Sig) {
 		t.Fatal("test premise: the renewed cert differs from the kit cert")
+	}
+	// The lease rode the beat (ADR-0009): the decorator sent #extend
+	// {until: fresh.exp} before the reply came back, so by now the
+	// provisioner's deadline IS the fresh cert's exp.
+	if l, _ := r.drv.p.Lease(b.Lease.ID); l.Until != fresh[0].Exp {
+		t.Fatalf("lease until %d after renew, want fresh.exp %d", l.Until, fresh[0].Exp)
+	}
+	if ext, _ := r.drv.seen(); len(ext) != 1 || ext[0] != fresh[0].Exp {
+		t.Fatalf("driver extends %v, want [%d]", ext, fresh[0].Exp)
 	}
 	// Second beat on the FRESH cert (6sax): the kit chain is P's own
 	// consent, and P re-installed it as it re-issued it.
@@ -470,8 +552,11 @@ func TestSpawnRefused(t *testing.T) {
 
 	r.drv.refuse = true
 	_, err = r.sp.Spawn(r.w.ctx, r.spec)
-	if re := remoteErr(t, err); re.Code != actor.StatusError || re.Msg != "no capacity" {
+	if re := remoteErr(t, err); re.Code != actor.StatusError || !strings.HasSuffix(re.Msg, "no capacity") {
 		t.Fatalf("refusal: %v", err)
+	}
+	if n := len(r.drv.p.Leases()); n != 1 {
+		t.Fatalf("provisioner holds %d leases after a failed Start, want the twin only", n)
 	}
 	if r.sp.Pending() != 1 {
 		t.Fatalf("pending = %d, want the twin only", r.sp.Pending())
@@ -626,5 +711,140 @@ func TestCheckIntroAndKit(t *testing.T) {
 	x.Nonce = ""
 	if _, err := spawn.Born(r.w.ctx, other, x, nil, 0); !errors.Is(err, spawn.ErrBadIntro) {
 		t.Fatalf("Born bad intro: %v", err)
+	}
+}
+
+// TestLeaseFollowsRenewal pins ADR-0009's spawner half: the deadline
+// asked of the provisioner is the latest exp re-issued to the child; a
+// refused #extend leaves the #renew reply untouched, is logged, and is
+// retried by the next beat; a re-issue that does not reach further
+// extends nothing; Kill forgets the child.
+func TestLeaseFollowsRenewal(t *testing.T) {
+	r := setup(t)
+	sink := &logSink{}
+	r.sp.Log = slog.New(sink)
+	pr, err := r.sp.Spawn(r.w.ctx, r.spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := r.drv.wait(t)
+	if h.err != nil {
+		t.Fatal(h.err)
+	}
+	b := r.waitPromise(t, pr)
+	beat := func(held cert.Cert) cert.Cert {
+		t.Helper()
+		payload, _ := actor.EncodeRenewRequest([]cert.Cert{held}, nil)
+		rep, err := h.a.Send(r.w.ctx, r.parent.ID(), actor.FacetRenew, payload)
+		if err != nil {
+			t.Fatalf("beat: %v", err)
+		}
+		fresh, errs, err := actor.DecodeRenewResponse(rep.Payload)
+		if err != nil || errs[0] != nil {
+			t.Fatalf("beat result: %v %v", err, errs)
+		}
+		h.a.Grant(r.parent.ID(), actor.FacetRenew, fresh[0])
+		return fresh[0]
+	}
+	until := func() int64 {
+		t.Helper()
+		l, ok := r.drv.p.Lease(b.Lease.ID)
+		if !ok {
+			t.Fatal("lease gone")
+		}
+		return l.Until
+	}
+	first := t0 + r.sp.Window
+
+	// The provisioner refuses #extend (its driver says no): the child's
+	// renewal still succeeds, the deadline stays, one warning.
+	r.drv.setExtendErr(errors.New("quota"))
+	r.w.clk.Advance(60)
+	fresh := beat(h.kit.Grants[0][0])
+	if got := until(); got != first {
+		t.Fatalf("until %d after a refused #extend, want %d", got, first)
+	}
+	if _, asked, _ := r.sp.Child(b.ID); asked != first {
+		t.Fatalf("asked deadline advanced to %d on a failed #extend", asked)
+	}
+	if sink.count() != 1 {
+		t.Fatalf("%d log records, want 1 (the failed #extend)", sink.count())
+	}
+
+	// The next beat retries and the deadline catches up to fresh.exp.
+	r.drv.setExtendErr(nil)
+	r.w.clk.Advance(60)
+	fresh = beat(fresh)
+	if got := until(); got != fresh.Exp {
+		t.Fatalf("until %d, want fresh.exp %d", got, fresh.Exp)
+	}
+	// Under a frozen clock the re-issue reaches no further: no #extend.
+	beat(fresh)
+	if ext, _ := r.drv.seen(); len(ext) != 1 {
+		t.Fatalf("driver extends %v, want exactly one", ext)
+	}
+
+	// Kill: #kill reaches the driver, the lease leaves the table, the
+	// child is forgotten; a second Kill is unknown; the child's next
+	// beat still renews (P's consent expires on its own) but no #extend
+	// is attempted for a forgotten child.
+	if err := r.sp.Kill(r.w.ctx, b.ID); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	if _, kills := r.drv.seen(); len(kills) != 1 || kills[0] != provisioner.Handle("ctr-"+b.Lease.ID) {
+		t.Fatalf("driver kills %v", kills)
+	}
+	if _, ok := r.drv.p.Lease(b.Lease.ID); ok {
+		t.Fatal("lease still in the table after #kill")
+	}
+	if _, _, ok := r.sp.Child(b.ID); ok {
+		t.Fatal("child still in the born table after Kill")
+	}
+	if err := r.sp.Kill(r.w.ctx, b.ID); !errors.Is(err, spawn.ErrUnknownChild) {
+		t.Fatalf("second kill: %v", err)
+	}
+	r.w.clk.Advance(60)
+	beat(fresh)
+	if ext, _ := r.drv.seen(); len(ext) != 1 || sink.count() != 1 {
+		t.Fatalf("a forgotten child's beat touched the lease: extends %v, logs %d", ext, sink.count())
+	}
+}
+
+// TestLeaseLapses: a child that stops renewing. The spawner's Sweep
+// forgets it once the asked deadline passes; the provisioner's Sweep
+// kills it through the driver at the same instant — funding-tree
+// semantics with no money and no message.
+func TestLeaseLapses(t *testing.T) {
+	r := setup(t)
+	pr, err := r.sp.Spawn(r.w.ctx, r.spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := r.drv.wait(t); h.err != nil {
+		t.Fatal(h.err)
+	}
+	b := r.waitPromise(t, pr)
+
+	r.w.clk.Advance(r.sp.Window - 1)
+	r.sp.Sweep()
+	r.drv.p.Sweep(r.w.ctx)
+	if _, _, ok := r.sp.Child(b.ID); !ok {
+		t.Fatal("child forgotten before its deadline")
+	}
+	if _, ok := r.drv.p.Lease(b.Lease.ID); !ok {
+		t.Fatal("lease lapsed before its deadline")
+	}
+
+	r.w.clk.Advance(1)
+	r.sp.Sweep()
+	r.drv.p.Sweep(r.w.ctx)
+	if _, _, ok := r.sp.Child(b.ID); ok {
+		t.Fatal("child not forgotten at its deadline")
+	}
+	if _, ok := r.drv.p.Lease(b.Lease.ID); ok {
+		t.Fatal("lease not lapsed at its deadline")
+	}
+	if _, kills := r.drv.seen(); len(kills) != 1 {
+		t.Fatalf("driver kills %v, want one", kills)
 	}
 }
