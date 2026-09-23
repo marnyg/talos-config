@@ -480,7 +480,7 @@ whose deployment-free form differs from the talos wording. Source:
   fresh key pays afresh; there is no spent-token set.
 - **Intro nonce** — the one-time bearer token a parent injects when
   spawning; the child exchanges it immediately for real certs. The
-  only bearer token in the system. _(Grill-design 2026-09-24:)_ on
+  only bearer token in the system. _(Grill-design 2026-09-21:)_ on
   the wire it is pure **correlation**, not authority — the birth
   envelope's payload names it, the handler matches it against the
   pending-spawn table; the envelope's own signature binds the child's

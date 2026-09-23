@@ -1,7 +1,7 @@
 # ADR-0009: The provisioner is an actor; leases are passive; children self-lapse
 
 - Status: Proposed
-- Date: 2026-09-24 (grill-design, `talos-config-0bc.4`)
+- Date: 2026-09-21 (grill-design, `talos-config-0bc.4`)
 - Builds: M4 (`protocol/spawn`, the provisioner binary and its
   drivers). Adds: invariant 13. Amends: sketch § Spawning ("P signs a
   lease with a provider" becomes a `#spawn` invocation; the lease

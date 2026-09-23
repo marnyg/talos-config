@@ -498,34 +498,31 @@ func (s *Spawner) BirthConsent(window int64) (cert.Cert, error) {
 // Both rules exist for twins: two spawns minted in the same second
 // are byte-identical (same shape, same iat/exp, deterministic
 // signature; there is no per-spawn caveat by design), so they share
-// one root and one spawn's exit must not unroot the other. One Hold,
-// atomic against the mailbox loop. Callers hold s.mu so two spawner
-// edits never interleave; an owner's own Hold between Authority and
-// Hold here is the owner's to sequence.
+// one root and one spawn's exit must not unroot the other. One
+// actor.EditConsents: atomic against the mailbox loop, Send and an
+// owner's Hold. Callers hold s.mu, so s.pending is stable inside.
 func (s *Spawner) editConsents(add []cert.Cert, drop [][]byte) {
-	consents, speakAs := s.a.Authority()
-	has := func(sig []byte) bool {
-		return slices.ContainsFunc(consents, func(c cert.Cert) bool { return bytes.Equal(c.Sig, sig) })
-	}
-	if len(drop) > 0 {
-		consents = slices.DeleteFunc(consents, func(c cert.Cert) bool {
-			if !slices.ContainsFunc(drop, func(sig []byte) bool { return bytes.Equal(sig, c.Sig) }) {
-				return false
-			}
-			for _, rec := range s.pending {
-				if bytes.Equal(rec.consent.Sig, c.Sig) {
+	s.a.EditConsents(func(consents []cert.Cert) []cert.Cert {
+		if len(drop) > 0 {
+			consents = slices.DeleteFunc(consents, func(c cert.Cert) bool {
+				if !slices.ContainsFunc(drop, func(sig []byte) bool { return bytes.Equal(sig, c.Sig) }) {
 					return false
 				}
-			}
-			return true
-		})
-	}
-	for _, c := range add {
-		if !has(c.Sig) {
-			consents = append(consents, c)
+				for _, rec := range s.pending {
+					if bytes.Equal(rec.consent.Sig, c.Sig) {
+						return false
+					}
+				}
+				return true
+			})
 		}
-	}
-	s.a.Hold(consents, speakAs)
+		for _, c := range add {
+			if !slices.ContainsFunc(consents, func(h cert.Cert) bool { return bytes.Equal(h.Sig, c.Sig) }) {
+				consents = append(consents, c)
+			}
+		}
+		return consents
+	})
 }
 
 // Spawn rents a child: mints the birth consent and nonce, records the
@@ -776,8 +773,7 @@ func Born(ctx context.Context, a *actor.Actor, in Intro, facets []string, consen
 		if err != nil {
 			return Kit{}, err
 		}
-		consents, speakAs := a.Authority()
-		a.Hold(append(consents, own), speakAs)
+		a.EditConsents(func(consents []cert.Cert) []cert.Cert { return append(consents, own) })
 	}
 	return kit, nil
 }

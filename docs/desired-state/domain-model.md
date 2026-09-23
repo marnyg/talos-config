@@ -783,7 +783,7 @@ provisioning or recovery path may depend on it.
 - **Provisioner (talos)** — the hub actor that provisions *machines*:
   serves `/config` with a boot token, verifies it at
   `/enroll/machine`, asks the Issuer for `#mint-machine`. Named before
-  the protocol had words for it (M4, 2026-09-24): it is a **Phase-1,
+  the protocol had words for it (M4, 2026-09-21): it is a **Phase-1,
   fused instance of the protocol's spawner + provisioner** whose
   driver is "serve a Talos machine config" — the boot token is its
   intro nonce, the seen-set its pending-spawn table, `/enroll/machine`

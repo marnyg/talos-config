@@ -23,7 +23,9 @@
 #              case of, verb = the root consent's (invoke | publish);
 #              ADR-0003 rule 4: the receiver answers for principals whose
 #              speak-as it HOLDS (never the caller's bundle); ADR-0004: the
-#              target wildcard `*` never widens, a `*` consent roots nothing
+#              target wildcard `*` never widens, a `*` consent roots nothing;
+#              ADR-0007 rev. 2026-09-22 (ydq0): a chain that begins with the
+#              rooting consent is folded without it (receiver-side strip)
 #   runway     ADR-0017/0018 cert lifetimes vs. sealed-hub starvation incl.
 #              the per-process speak-as bound and the 30 d nag
 #   clock      ADR-0019 time as trust input: iat low-water mark vs. clock rollback;

@@ -50,12 +50,6 @@ handshake and the spawner half of ADR-0009). ~600 LOC + tests.
   wire types; `0bc.4.2`'s "spawner client" is done — what remains
   there is the provisioner server (lease machine, `Driver`) and the
   `#renew` decorator.
-- `Spawn` holds the spawner's mutex around `Authority()`+`Hold()`; an
-  owner's own `Hold` (hub-style unseal) interleaving would drop birth
-  consents. Fine for a laptop parent; note if a hub ever spawns.
-- Dates: the M4 design is stamped 2026-09-24 in ADR-0008/0009, the
-  exploration log and the glossary, but landed 2026-09-21
-  (`d5672e2`). Fixed only in the § Spawning line touched.
 - Carried: `Job.spec.activeDeadlineSeconds` mutability (`0bc.4.3`);
   provisioner's consent to customers = parent's key in v0; `#extend`
   synchronous in a handler; `payment` absent (M5); `fh2y`; open

@@ -56,10 +56,10 @@ not copied:
   per-spawn aud-`*` consent (postage required); the intro nonce is
   correlation and binds to the first key; the intro carries P's
   signed reach-me-at; the starter kit mandates one chain (`#renew`).
-  _Proposed 2026-09-24 (M4 grill-design, `0bc.4`)._
+  _Proposed 2026-09-21 (M4 grill-design, `0bc.4`)._
 - [0009](0009-provisioner-is-an-actor-leases-are-passive.md) — the
   provisioner is an actor (`#spawn`/`#extend`/`#kill`) that knows
   leases and never learns about birth; leases are passive (deadline
   extended on the `#renew` beat via a decorator); children self-lapse
   on "no live edge"; M4 acceptance = fake + k8s + docker drivers.
-  Adds invariant 13. _Proposed 2026-09-24 (M4 grill-design, `0bc.4`)._
+  Adds invariant 13. _Proposed 2026-09-21 (M4 grill-design, `0bc.4`)._

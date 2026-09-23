@@ -255,6 +255,22 @@ func (a *Actor) Hold(consents, speakAs []cert.Cert) {
 	a.SpeakAs = append([]cert.Cert(nil), speakAs...)
 }
 
+// EditConsents applies edit to the held Consents atomically with respect
+// to the mailbox loop, Send, Hold and other EditConsents: the one
+// read-modify-write for a component that adds and removes roots on a
+// live actor while the owner may also Hold (ADR-0005 family; asked for
+// by protocol/spawn, whose per-spawn birth consents and kit chains come
+// and go under a running Listen — a separate Authority()+Hold() pair
+// would let an interleaving Hold drop them, or let them drop an
+// unseal). edit receives a copy and returns the new set; SpeakAs is
+// untouched. Authority installation only — what a chain proves is
+// unchanged.
+func (a *Actor) EditConsents(edit func(consents []cert.Cert) []cert.Cert) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Consents = edit(append([]cert.Cert(nil), a.Consents...))
+}
+
 // Authority returns a snapshot of the held Consents and SpeakAs (what
 // Hold last installed, or the pre-Listen fields): the receiver-side
 // inputs a cert.Receiver needs to run Authorize as this actor would.

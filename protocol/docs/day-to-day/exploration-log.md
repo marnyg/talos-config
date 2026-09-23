@@ -10,7 +10,7 @@
      (Envelope, Invocation, Reply, Location record, Renewal beat,
      Facet, Transport, Mailbox). Recover from git history if needed. -->
 
-## M4 spawn — birth handshake (grill-design 2026-09-24)
+## M4 spawn — birth handshake (grill-design 2026-09-21)
 
 Ruled out for the newborn's first message to its parent:
 
@@ -80,10 +80,10 @@ substrate) and *one real substrate* (k8s only). Chosen: fake provider
 in the protocol tests **plus two real adapters, k8s Job and docker** —
 two substrates force the child implementation to be self-contained in
 its image and keep the provider seam honest for later platforms
-(Akash). Owner's call 2026-09-24.
+(Akash). Owner's call 2026-09-21.
 
 **Provider as a library → provisioner as an actor** (owner's sketch,
-2026-09-24). Ruled out: the parent holding a Go `Provider` interface
+2026-09-21). Ruled out: the parent holding a Go `Provider` interface
 and platform credentials (kubeconfig on the laptop). Chosen: the
 *spawner* (parent library, knows actors) messages a *provisioner*
 (platform actor, knows leases: `#spawn`/`#extend`/`#kill`), which

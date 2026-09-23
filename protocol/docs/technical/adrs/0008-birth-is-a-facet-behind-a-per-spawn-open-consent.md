@@ -1,7 +1,7 @@
 # ADR-0008: Birth is a facet behind a per-spawn open consent; the nonce is correlation
 
 - Status: Proposed
-- Date: 2026-09-24 (grill-design, `talos-config-0bc.4`)
+- Date: 2026-09-21 (grill-design, `talos-config-0bc.4`)
 - Builds: M4 (`protocol/spawn`). Amends: sketch § Spawning (the birth
   message is an envelope, not `{child_pubkey, sign_C(nonce)}` to raw
   endpoints), glossary **Intro**, **`#birth` facet**, **Birth
