@@ -31,12 +31,13 @@ protocol regression fixed on the way.**
 
 ## Loose threads
 
-- **The Quint model does not carry the own-consent strip**
-  (`verification/quint/authorize.qnt:420`) — Go and model diverge until
-  it does. Standing rule is "change the model before the Go"; this
-  session went the other way, under deploy pressure.
+- ~~Quint own-consent strip~~ — ported in `08efe79` (`chainUnder`,
+  `links()`, witness `ownConsentPresentedTest`, mutation-tested); model
+  and Go agree again. The standing rule (model before Go) was broken
+  once under deploy pressure; noted, not repeated.
 - `-tags iroh` tests run only inside the nix build; `go test ./...` in
-  `config-server/` skips them silently. That is how `main` sat broken.
+  `config-server/` skips them silently — `scripts/test-iroh.sh`
+  (`08efe79`) is the gate now, named in AGENTS.md.
 - nas1's four SATA bays are empty — capacity is one NVMe partition.
 - Longhorn StorageClass is still `defaultClassReplicaCount: 2` with
   three nodes now present (the chart comment says "revisit when node
@@ -50,6 +51,5 @@ protocol regression fixed on the way.**
 - Populate nas1's SATA bays: one `UserVolumeConfig` per disk by serial
   + kubelet `extraMounts` + switch the Longhorn label to `config`.
   Applies live, no reinstall.
-- Port the own-consent strip into `authorize.qnt` and re-run the model.
 - Decide the replica count now that node three exists, and whether cp1
   and w1 should declare their Longhorn label like nas1 does.

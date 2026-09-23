@@ -65,12 +65,11 @@ docs only, no Go touched, no vendorHash moved).
 
 ## Loose threads
 
-- **`verification/quint/authorize.qnt` does not carry the own-consent
-  strip** (`chainUnder`, line ~420). The standing rule is *change the
-  model before the Go*; `ydq0` went the other way under deploy
-  pressure, so model and implementation disagree until it is ported.
-  The 18 chain laws still pass — the strip is a new law, not a changed
-  one.
+- ~~`authorize.qnt` own-consent strip~~ — ported in `08efe79`:
+  `chainUnder` skips a first link equal to the consent it folds under,
+  `links()` restates it for the laws, witness `ownConsentPresentedTest`
+  (mutation-tested: fails with the strip removed). Model and Go agree.
+  `ydq0` was the one time Go moved before the model; the rule stands.
 - `Job.spec.activeDeadlineSeconds` mutability on a live Job is
   asserted, not verified — check in `0bc.4.3`; fallback is the
   docker-style label sweep.
