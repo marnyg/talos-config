@@ -26,6 +26,7 @@ exported method without an ADR:
 | `SeqBase func() int64` (2026-09-19) | node agent restarts | `seq` must be monotonic per (sender, receiver) across the **sender's** restarts too, or a rebooted node is a replay until the hub forgets |
 | `Observe(verified)`, `RestoreLowWater(lw)` (2026-09-19) | node agent's stream facets | a verifier running `cert.Authorize` **outside** the inbox must still advance (and may seed) the ADR-0019 mark |
 | `EditConsents(edit)` (2026-09-23) | `protocol/spawn` (ADR-0008) | per-spawn birth consents and kit chains come and go on a live actor whose owner may also `Hold`; a separate `Authority()`+`Hold()` pair lets either side clobber the other — one atomic read-modify-write on `Consents` only |
+| `renewHandler` re-installs a renewed own consent (2026-09-23, `6sax`) | `protocol/spawn` (the kit's `#renew` chain is P's consent) | a consent that is also a direct relationship's leaf must stay rooted across beats: without it the holder's `[fresh]` folds as a link and fails; a no-op for links |
 
 Each was obviously right in isolation; together they change what
 `Actor` is. The question this ADR answers: is that drift, or a rule?

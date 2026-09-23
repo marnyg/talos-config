@@ -1140,3 +1140,82 @@ func TestExpiredOwnLocationIsNotPiggybacked(t *testing.T) {
 		t.Fatal("fresh record not piggybacked after re-publish")
 	}
 }
+
+// TestRenewOwnConsentReinstalls is talos-config-6sax: a consent that is
+// also the leaf of a direct relationship — B consents to A on #renew
+// and A holds exactly that cert as its chain — must stay rooted across
+// renewals. Without reinstallation A's second beat presents [fresh],
+// which folds under old as a link (its signer is B, not old.aud) and
+// fails; after old expires nothing roots. With it, both old and fresh
+// admit until old's exp, then fresh alone; expired roots are dropped;
+// a renewed cert that is NOT a held consent (a link) changes nothing.
+func TestRenewOwnConsentReinstalls(t *testing.T) {
+	w := newWorld(t)
+	now := w.clk.Now()
+	b, bs, _ := w.actor("b")
+	a, _, _ := w.actor("a")
+	B, A := b.ID(), a.ID()
+
+	old := issue(t, bs, string(A), []cert.ActorID{B}, []string{FacetRenew}, false, now, now+100)
+	b.Consents = []cert.Cert{old}
+	w.start(b)
+	w.start(a)
+	a.Grant(B, FacetRenew, old)
+
+	renew := func(held cert.Cert) cert.Cert {
+		t.Helper()
+		payload, _ := EncodeRenewRequest([]cert.Cert{held}, nil)
+		rep, err := a.Send(w.ctx, B, FacetRenew, payload)
+		if err != nil {
+			t.Fatalf("renew presenting %d: %v", held.Exp, err)
+		}
+		fresh, errs, _ := DecodeRenewResponse(rep.Payload)
+		if errs[0] != nil {
+			t.Fatalf("refused: %v", errs[0])
+		}
+		return fresh[0]
+	}
+
+	w.clk.Advance(10)
+	fresh := renew(old)
+	consents, _ := b.Authority()
+	if len(consents) != 2 {
+		t.Fatalf("after first renew B holds %d consents, want old+fresh", len(consents))
+	}
+	// Second beat presenting the FRESH cert — the case that used to fail.
+	a.Grant(B, FacetRenew, fresh)
+	w.clk.Advance(10)
+	fresh2 := renew(fresh)
+	// Old still admits until its exp...
+	a.Grant(B, FacetRenew, old)
+	renew(old)
+	// ...and is dropped from B's roots once expired (now = t0+105 > old.exp
+	// = t0+100), on the next renewal.
+	w.clk.Advance(85)
+	a.Grant(B, FacetRenew, fresh2)
+	renew(fresh2)
+	consents, _ = b.Authority()
+	for _, c := range consents {
+		if c.Exp <= w.clk.Now() {
+			t.Fatalf("expired consent kept: exp %d now %d", c.Exp, w.clk.Now())
+		}
+	}
+	a.Grant(B, FacetRenew, old)
+	payload, _ := EncodeRenewRequest([]cert.Cert{old}, nil)
+	_, err := a.Send(w.ctx, B, FacetRenew, payload)
+	wantRemote(t, err, StatusUnauthorized)
+
+	// A link this actor signed (not a held consent) renews without
+	// touching Consents: B consents to A, A presents B's link to C.
+	before, _ := b.Authority()
+	link := issue(t, bs, string(A), []cert.ActorID{b.ID()}, []string{"other"}, false, w.clk.Now(), w.clk.Now()+100)
+	a.Grant(B, FacetRenew, fresh2)
+	payload, _ = EncodeRenewRequest([]cert.Cert{link}, nil)
+	if _, err := a.Send(w.ctx, B, FacetRenew, payload); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := b.Authority()
+	if len(after) != len(before) {
+		t.Fatalf("renewing a non-consent changed Consents: %d → %d", len(before), len(after))
+	}
+}

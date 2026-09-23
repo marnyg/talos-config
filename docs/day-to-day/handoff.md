@@ -8,8 +8,8 @@
 2026-09-23 — **Protocol only: M4.1 `protocol/spawn` built** (`25e7dd0`)
 — the birth handshake and the spawner's `#spawn` client. Nothing under
 `talos/`, `config-server/` or `k8s/` moved; `scripts/test-iroh.sh`
-green. Detail, findings and the P1 thread `6sax` (renewed root
-consents must be re-installed) are in
+green. Detail and findings (incl. `6sax`, a renewal bug found and fixed
+the same session) are in
 `protocol/docs/day-to-day/handoff.md`. The stale "Quint divergence"
 loose thread below was found already fixed (`08efe79`) and struck.
 

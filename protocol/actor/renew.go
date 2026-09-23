@@ -123,6 +123,9 @@ func DecodeRenewResponse(body []byte) ([]cert.Cert, []error, error) {
 //  5. build the replacement: same aud/can, caveats = held (or Want if
 //     cert.Attenuate(held, want) == want, i.e. same-or-narrower —
 //     never wider), iat = now, exp = now + lifetime, signed by a.Signer
+//  6. if the held cert is one of this actor's own consents, install the
+//     replacement beside it (reinstallConsent, talos-config-6sax) so the
+//     holder's next chain still roots
 //
 // The reply, like every reply, carries this actor's current reach-me-at
 // so a holder whose grantor moved learns the new location on the beat.
@@ -186,7 +189,35 @@ func (a *Actor) renewOne(it RenewItem, caller cert.ActorID, proofSpeakAs []cert.
 	if err != nil {
 		return refuse("encode: " + err.Error())
 	}
+	a.reinstallConsent(old, signed, now)
 	return RenewResult{Cert: raw}
+}
+
+// reinstallConsent keeps a renewed ROOT rooted (talos-config-6sax). A
+// cert this actor re-issues may be one of its own consents — the leaf
+// of a direct relationship, like the #renew chain a spawner hands its
+// child (ADR-0008): the holder is both the aud and the presenter, and
+// the receiver is the issuer. If the held cert is not swapped for the
+// fresh one, the holder's next chain [fresh] folds under old as a LINK
+// (fresh.sig ≠ old.sig, so no strip; its signer is me, not old.aud ⇒
+// ErrChainLinkage) and, once old expires, roots nothing. So: when old
+// is byte-equal to a held consent, install fresh beside it (old stays
+// until its own exp — the holder may present either until it swaps)
+// and drop consents already expired at now. A no-op for a cert that
+// is not a held consent (a link this actor signed as someone's hot
+// key) — the talos hub sees no change. Authority installation only
+// (ADR-0005): what a chain proves is unchanged.
+func (a *Actor) reinstallConsent(old, fresh cert.Cert, now int64) {
+	a.EditConsents(func(consents []cert.Cert) []cert.Cert {
+		if !slices.ContainsFunc(consents, func(c cert.Cert) bool { return bytes.Equal(c.Sig, old.Sig) }) {
+			return consents
+		}
+		consents = slices.DeleteFunc(consents, func(c cert.Cert) bool { return c.Exp <= now })
+		if !slices.ContainsFunc(consents, func(c cert.Cert) bool { return bytes.Equal(c.Sig, fresh.Sig) }) {
+			consents = append(consents, fresh)
+		}
+		return consents
+	})
 }
 
 // issuedByMe is the own-signature check with hot-key resolution: the

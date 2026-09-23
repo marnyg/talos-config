@@ -39,13 +39,12 @@ handshake and the spawner half of ADR-0009). ~600 LOC + tests.
 
 ## Loose threads
 
-- **`6sax` (P1, blocks `0bc.4.2`): renewing a root consent must
-  re-install it.** The kit's `#renew` cert *is* P's consent; after the
-  child renews it, P holds only the old one, so the fresh chain folds
-  as a link (P must resolve to aud C) and fails; when old expires
-  nothing roots. Fix in `renewHandler` (swap fresh into `Consents` when
-  old is byte-equal to a held consent — ADR-0005 test 2) or in the
-  M4.2 decorator. Decide first.
+- ~~`6sax`~~ ruled and fixed the same session: `renewHandler` now
+  re-installs a renewed cert that is one of its own consents
+  (`reinstallConsent`; old stays until its exp, expired roots dropped;
+  no-op for links). ADR-0005 row. Laws:
+  `TestRenewOwnConsentReinstalls`, second beat in `TestSpawnBirth` —
+  both mutation-tested. `0bc.4.2` is unblocked.
 - M4.1 already ships the `#spawn` client and the `#extend`/`#kill`
   wire types; `0bc.4.2`'s "spawner client" is done — what remains
   there is the provisioner server (lease machine, `Driver`) and the
@@ -57,7 +56,7 @@ handshake and the spawner half of ADR-0009). ~600 LOC + tests.
 
 ## Suggested next steps
 
-- Rule on `6sax`, then `0bc.4.2`: provisioner actor with the lease
+- `0bc.4.2`: provisioner actor with the lease
   machine and `Driver{Start, Extend, Kill}`, the `#renew` decorator
   sending `#extend {until: fresh.exp}`; protocol test with a fake
   driver on a *real* `#spawn`/`#extend` path.

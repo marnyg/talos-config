@@ -101,3 +101,9 @@
   must vary a field or `Advance` the clock between them — found when
   two `Spawn`s in one test shared a birth consent. Not a test-only
   fact: the spawner dedupes on install and refcounts on drop for it.
+- 2026-09-23 — **A mutation test caught the frozen-clock trap the same
+  day it was noted**: `TestSpawnBirth`'s second beat passed with the
+  `6sax` fix commented out because the first renew re-issued a
+  byte-identical cert. Rule of thumb for renewal tests: `Advance` the
+  clock before every beat and assert `fresh.Sig != old.Sig` as a
+  premise.

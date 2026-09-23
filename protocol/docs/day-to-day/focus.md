@@ -6,8 +6,7 @@
 M4.1 landed 2026-09-23 (`protocol/spawn`: birth consent, intro,
 `#spawn` client, nonce table, `#birth` → kit, promise, `Born`).
 Next is `0bc.4.2` — the provisioner *actor* (`#spawn`/`#extend`/
-`#kill`, lease machine, `Driver` seam) and the `#renew` decorator —
-gated on thread `6sax` (a renewed root consent must be re-installed).
+`#kill`, lease machine, `Driver` seam) and the `#renew` decorator.
 Then drivers (k8s Job, docker), the child binary, the acceptance run
 (`0bc.4.3–.6`). Design: ADR-0008/0009 Proposed, invariant 13.
 M1–M3 are built and closed.

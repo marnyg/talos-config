@@ -271,7 +271,10 @@ func TestSpawnBirth(t *testing.T) {
 		t.Fatal("child did not install the renew chain")
 	}
 
-	// One beat: the child renews its chain at the parent.
+	// One beat: the child renews its chain at the parent. The clock
+	// moves first — under a frozen clock the re-issue is byte-identical
+	// to the kit cert and proves nothing.
+	r.w.clk.Advance(r.sp.Window / 4)
 	payload, _ := actor.EncodeRenewRequest([]cert.Cert{renew}, nil)
 	rep, err := h.a.Send(r.w.ctx, r.parent.ID(), actor.FacetRenew, payload)
 	if err != nil {
@@ -280,6 +283,17 @@ func TestSpawnBirth(t *testing.T) {
 	fresh, errs, err := actor.DecodeRenewResponse(rep.Payload)
 	if err != nil || errs[0] != nil || fresh[0].Aud != string(b.ID) {
 		t.Fatalf("renew result: %v %v %+v", err, errs, fresh)
+	}
+	if string(fresh[0].Sig) == string(renew.Sig) {
+		t.Fatal("test premise: the renewed cert differs from the kit cert")
+	}
+	// Second beat on the FRESH cert (6sax): the kit chain is P's own
+	// consent, and P re-installed it as it re-issued it.
+	h.a.Grant(r.parent.ID(), actor.FacetRenew, fresh[0])
+	r.w.clk.Advance(r.sp.Window / 4)
+	payload, _ = actor.EncodeRenewRequest([]cert.Cert{fresh[0]}, nil)
+	if _, err := h.a.Send(r.w.ctx, r.parent.ID(), actor.FacetRenew, payload); err != nil {
+		t.Fatalf("child's second beat: %v", err)
 	}
 
 	// P→C authority is the child's own consent: the parent sends with
