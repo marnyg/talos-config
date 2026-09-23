@@ -157,7 +157,9 @@ arrives. Supervision trees become **funding trees**: leases are
 **passive**, the `#renew` loop is child-initiated and each beat
 `#extend`s the lease; a missed beat is natural death, and a
 well-behaved child **self-lapses** once it holds no live edge.
-_(Designed 2026-09-24, protocol ADR-0008/0009; M4 `0bc.4`.)_
+_(Designed 2026-09-21 (`d5672e2`), protocol ADR-0008/0009; M4 `0bc.4`. The
+handshake — intro, `#birth`, kit, promise, child side — built
+2026-09-23 as `protocol/spawn`, M4.1 `0bc.4.1`.)_
 
 ## Economics
 
@@ -496,7 +498,12 @@ whose deployment-free form differs from the talos wording. Source:
   required — so `refusesUnstamped` guards it), **minted per spawn**
   inside `spawn()` and carried in the intro; it grants only the right
   to knock. The reply carries the starter kit, signed by P, which the
-  child checks against the parent id in the intro.
+  child checks against the parent id in the intro. _(Built 2026-09-23,
+  M4.1:)_ **any** live birth consent admits a knock — they are one
+  shape and grant one thing; the nonce alone selects the spawn. Two
+  spawns minted in the same second are byte-identical certs (no
+  per-spawn caveat by design), so the spawner holds them as one root
+  and drops it only when no pending spawn still names it.
 - **Starter kit** — the `#birth` reply body: `{grants: [[cert…],
   …], locations: [reach-me-at…]}` — root-first chains whose last
   `aud` is the child, plus location records for the actors those
@@ -527,7 +534,9 @@ whose deployment-free form differs from the talos wording. Source:
   actor: `Spawn(spec)` sends `#spawn` to a provisioner and returns the
   promise; owns the pending-spawn table, the `#birth` handler, the
   starter kit and the `#renew` decorator. It knows **actors** —
-  nonces, keys, kits, edges — and nothing about containers.
+  nonces, keys, kits, edges — and nothing about containers. _(Built
+  2026-09-23 as `protocol/spawn`, M4.1: `Spawner`, `Born`, the
+  `#spawn`/`#extend`/`#kill` wire types; the decorator is M4.2.)_
   Provisioner selection is **optional and transparent by default**:
   the spawner is configured with a default provisioner (id + chain)
   and `spec` may name another; a provisioner is just another

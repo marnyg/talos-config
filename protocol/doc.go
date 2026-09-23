@@ -26,6 +26,11 @@
 //	lighthouse/ the rendezvous actor: #publish (verb publish) and
 //	           #lookup over a volatile directory of published
 //	           {reach-me-at, frontdoor} records — spec: ADR-0007
+//	spawn/     spawning: the Spawner (per-spawn birth consent, intro,
+//	           #spawn client, pending-nonce table, #birth handler →
+//	           starter kit, promise) and the child's Born(intro); the
+//	           #spawn/#extend/#kill wire types a provisioner serves —
+//	           spec: ADR-0008/0009, invariant 13
 //	docs/      this scope's desired-state (goals, invariants, domain
 //	           model) and the protocol sketch
 //
