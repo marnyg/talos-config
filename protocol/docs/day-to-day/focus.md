@@ -2,14 +2,15 @@
 
 <!-- Forward-looking for the protocol scope. ~20 lines. -->
 
-**Now:** **M4 — spawn as funded enrollment — is designed
-(2026-09-24, ADR-0008/0009 Proposed, invariant 13) and next to
-build** (`0bc.4.1–.6`). Shape: a spawner library on the parent, a
-provisioner *actor* (`#spawn`/`#extend`/`#kill`) that knows leases and
-never learns about birth, a per-platform driver behind it (k8s Job +
-docker in v0), a per-spawn `#birth` consent, passive leases extended
-on the `#renew` beat, children that self-lapse. M1–M3 are built and
-closed (cert, envelope/actor, lighthouse + postage).
+**Now:** **M4 — spawn as funded enrollment — is being built.**
+M4.1 landed 2026-09-23 (`protocol/spawn`: birth consent, intro,
+`#spawn` client, nonce table, `#birth` → kit, promise, `Born`).
+Next is `0bc.4.2` — the provisioner *actor* (`#spawn`/`#extend`/
+`#kill`, lease machine, `Driver` seam) and the `#renew` decorator —
+gated on thread `6sax` (a renewed root consent must be re-installed).
+Then drivers (k8s Job, docker), the child binary, the acceptance run
+(`0bc.4.3–.6`). Design: ADR-0008/0009 Proposed, invariant 13.
+M1–M3 are built and closed.
 
 **Toward goal:** `desired-state/goals.md` — *Spawning as funded
 enrollment* ("let it crash" = "let the lease lapse"; a parent's death

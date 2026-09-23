@@ -95,3 +95,9 @@
   `eff.Cav.Postage` on a receiver holding both a frontdoor and a named
   consent must present a signer only `"*"` admits to see the stamp
   requirement.
+- 2026-09-23 — **Under a frozen fake clock, same-shape certs are
+  byte-identical** (Ed25519 is deterministic; iat/exp are the only
+  per-mint fields). A test that assumes two mints are distinct certs
+  must vary a field or `Advance` the clock between them — found when
+  two `Spawn`s in one test shared a birth consent. Not a test-only
+  fact: the spawner dedupes on install and refcounts on drop for it.
