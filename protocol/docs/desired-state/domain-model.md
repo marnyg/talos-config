@@ -555,8 +555,14 @@ whose deployment-free form differs from the talos wording. Source:
   platform) — and nothing about actors: **a provisioner never learns
   about birth**; the intro is an opaque param blob to it. A third
   party can run one knowing only "be an actor with three facets".
-  _(Built 2026-09-23 as `protocol/provisioner`, M4.2. The lease table
-  is volatile; persisting it is spike `udof`.)_
+  _(Built 2026-09-23 as `protocol/provisioner`, M4.2.)_ The lease
+  table is a **cache of what the driver rendered**, never persisted:
+  a restarted provisioner **re-adopts** from the platform
+  (`Driver.List` over the labels set at `Start`) as `running` leases
+  with `Until = now + AdoptGrace`; the owner's next `#extend` sets the
+  real deadline, else `Sweep` kills — the birth window's shape again.
+  A stateful provisioner is ruled out (ADR-0009 amendment, decision
+  `uzgl`).
 - **Driver** — the provisioner's per-platform seam,
   `Driver{Start(spec, until) → Handle; Extend(Handle, until);
   Kill(Handle)}`: k8s Job (`activeDeadlineSeconds`), docker, Akash
@@ -565,7 +571,10 @@ whose deployment-free form differs from the talos wording. Source:
   imports a platform SDK. _(Built 2026-09-23 as
   `provisioner.Driver`: `Start(StartSpec{Lease, Image, Params, Until})
   → Handle`. The lease id reaches `Start` so a driver without a
-  native deadline can label for its orphan sweep.)_
+  native deadline can label for its orphan sweep.)_ Every driver
+  labels what it starts with `sap/lease=<id>` and `sap/owner=<actor
+  id>` — immutable facts only, never `until` — and `List` returns
+  them for re-adoption at start.
 - **Lease** — what a provisioner holds for a spawner: **passive** —
   every lease has a deadline, each renewal beat extends it, and a
   parent that stops renewing (or dies) lets its children lapse: the
@@ -579,8 +588,9 @@ whose deployment-free form differs from the talos wording. Source:
   wrapper is where tranche policy lives (M5). A failed `#extend`
   leaves the reply untouched; the next beat retries. The **lease
   handle** is `(provisioner id, lease id)`. On a platform without a
-  native deadline (docker) the guard is best-effort: the driver
-  sweeps orphans by label at the next start. A lease has an **owner**,
+  native deadline (docker) the guard is best-effort: at the next
+  start the provisioner re-adopts by label with a grace deadline and
+  sweeps what no owner extends. A lease has an **owner**,
   the actor the chain bound at `#spawn`. `#extend` and `#kill` are the
   owner's alone: holding a chain to the facet admits the call, and
   ownership selects the lease. It is the same split as the birth

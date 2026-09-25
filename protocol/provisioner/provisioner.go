@@ -19,9 +19,19 @@
 // under this actor's clock. Sweep runs inside each handler and is
 // exported for the owner's beat — on a platform with a native
 // deadline (k8s activeDeadlineSeconds) it is bookkeeping, on one
-// without (docker) it IS the deadline while this process lives; the
-// driver's orphan sweep at start covers the gap. Nothing here starts
-// a goroutine.
+// without (docker) it IS the deadline while this process lives; Adopt
+// at the next start covers the gap. Nothing here starts a goroutine.
+//
+// # The table is a cache, not a record
+//
+// The lease table is what this process rendered, never persisted
+// (ADR-0009 amendment; invariant 12). A restarted provisioner calls
+// Adopt before Listen: Driver.List returns every container the driver
+// labelled at Start (lease id, owner — immutable facts; never the
+// deadline), and each becomes a running lease with Until = now +
+// AdoptGrace. The owner's next #extend sets the real deadline; an
+// owner that never shows lets Sweep kill it — the birth window's
+// shape again.
 //
 // # State machine
 //
@@ -36,11 +46,12 @@
 //
 // # The driver
 //
-// Driver{Start, Extend, Kill} is the one seam a platform fills.
+// Driver{Start, Extend, Kill, List} is the one seam a platform fills.
 // Drivers live outside the protocol module (k8s, docker; a market
 // later) so protocol/ never imports a platform SDK. Driver.Extend on
 // a platform without a native deadline is a no-op; Sweep does the
-// killing.
+// killing. Every driver labels what it starts with LabelLease and
+// LabelOwner so List can return it.
 package provisioner
 
 import (
@@ -64,24 +75,46 @@ import (
 // name, a container id). Opaque to the provisioner.
 type Handle string
 
-// StartSpec is what a driver starts: the lease id (so a platform
-// without a native deadline can label the container for its orphan
-// sweep), the image by digest, the params to inject unread, and the
-// first deadline.
+// Labels every driver sets on what it starts, and reads back at List.
+// Immutable facts only: the deadline moves every beat and has no home
+// on docker, so it is never stored on the platform.
+const (
+	LabelLease = "sap/lease"
+	LabelOwner = "sap/owner"
+)
+
+// StartSpec is what a driver starts: the lease id and owner (to label
+// the container for List), the image by digest, the params to inject
+// unread, and the first deadline.
 type StartSpec struct {
 	Lease  string
+	Owner  cert.ActorID
 	Image  string
 	Params []byte
 	Until  int64
 }
 
+// Running is one container a driver finds alive at List: the labels
+// it set at Start, the image, and its handle.
+type Running struct {
+	Lease  string
+	Owner  cert.ActorID
+	Image  string
+	Handle Handle
+}
+
 // Driver renders leases on one platform. Every call is synchronous;
 // an error from Start means nothing is running, an error from Extend
 // or Kill leaves the lease as it was (the caller retries on its beat).
+// List returns every container this driver labelled and that is
+// still alive; containers without both labels are not the driver's
+// to report (skip them, log if you like — never kill what you do not
+// understand).
 type Driver interface {
 	Start(ctx context.Context, spec StartSpec) (Handle, error)
 	Extend(ctx context.Context, h Handle, until int64) error
 	Kill(ctx context.Context, h Handle) error
+	List(ctx context.Context) ([]Running, error)
 }
 
 // State is where a lease is in its machine.
@@ -119,6 +152,11 @@ const (
 // Provisioner.DriverTimeout is 0. A number, not a rule.
 const DefaultDriverTimeout = 60 * time.Second
 
+// DefaultAdoptGrace is how long an adopted lease lives before an
+// owner must have extended it, when Provisioner.AdoptGrace is 0. Size
+// it to a spawner's beat plus slack. A number, not a rule.
+const DefaultAdoptGrace = 5 * time.Minute
+
 // imageByDigest is the one image shape accepted (ADR-0009: by digest,
 // never by tag — the parent names code, not a moving pointer).
 var imageByDigest = regexp.MustCompile(`^[^@\s]+@sha256:[0-9a-f]{64}$`)
@@ -141,8 +179,11 @@ type Provisioner struct {
 	// Start (docker run) needs more than one that only submits (a k8s
 	// Job). A cancelled Start fails the #spawn and drops the lease.
 	DriverTimeout time.Duration
+	// AdoptGrace is the deadline Adopt gives each lease it takes over,
+	// counted from the actor's clock; 0 ⇒ DefaultAdoptGrace.
+	AdoptGrace time.Duration
 	// Log receives what is not surfaced on the wire: Sweep's kills and
-	// their failures. nil ⇒ slog.Default().
+	// their failures, Adopt's takeovers. nil ⇒ slog.Default().
 	Log *slog.Logger
 
 	a      *actor.Actor
@@ -205,6 +246,39 @@ func (p *Provisioner) driverCtx(ctx context.Context) (context.Context, context.C
 	return context.WithTimeout(ctx, d)
 }
 
+// Adopt takes over what the driver finds alive: each Running the
+// table does not already hold becomes a running lease with Until =
+// now + AdoptGrace. Call once before Listen on a restart; a lease
+// already in the table (spawned since, or adopted before) is left as
+// it is. A List failure adopts nothing and is returned.
+func (p *Provisioner) Adopt(ctx context.Context) error {
+	dctx, cancel := p.driverCtx(ctx)
+	found, err := p.Driver.List(dctx)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("adopt: list: %w", err)
+	}
+	grace := p.AdoptGrace
+	if grace <= 0 {
+		grace = DefaultAdoptGrace
+	}
+	until := p.a.Now() + int64(grace/time.Second)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, r := range found {
+		if r.Lease == "" || r.Owner == "" {
+			p.log().Warn("provisioner: adopt skipped unlabelled container", "handle", r.Handle)
+			continue
+		}
+		if _, ok := p.leases[r.Lease]; ok {
+			continue
+		}
+		p.leases[r.Lease] = &Lease{ID: r.Lease, Owner: r.Owner, Image: r.Image, Until: until, State: StateRunning, Handle: r.Handle}
+		p.log().Info("provisioner: lease adopted", "lease", r.Lease, "owner", r.Owner, "until", until)
+	}
+	return nil
+}
+
 // Sweep lapses every running lease whose deadline has passed under the
 // actor's effective clock: Driver.Kill, then the lease leaves the
 // table. A Kill that fails is logged and the lease stays for the next
@@ -259,7 +333,7 @@ func (p *Provisioner) spawn(ctx context.Context, inv *actor.Invocation) ([]byte,
 	p.mu.Unlock()
 
 	dctx, cancel := p.driverCtx(ctx)
-	h, err := p.Driver.Start(dctx, StartSpec{Lease: id, Image: req.Image, Params: req.Params, Until: req.Until})
+	h, err := p.Driver.Start(dctx, StartSpec{Lease: id, Owner: inv.From, Image: req.Image, Params: req.Params, Until: req.Until})
 	cancel()
 
 	p.mu.Lock()

@@ -128,6 +128,9 @@ func (d *fakeDriver) Kill(_ context.Context, h provisioner.Handle) error {
 	return nil
 }
 
+// List: nothing survives a restart of the in-process fake.
+func (d *fakeDriver) List(context.Context) ([]provisioner.Running, error) { return nil, nil }
+
 func (d *fakeDriver) seen() (extends []int64, kills []provisioner.Handle) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

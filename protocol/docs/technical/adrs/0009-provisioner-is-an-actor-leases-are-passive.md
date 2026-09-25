@@ -91,3 +91,33 @@ docker**.
   runs until the next sweep.
 - Open: the provisioner's own consent to its customers (v0: the
   parent's key; the frontdoor/negotiated-offer path is M5-adjacent).
+
+### Amendment 2026-09-25 — restart re-adopts from the platform
+
+The lease table is a **cache of what the driver rendered**, not a
+record: the truth about a child's lifetime is the parent's consent
+(renewed on the beat) and the child's self-lapse; the provisioner's
+deadline is the guard. So a restarted provisioner **re-adopts** from
+the platform rather than persisting: `Driver.List` returns every
+container the driver labelled at `Start` — `sap/lease=<id>`,
+`sap/owner=<actor id>`, both immutable facts (docker labels cannot
+change) — and `Provisioner.Adopt` rebuilds them as `running` leases
+with **`Until = now + AdoptGrace`**. The owner's next `#extend` sets
+the real deadline; an owner that does not show within the grace lets
+`Sweep` kill it — the birth window's shape again. `Until` is never
+stored on the platform. Unlabelled or unparsable containers are
+logged and left alone. The docker orphan sweep at start is this same
+`List` with adopt in place of kill.
+
+Ruled out: a **stateful provisioner** persisting its table. It cuts
+against invariant 12 (restart from spec, not snapshot), would be the
+first actor needing a durable key (root invariant 2 for the talos
+consumer), and is a second source of truth that drifts from the
+platform — every drift case needs the reconciliation above, so it is
+re-adopt plus a database. The spawner's born table is equally
+volatile by design; a provisioner restart is the same kind of event.
+
+Trust: whoever can create labelled containers in the provisioner's
+namespace can inject a lease — but that principal can already kill
+children directly. Same trust domain, no new exposure.
+(Decision `talos-config-uzgl`, spike `udof`.)

@@ -29,8 +29,20 @@ type driver struct {
 	startErr  error
 	extendErr error
 	killErr   error
+	listErr   error
+	// alive is what List reports (what a restarted provisioner finds).
+	alive []provisioner.Running
 	// gate, when set, blocks Start until closed (a slow image pull).
 	gate chan struct{}
+}
+
+func (d *driver) List(_ context.Context) ([]provisioner.Running, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.listErr != nil {
+		return nil, d.listErr
+	}
+	return append([]provisioner.Running(nil), d.alive...), nil
 }
 
 func (d *driver) Start(ctx context.Context, s provisioner.StartSpec) (provisioner.Handle, error) {
@@ -178,7 +190,7 @@ func TestLeaseMachine(t *testing.T) {
 	r.drv.mu.Lock()
 	s := r.drv.starts[0]
 	r.drv.mu.Unlock()
-	if s.Lease != id || s.Image != image || string(s.Params) != `{"opaque":true}` || s.Until != t0+600 {
+	if s.Lease != id || s.Owner != r.customer.ID() || s.Image != image || string(s.Params) != `{"opaque":true}` || s.Until != t0+600 {
 		t.Fatalf("driver start %+v", s)
 	}
 
@@ -295,6 +307,84 @@ func TestDriverTimeout(t *testing.T) {
 	refused(t, err, context.DeadlineExceeded.Error())
 	if len(r.p.Leases()) != 0 {
 		t.Fatalf("table after a timed-out start %+v", r.p.Leases())
+	}
+}
+
+// TestAdopt: a restarted provisioner takes over what the driver finds
+// by label, with a grace deadline the owner must extend. The owner's
+// #extend and #kill work on an adopted lease; a stranger's are refused;
+// an unextended one lapses at the grace; unlabelled containers and
+// leases already in the table are left alone; a List failure adopts
+// nothing.
+func TestAdopt(t *testing.T) {
+	r := setup(t)
+	r.p.AdoptGrace = 300 * time.Second
+	live := r.spawn(r.customer, t0+600) // spawned before the (simulated) restart
+	r.drv.set(func(d *driver) {
+		d.alive = []provisioner.Running{
+			{Lease: "aa", Owner: r.customer.ID(), Image: image, Handle: "ctr-aa"},
+			{Lease: "bb", Owner: r.customer.ID(), Image: image, Handle: "ctr-bb"},
+			{Lease: live, Owner: r.stranger.ID(), Image: image, Handle: provisioner.Handle("ctr-" + live)}, // already held; not overwritten
+			{Handle: "ctr-unlabelled"},
+		}
+	})
+	if err := r.p.Adopt(r.Ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(r.p.Leases()); n != 3 {
+		t.Fatalf("table %+v, want 3", r.p.Leases())
+	}
+	a, _ := r.p.Lease("aa")
+	if a.State != provisioner.StateRunning || a.Owner != r.customer.ID() || a.Until != t0+300 || a.Handle != "ctr-aa" || a.Image != image {
+		t.Fatalf("adopted %+v", a)
+	}
+	if l, _ := r.p.Lease(live); l.Owner != r.customer.ID() || l.Until != t0+600 {
+		t.Fatalf("held lease overwritten by adopt: %+v", l)
+	}
+
+	// Ownership carries over from the label.
+	_, err := r.call(r.stranger, spawn.FacetExtend, spawn.ExtendRequest{Lease: "aa", Until: t0 + 7200})
+	refused(t, err, provisioner.RefuseNotOwner)
+	if _, err := r.call(r.customer, spawn.FacetExtend, spawn.ExtendRequest{Lease: "aa", Until: t0 + 7200}); err != nil {
+		t.Fatalf("#extend adopted: %v", err)
+	}
+	if _, err := r.call(r.customer, spawn.FacetKill, spawn.KillRequest{Lease: "bb"}); err != nil {
+		t.Fatalf("#kill adopted: %v", err)
+	}
+	// The extended one outlives the grace; nothing else to lapse.
+	r.Clock.Set(t0 + 300)
+	r.p.Sweep(r.Ctx)
+	if l, ok := r.p.Lease("aa"); !ok || l.Until != t0+7200 {
+		t.Fatalf("extended adopted lease %+v ok=%v", l, ok)
+	}
+
+	// An adopted lease nobody extends lapses at the grace, through Kill.
+	r.drv.set(func(d *driver) { d.alive = []provisioner.Running{{Lease: "cc", Owner: r.customer.ID(), Image: image, Handle: "ctr-cc"}} })
+	if err := r.p.Adopt(r.Ctx); err != nil {
+		t.Fatal(err)
+	}
+	r.Clock.Set(t0 + 600)
+	r.p.Sweep(r.Ctx)
+	if _, ok := r.p.Lease("cc"); ok {
+		t.Fatal("unextended adopted lease survived its grace")
+	}
+	r.drv.mu.Lock()
+	kills := append([]provisioner.Handle(nil), r.drv.kills...)
+	r.drv.mu.Unlock()
+	// #kill of bb first; live and cc lapse in the same sweep, in map order.
+	if len(kills) != 3 || kills[0] != "ctr-bb" ||
+		!(kills[1] == "ctr-cc" && kills[2] == "ctr-"+provisioner.Handle(live)) &&
+			!(kills[2] == "ctr-cc" && kills[1] == "ctr-"+provisioner.Handle(live)) {
+		t.Fatalf("kills %v", kills)
+	}
+
+	// List failing adopts nothing and says so.
+	r.drv.set(func(d *driver) { d.listErr = errors.New("api down"); d.alive = []provisioner.Running{{Lease: "dd", Owner: r.customer.ID(), Handle: "ctr-dd"}} })
+	if err := r.p.Adopt(r.Ctx); err == nil || !strings.Contains(err.Error(), "api down") {
+		t.Fatalf("adopt with a failing List: %v", err)
+	}
+	if _, ok := r.p.Lease("dd"); ok {
+		t.Fatal("adopted through a failed List")
 	}
 }
 
