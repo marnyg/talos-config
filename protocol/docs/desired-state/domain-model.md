@@ -157,9 +157,15 @@ arrives. Supervision trees become **funding trees**: leases are
 **passive**, the `#renew` loop is child-initiated and each beat
 `#extend`s the lease; a missed beat is natural death, and a
 well-behaved child **self-lapses** once it holds no live edge.
-_(Designed 2026-09-21 (`d5672e2`), protocol ADR-0008/0009; M4 `0bc.4`. The
-handshake — intro, `#birth`, kit, promise, child side — built
-2026-09-23 as `protocol/spawn`, M4.1 `0bc.4.1`.)_
+A provisioner's **customer** is a spawner it holds a consent for —
+v0: one root over `#spawn/#extend/#kill`, named when the provisioner
+starts; only the lease's owner (the customer that sent `#spawn`) may
+`#extend` or `#kill` it.
+_(Designed 2026-09-21 (`d5672e2`), protocol ADR-0008/0009; M4 `0bc.4`.
+Built: the handshake as `protocol/spawn` (M4.1, 2026-09-23), the
+provisioner actor as `protocol/provisioner` (M4.2, 2026-09-23), the
+k8s/docker drivers and the child/provisioner binaries in `actors/`
+(M4.3–M4.5, 2026-09-25).)_
 
 ## Economics
 
@@ -562,7 +568,12 @@ whose deployment-free form differs from the talos wording. Source:
   with `Until = now + AdoptGrace`; the owner's next `#extend` sets the
   real deadline, else `Sweep` kills — the birth window's shape again.
   A stateful provisioner is ruled out (ADR-0009 amendment, decision
-  `uzgl`).
+  `uzgl`). _(Binary: `actors/cmd/provisioner`, M4.5.)_
+- **Customer** — a spawner a provisioner holds a consent for: the
+  one who may `#spawn`, and the owner of each lease it spawned (only
+  the owner may `#extend`/`#kill` it). v0: one root per customer over
+  all three facets, minted when the provisioner starts
+  (`-customer`); a market's negotiated offer replaces that in M5.
 - **Driver** — the provisioner's per-platform seam,
   `Driver{Start(spec, until) → Handle; Extend(Handle, until);
   Kill(Handle)}`: k8s Job (`activeDeadlineSeconds`), docker, Akash

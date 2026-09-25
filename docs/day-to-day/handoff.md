@@ -36,8 +36,13 @@ protocol half of M4 complete.
   `NotReady` / `SchedulingDisabled`; nas1 was being booted back up
   during the session. The acceptance run (`0bc.4.6`) needs a
   schedulable worker.
-- **The actors image is not pushed yet** (`HUB_BUILDER=mar@nixos
-  actors/build.sh`; needs the box + GHCR token).
+- **The actors image is pushed but private** (`ghcr.io/marnyg/sap-
+  actors@sha256:307db953…`, full digest in the protocol handoff):
+  set the GHCR package public before `0bc.4.6`.
+- Same session, broken windows: `cert`'s exhaustive sweep runs in
+  parallel (277 s → 43 s under `-race`); one
+  `irohtransport.SetLogLevel` replaces six copies of the env→level
+  map (config-server + actors vendorHashes moved).
 - `-tags iroh` tests run only inside the nix build; `scripts/test-
   iroh.sh` is the gate for the hub, `nix build .#actors-bin` for
   `actors/cmd/` (AGENTS.md).
@@ -49,7 +54,7 @@ protocol half of M4 complete.
 
 ## Suggested next steps
 
-- Push the actors image; then `0bc.4.6` (parent CLI, provisioner
+- Make the actors image public; then `0bc.4.6` (parent CLI, provisioner
   Deployment on the cluster + a docker host) — see the protocol
   handoff. Confirm nas1 is `Ready` and uncordoned first.
 - Populate nas1's SATA bays; decide the Longhorn replica count.

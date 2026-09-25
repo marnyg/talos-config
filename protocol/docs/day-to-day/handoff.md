@@ -36,9 +36,11 @@ under `protocol/` changed; all of it is in `actors/`.
 
 ## Loose threads
 
-- **The image is not pushed yet.** `HUB_BUILDER=mar@nixos
-  actors/build.sh` needs the linux box + GHCR token; `0bc.4.6` needs
-  the printed digest.
+- **Image pushed, but the package is private**:
+  `ghcr.io/marnyg/sap-actors@sha256:307db953eb5d2bc34d5d43a51063652afc1999503ab2736528cf62469510c487`
+  (tag `800a368`). Anonymous pulls get 403, so neither driver can
+  pull it until the GHCR package is set public (GitHub UI → package
+  settings → visibility) — registry auth is not v0.
 - **How a customer finds the provisioner is a file.** `location.json`
   is the signed, expiring reach-me-at (10 min) copied out of band;
   after the first reply piggyback keeps it fresh. A lighthouse
@@ -56,12 +58,12 @@ under `protocol/` changed; all of it is in `actors/`.
   first beat.
 - Carried: registry auth not v0 (public image); `Running.Image` is as
   the platform names it; `DriverTimeout` bounds docker's pull;
-  `payment` absent (M5); `fh2y`; open problems 8, 9; `cert`'s `rapid`
-  suite ~6 min under `-race` (unfiled broken window).
+  `payment` absent (M5); `fh2y`; open problems 8, 9. `bh74` (the
+  fake-range `198.18.0.1` advert) now also shows on provisioners.
 
 ## Suggested next steps
 
-- Push the image; pin the digest.
+- Make `sap-actors` public on GHCR.
 - `0bc.4.6`: a parent CLI (`cmd/spawn`? laptop, loads
   `location.json`, `Spawn` by digest, logs birth / extend / lapse),
   the provisioner Deployment on the cluster and a `docker` run on a
