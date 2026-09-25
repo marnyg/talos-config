@@ -36,7 +36,6 @@ import (
 
 	"github.com/marnyg/talos-config/actors/child"
 	"github.com/marnyg/talos-config/actors/driver"
-	"github.com/marnyg/talos-config/iroh-go/iroh"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
@@ -65,11 +64,7 @@ func main() {
 			log.Fatalf("SAP_BEAT: %v", err)
 		}
 	}
-	if lvl := os.Getenv("SAP_LOG"); lvl != "" {
-		if l, ok := map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl]; ok {
-			iroh.SetLogLevel(l)
-		}
-	}
+	irohtransport.SetLogLevel(os.Getenv("SAP_LOG")) // trace|debug|info|warn
 
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

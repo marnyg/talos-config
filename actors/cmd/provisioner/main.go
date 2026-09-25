@@ -46,7 +46,6 @@ import (
 
 	"github.com/marnyg/talos-config/actors/driver/docker"
 	"github.com/marnyg/talos-config/actors/driver/k8s"
-	"github.com/marnyg/talos-config/iroh-go/iroh"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
@@ -90,11 +89,7 @@ func main() {
 	)
 	flag.Var(&cust, "customer", "actor id consented to #spawn/#extend/#kill; repeatable")
 	flag.Parse()
-	if lvl := os.Getenv("SAP_LOG"); lvl != "" {
-		if l, ok := map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl]; ok {
-			iroh.SetLogLevel(l)
-		}
-	}
+	irohtransport.SetLogLevel(os.Getenv("SAP_LOG")) // trace|debug|info|warn
 	if len(cust) == 0 {
 		log.Fatal("no -customer: nobody could #spawn")
 	}

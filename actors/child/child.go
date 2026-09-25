@@ -186,7 +186,7 @@ func Live(a *actor.Actor, parent cert.ActorID, now int64) bool {
 func Renew(ctx context.Context, a *actor.Actor, parent cert.ActorID) (int, error) {
 	me := string(a.ID())
 	var certs []cert.Cert
-	var keys [][]actor.GrantKey // per cert: the grant keys it is the last link of
+	var keys [][]actor.GrantKey   // per cert: the grant keys it is the last link of
 	index := make(map[string]int) // sig → position in certs
 	for key, chain := range a.Grants {
 		if len(chain) == 0 {

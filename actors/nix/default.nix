@@ -39,7 +39,7 @@ let
       # (git add first; FOD drift after touching a replaced tree; the
       # two-step --rebuild check). The pre-push hook and CI's vendor-hash
       # job cover this module too.
-      vendorHash = "sha256-p1fuQtV1NI3lSn7uzKfkXHkgCkKiIZH8NDYmRGi2wM8=";
+      vendorHash = "sha256-Rb2KgnNs4PVaVYkY+7ismdQqgzflKmWXJwH7oJqWi9Y=";
       tags = [ "iroh" ];
       env.CGO_ENABLED = 1;
       env.CGO_LDFLAGS = irohGo'.cgoLdflags;

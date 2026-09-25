@@ -26,7 +26,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/iroh-go/iroh"
+	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 )
 
 type forwards map[string]string
@@ -59,11 +59,7 @@ func main() {
 	if len(fwd) == 0 {
 		fwd["apid"] = fmt.Sprintf("127.0.0.1:%d", policy.FacetPort("apid"))
 	}
-	if lvl := os.Getenv("P0_LOG"); lvl != "" { // trace|debug|info|warn
-		if l, ok := map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl]; ok {
-			iroh.SetLogLevel(l)
-		}
-	}
+	irohtransport.SetLogLevel(os.Getenv("P0_LOG")) // trace|debug|info|warn
 	logger := log.New(os.Stderr, "", log.LstdFlags|log.Lmicroseconds)
 	// ADR-0019: the service depends on time.sync; the clock we start
 	// with is on record beside the uptime.

@@ -33,7 +33,7 @@ import (
 	"github.com/marnyg/talos-config/config-server/gateway"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
-	"github.com/marnyg/talos-config/iroh-go/iroh"
+	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
@@ -54,11 +54,7 @@ func main() {
 	if *relay == "" {
 		*relay = *hub
 	}
-	if lvl := os.Getenv("P0_LOG"); lvl != "" { // trace|debug|info|warn
-		if l, ok := map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl]; ok {
-			iroh.SetLogLevel(l)
-		}
-	}
+	irohtransport.SetLogLevel(os.Getenv("P0_LOG")) // trace|debug|info|warn
 	logger := log.New(os.Stderr, "", log.LstdFlags|log.Lmicroseconds)
 	logger.Printf("gateway start: wall %s", time.Now().UTC().Format(time.RFC3339))
 

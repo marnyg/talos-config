@@ -26,7 +26,7 @@ import (
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/meshtun"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
-	"github.com/marnyg/talos-config/iroh-go/iroh"
+	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 )
 
 // SocketProtector is implemented in Kotlin with VpnService.protect:
@@ -94,11 +94,7 @@ func Start(stateDir, hub, relay string, tunFd, mtu int, upstreamDNS, localAddrs,
 	logger := log.New(sink, "", log.Ltime)
 	log.SetOutput(sink) // fakeip's and the transport's package-level lines
 	log.SetFlags(log.Ltime)
-	if lvl := os.Getenv("P0_LOG"); lvl != "" {
-		if l, ok := map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl]; ok {
-			iroh.SetLogLevel(l)
-		}
-	}
+	irohtransport.SetLogLevel(os.Getenv("P0_LOG")) // trace|debug|info|warn
 
 	a, err := nodeagent.Start(nodeagent.Options{
 		Config: nodeagent.Config{Hub: hub, Relay: relay},
