@@ -95,7 +95,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        attr: [config-server-bin, iroh-transport]
+        attr: [config-server-bin, iroh-transport, actors-bin]
     steps:
       - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@v22

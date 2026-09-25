@@ -2,8 +2,8 @@
 # pre-push: refuse to push a stale Go vendorHash, or a Go package whose
 # other-OS half no longer type-checks (see the second block).
 #
-# config-server-bin and iroh-transport vendor the local `replace`d
-# modules (protocol/, iroh-transport/, iroh-go/iroh/) into a
+# config-server-bin, iroh-transport and actors-bin vendor the local
+# `replace`d modules (protocol/, iroh-transport/, iroh-go/iroh/) into a
 # fixed-output derivation, so any change under those trees — or to a
 # go.mod/go.sum — changes the hash while a cached vendor dir keeps
 # building fine locally. CI's `vendor-hash` job catches it, but we push
@@ -31,8 +31,9 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
     # shellcheck disable=SC2086
     files=$(git -C "$repo" diff --name-only $range -- \
       'protocol/**/*.go' 'protocol/*.go' 'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' \
+      'actors/**/*.go' 'actors/*.go' \
       'go.mod' 'go.sum' '*/go.mod' '*/go.sum' \
-      'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 2>/dev/null || true)
+      'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 2>/dev/null || true)
     [ -n "$files" ] && touched="$touched$files
 "
   done
@@ -40,12 +41,12 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
   if [ -n "$touched" ]; then
     echo "pre-push: vendored inputs changed in the pushed range:" >&2
     printf '%s' "$touched" | sort -u | sed 's/^/  /' >&2
-    if ! git -C "$repo" diff --quiet HEAD -- protocol iroh-transport iroh-go/iroh; then
+    if ! git -C "$repo" diff --quiet HEAD -- protocol iroh-transport iroh-go/iroh actors; then
       echo "pre-push: note: working tree is dirty under a vendored tree; the check sees tracked-file contents as on disk" >&2
     fi
     log=$(mktemp "${TMPDIR:-/tmp}/pre-push-vendor.XXXXXX")
     trap 'rm -f "$log"' EXIT
-    for attr in config-server-bin iroh-transport; do
+    for attr in config-server-bin iroh-transport actors-bin; do
       echo "pre-push: checking .#$attr.goModules vendorHash…" >&2
       # Realise first (substitution allowed — a stale cached output is
       # exactly the case), then --rebuild (implies --check) compares.

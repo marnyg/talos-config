@@ -49,6 +49,10 @@
           # The hub binary (cgo against iroh-go, -tags iroh) and its static
           # variant for the fly image. See config-server/nix/default.nix.
           configServer = import ./config-server/nix { inherit pkgs lib; self = self'; };
+          # The protocol's runnable side: provisioner + child binaries on iroh
+          # (-tags iroh, cgo) and their static variant for the image. See
+          # actors/nix/default.nix.
+          actors = import ./actors/nix { inherit pkgs lib; self = self'; };
         in
         lib.mkMerge [
           {
@@ -64,6 +68,11 @@
             #   nix build .#config-server-static   musl, what the fly image ships (linux)
             #   nix build .#hub-image              the fly image (linux; fly/image.nix)
             packages.config-server-bin = configServer.bin;
+            # nix build .#actors-bin     — bin/{child,provisioner} + the actors/
+            #                               suite under -tags iroh -race
+            # nix build .#actors-static  — musl, what actors/image.nix ships (linux)
+            # nix build .#actors-image   — the child/provisioner image (linux)
+            packages.actors-bin = actors.bin;
 
             # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go
             #                               package, drift-checked against iroh-go/iroh
@@ -383,6 +392,15 @@
               self = inputs.self;
               nix2container = inputs'.nix2container.packages.nix2container;
               configServer = configServer.static;
+            };
+            packages.actors-static = actors.static;
+            # nix build .#actors-image — the child/provisioner image
+            # (actors/image.nix; driver: actors/build.sh).
+            packages.actors-image = import ./actors/image.nix {
+              inherit pkgs lib;
+              self = inputs.self;
+              nix2container = inputs'.nix2container.packages.nix2container;
+              actors = actors.static;
             };
           })
         ];

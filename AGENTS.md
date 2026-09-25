@@ -8,9 +8,11 @@ Monorepo around the **sovereign-actor protocol** (decision
   `protocol/docs/` (its own `desired-state/`, ADRs from 0001, the design
   sketch `sovereign-actor-protocol.md`).
 - `actors/` — the protocol's runnable side: platform drivers
-  (`driver/k8s`, `driver/docker`) and later the provisioner/child
-  binaries. Own Go module replacing `../protocol`, like
-  `iroh-transport/`; drivers stay C-free.
+  (`driver/k8s`, `driver/docker`), the child's beat (`child/`), and
+  the `cmd/{provisioner,child}` binaries behind build tag `iroh`. Own
+  Go module replacing `../protocol` + `../iroh-transport`; everything
+  but `cmd/` stays C-free. `nix build .#actors-bin` is the tagged
+  gate; `actors/build.sh` pushes the image (`actors/image.nix`).
 - `config-server/`, `talos/`, `k8s/` — the talos deployment, the
   protocol's first (N=1) consumer; root `docs/` is authoritative for it.
 
@@ -40,7 +42,8 @@ broken node beat was found by a live provisioning run
 
 **After touching `protocol/`, `config-server/` or `iroh-transport/`, run
 `scripts/test-iroh.sh` before pushing.** It is the nix build's test
-phase without the sandbox (~40 s warm). This is separate from the
+phase without the sandbox (~40 s warm). `actors/cmd/` is the same
+story: `nix build .#actors-bin` is the only thing that compiles it. This is separate from the
 pre-push `vendorHash` check — same trees, different failure.
 
 <!-- docs-skill:start -->
