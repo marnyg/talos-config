@@ -14,6 +14,11 @@
 
 ## Read first
 
+- 2026-09-25 — **nas1 is `NotReady,SchedulingDisabled`, w1 `NotReady`**;
+  only cp1 serves (seen at 10:00Z, not investigated). Nothing in git
+  cordoned nas1. Check `kubectl get nodes` before trusting the
+  2026-09-22 deployed-state picture.
+
 - 2026-09-22 — **`go test ./...` in `config-server/` does not gate the
   hub.** The iroh half is behind `-tags iroh` and only the nix build
   runs it, so `main` sat undeployable for three commits (M3 broke the

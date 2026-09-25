@@ -5,68 +5,48 @@
 
 ## Last session
 
-2026-09-23 (second) — **Protocol only: M4.2 built** (`2dafea6`) —
-`protocol/provisioner` (the provisioner actor: lease machine behind
-`Driver{Start, Extend, Kill}`) and the spawner's `#renew` → `#extend`
-decorator. The protocol half of M4 is complete; what remains (`0bc.4.3–
-.6`) is drivers and binaries outside `protocol/`. Nothing under
+2026-09-25 — **Protocol + a new module: `udof` decided, M4.3/M4.4
+drivers built** (`121f8e3`, `e316081`, `2b5c29d`). A provisioner
+restart now re-adopts leases from platform labels instead of
+persisting (decision `uzgl`, ADR-0009 amended); the k8s and docker
+drivers live in **`actors/`**, a new C-free Go module beside
+`iroh-transport/` (in CI's `go` matrix; AGENTS.md layout updated).
+Both were verified against the live platforms — a throwaway Job in
+a `sap-probe` namespace (deleted) and Docker Desktop. Nothing under
 `talos/`, `config-server/` or `k8s/` moved; `scripts/test-iroh.sh`
-green; vendorHashes bumped for the new package. Detail in
+green; vendorHashes unchanged. Detail in
 `protocol/docs/day-to-day/handoff.md`.
 
 ## Previous sessions
 
-2026-09-23 — **Protocol only: M4.1 `protocol/spawn` built** (`25e7dd0`)
-— the birth handshake and the spawner's `#spawn` client. `6sax`, a
-renewal bug, found and fixed the same session. The stale "Quint
-divergence" loose thread below was found already fixed (`08efe79`) and
-struck.
+2026-09-23 (two sessions) — **Protocol only: M4.1 `protocol/spawn`
+and M4.2 `protocol/provisioner` built** (`25e7dd0`, `2dafea6`); the
+protocol half of M4 complete.
 
-2026-09-22 — **nas1 provisioned (node three, the storage node), and a
-protocol regression fixed on the way.**
-
-- **`talos/machines/6c-bf-b5-05-51-a8/` + `hardware/terramaster-f4-425-plus.yaml`**
-  (`72f9038`): TerraMaster F4-425 Plus, worker, `diskEncryption: true`.
-  Install by `diskSelector: type: nvme` (never `/dev/sda` — a 2.1GB USB
-  stick); EPHEMERAL 86GB, `u-longhorn` grew to **912GB**. Longhorn's
-  `create-default-disk` label is declared in `nodeLabels` — the first
-  node where it is git-derived rather than `kubectl label`.
-  Verified live: `Ready`, Longhorn node schedulable, KMS sealed *and*
-  unsealed under the declared UUID, member `ed:90cf67ec…` minted on the
-  machine, `beat ok`. Details in `technical/deployed-state.md`.
-- **Protocol bug `ydq0`, found by the deploy** (`32ef88c`, hashes
-  `4518c2f`): the hub image builds its test suite, and M3 (`5c2bf7d`)
-  had broken `TestHubBeatOverIroh` + `TestNodeAgentEndToEnd` three
-  commits back — `main` was undeployable and nobody knew. `Send`
-  dropped a held chain's first link whenever the receiver signed it,
-  assuming receiver-signed ⇒ the receiver's own consent; the hub's beat
-  grant is receiver-signed *and* a link (its hot key signs as the
-  wallet, ADR-0018), so every node's chain was emptied and answered
-  `ErrAudUnbound`. Moved receiver-side into `VerifyChain.chainUnder`.
-  Protocol handoff has the detail.
-- **Hub `4518c2f` deployed**, unsealed, nas1 approved.
+2026-09-22 — **nas1 provisioned (node three, the storage node)**
+(`72f9038`) and protocol regression `ydq0` fixed (`32ef88c`); hub
+`4518c2f` deployed. Details in `technical/deployed-state.md`.
 
 ## Loose threads
 
-- ~~Quint own-consent strip~~ — ported in `08efe79` (`chainUnder`,
-  `links()`, witness `ownConsentPresentedTest`, mutation-tested); model
-  and Go agree again. The standing rule (model before Go) was broken
-  once under deploy pressure; noted, not repeated.
-- `-tags iroh` tests run only inside the nix build; `go test ./...` in
-  `config-server/` skips them silently — `scripts/test-iroh.sh`
-  (`08efe79`) is the gate now, named in AGENTS.md.
-- nas1's four SATA bays are empty — capacity is one NVMe partition.
-- Longhorn StorageClass is still `defaultClassReplicaCount: 2` with
-  three nodes now present (the chart comment says "revisit when node
-  three lands"). Undecided on purpose.
-- Carried: w1 off since 2026-09-21 (`9l67`); `*.gw` services and three
-  media volumes follow it. Clients on `enrollmsg` v2 (`5q33`). TV not
-  measured (`4te`). `-n cp1` by name fails from the tun (`t7b2`).
+- **nas1 is `NotReady,SchedulingDisabled` and w1 `NotReady`** as of
+  2026-09-25 10:00Z (seen while probing the Jobs API; not
+  investigated). nas1 was `Ready` on 2026-09-22 and nothing in git
+  cordoned it. Only cp1 is serving. Look before assuming anything
+  about the cluster.
+- `-tags iroh` tests run only inside the nix build; `scripts/test-
+  iroh.sh` is the gate (AGENTS.md). `actors/` is C-free and not
+  covered by it — nor yet by the pre-push vendored-tree list.
+- nas1's four SATA bays are empty; Longhorn `replicaCount: 2` with
+  three nodes — undecided on purpose.
+- Carried: w1 off since 2026-09-21 (`9l67`); clients on `enrollmsg`
+  v2 (`5q33`); TV not measured (`4te`); `-n cp1` by name fails from
+  the tun (`t7b2`); `c4vd`, `etzl`.
 
 ## Suggested next steps
 
-- Populate nas1's SATA bays: one `UserVolumeConfig` per disk by serial
-  + kubelet `extraMounts` + switch the Longhorn label to `config`.
-  Applies live, no reinstall.
-- Decide the replica count now that node three exists, and whether cp1
-  and w1 should declare their Longhorn label like nas1 does.
+- Find out why nas1 is cordoned/NotReady before anything else on the
+  cluster — the acceptance run (`0bc.4.6`) needs a schedulable node.
+- Protocol: `0bc.4.5` (child + provisioner binaries + image) — see
+  the protocol handoff.
+- Populate nas1's SATA bays; decide the Longhorn replica count.

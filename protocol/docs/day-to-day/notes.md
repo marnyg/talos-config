@@ -3,6 +3,18 @@
 <!-- "Weather, not climate" for the protocol scope. Each entry
      `YYYY-MM-DD — <note>`. Deployment weather lives in the root notes. -->
 
+- 2026-09-25 — **An actor id does not fit a k8s label value** (`:`
+  and 67 chars vs. a 63-char `[A-Za-z0-9._-]` value). Anywhere an id
+  must ride on a k8s object, use an annotation; only the 16-hex lease
+  id is label-shaped. Docker labels have no such limit. Also: the
+  cluster's namespaces enforce PodSecurity `restricted` — any pod a
+  driver creates needs the full non-root/seccomp/drop-ALL contexts,
+  and so the child image must run as non-root.
+- 2026-09-25 — **Docker's "image missing" 404 has two spellings**:
+  `No such image: …` (classic store) and `no such image: …: image
+  not known` (containerd store, Docker Desktop here). The containerd
+  store also normalises image references on list
+  (`docker.io/library/…`). Compare digests, not names.
 - 2026-09-22 — **The protocol's real consumer is a build away, and it
   is not in `go test ./...`.** `config-server`'s iroh suite (`-tags
   iroh`, cgo) is what exercises a real chain end to end, and it runs
