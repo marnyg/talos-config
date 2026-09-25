@@ -10,9 +10,11 @@ lease machine, `Driver` seam; the spawner's `#renew` decorator and
 `Kill`). 2026-09-25: restart re-adopts from platform labels
 (`Adopt`, decision `uzgl`) and **both drivers are built** in the new
 `actors/` module (`driver/k8s`, `driver/docker`; `0bc.4.3/.4`
-closed), each verified against its live platform. What is left:
-the child + provisioner binaries and image (`0bc.4.5`), the
-acceptance run (`0bc.4.6`). Design: ADR-0008/0009 Proposed (+
+closed), each verified against its live platform; **the same day
+the child and provisioner binaries, the child's beat and the image
+recipe** (`actors/child`, `actors/cmd/*`, `actors-image`; `0bc.4.5`).
+What is left: push the image, then the acceptance run (`0bc.4.6`)
+with a parent CLI. Design: ADR-0008/0009 Proposed (+
 amendment), invariant 13. M1–M3 are built and closed.
 
 **Toward goal:** `desired-state/goals.md` — *Spawning as funded

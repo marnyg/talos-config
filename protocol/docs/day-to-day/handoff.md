@@ -5,66 +5,65 @@
 
 ## Last session
 
-2026-09-25 — **`udof` decided, M4.3 + M4.4 built: both drivers, in a
-new `actors/` module** (`121f8e3`, `e316081`, `2b5c29d`).
+2026-09-25 (second session) — **M4.5 built: the child and provisioner
+binaries, the child's beat, the image recipe** (`b93bfcc`). Nothing
+under `protocol/` changed; all of it is in `actors/`.
 
-- **Restart re-adopts, never persists** (decision `uzgl`; ADR-0009
-  gained an amendment section; glossary updated). The lease table is
-  a cache of what the driver rendered. `Driver` gained
-  `List(ctx) []Running{Lease, Owner, Image, Handle}`; `StartSpec`
-  gained `Owner`; every driver stamps `provisioner.LabelLease` /
-  `LabelOwner` (`sap/lease`, `sap/owner`) — immutable facts only,
-  never the deadline. `Provisioner.Adopt(ctx)` (call before Listen)
-  takes each unheld one as `running` with `Until = now + AdoptGrace`
-  (default 5 min); the owner's next `#extend` sets the real deadline,
-  else `Sweep` kills it. Stateful provisioner ruled out (inv 12,
-  second source of truth, first actor needing a durable key).
-  `TestAdopt` pins it.
-- **`actors/`** — own Go module (`replace ../protocol`), C-free, in
-  CI's `go` matrix. Layout: `driver/` (shared `ParamsEnv =
-  "SAP_INTRO"`), `driver/k8s`, `driver/docker`; `cmd/{provisioner,
-  child}` to come. Both drivers are `net/http` against the platform
-  API — four/five calls each, **no client-go, no docker SDK** —
-  tested against in-memory fakes of those endpoints.
-- **k8s** (`e316081`): Job `sap-<lease>` by digest, intro in env,
-  `activeDeadlineSeconds = until − startTime`, PSS `restricted`
-  contexts, no SA token, `ttlSecondsAfterFinished 600`. **Verified
-  live on k8s 1.32: `activeDeadlineSeconds` is mutable both ways and
-  fires on shortening** — Extend is native, Sweep is bookkeeping.
-  An actor id is not a legal label value (`:`; 67 chars), so
-  `sap/owner` is an **annotation** on k8s. `InCluster()` reads the SA
-  mount; no kubeconfig support.
-- **docker** (`2b5c29d`): create named `sap-<lease>` with labels +
-  env + `AutoRemove`; pull by digest on "no such image" (JSON-line
-  stream, inline errors); Extend no-op; Kill `rm -f` (404 = done);
-  List by label + `status=running`. Verified live against Engine API
-  1.54 (`SAP_DOCKER_LIVE=1 go test -run TestLive`).
+- **`actors/child`** (C-free): `Run` = publish location → `spawn.Born`
+  → beat. Each beat re-`#renew`s every held cert the parent issued
+  (one request; each fresh cert replaces the old last link under
+  every `(target, facet)` it sat at) and republishes. It returns
+  `ErrLapsed` once no unexpired chain at `(parent, #renew)` remains —
+  the self-lapse of invariant 13, on the child's side. A `#ping` echo
+  facet is the P→C probe. Tested over `MemoryNetwork` against a real
+  `Spawner` + `Provisioner`: birth, ping on the child's own consent,
+  renew → `#extend` at the provisioner, lapse.
+- **`cmd/child`**: env only (`SAP_INTRO`, `SAP_RELAY`, `SAP_BEAT`,
+  `SAP_LOG`). Key minted in memory, never written. Homes at the first
+  `iroh:relay=` in the parent's reach-me-at unless `SAP_RELAY` says
+  otherwise. Exit 0 on lapse or SIGTERM.
+- **`cmd/provisioner`**: `-driver k8s|docker`, `-state` (the key
+  persists; `location.json` is derived, rewritten each beat),
+  `-customer ID` (repeatable) → one consent over `#spawn/#extend/#kill`
+  for `-customer-ttl` (365 d) minted at start — ADR-0009's open item,
+  answered for v0 as "a flag". `Adopt` before `Listen`; `Sweep` +
+  republish on `-beat`. Smoke-run against Docker Desktop.
+- **nix**: `actors-bin` (host; runs the tagged suite `-race`),
+  `actors-static` (musl), `actors-image` → `ghcr.io/marnyg/sap-actors`
+  (`actors/image.nix`, child entrypoint, user 65534 for PSS
+  `restricted`), `actors/build.sh` from the gateway's. `actors/` is now
+  in the pre-push vendored list and CI's `vendor-hash` matrix.
 
 ## Loose threads
 
-- **Registry auth is not v0** on either driver: the child image must
-  be public or pre-present. The hub recipe publishes where?
-  (`0bc.4.5` decides.)
-- **`Running.Image` is as the platform names it** — a containerd-
-  store daemon normalises to `docker.io/library/…@sha256:…`. Only
-  informational on adopt; do not compare names, compare digests.
-- `Provisioner.DriverTimeout` (60 s) bounds docker's `Start`, which
-  pulls inside it. Fine for a small image; a goroutine per Start if
-  it hurts (ADR-0009 consequence).
-- The pre-push hook's vendored-tree list does not yet name `actors/`;
-  it must once `cmd/provisioner` gets a nix build and a vendorHash.
-- Carried: `payment` absent (M5); `fh2y`; the provisioner's consent to
-  a customer is one root over three facets (ADR-0009 open item);
-  open problems 8, 9. `cert`'s `rapid` law suite takes ~6 min under
-  `-race` (broken window, unfiled).
+- **The image is not pushed yet.** `HUB_BUILDER=mar@nixos
+  actors/build.sh` needs the linux box + GHCR token; `0bc.4.6` needs
+  the printed digest.
+- **How a customer finds the provisioner is a file.** `location.json`
+  is the signed, expiring reach-me-at (10 min) copied out of band;
+  after the first reply piggyback keeps it fresh. A lighthouse
+  `#publish` (the hub runs none for actors yet) is the real answer.
+- **Customer consent for a year, minted at start.** Revocation is
+  expiry or a restart without the flag. Fine for the acceptance run;
+  a market (M5) replaces the flag.
+- **No k8s manifest for the provisioner** (Deployment + SA with Jobs
+  RBAC + the state volume) — `0bc.4.6`'s, with the parent CLI.
+- **The child's beat is wall-clock; certs are the actor clock.** In
+  tests advance the clock between beats or nothing re-issues later
+  than before (the byte-identical-cert note, 2026-09-23) — and
+  `#extend` only fires when a re-issued exp passes the lease's current
+  deadline, so a kit TTL below the birth window never extends on the
+  first beat.
+- Carried: registry auth not v0 (public image); `Running.Image` is as
+  the platform names it; `DriverTimeout` bounds docker's pull;
+  `payment` absent (M5); `fh2y`; open problems 8, 9; `cert`'s `rapid`
+  suite ~6 min under `-race` (unfiled broken window).
 
 ## Suggested next steps
 
-- `0bc.4.5` `cmd/child` + `cmd/provisioner` + image: read
-  `driver.ParamsEnv`, mint a key, `spawn.Born`, renew on a short beat,
-  exit on no live edge; provisioner binary = `provisioner.New` +
-  `Adopt` + a driver picked by flag; linux cgo iroh image via the hub
-  recipe (`fly/image.nix`). Read `spawn.Born` and `fly/image.nix`
-  first. Add `actors/` to the pre-push vendored list then.
-- `0bc.4.6` acceptance on both platforms; promote ADR-0008/0009;
+- Push the image; pin the digest.
+- `0bc.4.6`: a parent CLI (`cmd/spawn`? laptop, loads
+  `location.json`, `Spawn` by digest, logs birth / extend / lapse),
+  the provisioner Deployment on the cluster and a `docker` run on a
+  host, one child each; then promote ADR-0008/0009 to Accepted and
   prune exploration-log §M4.

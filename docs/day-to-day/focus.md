@@ -22,8 +22,9 @@ binaries (`5q33`), relay access gating (`5gz`), `bh74`.
   **M4 spawn: designed (ADR-0008/0009 Proposed), M4.1 + M4.2 built
   2026-09-23** (`protocol/spawn`, `protocol/provisioner`); **drivers
   built 2026-09-25** in the new `actors/` module (`0bc.4.3/.4`
-  closed); `0bc.4.5` (binaries + image) next; talos wire unchanged
-  throughout. State and history
+  closed), **binaries + image recipe the same day** (`0bc.4.5`);
+  next: push the image, then the acceptance run `0bc.4.6`; talos
+  wire unchanged throughout. State and history
   live in `protocol/docs/day-to-day/`. The talos Provisioner's split
   along ADR-0009 is thread `kckm`, not v0.
 - Small ops: cp1 hostname pin (`t7b2`), w1's provisioning MAC

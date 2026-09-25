@@ -119,3 +119,17 @@
   byte-identical cert. Rule of thumb for renewal tests: `Advance` the
   clock before every beat and assert `fresh.Sig != old.Sig` as a
   premise.
+- 2026-09-25 — **`#extend` fires only when a re-issued exp passes the
+  lease's current deadline** (`spawn.extendFor`: `until > have`), and
+  the first deadline is the birth window's end. A `Spawner.KitTTL`
+  shorter than the window never extends on the first beat — the child
+  renews fine, the provisioner just hears nothing. A test that expects
+  an `#extend` after one beat needs `KitTTL > Window` (or a clock past
+  the window). Found writing `actors/child`'s lifecycle test.
+- 2026-09-25 — **The promise resolves before the child is reachable
+  on its own consent**: `#birth` answers, the parent's promise
+  resolves, and only then does `Born` install the kit and mint the
+  child's consent. A parent that calls the child's app facet straight
+  off `Wait` may be refused once (`no receiver-signed consent roots
+  the chain`); retry. Not a bug — the kit lands on the child after the
+  reply leaves it.

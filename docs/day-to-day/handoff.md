@@ -5,19 +5,22 @@
 
 ## Last session
 
-2026-09-25 — **Protocol + a new module: `udof` decided, M4.3/M4.4
-drivers built** (`121f8e3`, `e316081`, `2b5c29d`). A provisioner
-restart now re-adopts leases from platform labels instead of
-persisting (decision `uzgl`, ADR-0009 amended); the k8s and docker
-drivers live in **`actors/`**, a new C-free Go module beside
-`iroh-transport/` (in CI's `go` matrix; AGENTS.md layout updated).
-Both were verified against the live platforms — a throwaway Job in
-a `sap-probe` namespace (deleted) and Docker Desktop. Nothing under
-`talos/`, `config-server/` or `k8s/` moved; `scripts/test-iroh.sh`
-green; vendorHashes unchanged. Detail in
+2026-09-25 (second) — **Protocol only: M4.5 built** (`b93bfcc`) —
+`actors/cmd/{child,provisioner}` on iroh (behind build tag `iroh`,
+config-server's pattern), the child's beat as C-free `actors/child`,
+and the image recipe (`actors-image` → `ghcr.io/marnyg/sap-actors`,
+`actors/build.sh`). `actors/` joined the pre-push vendored list and
+CI's `vendor-hash` matrix; AGENTS.md layout + quality-gate notes
+updated. Nothing under `talos/`, `config-server/`, `protocol/` or
+`k8s/` moved; `nix build .#actors-bin` green (the tagged suite);
+other vendorHashes unchanged. Detail in
 `protocol/docs/day-to-day/handoff.md`.
 
 ## Previous sessions
+
+2026-09-25 — **`udof` decided, M4.3/M4.4 drivers built** (`121f8e3`,
+`e316081`, `2b5c29d`) in the new `actors/` module; restart re-adopts
+leases from platform labels (decision `uzgl`).
 
 2026-09-23 (two sessions) — **Protocol only: M4.1 `protocol/spawn`
 and M4.2 `protocol/provisioner` built** (`25e7dd0`, `2dafea6`); the
@@ -29,14 +32,15 @@ protocol half of M4 complete.
 
 ## Loose threads
 
-- **nas1 is `NotReady,SchedulingDisabled` and w1 `NotReady`** as of
-  2026-09-25 10:00Z (seen while probing the Jobs API; not
-  investigated). nas1 was `Ready` on 2026-09-22 and nothing in git
-  cordoned it. Only cp1 is serving. Look before assuming anything
-  about the cluster.
+- **nas1 and w1 were powered off** (owner, 2026-09-25) — that is the
+  `NotReady` / `SchedulingDisabled`; nas1 was being booted back up
+  during the session. The acceptance run (`0bc.4.6`) needs a
+  schedulable worker.
+- **The actors image is not pushed yet** (`HUB_BUILDER=mar@nixos
+  actors/build.sh`; needs the box + GHCR token).
 - `-tags iroh` tests run only inside the nix build; `scripts/test-
-  iroh.sh` is the gate (AGENTS.md). `actors/` is C-free and not
-  covered by it — nor yet by the pre-push vendored-tree list.
+  iroh.sh` is the gate for the hub, `nix build .#actors-bin` for
+  `actors/cmd/` (AGENTS.md).
 - nas1's four SATA bays are empty; Longhorn `replicaCount: 2` with
   three nodes — undecided on purpose.
 - Carried: w1 off since 2026-09-21 (`9l67`); clients on `enrollmsg`
@@ -45,8 +49,7 @@ protocol half of M4 complete.
 
 ## Suggested next steps
 
-- Find out why nas1 is cordoned/NotReady before anything else on the
-  cluster — the acceptance run (`0bc.4.6`) needs a schedulable node.
-- Protocol: `0bc.4.5` (child + provisioner binaries + image) — see
-  the protocol handoff.
+- Push the actors image; then `0bc.4.6` (parent CLI, provisioner
+  Deployment on the cluster + a docker host) — see the protocol
+  handoff. Confirm nas1 is `Ready` and uncordoned first.
 - Populate nas1's SATA bays; decide the Longhorn replica count.
