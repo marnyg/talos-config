@@ -37,8 +37,8 @@ under `protocol/` changed; all of it is in `actors/`.
 ## Loose threads
 
 - **Image pushed, but the package is private**:
-  `ghcr.io/marnyg/sap-actors@sha256:307db953eb5d2bc34d5d43a51063652afc1999503ab2736528cf62469510c487`
-  (tag `800a368`). Anonymous pulls get 403, so neither driver can
+  `ghcr.io/marnyg/sap-actors@sha256:f9de434d0ffc3f3798dc3187213c7363a4499e6e37e139f8a0229840c0997c8f`
+  (tag `53b84b4`, built by `scripts/ghcr-push.sh`). Anonymous pulls get 403, so neither driver can
   pull it until the GHCR package is set public (GitHub UI → package
   settings → visibility) — registry auth is not v0.
 - **How a customer finds the provisioner is a file.** `location.json`

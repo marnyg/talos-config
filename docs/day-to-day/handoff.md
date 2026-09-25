@@ -37,12 +37,14 @@ protocol half of M4 complete.
   during the session. The acceptance run (`0bc.4.6`) needs a
   schedulable worker.
 - **The actors image is pushed but private** (`ghcr.io/marnyg/sap-
-  actors@sha256:307db953…`, full digest in the protocol handoff):
+  actors@sha256:f9de434d…`, full digest in the protocol handoff):
   set the GHCR package public before `0bc.4.6`.
 - Same session, broken windows: `cert`'s exhaustive sweep runs in
   parallel (277 s → 43 s under `-race`); one
   `irohtransport.SetLogLevel` replaces six copies of the env→level
-  map (config-server + actors vendorHashes moved).
+  map (config-server + actors vendorHashes moved); the pre-push
+  cross-OS check runs again (stdin was drained); one
+  `scripts/ghcr-push.sh` behind both image `build.sh`s.
 - `-tags iroh` tests run only inside the nix build; `scripts/test-
   iroh.sh` is the gate for the hub, `nix build .#actors-bin` for
   `actors/cmd/` (AGENTS.md).
