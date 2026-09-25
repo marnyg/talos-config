@@ -18,10 +18,15 @@
 
 set -eu
 repo=$(git rev-parse --show-toplevel)
+# git hands the pushed refs over stdin, once. Every block below (and
+# beads' shim) reads them, so keep a copy: a bare `while read` in the
+# first block used to drain it and the cross-OS check never saw a ref.
+refs=$(cat)
 
 if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
   touched=""
   while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ -z "$local_sha" ] && continue                                           # no refs (the heredoc's blank line)
     [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue # deleting a ref
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
       range="$local_sha --not --remotes"
@@ -36,7 +41,9 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
       'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 2>/dev/null || true)
     [ -n "$files" ] && touched="$touched$files
 "
-  done
+  done <<EOF
+$refs
+EOF
 
   if [ -n "$touched" ]; then
     echo "pre-push: vendored inputs changed in the pushed range:" >&2
@@ -73,6 +80,7 @@ fi
 if [ "${SKIP_OSCHECK:-0}" != "1" ]; then
   gotouched=""
   while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ -z "$local_sha" ] && continue
     [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
       range="$local_sha --not --remotes"
@@ -85,7 +93,9 @@ if [ "${SKIP_OSCHECK:-0}" != "1" ]; then
       'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' 2>/dev/null || true)
     [ -n "$files" ] && gotouched="$gotouched$files
 "
-  done
+  done <<EOF
+$refs
+EOF
   if [ -n "$gotouched" ]; then
     case "$(uname -s)" in
       Darwin) other=linux ;;
@@ -107,5 +117,7 @@ fi
 
 # beads' shim (core.hooksPath used to point at .beads/hooks directly).
 if [ -x "$repo/.beads/hooks/pre-push" ]; then
-  exec "$repo/.beads/hooks/pre-push" "$@"
+  exec "$repo/.beads/hooks/pre-push" "$@" <<EOF
+$refs
+EOF
 fi
