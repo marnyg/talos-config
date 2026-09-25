@@ -50,7 +50,10 @@ func usage() {
 
 func bind(relay, bindAddr string) *iroh.Endpoint {
 	if lvl := os.Getenv("P0_LOG"); lvl != "" { // trace|debug|info|warn
-		iroh.SetLogLevel(map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl])
+		// A miss is LogLevel(0), outside the enum (Trace = 1), handed to the FFI unchecked.
+		if l, ok := map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl]; ok {
+			iroh.SetLogLevel(l)
+		}
 	}
 	if relay == "" {
 		fatal("-relay is required")

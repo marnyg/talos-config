@@ -88,7 +88,10 @@ type stats struct {
 func Start(tunFd int, mtu int, relay, peerHex, upstreamDNS, localAddrs string, protector SocketProtector) (*Tunnel, error) {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	if lvl := os.Getenv("P0_LOG"); lvl != "" {
-		iroh.SetLogLevel(map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl])
+		// A miss is LogLevel(0), outside the enum (Trace = 1), handed to the FFI unchecked.
+		if l, ok := map[string]iroh.LogLevel{"trace": iroh.LogLevelTrace, "debug": iroh.LogLevelDebug, "info": iroh.LogLevelInfo, "warn": iroh.LogLevelWarn}[lvl]; ok {
+			iroh.SetLogLevel(l)
+		}
 	}
 	peer, err := iroh.EndpointIdFromString(peerHex)
 	if err != nil {
