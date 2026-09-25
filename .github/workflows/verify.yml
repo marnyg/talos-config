@@ -3,7 +3,8 @@
 # for two weeks; there was no Go test workflow at all). Five jobs:
 #
 #   go            go vet + go test -race for each module (config-server,
-#                 protocol), Go version pinned from each module's go.mod.
+#                 protocol, actors), Go version pinned from each module's
+#                 go.mod.
 #   quint         the fast tier — `check.sh run` (witness tests + random
 #                 simulation), on every push/PR.
 #   quint-verify  the Apalache bounded-model-checking tier
@@ -40,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [config-server, protocol]
+        module: [config-server, protocol, actors]
     steps:
       # Full checkout, not sparse: config-server's policy/ tests read
       # the shipped ../talos/mesh-policy-v3.yaml and the Nickel contract

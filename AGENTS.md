@@ -7,6 +7,10 @@ Monorepo around the **sovereign-actor protocol** (decision
   config-server, Talos, fly, or nebula. Docs sub-scope at
   `protocol/docs/` (its own `desired-state/`, ADRs from 0001, the design
   sketch `sovereign-actor-protocol.md`).
+- `actors/` — the protocol's runnable side: platform drivers
+  (`driver/k8s`, `driver/docker`) and later the provisioner/child
+  binaries. Own Go module replacing `../protocol`, like
+  `iroh-transport/`; drivers stay C-free.
 - `config-server/`, `talos/`, `k8s/` — the talos deployment, the
   protocol's first (N=1) consumer; root `docs/` is authoritative for it.
 
