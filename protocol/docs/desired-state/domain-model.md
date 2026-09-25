@@ -534,9 +534,13 @@ whose deployment-free form differs from the talos wording. Source:
   actor: `Spawn(spec)` sends `#spawn` to a provisioner and returns the
   promise; owns the pending-spawn table, the `#birth` handler, the
   starter kit and the `#renew` decorator. It knows **actors** —
-  nonces, keys, kits, edges — and nothing about containers. _(Built
-  2026-09-23 as `protocol/spawn`, M4.1: `Spawner`, `Born`, the
-  `#spawn`/`#extend`/`#kill` wire types; the decorator is M4.2.)_
+  nonces, keys, kits, edges — and nothing about containers. It holds
+  a **born table** (child → lease handle and the deadline the
+  provisioner holds, as far as the spawner knows): the decorator reads
+  it, `Kill(child)` sends `#kill`, and a child past its deadline is
+  forgotten. _(Built 2026-09-23 as `protocol/spawn`: M4.1 `Spawner`,
+  `Born`, the `#spawn`/`#extend`/`#kill` wire types; M4.2 the born
+  table, the `#renew` decorator, `Kill`.)_
   Provisioner selection is **optional and transparent by default**:
   the spawner is configured with a default provisioner (id + chain)
   and `spec` may name another; a provisioner is just another
@@ -551,12 +555,17 @@ whose deployment-free form differs from the talos wording. Source:
   platform) — and nothing about actors: **a provisioner never learns
   about birth**; the intro is an opaque param blob to it. A third
   party can run one knowing only "be an actor with three facets".
+  _(Built 2026-09-23 as `protocol/provisioner`, M4.2. The lease table
+  is volatile; persisting it is spike `udof`.)_
 - **Driver** — the provisioner's per-platform seam,
   `Driver{Start(spec, until) → Handle; Extend(Handle, until);
   Kill(Handle)}`: k8s Job (`activeDeadlineSeconds`), docker, Akash
   later. One generic provisioner, N drivers; drivers live outside the
   protocol module (as `iroh-transport/` does), so `protocol/` never
-  imports a platform SDK.
+  imports a platform SDK. _(Built 2026-09-23 as
+  `provisioner.Driver`: `Start(StartSpec{Lease, Image, Params, Until})
+  → Handle`. The lease id reaches `Start` so a driver without a
+  native deadline can label for its orphan sweep.)_
 - **Lease** — what a provisioner holds for a spawner: **passive** —
   every lease has a deadline, each renewal beat extends it, and a
   parent that stops renewing (or dies) lets its children lapse: the
@@ -571,7 +580,12 @@ whose deployment-free form differs from the talos wording. Source:
   leaves the reply untouched; the next beat retries. The **lease
   handle** is `(provisioner id, lease id)`. On a platform without a
   native deadline (docker) the guard is best-effort: the driver
-  sweeps orphans by label at the next start.
+  sweeps orphans by label at the next start. A lease has an **owner**,
+  the actor the chain bound at `#spawn`. `#extend` and `#kill` are the
+  owner's alone: holding a chain to the facet admits the call, and
+  ownership selects the lease. It is the same split as the birth
+  nonce: the chain grants, the payload correlates. The provisioner's
+  `Sweep` kills a lapsed lease through its driver on every platform.
 - **Self-lapse** — a well-behaved child **exits when it holds no live
   edge** (every renewable edge expired and renewal failed): "let the
   lease lapse" from the inside, on every platform. "No live edge",

@@ -7,7 +7,7 @@
 
 2026-09-23 (second session) — **M4.2 built: `protocol/provisioner` +
 the spawner's `#renew` decorator** (`2dafea6`; ADR-0009's two halves).
-~330 LOC + tests. `0bc.4.2` done pending close.
+~330 LOC + tests. `0bc.4.2` closed.
 
 - **`protocol/provisioner`** — an actor with `#spawn`/`#extend`/
   `#kill` over a lease table, rendered through `Driver{Start, Extend,
@@ -48,8 +48,10 @@ the spawner's `#renew` decorator** (`2dafea6`; ADR-0009's two halves).
   leases: the spawner's next `#extend` is refused "unknown lease"
   (logged) and the child lapses at its last deadline — k8s by
   `activeDeadlineSeconds`, docker by the label sweep at the next start
-  (`0bc.4.4`). Passive leases make this safe, not seamless; a
-  re-adopt-by-label at start is an idea, not v0.
+  (`0bc.4.4`). Passive leases make this safe, not seamless. Spike
+  `udof` covers the fix: a stateful provisioner that persists the
+  table, re-adopt by label, or both. Decide it before the docker
+  driver fixes the label schema.
 - `#extend` and the decorator's `Send` block the mailbox loop while
   they run (ADR-0009 accepted consequence); `DriverTimeout` = 60 s
   bounds each driver call. A slow `Start` holds the provisioner's loop
@@ -67,6 +69,6 @@ the spawner's `#renew` decorator** (`2dafea6`; ADR-0009's two halves).
   `provisioner.Driver`; the pre-push vendorHash hook will bite on
   every `protocol/` touch.
 - `0bc.4.5` `cmd/child`: `spawn.Born` + a renew loop + self-lapse.
-- Promote ADR-0008/0009 at `0bc.4.6`; prune exploration-log §M4 then;
-  glossary "built" notes for Provisioner/Driver/Lease (proposed below
-  in the session report, not yet written).
+- Promote ADR-0008/0009 at `0bc.4.6`; prune exploration-log §M4 then.
+  The glossary already carries the M4.2 "built" notes, the lease
+  owner rule and the born table.
