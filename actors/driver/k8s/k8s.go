@@ -36,12 +36,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marnyg/talos-config/actors/driver"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/provisioner"
 )
-
-// ParamsEnv is the env var the child reads its intro from.
-const ParamsEnv = "SAP_INTRO"
 
 // Config is one API server and namespace.
 type Config struct {
@@ -271,7 +269,7 @@ func (d *Driver) Start(ctx context.Context, spec provisioner.StartSpec) (provisi
 		Containers: []container{{
 			Name:            "actor",
 			Image:           spec.Image,
-			Env:             []envVar{{Name: ParamsEnv, Value: string(spec.Params)}},
+			Env:             []envVar{{Name: driver.ParamsEnv, Value: string(spec.Params)}},
 			SecurityContext: containerSecurity,
 		}},
 	}

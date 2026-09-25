@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marnyg/talos-config/actors/driver"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/provisioner"
 )
@@ -180,7 +181,7 @@ func TestStartShape(t *testing.T) {
 		t.Fatalf("image %v", c["image"])
 	}
 	env := c["env"].([]any)[0].(map[string]any)
-	if env["name"] != ParamsEnv || env["value"] != `{"nonce":"n"}` {
+	if env["name"] != driver.ParamsEnv || env["value"] != `{"nonce":"n"}` {
 		t.Fatalf("env %v", env)
 	}
 	if c["securityContext"].(map[string]any)["allowPrivilegeEscalation"] != false {
