@@ -53,7 +53,7 @@ the spawner's `#renew` decorator** (`2dafea6`; ADR-0009's two halves).
   table, re-adopt by label, or both. Decide it before the docker
   driver fixes the label schema.
 - `#extend` and the decorator's `Send` block the mailbox loop while
-  they run (ADR-0009 accepted consequence); `DriverTimeout` = 60 s
+  they run (ADR-0009 accepted consequence); `Provisioner.DriverTimeout` (default 60 s)
   bounds each driver call. A slow `Start` holds the provisioner's loop
   for an image pull. A goroutine per `Start` is the obvious change if
   it hurts.

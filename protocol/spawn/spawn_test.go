@@ -2,19 +2,17 @@ package spawn_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/talos-config/protocol/internal/actortest"
 	"github.com/marnyg/talos-config/protocol/postage"
 	"github.com/marnyg/talos-config/protocol/provisioner"
 	"github.com/marnyg/talos-config/protocol/spawn"
@@ -26,67 +24,8 @@ var image = "img@sha256:" + strings.Repeat("a", 64)
 const t0 int64 = 1_700_000_000
 const hour int64 = 3600
 
-type fakeClock struct{ now atomic.Int64 }
-
-func (c *fakeClock) Now() int64      { return c.now.Load() }
-func (c *fakeClock) Advance(d int64) { c.now.Add(d) }
-
-type world struct {
-	t      *testing.T
-	ctx    context.Context
-	cancel context.CancelFunc
-	net    *actor.MemoryNetwork
-	clk    *fakeClock
-}
-
-func newWorld(t *testing.T) *world {
-	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	clk := &fakeClock{}
-	clk.now.Store(t0)
-	return &world{t: t, ctx: ctx, cancel: cancel, net: actor.NewMemoryNetwork(), clk: clk}
-}
-
-func newSigner(t *testing.T) cert.EdSigner {
-	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cert.NewEdSigner(priv)
-}
-
-func (w *world) actor(name string) *actor.Actor {
-	w.t.Helper()
-	s := newSigner(w.t)
-	ep, err := w.net.Bind(s.ActorID(), name)
-	if err != nil {
-		w.t.Fatal(err)
-	}
-	a := actor.New(s, ep)
-	a.Clock = w.clk.Now
-	return a
-}
-
-func (w *world) start(a *actor.Actor) {
-	w.t.Helper()
-	done := make(chan error, 1)
-	go func() { done <- a.Listen(w.ctx) }()
-	w.t.Cleanup(func() {
-		w.cancel()
-		select {
-		case err := <-done:
-			if err != nil && !errors.Is(err, context.Canceled) {
-				w.t.Errorf("Listen: %v", err)
-			}
-		case <-time.After(5 * time.Second):
-			w.t.Error("Listen did not stop")
-		}
-	})
-	if _, err := a.PublishLocation(hour); err != nil {
-		w.t.Fatal(err)
-	}
-}
+// world is the shared memory-network rig (internal/actortest).
+type world = actortest.World
 
 // consent signs {iss: s, aud, invoke, cav: {target: [s], facet}}.
 func consent(t *testing.T, a *actor.Actor, aud cert.ActorID, facet string) cert.Cert {
@@ -146,7 +85,7 @@ type fakeDriver struct {
 }
 
 func newFakeDriver(w *world, parent cert.ActorID) *fakeDriver {
-	d := &fakeDriver{w: w, a: w.actor("prov"), hatched: make(chan hatch, 8), facets: []string{"app"}}
+	d := &fakeDriver{w: w, a: w.Actor("prov"), hatched: make(chan hatch, 8), facets: []string{"app"}}
 	// The provisioner's consent to its customer: one delegable root over
 	// all three facets (v0: the parent's key, ADR-0009 open item).
 	c, err := cert.Sign(cert.Cert{
@@ -157,7 +96,7 @@ func newFakeDriver(w *world, parent cert.ActorID) *fakeDriver {
 		Exp: t0 + 24*hour,
 	}, d.a.Signer)
 	if err != nil {
-		w.t.Fatal(err)
+		w.T.Fatal(err)
 	}
 	d.a.Consents = []cert.Cert{c}
 	d.p = provisioner.New(d.a, d)
@@ -207,14 +146,14 @@ func (d *fakeDriver) run(params []byte) {
 		d.hatched <- hatch{err: err}
 		return
 	}
-	child := d.w.actor("child-" + in.Nonce[:6])
+	child := d.w.Actor("child-" + in.Nonce[:6])
 	child.Postage = postage.Default
-	d.w.start(child)
+	d.w.Start(child)
 	var kit spawn.Kit
 	if d.born != nil {
 		kit, err = d.born(child, in)
 	} else {
-		kit, err = spawn.Born(d.w.ctx, child, in, d.facets, hour)
+		kit, err = spawn.Born(d.w.Ctx, child, in, d.facets, hour)
 	}
 	d.hatched <- hatch{a: child, kit: kit, err: err}
 }
@@ -239,8 +178,8 @@ type rig struct {
 }
 
 func setup(t *testing.T) *rig {
-	w := newWorld(t)
-	p := w.actor("parent")
+	w := actortest.New(t, t0)
+	p := w.Actor("parent")
 	sp := spawn.New(p)
 	sp.Postage = postage.Require(8)
 	sp.Window = 10 * 60
@@ -249,8 +188,8 @@ func setup(t *testing.T) *rig {
 	// The parent knows where its provisioner is (a configured
 	// correspondent); the chain to #spawn is the provisioner's consent,
 	// presented empty.
-	w.start(drv.a)
-	w.start(p)
+	w.Start(drv.a)
+	w.Start(p)
 	if err := p.UpdateLocation(drv.a.ID(), drv.a.CurrentLocation()); err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +219,7 @@ func (s *logSink) count() int {
 
 func (r *rig) waitPromise(t *testing.T, pr *spawn.Promise) spawn.Birth {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(r.w.ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.w.Ctx, 5*time.Second)
 	defer cancel()
 	b, err := pr.Wait(ctx)
 	if err != nil {
@@ -296,7 +235,7 @@ func (r *rig) waitPromise(t *testing.T, pr *spawn.Promise) spawn.Birth {
 // the consent the child minted itself.
 func TestSpawnBirth(t *testing.T) {
 	r := setup(t)
-	pr, err := r.sp.Spawn(r.w.ctx, r.spec)
+	pr, err := r.sp.Spawn(r.w.Ctx, r.spec)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
@@ -347,9 +286,9 @@ func TestSpawnBirth(t *testing.T) {
 	// One beat: the child renews its chain at the parent. The clock
 	// moves first — under a frozen clock the re-issue is byte-identical
 	// to the kit cert and proves nothing.
-	r.w.clk.Advance(r.sp.Window / 4)
+	r.w.Clock.Advance(r.sp.Window / 4)
 	payload, _ := actor.EncodeRenewRequest([]cert.Cert{renew}, nil)
-	rep, err := h.a.Send(r.w.ctx, r.parent.ID(), actor.FacetRenew, payload)
+	rep, err := h.a.Send(r.w.Ctx, r.parent.ID(), actor.FacetRenew, payload)
 	if err != nil {
 		t.Fatalf("child renew: %v", err)
 	}
@@ -372,9 +311,9 @@ func TestSpawnBirth(t *testing.T) {
 	// Second beat on the FRESH cert (6sax): the kit chain is P's own
 	// consent, and P re-installed it as it re-issued it.
 	h.a.Grant(r.parent.ID(), actor.FacetRenew, fresh[0])
-	r.w.clk.Advance(r.sp.Window / 4)
+	r.w.Clock.Advance(r.sp.Window / 4)
 	payload, _ = actor.EncodeRenewRequest([]cert.Cert{fresh[0]}, nil)
-	if _, err := h.a.Send(r.w.ctx, r.parent.ID(), actor.FacetRenew, payload); err != nil {
+	if _, err := h.a.Send(r.w.Ctx, r.parent.ID(), actor.FacetRenew, payload); err != nil {
 		t.Fatalf("child's second beat: %v", err)
 	}
 
@@ -383,7 +322,7 @@ func TestSpawnBirth(t *testing.T) {
 	h.a.AcceptTable["app"] = func(_ context.Context, inv *actor.Invocation) ([]byte, error) {
 		return []byte(`"hi ` + string(inv.From) + `"`), nil
 	}
-	rep, err = r.parent.Send(r.w.ctx, b.ID, "app", []byte(`{}`))
+	rep, err = r.parent.Send(r.w.Ctx, b.ID, "app", []byte(`{}`))
 	if err != nil {
 		t.Fatalf("parent → child app: %v", err)
 	}
@@ -391,7 +330,7 @@ func TestSpawnBirth(t *testing.T) {
 		t.Fatalf("app reply %s", rep.Payload)
 	}
 	// ...and a facet the child did not consent to is refused.
-	_, err = r.parent.Send(r.w.ctx, b.ID, "other", []byte(`{}`))
+	_, err = r.parent.Send(r.w.Ctx, b.ID, "other", []byte(`{}`))
 	if remoteErr(t, err).Code != actor.StatusUnauthorized {
 		t.Fatalf("unconsented facet: %v", err)
 	}
@@ -408,9 +347,9 @@ func TestNonceBindsToFirstKey(t *testing.T) {
 	r.drv.born = func(child *actor.Actor, in spawn.Intro) (spawn.Kit, error) {
 		intro = in
 		close(got)
-		return spawn.Born(r.w.ctx, child, in, nil, 0)
+		return spawn.Born(r.w.Ctx, child, in, nil, 0)
 	}
-	pr, err := r.sp.Spawn(r.w.ctx, r.spec)
+	pr, err := r.sp.Spawn(r.w.Ctx, r.spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +363,7 @@ func TestNonceBindsToFirstKey(t *testing.T) {
 	knock := func(a *actor.Actor, nonce string) (*actor.Reply, error) {
 		a.Grant(r.parent.ID(), spawn.FacetBirth, intro.Consent)
 		payload, _ := json.Marshal(spawn.BirthRequest{Nonce: nonce})
-		return a.Send(r.w.ctx, r.parent.ID(), spawn.FacetBirth, payload)
+		return a.Send(r.w.Ctx, r.parent.ID(), spawn.FacetBirth, payload)
 	}
 
 	// Same key: idempotent, byte-identical kit.
@@ -441,8 +380,8 @@ func TestNonceBindsToFirstKey(t *testing.T) {
 	}
 
 	// Another key with the same nonce inside the window.
-	imp := r.w.actor("impostor")
-	r.w.start(imp)
+	imp := r.w.Actor("impostor")
+	r.w.Start(imp)
 	_, err = knock(imp, intro.Nonce)
 	if re := remoteErr(t, err); re.Code != actor.StatusError || re.Msg != spawn.RefuseNonceBound {
 		t.Fatalf("impostor: %v", err)
@@ -462,7 +401,7 @@ func TestNonceBindsToFirstKey(t *testing.T) {
 		got2 <- in
 		return spawn.Kit{}, errors.New("held back")
 	}
-	pr2, err := r.sp.Spawn(r.w.ctx, r.spec)
+	pr2, err := r.sp.Spawn(r.w.Ctx, r.spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +441,7 @@ func TestBirthWindow(t *testing.T) {
 		intro = in
 		return spawn.Kit{}, errors.New("stalled")
 	}
-	pr, err := r.sp.Spawn(r.w.ctx, r.spec)
+	pr, err := r.sp.Spawn(r.w.Ctx, r.spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -517,9 +456,9 @@ func TestBirthWindow(t *testing.T) {
 	default:
 	}
 
-	r.w.clk.Advance(r.sp.Window)
+	r.w.Clock.Advance(r.sp.Window)
 	r.sp.Sweep()
-	if _, err := pr.Wait(r.w.ctx); !errors.Is(err, spawn.ErrBirthWindow) {
+	if _, err := pr.Wait(r.w.Ctx); !errors.Is(err, spawn.ErrBirthWindow) {
 		t.Fatalf("promise after window: %v", err)
 	}
 	if r.sp.Pending() != 0 {
@@ -532,7 +471,7 @@ func TestBirthWindow(t *testing.T) {
 	// The late child: its consent has expired — nothing roots.
 	h.a.Grant(r.parent.ID(), spawn.FacetBirth, intro.Consent)
 	payload, _ := json.Marshal(spawn.BirthRequest{Nonce: intro.Nonce})
-	_, err = h.a.Send(r.w.ctx, r.parent.ID(), spawn.FacetBirth, payload)
+	_, err = h.a.Send(r.w.Ctx, r.parent.ID(), spawn.FacetBirth, payload)
 	if remoteErr(t, err).Code != actor.StatusUnauthorized {
 		t.Fatalf("late knock: %v", err)
 	}
@@ -544,14 +483,14 @@ func TestBirthWindow(t *testing.T) {
 func TestSpawnRefused(t *testing.T) {
 	r := setup(t)
 	r.drv.born = func(_ *actor.Actor, in spawn.Intro) (spawn.Kit, error) { return spawn.Kit{}, errors.New("held") }
-	twin, err := r.sp.Spawn(r.w.ctx, r.spec)
+	twin, err := r.sp.Spawn(r.w.Ctx, r.spec)
 	if err != nil {
 		t.Fatal(err)
 	}
 	r.drv.wait(t)
 
 	r.drv.refuse = true
-	_, err = r.sp.Spawn(r.w.ctx, r.spec)
+	_, err = r.sp.Spawn(r.w.Ctx, r.spec)
 	if re := remoteErr(t, err); re.Code != actor.StatusError || !strings.HasSuffix(re.Msg, "no capacity") {
 		t.Fatalf("refusal: %v", err)
 	}
@@ -572,9 +511,9 @@ func TestSpawnRefused(t *testing.T) {
 
 	// The twin lapses at the window like any other; then the table and
 	// the consents are empty.
-	r.w.clk.Advance(r.sp.Window)
+	r.w.Clock.Advance(r.sp.Window)
 	r.sp.Sweep()
-	if _, err := twin.Wait(r.w.ctx); !errors.Is(err, spawn.ErrBirthWindow) {
+	if _, err := twin.Wait(r.w.Ctx); !errors.Is(err, spawn.ErrBirthWindow) {
 		t.Fatalf("twin: %v", err)
 	}
 	if consents, _ := r.parent.Authority(); len(consents) != 0 || r.sp.Pending() != 0 {
@@ -582,11 +521,11 @@ func TestSpawnRefused(t *testing.T) {
 	}
 	// No location, no provisioner: refused before anything is minted.
 	r.sp.Provisioner = ""
-	if _, err := r.sp.Spawn(r.w.ctx, r.spec); !errors.Is(err, spawn.ErrNoProvisioner) {
+	if _, err := r.sp.Spawn(r.w.Ctx, r.spec); !errors.Is(err, spawn.ErrNoProvisioner) {
 		t.Fatalf("no provisioner: %v", err)
 	}
-	q := r.w.actor("quiet")
-	if _, err := spawn.New(q).Spawn(r.w.ctx, spawn.Spec{Provisioner: r.drv.a.ID()}); !errors.Is(err, spawn.ErrNoLocation) {
+	q := r.w.Actor("quiet")
+	if _, err := spawn.New(q).Spawn(r.w.Ctx, spawn.Spec{Provisioner: r.drv.a.ID()}); !errors.Is(err, spawn.ErrNoLocation) {
 		t.Fatalf("no location: %v", err)
 	}
 }
@@ -596,8 +535,8 @@ func TestSpawnRefused(t *testing.T) {
 // with the locations of the actors it names.
 func TestOutfit(t *testing.T) {
 	r := setup(t)
-	sib := r.w.actor("sibling")
-	r.w.start(sib)
+	sib := r.w.Actor("sibling")
+	r.w.Start(sib)
 	// The parent holds a delegable consent from the sibling and
 	// forwards a link to the child.
 	sibConsent := consent(t, sib, r.parent.ID(), "work")
@@ -614,7 +553,7 @@ func TestOutfit(t *testing.T) {
 		}
 		return spawn.Kit{Grants: [][]cert.Cert{{sibConsent, link}}, Locations: []cert.Cert{*sib.CurrentLocation()}}, nil
 	}
-	pr, err := r.sp.Spawn(r.w.ctx, r.spec)
+	pr, err := r.sp.Spawn(r.w.Ctx, r.spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +566,7 @@ func TestOutfit(t *testing.T) {
 		t.Fatalf("kit %+v", h.kit)
 	}
 	sib.AcceptTable["work"] = func(context.Context, *actor.Invocation) ([]byte, error) { return []byte(`1`), nil }
-	if _, err := h.a.Send(r.w.ctx, sib.ID(), "work", nil); err != nil {
+	if _, err := h.a.Send(r.w.Ctx, sib.ID(), "work", nil); err != nil {
 		t.Fatalf("child → sibling on the outfitted chain: %v", err)
 	}
 }
@@ -658,7 +597,7 @@ func TestCheckIntroAndKit(t *testing.T) {
 			t.Fatalf("%s: err = %v, want ErrBadIntro", name, err)
 		}
 	}
-	other := r.w.actor("other")
+	other := r.w.Actor("other")
 	bad("no nonce", func(x *spawn.Intro) { x.Nonce = "" })
 	bad("foreign location", func(x *spawn.Intro) { x.Location = *r.drv.a.CurrentLocation() })
 	bad("consent by another", func(x *spawn.Intro) { x.Consent = consent(t, other, "*", spawn.FacetBirth) })
@@ -709,7 +648,7 @@ func TestCheckIntroAndKit(t *testing.T) {
 	// Born refuses a bad intro before sending anything.
 	x := in
 	x.Nonce = ""
-	if _, err := spawn.Born(r.w.ctx, other, x, nil, 0); !errors.Is(err, spawn.ErrBadIntro) {
+	if _, err := spawn.Born(r.w.Ctx, other, x, nil, 0); !errors.Is(err, spawn.ErrBadIntro) {
 		t.Fatalf("Born bad intro: %v", err)
 	}
 }
@@ -723,7 +662,7 @@ func TestLeaseFollowsRenewal(t *testing.T) {
 	r := setup(t)
 	sink := &logSink{}
 	r.sp.Log = slog.New(sink)
-	pr, err := r.sp.Spawn(r.w.ctx, r.spec)
+	pr, err := r.sp.Spawn(r.w.Ctx, r.spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -735,7 +674,7 @@ func TestLeaseFollowsRenewal(t *testing.T) {
 	beat := func(held cert.Cert) cert.Cert {
 		t.Helper()
 		payload, _ := actor.EncodeRenewRequest([]cert.Cert{held}, nil)
-		rep, err := h.a.Send(r.w.ctx, r.parent.ID(), actor.FacetRenew, payload)
+		rep, err := h.a.Send(r.w.Ctx, r.parent.ID(), actor.FacetRenew, payload)
 		if err != nil {
 			t.Fatalf("beat: %v", err)
 		}
@@ -759,7 +698,7 @@ func TestLeaseFollowsRenewal(t *testing.T) {
 	// The provisioner refuses #extend (its driver says no): the child's
 	// renewal still succeeds, the deadline stays, one warning.
 	r.drv.setExtendErr(errors.New("quota"))
-	r.w.clk.Advance(60)
+	r.w.Clock.Advance(60)
 	fresh := beat(h.kit.Grants[0][0])
 	if got := until(); got != first {
 		t.Fatalf("until %d after a refused #extend, want %d", got, first)
@@ -773,7 +712,7 @@ func TestLeaseFollowsRenewal(t *testing.T) {
 
 	// The next beat retries and the deadline catches up to fresh.exp.
 	r.drv.setExtendErr(nil)
-	r.w.clk.Advance(60)
+	r.w.Clock.Advance(60)
 	fresh = beat(fresh)
 	if got := until(); got != fresh.Exp {
 		t.Fatalf("until %d, want fresh.exp %d", got, fresh.Exp)
@@ -788,7 +727,7 @@ func TestLeaseFollowsRenewal(t *testing.T) {
 	// child is forgotten; a second Kill is unknown; the child's next
 	// beat still renews (P's consent expires on its own) but no #extend
 	// is attempted for a forgotten child.
-	if err := r.sp.Kill(r.w.ctx, b.ID); err != nil {
+	if err := r.sp.Kill(r.w.Ctx, b.ID); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
 	if _, kills := r.drv.seen(); len(kills) != 1 || kills[0] != provisioner.Handle("ctr-"+b.Lease.ID) {
@@ -800,10 +739,10 @@ func TestLeaseFollowsRenewal(t *testing.T) {
 	if _, _, ok := r.sp.Child(b.ID); ok {
 		t.Fatal("child still in the born table after Kill")
 	}
-	if err := r.sp.Kill(r.w.ctx, b.ID); !errors.Is(err, spawn.ErrUnknownChild) {
+	if err := r.sp.Kill(r.w.Ctx, b.ID); !errors.Is(err, spawn.ErrUnknownChild) {
 		t.Fatalf("second kill: %v", err)
 	}
-	r.w.clk.Advance(60)
+	r.w.Clock.Advance(60)
 	beat(fresh)
 	if ext, _ := r.drv.seen(); len(ext) != 1 || sink.count() != 1 {
 		t.Fatalf("a forgotten child's beat touched the lease: extends %v, logs %d", ext, sink.count())
@@ -816,7 +755,7 @@ func TestLeaseFollowsRenewal(t *testing.T) {
 // semantics with no money and no message.
 func TestLeaseLapses(t *testing.T) {
 	r := setup(t)
-	pr, err := r.sp.Spawn(r.w.ctx, r.spec)
+	pr, err := r.sp.Spawn(r.w.Ctx, r.spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -825,9 +764,9 @@ func TestLeaseLapses(t *testing.T) {
 	}
 	b := r.waitPromise(t, pr)
 
-	r.w.clk.Advance(r.sp.Window - 1)
+	r.w.Clock.Advance(r.sp.Window - 1)
 	r.sp.Sweep()
-	r.drv.p.Sweep(r.w.ctx)
+	r.drv.p.Sweep(r.w.Ctx)
 	if _, _, ok := r.sp.Child(b.ID); !ok {
 		t.Fatal("child forgotten before its deadline")
 	}
@@ -835,9 +774,9 @@ func TestLeaseLapses(t *testing.T) {
 		t.Fatal("lease lapsed before its deadline")
 	}
 
-	r.w.clk.Advance(1)
+	r.w.Clock.Advance(1)
 	r.sp.Sweep()
-	r.drv.p.Sweep(r.w.ctx)
+	r.drv.p.Sweep(r.w.Ctx)
 	if _, _, ok := r.sp.Child(b.ID); ok {
 		t.Fatal("child not forgotten at its deadline")
 	}

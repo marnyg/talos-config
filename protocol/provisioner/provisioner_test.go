@@ -2,18 +2,16 @@ package provisioner_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/talos-config/protocol/internal/actortest"
 	"github.com/marnyg/talos-config/protocol/provisioner"
 	"github.com/marnyg/talos-config/protocol/spawn"
 )
@@ -35,9 +33,13 @@ type driver struct {
 	gate chan struct{}
 }
 
-func (d *driver) Start(_ context.Context, s provisioner.StartSpec) (provisioner.Handle, error) {
+func (d *driver) Start(ctx context.Context, s provisioner.StartSpec) (provisioner.Handle, error) {
 	if d.gate != nil {
-		<-d.gate
+		select {
+		case <-d.gate:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -81,52 +83,12 @@ func (d *driver) counts() (starts, extends, kills int) {
 }
 
 type rig struct {
-	t        *testing.T
-	ctx      context.Context
-	cancel   context.CancelFunc
-	now      atomic.Int64
-	net      *actor.MemoryNetwork
+	*actortest.World
 	drv      *driver
 	prov     *actor.Actor
 	p        *provisioner.Provisioner
 	customer *actor.Actor
 	stranger *actor.Actor
-}
-
-func newActor(r *rig, name string) *actor.Actor {
-	r.t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		r.t.Fatal(err)
-	}
-	s := cert.NewEdSigner(priv)
-	ep, err := r.net.Bind(s.ActorID(), name)
-	if err != nil {
-		r.t.Fatal(err)
-	}
-	a := actor.New(s, ep)
-	a.Clock = r.now.Load
-	return a
-}
-
-func (r *rig) start(a *actor.Actor) {
-	r.t.Helper()
-	done := make(chan error, 1)
-	go func() { done <- a.Listen(r.ctx) }()
-	r.t.Cleanup(func() {
-		r.cancel()
-		select {
-		case err := <-done:
-			if err != nil && !errors.Is(err, context.Canceled) {
-				r.t.Errorf("Listen: %v", err)
-			}
-		case <-time.After(5 * time.Second):
-			r.t.Error("Listen did not stop")
-		}
-	})
-	if _, err := a.PublishLocation(3600); err != nil {
-		r.t.Fatal(err)
-	}
 }
 
 // consent is the provisioner's root for aud over the three facets.
@@ -146,19 +108,17 @@ func consent(t *testing.T, prov *actor.Actor, aud cert.ActorID) cert.Cert {
 }
 
 func setup(t *testing.T) *rig {
-	ctx, cancel := context.WithCancel(context.Background())
-	r := &rig{t: t, ctx: ctx, cancel: cancel, net: actor.NewMemoryNetwork(), drv: &driver{}}
-	r.now.Store(t0)
-	r.prov = newActor(r, "prov")
+	r := &rig{World: actortest.New(t, t0), drv: &driver{}}
+	r.prov = r.Actor("prov")
 	r.p = provisioner.New(r.prov, r.drv)
-	r.customer = newActor(r, "customer")
-	r.stranger = newActor(r, "stranger")
+	r.customer = r.Actor("customer")
+	r.stranger = r.Actor("stranger")
 	// Both hold a consent — the stranger is authorised to CALL, and is
 	// still not the owner of the customer's lease.
 	r.prov.Consents = []cert.Cert{consent(t, r.prov, r.customer.ID()), consent(t, r.prov, r.stranger.ID())}
-	r.start(r.prov)
-	r.start(r.customer)
-	r.start(r.stranger)
+	r.Start(r.prov)
+	r.Start(r.customer)
+	r.Start(r.stranger)
 	for _, a := range []*actor.Actor{r.customer, r.stranger} {
 		if err := a.UpdateLocation(r.prov.ID(), r.prov.CurrentLocation()); err != nil {
 			t.Fatal(err)
@@ -168,12 +128,12 @@ func setup(t *testing.T) *rig {
 }
 
 func (r *rig) call(from *actor.Actor, facet string, req any) ([]byte, error) {
-	r.t.Helper()
+	r.T.Helper()
 	payload, err := json.Marshal(req)
 	if err != nil {
-		r.t.Fatal(err)
+		r.T.Fatal(err)
 	}
-	rep, err := from.Send(r.ctx, r.prov.ID(), facet, payload)
+	rep, err := from.Send(r.Ctx, r.prov.ID(), facet, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -181,14 +141,14 @@ func (r *rig) call(from *actor.Actor, facet string, req any) ([]byte, error) {
 }
 
 func (r *rig) spawn(from *actor.Actor, until int64) string {
-	r.t.Helper()
+	r.T.Helper()
 	body, err := r.call(from, spawn.FacetSpawn, spawn.SpawnRequest{Image: image, Params: []byte(`{"opaque":true}`), Until: until})
 	if err != nil {
-		r.t.Fatalf("#spawn: %v", err)
+		r.T.Fatalf("#spawn: %v", err)
 	}
 	var rep spawn.SpawnReply
 	if err := json.Unmarshal(body, &rep); err != nil || rep.Lease == "" {
-		r.t.Fatalf("#spawn reply %s: %v", body, err)
+		r.T.Fatalf("#spawn reply %s: %v", body, err)
 	}
 	return rep.Lease
 }
@@ -325,6 +285,19 @@ func TestDriverFailures(t *testing.T) {
 	}
 }
 
+// TestDriverTimeout: a Start that outlives Provisioner.DriverTimeout
+// is cancelled; the #spawn fails and no lease is left behind.
+func TestDriverTimeout(t *testing.T) {
+	r := setup(t)
+	r.p.DriverTimeout = 50 * time.Millisecond
+	r.drv.set(func(d *driver) { d.gate = make(chan struct{}) }) // never opens
+	_, err := r.call(r.customer, spawn.FacetSpawn, spawn.SpawnRequest{Image: image, Until: t0 + 600})
+	refused(t, err, context.DeadlineExceeded.Error())
+	if len(r.p.Leases()) != 0 {
+		t.Fatalf("table after a timed-out start %+v", r.p.Leases())
+	}
+}
+
 // TestSweep: the deadline is the provisioner's. At until the running
 // lease is killed and leaves the table; a Kill that fails keeps it for
 // the next sweep; a lease still pending (Start in flight) is not swept.
@@ -333,14 +306,14 @@ func TestSweep(t *testing.T) {
 	a := r.spawn(r.customer, t0+600)
 	b := r.spawn(r.customer, t0+1200)
 
-	r.now.Store(t0 + 600)
+	r.Clock.Set(t0 + 600)
 	r.drv.set(func(d *driver) { d.killErr = errors.New("api down") })
-	r.p.Sweep(r.ctx)
+	r.p.Sweep(r.Ctx)
 	if _, ok := r.p.Lease(a); !ok {
 		t.Fatal("lease dropped although Kill failed")
 	}
 	r.drv.set(func(d *driver) { d.killErr = nil })
-	r.p.Sweep(r.ctx)
+	r.p.Sweep(r.Ctx)
 	if _, ok := r.p.Lease(a); ok {
 		t.Fatal("lapsed lease still in the table")
 	}
@@ -353,7 +326,7 @@ func TestSweep(t *testing.T) {
 
 	// A handler sweeps too: b's own #extend arriving after its deadline
 	// finds it already lapsed.
-	r.now.Store(t0 + 1200)
+	r.Clock.Set(t0 + 1200)
 	_, err := r.call(r.customer, spawn.FacetExtend, spawn.ExtendRequest{Lease: b, Until: t0 + 2400})
 	refused(t, err, provisioner.RefuseUnknownLease)
 
@@ -373,8 +346,8 @@ func TestSweep(t *testing.T) {
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
-	r.now.Store(t0 + 1800)
-	r.p.Sweep(r.ctx)
+	r.Clock.Set(t0 + 1800)
+	r.p.Sweep(r.Ctx)
 	if ls := r.p.Leases(); len(ls) != 1 || ls[0].State != provisioner.StatePending {
 		t.Fatalf("pending lease swept: %+v", ls)
 	}
@@ -384,7 +357,7 @@ func TestSweep(t *testing.T) {
 		t.Fatalf("lease after a slow start %+v ok=%v", l, ok)
 	}
 	// ...and lapses at the next sweep, its deadline having passed.
-	r.p.Sweep(r.ctx)
+	r.p.Sweep(r.Ctx)
 	if _, ok := r.p.Lease(id); ok {
 		t.Fatal("slow-started lease past its deadline not lapsed")
 	}

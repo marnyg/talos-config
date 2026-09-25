@@ -115,9 +115,9 @@ const (
 	RefuseNotRunning   = "lease is not running"
 )
 
-// DriverTimeout bounds each driver call made from a handler or Sweep.
-// A number, not a rule.
-const DriverTimeout = 60 * time.Second
+// DefaultDriverTimeout bounds each driver call when
+// Provisioner.DriverTimeout is 0. A number, not a rule.
+const DefaultDriverTimeout = 60 * time.Second
 
 // imageByDigest is the one image shape accepted (ADR-0009: by digest,
 // never by tag — the parent names code, not a moving pointer).
@@ -135,6 +135,12 @@ func CheckImage(image string) error {
 // Configure the exported fields before Listen.
 type Provisioner struct {
 	Driver Driver
+	// DriverTimeout bounds each Driver call made from a handler or
+	// Sweep; 0 ⇒ DefaultDriverTimeout. Size it to the platform's
+	// slowest synchronous Start: a driver that pulls the image inside
+	// Start (docker run) needs more than one that only submits (a k8s
+	// Job). A cancelled Start fails the #spawn and drops the lease.
+	DriverTimeout time.Duration
 	// Log receives what is not surfaced on the wire: Sweep's kills and
 	// their failures. nil ⇒ slog.Default().
 	Log *slog.Logger
@@ -191,8 +197,12 @@ func newLeaseID() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-func driverCtx(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, DriverTimeout)
+func (p *Provisioner) driverCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	d := p.DriverTimeout
+	if d <= 0 {
+		d = DefaultDriverTimeout
+	}
+	return context.WithTimeout(ctx, d)
 }
 
 // Sweep lapses every running lease whose deadline has passed under the
@@ -210,7 +220,7 @@ func (p *Provisioner) sweepLocked(ctx context.Context, now int64) {
 		if l.State != StateRunning || l.Until > now {
 			continue
 		}
-		dctx, cancel := driverCtx(ctx)
+		dctx, cancel := p.driverCtx(ctx)
 		err := p.Driver.Kill(dctx, l.Handle)
 		cancel()
 		if err != nil {
@@ -248,7 +258,7 @@ func (p *Provisioner) spawn(ctx context.Context, inv *actor.Invocation) ([]byte,
 	p.leases[id] = l
 	p.mu.Unlock()
 
-	dctx, cancel := driverCtx(ctx)
+	dctx, cancel := p.driverCtx(ctx)
 	h, err := p.Driver.Start(dctx, StartSpec{Lease: id, Image: req.Image, Params: req.Params, Until: req.Until})
 	cancel()
 
@@ -297,7 +307,7 @@ func (p *Provisioner) extend(ctx context.Context, inv *actor.Invocation) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	dctx, cancel := driverCtx(ctx)
+	dctx, cancel := p.driverCtx(ctx)
 	err = p.Driver.Extend(dctx, l.Handle, req.Until)
 	cancel()
 	if err != nil {
@@ -322,7 +332,7 @@ func (p *Provisioner) kill(ctx context.Context, inv *actor.Invocation) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	dctx, cancel := driverCtx(ctx)
+	dctx, cancel := p.driverCtx(ctx)
 	err = p.Driver.Kill(dctx, l.Handle)
 	cancel()
 	if err != nil {
