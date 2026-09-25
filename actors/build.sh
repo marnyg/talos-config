@@ -20,10 +20,12 @@ if [ -n "${HUB_BUILDER:-}" ]; then
     store=(--store "ssh-ng://$HUB_BUILDER" --eval-store auto)
 fi
 
-echo "building $attr${HUB_BUILDER:+ on $HUB_BUILDER}"
-push=$(nix build "${store[@]}" --no-link --print-out-paths "$attr.copyToRegistry")
+# The tag first: evaluated after the build, an edit made meanwhile
+# names a -dirty tag the pushed image does not carry.
 tag=$(nix eval --raw "$attr.imageTag")
 image="ghcr.io/marnyg/sap-actors:$tag"
+echo "building $attr${HUB_BUILDER:+ on $HUB_BUILDER}"
+push=$(nix build "${store[@]}" --no-link --print-out-paths "$attr.copyToRegistry")
 
 if [ -z "${GHCR_TOKEN:-}" ]; then
     creds=$(printf 'https://ghcr.io' | docker-credential-osxkeychain get)
@@ -45,4 +47,11 @@ else
     REGISTRY_AUTH_FILE="$f" "$push/bin/copy-to-registry"
 fi
 echo "pushed $image"
-echo "digest: $(docker manifest inspect -v "$image" 2>/dev/null | sed -n 's/.*"digest": "\(sha256:[a-f0-9]*\)".*/\1/p' | head -1 || true)"
+# The digest from the registry itself, with the same credentials (the
+# package may be private; docker manifest inspect then prints nothing).
+bearer=$(curl -fsS -u "$user:$GHCR_TOKEN" "https://ghcr.io/token?scope=repository:marnyg/sap-actors:pull" |
+    sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+digest=$(curl -fsSI -H "Authorization: Bearer $bearer" \
+    -H "Accept: application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
+    "https://ghcr.io/v2/marnyg/sap-actors/manifests/$tag" | tr -d '\r' | sed -n 's/^docker-content-digest: //Ip')
+echo "image: ghcr.io/marnyg/sap-actors@$digest"
