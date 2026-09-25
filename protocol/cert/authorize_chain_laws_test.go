@@ -3,6 +3,7 @@ package cert
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -934,8 +935,14 @@ var wildConsentPairs = [][2]fault{{fConsentTargetAny, fNone}, {fConsentTargetAny
 // job; the held faults joined only where cfChainTargetOwner1 makes them
 // bite, the wildcard-consent faults only where a link carries `*`) —
 // the deterministic backbone behind the random suite.
+//
+// The scenario list is enumerated first (cheap) and then checked in
+// GOMAXPROCS parallel chunks: the checking is signature verification,
+// and one goroutine made this the slowest test in the module (minutes
+// under -race). The fixture is shared — its memo is a sync.Map.
 func TestChainFaultPairSweep(t *testing.T) {
 	f := detFixture(60)
+	var all []chainParams
 	n := 0
 	for c1 := cfault(0); c1 < numCFaults; c1++ {
 		for c2 := c1; c2 < numCFaults; c2++ {
@@ -958,7 +965,7 @@ func TestChainFaultPairSweep(t *testing.T) {
 							p := chainParams{cf1: c1, cf2: c2, kind: kind, verb: verb, hubSigned: hub, f1: cp[0], f2: cp[1],
 								attI: n % 2, attKind: n % numAtts, attT: "R", attF: "apid",
 								attG: modelGroups[n%len(modelGroups)], attE: modelEndpoints[n%len(modelEndpoints)]}
-							checkChainLaws(sweepCT{t, p}, f.id, buildChainScenario(f, p), nil)
+							all = append(all, p)
 							n++
 						}
 					}
@@ -966,7 +973,18 @@ func TestChainFaultPairSweep(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("swept %d chain scenarios", n)
+	workers := runtime.GOMAXPROCS(0)
+	t.Run("chunks", func(t *testing.T) {
+		for w := range workers {
+			t.Run(fmt.Sprint(w), func(t *testing.T) {
+				t.Parallel()
+				for i := w; i < len(all); i += workers {
+					checkChainLaws(sweepCT{t, all[i]}, f.id, buildChainScenario(f, all[i]), nil)
+				}
+			})
+		}
+	})
+	t.Logf("swept %d chain scenarios over %d workers", len(all), workers)
 }
 
 type sweepCT struct {
