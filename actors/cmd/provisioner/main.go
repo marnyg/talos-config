@@ -8,6 +8,7 @@
 //
 //	provisioner -driver k8s    -customer ed:…   # in a pod: Jobs in the pod's namespace
 //	provisioner -driver docker -customer ed:…   # on a host: containers on its daemon
+//	provisioner -state DIR -print-id            # the id a lighthouse names in -member
 //
 // Identity: -state DIR holds the key (a 32-byte seed, minted on first
 // run — a provisioner's id must outlive its process, customers hold
@@ -40,56 +41,33 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
+	"github.com/marnyg/talos-config/actors/cmd/internal/boot"
 	"github.com/marnyg/talos-config/actors/driver/docker"
 	"github.com/marnyg/talos-config/actors/driver/k8s"
-	"github.com/marnyg/talos-config/actors/keyfile"
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
-	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/lighthouse"
 	"github.com/marnyg/talos-config/protocol/provisioner"
 	"github.com/marnyg/talos-config/protocol/spawn"
 )
 
-const (
-	keyFile      = "key"
-	locationFile = "location.json"
-)
-
-type customers []cert.ActorID
-
-func (c *customers) String() string { return fmt.Sprint([]cert.ActorID(*c)) }
-func (c *customers) Set(s string) error {
-	id := cert.ActorID(strings.TrimSpace(s))
-	if err := id.Validate(); err != nil {
-		return err
-	}
-	*c = append(*c, id)
-	return nil
-}
+const locationFile = "location.json" // derived, beside the key in -state
 
 func main() {
-	log.SetFlags(0)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	var cust customers
+	pb := boot.Flags("provisioner", "/var/lib/sap-provisioner")
+	var cust boot.IDs
+	var lhFlag boot.ID
 	var (
 		drv        = flag.String("driver", "", "platform: k8s (in-cluster, the pod's namespace) or docker (the local daemon)")
-		stateDir   = flag.String("state", "/var/lib/sap-provisioner", "state dir: key (persisted identity), location.json (derived)")
-		relay      = flag.String("relay", "https://marnyg-talos-config.fly.dev", "iroh home relay URL")
-		bindAddr   = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 		namespace  = flag.String("namespace", "", "k8s: namespace for Jobs (default the pod's own)")
 		dockerHost = flag.String("docker-host", "", "docker: daemon (default as the docker CLI: DOCKER_HOST, then the current docker context, then unix:///var/run/docker.sock)")
-		lhID       = flag.String("lighthouse", "", "lighthouse actor id to #publish each reach-me-at to (this id must be one of its -member); dialled on -relay")
 		custTTL    = flag.Duration("customer-ttl", 365*24*time.Hour, "lifetime of each -customer consent, from start")
 		beat       = flag.Duration("beat", time.Minute, "sweep + reach-me-at interval")
 		locTTL     = flag.Duration("location-ttl", 10*time.Minute, "lifetime of each published reach-me-at; keep well above -beat")
@@ -97,39 +75,16 @@ func main() {
 		drvTimeout = flag.Duration("driver-timeout", provisioner.DefaultDriverTimeout, "bound on each driver call (docker pulls inside Start)")
 	)
 	flag.Var(&cust, "customer", "actor id consented to #spawn/#extend/#kill; repeatable")
+	flag.Var(&lhFlag, "lighthouse", "lighthouse actor id to #publish each reach-me-at to (this id must be one of its -member); dialled on -relay")
 	flag.Parse()
-	irohtransport.SetLogLevel(os.Getenv("SAP_LOG")) // trace|debug|info|warn
+	a, ep := pb.Up()
+	defer ep.Close()
 	if len(cust) == 0 {
 		log.Fatal("no -customer: nobody could #spawn")
 	}
-	lh := cert.ActorID(strings.TrimSpace(*lhID))
-	if lh != "" {
-		if err := lh.Validate(); err != nil {
-			log.Fatalf("-lighthouse: %v", err)
-		}
-	}
-
-	if err := os.MkdirAll(*stateDir, 0o700); err != nil {
-		log.Fatal(err)
-	}
-	priv, minted, err := keyfile.Load(filepath.Join(*stateDir, keyFile))
-	if err != nil {
-		log.Fatal(err)
-	}
-	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: *bindAddr, Relay: *relay})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer ep.Close()
-	a := actor.New(cert.NewEdSigner(priv), ep)
-	a.SeqBase = func() int64 { return time.Now().UnixMicro() }
-	if minted {
-		slog.Info("provisioner: key minted", "state", *stateDir)
-	}
-	if lh != "" {
-		a.Bootstrap = map[cert.ActorID][]string{lh: {irohtransport.TagRelay + *relay}}
-	}
-	slog.Info("provisioner: up", "id", a.ID(), "driver", *drv, "relay", *relay, "lighthouse", lh)
+	lh := lhFlag.ActorID()
+	pb.ViaRelay(a, lh)
+	slog.Info("provisioner: up", "id", a.ID(), "driver", *drv, "relay", pb.Relay(), "lighthouse", lh)
 
 	now := a.Now()
 	for _, id := range cust {
@@ -147,7 +102,10 @@ func main() {
 		slog.Info("provisioner: customer", "id", id, "exp", c.Exp)
 	}
 
-	var d provisioner.Driver
+	var (
+		d   provisioner.Driver
+		err error
+	)
 	switch *drv {
 	case "k8s":
 		cfg, err := k8s.InCluster()
@@ -183,7 +141,7 @@ func main() {
 		}
 		raw, err := cert.Encode(loc)
 		if err == nil {
-			err = os.WriteFile(filepath.Join(*stateDir, locationFile), raw, 0o644)
+			err = os.WriteFile(filepath.Join(pb.State(), locationFile), raw, 0o644)
 		}
 		if err != nil {
 			slog.Warn("provisioner: location.json", "err", err)

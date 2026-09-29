@@ -35,16 +35,14 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/actors/child"
+	"github.com/marnyg/talos-config/actors/cmd/internal/boot"
 	"github.com/marnyg/talos-config/actors/driver"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
-	"github.com/marnyg/talos-config/protocol/actor"
-	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/spawn"
 )
 
 func main() {
-	log.SetFlags(0)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	boot.Logging()
 
 	raw := os.Getenv(driver.ParamsEnv)
 	if raw == "" {
@@ -64,19 +62,15 @@ func main() {
 			log.Fatalf("SAP_BEAT: %v", err)
 		}
 	}
-	irohtransport.SetLogLevel(os.Getenv("SAP_LOG")) // trace|debug|info|warn
-
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		log.Fatal(err)
 	}
-	ep, err := irohtransport.Bind(priv, irohtransport.Options{Relay: relay})
+	a, ep, err := boot.Actor(priv, relay, "")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer ep.Close()
-	a := actor.New(cert.NewEdSigner(priv), ep)
-	a.SeqBase = func() int64 { return time.Now().UnixMicro() }
 	slog.Info("child: up", "id", a.ID(), "parent", in.Parent, "relay", relay, "beat", beat)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

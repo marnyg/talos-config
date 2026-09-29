@@ -43,7 +43,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -54,28 +53,21 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/actors/child"
-	"github.com/marnyg/talos-config/actors/keyfile"
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
+	"github.com/marnyg/talos-config/actors/cmd/internal/boot"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/lighthouse"
 	"github.com/marnyg/talos-config/protocol/spawn"
 )
 
-const keyFile = "key"
-
 func main() {
-	log.SetFlags(0)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	pb := boot.Flags("parent", filepath.Join(os.Getenv("HOME"), ".sap-parent"))
+	var lhFlag, provFlag boot.ID
+	flag.Var(&lhFlag, "lighthouse", "lighthouse actor id to #lookup the provisioner at (this id must be one of its -member); dialled on -relay")
+	flag.Var(&provFlag, "provisioner-id", "the provisioner's actor id, with -lighthouse")
 	var (
-		stateDir = flag.String("state", filepath.Join(os.Getenv("HOME"), ".sap-parent"), "state dir: key (persisted identity)")
-		printID  = flag.Bool("print-id", false, "print this parent's actor id and exit (the provisioner's -customer)")
 		provFile = flag.String("provisioner", "", "the provisioner's location.json (its signed reach-me-at); the no-lighthouse path")
-		lhID     = flag.String("lighthouse", "", "lighthouse actor id to #lookup the provisioner at (this id must be one of its -member); dialled on -relay")
-		provID   = flag.String("provisioner-id", "", "the provisioner's actor id, with -lighthouse")
 		image    = flag.String("image", "", "child image by content digest (name@sha256:…)")
-		relay    = flag.String("relay", "https://marnyg-talos-config.fly.dev", "iroh home relay URL")
-		bindAddr = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 		window   = flag.Duration("window", 3*time.Minute, "birth window: how long the child has to knock (pull time included)")
 		kitTTL   = flag.Duration("kit-ttl", 5*time.Minute, "lifetime of the child's #renew chain per issue; keep above -window")
 		renewals = flag.Int("renewals", 1, "answered #renew→#extend rounds before this parent stops re-issuing; 0 = forever")
@@ -83,21 +75,9 @@ func main() {
 		locTTL   = flag.Duration("location-ttl", 10*time.Minute, "lifetime of each published reach-me-at; keep well above -beat")
 	)
 	flag.Parse()
-	irohtransport.SetLogLevel(os.Getenv("SAP_LOG")) // trace|debug|info|warn
-
-	if err := os.MkdirAll(*stateDir, 0o700); err != nil {
-		log.Fatal(err)
-	}
-	priv, minted, err := keyfile.Load(filepath.Join(*stateDir, keyFile))
-	if err != nil {
-		log.Fatal(err)
-	}
-	signer := cert.NewEdSigner(priv)
-	if *printID {
-		fmt.Println(signer.ActorID())
-		return
-	}
-	lh, prov := cert.ActorID(*lhID), cert.ActorID(*provID)
+	a, ep := pb.Up() // -print-id (the provisioner's -customer, the lighthouse's -member) exits here
+	defer ep.Close()
+	lh, prov := lhFlag.ActorID(), provFlag.ActorID()
 	byLighthouse := lh != "" || prov != ""
 	switch {
 	case *image == "", byLighthouse == (*provFile != ""):
@@ -106,14 +86,7 @@ func main() {
 		log.Fatal("-lighthouse and -provisioner-id go together")
 	}
 	var provLoc *cert.Cert
-	if byLighthouse {
-		if err := lh.Validate(); err != nil {
-			log.Fatalf("-lighthouse: %v", err)
-		}
-		if err := prov.Validate(); err != nil {
-			log.Fatalf("-provisioner-id: %v", err)
-		}
-	} else {
+	if !byLighthouse {
 		raw, err := os.ReadFile(*provFile)
 		if err != nil {
 			log.Fatal(err)
@@ -124,21 +97,10 @@ func main() {
 		}
 		provLoc, prov = &loc, loc.Iss
 	}
-
-	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: *bindAddr, Relay: *relay})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer ep.Close()
-	a := actor.New(signer, ep)
-	a.SeqBase = func() int64 { return time.Now().UnixMicro() }
-	if minted {
-		slog.Info("parent: key minted", "state", *stateDir)
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if byLighthouse {
-		a.Bootstrap = map[cert.ActorID][]string{lh: {irohtransport.TagRelay + *relay}}
+		pb.ViaRelay(a, lh)
 		lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		recs, err := lighthouse.Lookup(lctx, a, lh, prov)
 		cancel()
@@ -174,7 +136,7 @@ func main() {
 		}
 	}
 	publish()
-	slog.Info("parent: up", "id", a.ID(), "provisioner", prov, "relay", *relay)
+	slog.Info("parent: up", "id", a.ID(), "provisioner", prov, "relay", pb.Relay())
 
 	// #spawn, then the birth.
 	sctx, cancel := context.WithTimeout(ctx, *window)

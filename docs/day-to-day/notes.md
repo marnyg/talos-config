@@ -956,16 +956,12 @@
   docker driver now resolves like the docker CLI (DOCKER_HOST → docker
   context → socket), so it follows `docker context show`; other tools
   may not.
-- 2026-09-29 — **The sap-actors image has no shell or `cat`**; to read
-  the in-cluster provisioner's `location.json`:
-  `kubectl debug -n sap <pod> --target=provisioner --image=busybox:1.36
-  --custom=<securityContext uid 65534, restricted> -- cat
-  /proc/1/root/var/lib/sap-provisioner/location.json`, then
-  `kubectl logs <pod> -c <debugger>` (without `-it` stdout is not
-  attached). Ephemeral containers stay in the pod spec until restart.
-  _Superseded 2026-09-29 by `k8s/apps/sap-lighthouse` (`0bc.6`): the
-  parent `#lookup`s the provisioner by id; only the lighthouse's own
-  id was ever read, from `kubectl logs` at its first start._
+- 2026-09-29 — **The sap-actors image has no shell or `cat`.** No
+  need to read files off its pods any more: every actor binary takes
+  `-state DIR -print-id`, and the provisioner is found by `#lookup` at
+  `sap-lighthouse` (`0bc.6`). If a file must be read anyway:
+  `kubectl debug --target=<container> --image=busybox` and
+  `/proc/1/root/…` (ephemeral containers stay until the pod restarts).
 - 2026-09-29 — **An ArgoCD sync op can sit "Running" for hours** on
   "waiting for healthy state of <wave-0 resource>" when any later
   wave exists (`vms/` uses waves 1–2): the gateway's ghost pod on w1

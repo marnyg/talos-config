@@ -6,11 +6,13 @@
 // members published and hands records back by id; it cannot forge one
 // (a client re-validates every record's signature).
 //
+//	lighthouse -state DIR -print-id
 //	lighthouse -state DIR -member ed:… [-member ed:…]
 //
 // Identity: -state DIR holds the key (a 32-byte seed, minted on first
 // run — a lighthouse's id is what its members are handed as the network
 // bundle, so it must outlive its process). Nothing else in DIR.
+// -print-id prints it (minting the key if needed) and exits.
 //
 // Members: -member ID (repeatable) mints, at start, two consents
 // {iss: me, aud: ID, publish, cav: {target: [me], facet: [#publish]}}
@@ -36,45 +38,21 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"log/slog"
-	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
-	"github.com/marnyg/talos-config/actors/keyfile"
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
-	"github.com/marnyg/talos-config/protocol/actor"
+	"github.com/marnyg/talos-config/actors/cmd/internal/boot"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/lighthouse"
 )
 
-const keyFile = "key"
-
-type members []cert.ActorID
-
-func (m *members) String() string { return fmt.Sprint([]cert.ActorID(*m)) }
-func (m *members) Set(s string) error {
-	id := cert.ActorID(strings.TrimSpace(s))
-	if err := id.Validate(); err != nil {
-		return err
-	}
-	*m = append(*m, id)
-	return nil
-}
-
 func main() {
-	log.SetFlags(0)
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	var mem members
+	p := boot.Flags("lighthouse", "/var/lib/sap-lighthouse")
+	var mem boot.IDs
 	var (
-		stateDir   = flag.String("state", "/var/lib/sap-lighthouse", "state dir: key (persisted identity)")
-		relay      = flag.String("relay", "https://marnyg-talos-config.fly.dev", "iroh home relay URL")
-		bindAddr   = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 		memTTL     = flag.Duration("member-ttl", 365*24*time.Hour, "lifetime of each -member consent, from start")
 		beat       = flag.Duration("beat", time.Minute, "reach-me-at interval")
 		locTTL     = flag.Duration("location-ttl", 10*time.Minute, "lifetime of each published reach-me-at; keep well above -beat")
@@ -82,29 +60,12 @@ func main() {
 	)
 	flag.Var(&mem, "member", "actor id consented to #publish and #lookup; repeatable")
 	flag.Parse()
-	irohtransport.SetLogLevel(os.Getenv("SAP_LOG")) // trace|debug|info|warn
+	a, ep := p.Up()
+	defer ep.Close()
 	if len(mem) == 0 {
 		log.Fatal("no -member: nobody could #publish or #lookup")
 	}
-
-	if err := os.MkdirAll(*stateDir, 0o700); err != nil {
-		log.Fatal(err)
-	}
-	priv, minted, err := keyfile.Load(filepath.Join(*stateDir, keyFile))
-	if err != nil {
-		log.Fatal(err)
-	}
-	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: *bindAddr, Relay: *relay})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer ep.Close()
-	a := actor.New(cert.NewEdSigner(priv), ep)
-	a.SeqBase = func() int64 { return time.Now().UnixMicro() }
-	if minted {
-		slog.Info("lighthouse: key minted", "state", *stateDir)
-	}
-	slog.Info("lighthouse: up", "id", a.ID(), "relay", *relay)
+	slog.Info("lighthouse: up", "id", a.ID(), "relay", p.Relay())
 
 	now := a.Now()
 	for _, id := range mem {
