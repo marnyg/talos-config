@@ -319,42 +319,65 @@ its networks and its parent as its first act.
 
 ## Spawning
 
-Parent P spawns child C on a compute market:
+Parent P spawns child C by renting compute from a **provisioner** —
+an ordinary actor, reached by an ordinary chain, that knows leases
+and never learns about birth (ADR-0009, invariant 13):
 
 ```
-spawn(image@sha256:…, payment, intro)
-  where intro = { parent: P, endpoints: [...], nonce: one-time }
-returns: promise of { id, location, lease_handle }
+P → Prov #spawn  { image@sha256:…, params: intro, until }  → { lease }
+  where intro = { parent: P, location: P's reach-me-at,
+                  consent: birth consent, nonce: one-time }
+returns: promise of { id, location, lease: (Prov, lease id) }
 ```
 
-1. P signs a lease with a provider, paying from its own funds, and
-   injects `intro` as deployment parameters. The image is referenced
-   **by content digest, never by tag** — "the code I funded" has an
-   unambiguous, re-spawnable referent. The intro's endpoints are raw
-   addresses: the sanctioned bootstrap exception.
+1. P mints a per-spawn **birth consent** — `{aud: "*", invoke,
+   facet: #birth, postage}`, live for the **birth window** — and a
+   nonce, and sends `#spawn` to a provisioner it holds a chain to.
+   The image is referenced **by content digest, never by tag** —
+   "the code I funded" has an unambiguous, re-spawnable referent.
+   The intro is opaque `params` to the provisioner, which hands it to
+   the platform (an env var); `until` is the lease's first deadline,
+   the window's end. The intro carries P's *signed* reach-me-at
+   rather than raw endpoints — still the sanctioned bootstrap
+   exception, but a record the runtime already validates and expires.
 2. C boots, generates its keypair — **the private key is born on C's
    compute and never travels; only public keys cross the wire** —
-   and sends its birth message to the intro endpoints:
-   `{ child_pubkey, sign_C(nonce) }`.
-3. P matches the nonce to an outstanding spawn (a small table of
-   pending nonces — the **intro nonce is the only bearer token in
-   the system**, single-use, exchanged immediately for real certs).
-4. P replies with C's **starter kit**: capabilities to invoke P
-   (`#report`, `#renew`, …) and initial funding (next section).
+   and knocks on **P `#birth`**: an ordinary envelope under the birth
+   consent, stamped with one PoW (the child pays postage once, to its
+   own parent), `{nonce}` in the payload.
+3. P matches the nonce to its pending-spawn table. The nonce is
+   **correlation, not authority**: it grants nothing by itself, and it
+   **binds to the first key** that presents it — the same key
+   re-knocking gets the same kit back, any other key is refused.
+4. P replies with C's **starter kit**: one mandated chain, `(P,
+   #renew)`, whose expiry is the child's first renewal beat, plus
+   whatever else P chooses to hand over (initial funding is M5's).
+   C installs it and consents P to its own facets — P→C authority is
+   the child's to give (invariant 3), never shipped in the kit.
 
 `spawn` returns a *promise* — the child mints its own identity, so
 the parent learns `id` (the child's address) and `location` (the
-child's first signed location record) only when the birth message
-arrives. If it never arrives (provider failure, parent outage during
-the birth window), C retries until its first lease period lapses
-unrenewed — the funding tree garbage-collects failed births. The
-resolved `lease_handle` is deliberately distinct from `id`: it is
-the provider's own lease object — how you kill the actor — while
-`id` is how you talk to it. Killing therefore relies on the provider
-honoring its own termination API: the same trust bucket as birth
-fidelity, with the same fallback (stop paying) and the same eventual
-upgrade (attested runtimes). A parent that loses the lease handle
-can only starve a child, not stop it.
+child's first signed location record) only when the knock arrives.
+If it never arrives (platform failure, parent outage or a moved
+parent during the window), the lease's first deadline passes and the
+provisioner lapses it — the funding tree garbage-collects failed
+births with no parent-side reaping. The resolved lease is
+deliberately distinct from `id`: `(provisioner, lease id)` is how you
+kill the actor (`#kill`), `id` is how you talk to it. Killing
+therefore relies on the provisioner honoring its own contract: the
+same trust bucket as birth fidelity, with the same fallback (stop
+extending) and the same eventual upgrade (attested runtimes). A
+parent that loses the lease can only starve a child, not stop it.
+
+**Leases are passive.** Every lease has a deadline that only the
+renewal beat moves: the spawner decorates P's `#renew` handler, and
+each re-issued cert whose `exp` passes the lease's deadline becomes
+`#extend {lease, until: exp}` at the provisioner. A platform with a
+native deadline enforces it (a k8s Job's `activeDeadlineSeconds`);
+one without (docker) sweeps. Either way the child **self-lapses**: it
+exits once it holds no unexpired chain to `(P, #renew)`. A parent
+that stops renewing, or dies, lets its children lapse; nothing
+watches for the death.
 
 **The `#renew` loop:** child-initiated before its certs expire; P's
 response carries fresh certs, P's current location record, and — at

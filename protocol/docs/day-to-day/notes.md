@@ -133,3 +133,10 @@
   off `Wait` may be refused once (`no receiver-signed consent roots
   the chain`); retry. Not a bug — the kit lands on the child after the
   reply leaves it.
+- 2026-09-29 — **On k8s a lapsing child races its own Job deadline**:
+  the lease's `activeDeadlineSeconds` is the chain's exp, and the
+  child's lapse check fires on the first beat at or after that exp —
+  the same second. The platform usually wins (`DeadlineExceeded`,
+  SIGTERM → exit 0), and `ttlSecondsAfterFinished` then deletes the
+  Job and the child's logs with it. To see the child's side, tail
+  `kubectl logs -f job/<name>` from birth.

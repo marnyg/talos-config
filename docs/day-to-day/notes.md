@@ -942,3 +942,23 @@
 - 2026-09-21 — **The dedicated fly IPv4 is the KMS port's, not
   nebula's**: `fly ips release 213.188.219.215` would break disk
   unlock on the next node boot (shared v4 = 80/443 only). `os8s`.
+- 2026-09-29 — **A dead node freezes GitOps**: StatefulSet pods on a
+  NotReady node stay `Terminating` forever and never reschedule.
+  `argocd-application-controller-0` sat on w1 from 09-21 to 09-29, so
+  ArgoCD reconciled nothing for 8 days (stuck at `22a84de`) and
+  nothing said so. Symptom: a push that never deploys. Fix:
+  `kubectl delete pod -n argocd argocd-application-controller-0
+  --force --grace-period=0`. Structural fix is part of the HA sweep
+  (`9l67`, noted there).
+- 2026-09-29 — **`/var/run/docker.sock` on the Mac is podman's**
+  (a symlink into `~/.local/share/containers/podman/`), not Docker
+  Desktop's. Anything defaulting to it (the actors provisioner's
+  `-driver docker`) talks to podman: pass
+  `-docker-host unix://$HOME/.docker/run/docker.sock`.
+- 2026-09-29 — **The sap-actors image has no shell or `cat`**; to read
+  the in-cluster provisioner's `location.json`:
+  `kubectl debug -n sap <pod> --target=provisioner --image=busybox:1.36
+  --custom=<securityContext uid 65534, restricted> -- cat
+  /proc/1/root/var/lib/sap-provisioner/location.json`, then
+  `kubectl logs <pod> -c <debugger>` (without `-it` stdout is not
+  attached). Ephemeral containers stay in the pod spec until restart.

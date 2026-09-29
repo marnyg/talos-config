@@ -117,6 +117,15 @@ history and, where the numbers still matter, in ADR-0006 and
   inlineManifest-provisioned key pair. **Reinstall**:
   [`guides/reinstall.md`](guides/reinstall.md) — label-scoped reset
   only; a plain `talosctl reset` wipes the Longhorn disk.
+- **Sovereign-actor provisioner** _(2026-09-29, `0bc.4.6`)_: ns `sap`
+  (PSS `restricted`), Deployment `sap-provisioner` (`-driver k8s`,
+  image `ghcr.io/marnyg/sap-actors:53b84b4@sha256:f9de434d…`, public
+  on GHCR), SA + namespaced Role on `batch/jobs` only, key on the 16Mi
+  RWO PVC `sap-provisioner-state`. Actor id `ed:9c3ae5ec…`; one
+  `-customer`, the owner's laptop parent `ed:79547a96…` (key
+  `~/.sap-parent/key`). Children run as Jobs in `sap`; none live
+  between runs. Egress only (fly relay); no Service. The image has no
+  shell — read `location.json` with `kubectl debug --target` (notes).
 - Provenance of the image line: 2026-09-15 cp1 first booted an
   imager build (`p0agent` 0.0.3, scratch relay); 2026-09-16 it became
   the declared image (ADR-0023); 2026-09-19/20 w1 followed and both

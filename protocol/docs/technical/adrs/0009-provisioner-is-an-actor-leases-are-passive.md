@@ -1,6 +1,6 @@
 # ADR-0009: The provisioner is an actor; leases are passive; children self-lapse
 
-- Status: Proposed
+- Status: Accepted (2026-09-29, M4 acceptance run `0bc.4.6`)
 - Date: 2026-09-21 (grill-design, `talos-config-0bc.4`)
 - Builds: M4 (`protocol/spawn`, the provisioner binary and its
   drivers). Adds: invariant 13. Amends: sketch § Spawning ("P signs a
@@ -121,3 +121,16 @@ Trust: whoever can create labelled containers in the provisioner's
 namespace can inject a lease — but that principal can already kill
 children directly. Same trust domain, no new exposure.
 (Decision `talos-config-uzgl`, spike `udof`.)
+
+### Acceptance 2026-09-29 (`0bc.4.6`)
+
+Accepted on the live run: `actors/cmd/spawn` on a laptop, one image
+(`sap-actors@sha256:f9de434d…`) behind two provisioners over the fly
+relay. **docker** (laptop daemon): #spawn → knock → kit in 1.5 s,
+`#ping` on the child's consent, one `#renew` → `#extend`, the parent
+refused further renewals, the child self-lapsed at the chain's exp
+and the provisioner swept 16 s later. **k8s** (Deployment on nas1,
+Job driver): born in 0.7 s; the Job outlived its 180 s window deadline
+because `#extend` patched `activeDeadlineSeconds`, and ended
+`DeadlineExceeded` at the extended `until` — platform deadline and
+self-lapse converge on the same instant, as designed.

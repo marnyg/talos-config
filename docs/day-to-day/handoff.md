@@ -5,58 +5,38 @@
 
 ## Last session
 
-2026-09-25 (second) — **Protocol only: M4.5 built** (`b93bfcc`) —
-`actors/cmd/{child,provisioner}` on iroh (behind build tag `iroh`,
-config-server's pattern), the child's beat as C-free `actors/child`,
-and the image recipe (`actors-image` → `ghcr.io/marnyg/sap-actors`,
-`actors/build.sh`). `actors/` joined the pre-push vendored list and
-CI's `vendor-hash` matrix; AGENTS.md layout + quality-gate notes
-updated. Nothing under `talos/`, `config-server/`, `protocol/` or
-`k8s/` moved; `nix build .#actors-bin` green (the tagged suite);
-other vendorHashes unchanged. Detail in
-`protocol/docs/day-to-day/handoff.md`.
+2026-09-29 — **Protocol M4 accepted live; the cluster's first actor
+workload deployed; ArgoCD un-stuck.**
 
-## Previous sessions
-
-2026-09-25 — **`udof` decided, M4.3/M4.4 drivers built** (`121f8e3`,
-`e316081`, `2b5c29d`) in the new `actors/` module; restart re-adopts
-leases from platform labels (decision `uzgl`).
-
-2026-09-23 (two sessions) — **Protocol only: M4.1 `protocol/spawn`
-and M4.2 `protocol/provisioner` built** (`25e7dd0`, `2dafea6`); the
-protocol half of M4 complete.
-
-2026-09-22 — **nas1 provisioned (node three, the storage node)**
-(`72f9038`) and protocol regression `ydq0` fixed (`32ef88c`); hub
-`4518c2f` deployed. Details in `technical/deployed-state.md`.
+- `actors/cmd/spawn` (laptop parent) + `k8s/apps/sap-provisioner`
+  (ns `sap`, Jobs-only Role, PVC; `676a791`). The M4.6 acceptance run
+  passed on the in-cluster k8s provisioner (nas1) and a docker one on
+  the laptop. ADR-0008/0009 Accepted. Detail in
+  `protocol/docs/day-to-day/handoff.md`; deployed facts in
+  `technical/deployed-state.md`.
+- `ghcr.io/marnyg/sap-actors` is **public** now (owner, GitHub UI).
+- **ArgoCD had reconciled nothing since 2026-09-21**: its controller
+  StatefulSet pod was stuck `Terminating` on dead w1. Force-deleted, so
+  it now runs on cp1 and synced `676a791`. Nothing was lost: the only
+  `k8s/` change in the gap was a comment. Noted on `9l67` and in
+  `notes.md`.
 
 ## Loose threads
 
-- **nas1 and w1 were powered off** (owner, 2026-09-25) — that is the
-  `NotReady` / `SchedulingDisabled`; nas1 was being booted back up
-  during the session. The acceptance run (`0bc.4.6`) needs a
-  schedulable worker.
-- **The actors image is pushed but private** (`ghcr.io/marnyg/sap-
-  actors@sha256:f9de434d…`, full digest in the protocol handoff):
-  set the GHCR package public before `0bc.4.6`.
-- Same session, broken windows: `cert`'s exhaustive sweep runs in
-  parallel (277 s → 43 s under `-race`); one
-  `irohtransport.SetLogLevel` replaces six copies of the env→level
-  map (config-server + actors vendorHashes moved); the pre-push
-  cross-OS check runs again (stdin was drained); one
-  `scripts/ghcr-push.sh` behind both image `build.sh`s.
-- `-tags iroh` tests run only inside the nix build; `scripts/test-
-  iroh.sh` is the gate for the hub, `nix build .#actors-bin` for
-  `actors/cmd/` (AGENTS.md).
-- nas1's four SATA bays are empty; Longhorn `replicaCount: 2` with
-  three nodes — undecided on purpose.
-- Carried: w1 off since 2026-09-21 (`9l67`); clients on `enrollmsg`
-  v2 (`5q33`); TV not measured (`4te`); `-n cp1` by name fails from
-  the tun (`t7b2`); `c4vd`, `etzl`.
+- `apps` shows `OutOfSync` / `Progressing` after the catch-up sync
+  (the `cdis.cdi.kubevirt.io` CRD is the one OutOfSync resource). Not
+  investigated; may be long-standing (compare `p0ar`).
+- The other argocd Deployment replicas on w1 are ghost `Terminating`
+  pods too. They're harmless (replacements run on cp1), but they're the
+  same class of problem.
+- nas1 is Ready and carries the provisioner. w1 is still off (`9l67`).
+- Carried: nas1's SATA bays empty; `5q33`, `4te`, `t7b2`, `c4vd`,
+  `etzl`.
 
 ## Suggested next steps
 
-- Make the actors image public; then `0bc.4.6` (parent CLI, provisioner
-  Deployment on the cluster + a docker host) — see the protocol
-  handoff. Confirm nas1 is `Ready` and uncordoned first.
-- Populate nas1's SATA bays; decide the Longhorn replica count.
+- The HA sweep (`9l67`) has a second, sharper reason now: one node
+  down silently stops GitOps.
+- Populate nas1's SATA bays.
+- Protocol: owner picks M5 (`0bc.5`) or lighthouse discovery for
+  provisioners.

@@ -16,16 +16,15 @@ binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 - **Fill nas1's four SATA bays** — live `UserVolumeConfig` per disk;
   the reason the node exists, and it makes the HA sweep affordable.
 - **HA sweep** (`9l67`) once networking is settled — w1 off takes
-  every `*.gw` service down with the gateway's RWO volume. Three
+  every `*.gw` service down with the gateway's RWO volume, and (found
+  2026-09-29) froze ArgoCD for 8 days via its StatefulSet pod. Three
   nodes make a real replica spread possible for the first time.
-- **Sovereign-actor protocol v0** (`0bc`, M1–M5) — M1–M3 built;
-  **M4 spawn: designed (ADR-0008/0009 Proposed), M4.1 + M4.2 built
-  2026-09-23** (`protocol/spawn`, `protocol/provisioner`); **drivers
-  built 2026-09-25** in the new `actors/` module (`0bc.4.3/.4`
-  closed), **binaries + image recipe the same day** (`0bc.4.5`);
-  next: push the image, then the acceptance run `0bc.4.6`; talos
-  wire unchanged throughout. State and history
-  live in `protocol/docs/day-to-day/`. The talos Provisioner's split
+- **Sovereign-actor protocol v0** (`0bc`, M1–M5) — **M1–M4 built;
+  M4 accepted live 2026-09-29** (`0bc.4.6`: laptop parent → k8s
+  provisioner in ns `sap` + a docker one; ADR-0008/0009 Accepted).
+  Next: M5 money (`0bc.5`) or lighthouse discovery for provisioners;
+  talos wire unchanged throughout. State and history live in
+  `protocol/docs/day-to-day/`. The talos Provisioner's split
   along ADR-0009 is thread `kckm`, not v0.
 - Small ops: cp1 hostname pin (`t7b2`), w1's provisioning MAC
   (`c4vd`), SA-issuer runbook (`etzl`).

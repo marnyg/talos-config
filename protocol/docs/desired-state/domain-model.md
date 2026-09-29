@@ -165,7 +165,8 @@ _(Designed 2026-09-21 (`d5672e2`), protocol ADR-0008/0009; M4 `0bc.4`.
 Built: the handshake as `protocol/spawn` (M4.1, 2026-09-23), the
 provisioner actor as `protocol/provisioner` (M4.2, 2026-09-23), the
 k8s/docker drivers and the child/provisioner binaries in `actors/`
-(M4.3–M4.5, 2026-09-25).)_
+(M4.3–M4.5, 2026-09-25). Run live over iroh on both drivers and
+ADR-0008/0009 Accepted 2026-09-29 (M4.6).)_
 
 ## Economics
 
