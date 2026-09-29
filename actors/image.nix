@@ -1,4 +1,5 @@
-# The actors image (0bc.4.5): one image, two binaries. A parent names
+# The actors image (0bc.4.5): one image, two binaries (cmd/spawn, the
+# laptop parent, is not shipped — it is `nix build .#actors-bin`'s). A parent names
 # it by digest in #spawn and the driver runs it as a child; the same
 # image, `--entrypoint provisioner`, is the provisioner Deployment /
 # the docker host's container. Built by nix like the hub's and the

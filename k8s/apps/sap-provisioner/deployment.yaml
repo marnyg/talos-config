@@ -1,0 +1,134 @@
+# The in-cluster provisioner (sovereign-actor protocol ADR-0009,
+# talos-config-0bc.4.6): an ordinary actor serving #spawn/#extend/#kill
+# whose driver renders leases as Jobs in this namespace. It never learns
+# about birth — the intro is an opaque env var on the Job it creates —
+# and holds nothing but leases, which lapse when the parent stops
+# extending (invariant 13). Same image as the children it starts
+# (actors/image.nix), `--entrypoint provisioner`.
+#
+# Identity: the key on the PVC is minted here and never travels; it
+# persists because customers hold chains to this id (Recreate: one
+# holder at a time). Everything else on the volume is derived —
+# location.json is the signed reach-me-at a customer copies out of band
+# (`kubectl cp` / `kubectl exec cat`); v0's discovery.
+#
+# Customers: each -customer is one actor consented to the three facets
+# for a year from start (ADR-0009's open item, v0 answer: a flag).
+# Today that is the acceptance run's laptop parent (actors/cmd/spawn
+# -print-id). Revocation is a restart without the flag.
+#
+# RBAC: the k8s driver is plain HTTP against batch/v1 Jobs in the
+# pod's own namespace — create, get (deadline reads), patch
+# (activeDeadlineSeconds on #extend), delete (#kill, background
+# propagation), list by label (Adopt at start). Nothing cluster-wide.
+#
+# PSS: the Jobs it submits run as 65534 with everything dropped, so the
+# namespace can be `restricted`; the image is public on GHCR (no pull
+# secret — registry auth is not v0). Egress only: the hub's relay.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sap
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sap-provisioner
+  namespace: sap
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sap-provisioner
+  namespace: sap
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sap-provisioner
+  namespace: sap
+subjects:
+  - kind: ServiceAccount
+    name: sap-provisioner
+    namespace: sap
+roleRef:
+  kind: Role
+  name: sap-provisioner
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sap-provisioner-state
+  namespace: sap
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 16Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sap-provisioner
+  namespace: sap
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sap-provisioner
+  template:
+    metadata:
+      labels:
+        app: sap-provisioner
+    spec:
+      serviceAccountName: sap-provisioner
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: provisioner
+          # actors/build.sh prints the tag@digest to pin here; the SAME
+          # digest is what the parent names in #spawn (-image).
+          image: ghcr.io/marnyg/sap-actors:53b84b4@sha256:f9de434d0ffc3f3798dc3187213c7363a4499e6e37e139f8a0229840c0997c8f
+          command: ["/usr/local/bin/provisioner"]
+          args:
+            - -driver=k8s
+            - -state=/var/lib/sap-provisioner
+            - -relay=https://marnyg-talos-config.fly.dev
+            # The laptop parent of the acceptance run (spawn -print-id).
+            - -customer=ed:79547a961cf58b525d4a65c32dca8db46c5aa568526f56911433f7410dcd769b
+          env:
+            - name: SAP_LOG
+              value: warn
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/sap-provisioner
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: sap-provisioner-state

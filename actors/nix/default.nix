@@ -3,7 +3,7 @@
 # tag `iroh` (as config-server's do), so this is the only place they get
 # compiled and tested. Same shape as config-server/nix/default.nix:
 #
-#   nix build .#actors-bin       — host build: bin/{child,provisioner};
+#   nix build .#actors-bin       — host build: bin/{child,provisioner,spawn};
 #                                   checkPhase = go test ./... -tags iroh -race
 #   nix build .#actors-static    — pkgsStatic (musl) + -extldflags -static:
 #                                   what actors/image.nix ships. Linux only.

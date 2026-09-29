@@ -9,7 +9,7 @@ Monorepo around the **sovereign-actor protocol** (decision
   sketch `sovereign-actor-protocol.md`).
 - `actors/` — the protocol's runnable side: platform drivers
   (`driver/k8s`, `driver/docker`), the child's beat (`child/`), and
-  the `cmd/{provisioner,child}` binaries behind build tag `iroh`. Own
+  the `cmd/{provisioner,child,spawn}` binaries behind build tag `iroh`. Own
   Go module replacing `../protocol` + `../iroh-transport`; everything
   but `cmd/` stays C-free. `nix build .#actors-bin` is the tagged
   gate; `actors/build.sh` pushes the image (`actors/image.nix`).
