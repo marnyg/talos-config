@@ -963,6 +963,16 @@
   /proc/1/root/var/lib/sap-provisioner/location.json`, then
   `kubectl logs <pod> -c <debugger>` (without `-it` stdout is not
   attached). Ephemeral containers stay in the pod spec until restart.
-  _Superseded once `k8s/apps/sap-lighthouse` is live (`0bc.6`): the
+  _Superseded 2026-09-29 by `k8s/apps/sap-lighthouse` (`0bc.6`): the
   parent `#lookup`s the provisioner by id; only the lighthouse's own
-  id is read, from `kubectl logs` at its start._
+  id was ever read, from `kubectl logs` at its first start._
+- 2026-09-29 — **An ArgoCD sync op can sit "Running" for hours** on
+  "waiting for healthy state of <wave-0 resource>" when any later
+  wave exists (`vms/` uses waves 1–2): the gateway's ghost pod on w1
+  held the `676a791` op open from 10:35Z, and `apps` showed *Synced*
+  because live state matched — no newer revision was ever applied.
+  `kubectl -n argocd patch app apps --type merge -p
+  '{"status":{"operationState":{"phase":"Terminating"}}}'` ends it;
+  auto-sync starts a fresh op that applies wave 0 and hangs again.
+  Check `.status.operationState.{phase,startedAt,message}`, not the
+  sync status, when a push seems not to land.

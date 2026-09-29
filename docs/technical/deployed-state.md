@@ -124,15 +124,27 @@ history and, where the numbers still matter, in ADR-0006 and
   RWO PVC `sap-provisioner-state`. Actor id `ed:9c3ae5ec…`; one
   `-customer`, the owner's laptop parent `ed:79547a96…` (key
   `~/.sap-parent/key`). Children run as Jobs in `sap`; none live
-  between runs. Egress only (fly relay); no Service. The image has no
-  shell — read `location.json` with `kubectl debug --target` (notes).
-  _Pending (`0bc.6`, written 2026-09-29, not yet applied):_
-  `k8s/apps/sap-lighthouse` — Deployment `sap-lighthouse` (same
-  image, `command: lighthouse`, 16Mi PVC `sap-lighthouse-state`, no
-  SA/RBAC/Service) with the provisioner and the laptop parent as
-  `-member`; the provisioner then gets `-lighthouse=<its id>` and the
-  parent finds it by `#lookup` — no `location.json` read. Needs an
-  image push first (the pinned digest predates `cmd/lighthouse`).
+  between runs. Egress only (fly relay); no Service. Image since
+  2026-09-29 (`0bc.6`): `47bae97@sha256:879d6580…`, and the flag
+  `-lighthouse=ed:5cad808a…`.
+- **Sovereign-actor lighthouse** _(2026-09-29, `0bc.6`)_: Deployment
+  `sap-lighthouse` in `sap` (same image, `command: lighthouse`, 16Mi
+  RWO PVC `sap-lighthouse-state`, no SA/RBAC/Service, egress only).
+  Actor id `ed:5cad808a3ed6be76…` (full id in the provisioner
+  manifest); `-member`: the provisioner `ed:9c3ae5ec…` (publishes
+  each beat) and the laptop parent `ed:79547a96…` (looks up). The
+  parent finds the provisioner with `spawn -lighthouse <L> 
+  -provisioner-id <P>` — nothing is read off a pod. Directory is
+  volatile: a restart empties it until the provisioner's next beat
+  (≤ 1 min).
+- **ArgoCD sync waves and the gateway**: the `apps` sync operation
+  had been *Running* since 2026-09-29 10:35Z, waiting for wave-0 health
+  (Deployment `gateway` 0/1, the ghost pod on dead w1) before wave 1
+  (the VMs); while it ran, no newer revision synced. Terminated twice
+  by hand (`kubectl patch app apps --type merge -p
+  '{"status":{"operationState":{"phase":"Terminating"}}}'`) to land
+  `0bc.6`; each fresh op applies wave 0 and hangs the same way. It
+  stays that way until `9l67` (or the ghost pod goes).
 - Provenance of the image line: 2026-09-15 cp1 first booted an
   imager build (`p0agent` 0.0.3, scratch relay); 2026-09-16 it became
   the declared image (ADR-0023); 2026-09-19/20 w1 followed and both

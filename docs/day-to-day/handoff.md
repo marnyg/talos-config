@@ -6,20 +6,21 @@
 ## Last session
 
 2026-09-29 (second session) — **Lighthouse discovery for provisioners
-(`0bc.6`) built and accepted on docker; k8s manifests written, not
-applied.** Detail in `protocol/docs/day-to-day/handoff.md`.
+(`0bc.6`) built, accepted on docker and k8s, live in `sap`.** Detail
+in `protocol/docs/day-to-day/handoff.md`.
 
 - `protocol/actor` gains `Bootstrap` hints (the network bundle's raw
   endpoints, invariant 11); `actors/cmd/lighthouse` is new; the
   provisioner `#publish`es and `spawn` `#lookup`s. `actors-bin`
   vendorHash bumped (first import of `protocol/lighthouse`).
-- `k8s/apps/sap-lighthouse` + a commented `-lighthouse=` on the
-  provisioner Deployment. **The pinned image (`53b84b4`) has no
-  `lighthouse` binary** — ArgoCD will sync the new Deployment into
-  CrashLoop until `actors/build.sh` pushes a new digest and both
-  manifests are re-pinned. Then: read the lighthouse id from its log,
-  fill in the provisioner flag, run `spawn -lighthouse …
-  -provisioner-id ed:9c3ae5ec…` from the laptop.
+- Image `47bae97@sha256:879d6580…` pushed; `k8s/apps/sap-lighthouse`
+  Deployment + PVC live (id `ed:5cad808a…`), provisioner re-pinned
+  and carrying `-lighthouse`. `technical/deployed-state.md` updated.
+- **ArgoCD had not applied anything since the 10:35Z op**: that sync
+  was still *Running*, waiting on the gateway's health (ghost pod on
+  w1) before wave 1 (the VMs). `Synced` last session was a live-state
+  match. Terminated it twice by hand to land this; the fresh op hangs
+  the same way (notes.md has the recipe). A third reason for `9l67`.
 
 ## Session before
 

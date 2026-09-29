@@ -8,10 +8,10 @@ The M4.6 acceptance run passed on both drivers (birth, one `#renew →
 provisioner is now found by `#lookup` at `actors/cmd/lighthouse`
 instead of a copied `location.json`: `Actor.Bootstrap` is the network
 bundle's raw endpoints (ADR-0007 § Run live), which on iroh is the
-lighthouse's id alone. Accepted on docker; the k8s Deployment
-(`k8s/apps/sap-lighthouse`) lands with the next image push and its
-two-step id dance. M1–M4 built plus discovery. **Next is the owner's
-pick:** M5 money (`0bc.5`) or the k8s lighthouse cut-over.
+lighthouse's id alone. Accepted on docker and on k8s; the
+`sap-lighthouse` Deployment is live and the in-cluster provisioner
+publishes to it. M1–M4 built plus discovery. **Next is the owner's
+pick:** M5 money (`0bc.5`).
 
 **Toward goal:** `desired-state/goals.md` — *Spawning as funded
 enrollment*, *Sovereign identity* (private key born on the child's

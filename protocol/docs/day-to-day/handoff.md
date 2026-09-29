@@ -6,9 +6,8 @@
 ## Last session
 
 2026-09-29 (second session) — **Lighthouse discovery for
-provisioners (`0bc.6`): built and accepted on docker.** The
-`location.json` handoff is no longer the only way to find a
-provisioner.
+provisioners (`0bc.6`): built, accepted on docker and on k8s, live in
+the cluster.** The `location.json` handoff is gone from the path.
 
 - **`Actor.Bootstrap map[ActorID][]string`** (`protocol/actor`): raw
   dial hints for an id with no live cached record — the network
@@ -32,17 +31,16 @@ provisioner.
   and the fold decides. After the member restart: `#publish ok` on
   every beat, directory 1; parent `#lookup ok → #spawn → born 0.9 s →
   #ping ok → 1 extend → lapse`. No file copied.
-- `actors/image.nix` ships `lighthouse`; `k8s/apps/sap-lighthouse`
-  Deployment + PVC written (members: sap-provisioner + laptop parent),
-  provisioner manifest carries a commented `-lighthouse=` awaiting the
-  in-cluster id. **Not deployed yet** — needs an image push
-  (`actors/build.sh`), then the two-step: deploy the lighthouse, read
-  its id from `kubectl logs`, fill in the provisioner's flag.
+- **k8s acceptance:** image `47bae97@sha256:879d6580…` pushed;
+  `k8s/apps/sap-lighthouse` up (id `ed:5cad808a…`, members: the
+  provisioner + the laptop parent); provisioner restarted with
+  `-lighthouse`, `#publish ok` on its first beat; laptop `spawn
+  -lighthouse -provisioner-id` → `#lookup ok → #spawn → born 0.6 s →
+  #ping ok`, Job running in `sap`. Nothing read off a pod. (Landing
+  it needed ArgoCD's stuck sync op terminated twice — root handoff.)
 
 ## Loose threads
 
-- **k8s cut-over pending** (above). Until then the in-cluster
-  provisioner is still found through `location.json` + `kubectl debug`.
 - The lighthouse's own `-member` list is a restart to change, as the
   provisioner's `-customer` is; the founder indirection (`-founder`,
   delegable consent to F who mints caps) is the way out when it itches.
@@ -54,5 +52,6 @@ provisioner.
 
 ## Suggested next steps
 
-- Push the image and cut the k8s provisioner over to the lighthouse
-  (closes `0bc.6`), or go straight to M5 money (`0bc.5`).
+- Close `0bc.6` (owner's call). Then M5 money (`0bc.5`), or the
+  `-print-id` / shared-preamble cleanups in `actors/cmd` (broken
+  windows surfaced this session).
