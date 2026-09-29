@@ -2,12 +2,15 @@ package docker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -279,8 +282,57 @@ func TestConfig(t *testing.T) {
 	}
 }
 
+// TestResolveHost: DOCKER_HOST, then the context (DOCKER_CONTEXT over
+// config.json's currentContext) from its meta.json, then the socket.
+func TestResolveHost(t *testing.T) {
+	dir := t.TempDir()
+	writeCtx := func(name, host string) {
+		sum := sha256.Sum256([]byte(name))
+		p := filepath.Join(dir, "contexts", "meta", hex.EncodeToString(sum[:]))
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		meta := `{"Name":"` + name + `","Endpoints":{"docker":{"Host":"` + host + `"}}}`
+		if err := os.WriteFile(filepath.Join(p, "meta.json"), []byte(meta), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeCtx("desktop-linux", "unix:///home/u/.docker/run/docker.sock")
+	writeCtx("remote", "tcp://10.0.0.9:2375")
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"currentContext":"desktop-linux"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := func(kv map[string]string) func(string) string {
+		return func(k string) string { return kv[k] }
+	}
+	for _, c := range []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"DOCKER_HOST wins", map[string]string{"DOCKER_HOST": "tcp://1.2.3.4:2375", "DOCKER_CONFIG": dir}, "tcp://1.2.3.4:2375"},
+		{"currentContext", map[string]string{"DOCKER_CONFIG": dir}, "unix:///home/u/.docker/run/docker.sock"},
+		{"DOCKER_CONTEXT over currentContext", map[string]string{"DOCKER_CONFIG": dir, "DOCKER_CONTEXT": "remote"}, "tcp://10.0.0.9:2375"},
+		{"default context", map[string]string{"DOCKER_CONFIG": dir, "DOCKER_CONTEXT": "default"}, DefaultSocket},
+		{"unknown context", map[string]string{"DOCKER_CONFIG": dir, "DOCKER_CONTEXT": "gone"}, DefaultSocket},
+		{"no config dir", map[string]string{"DOCKER_CONFIG": filepath.Join(dir, "nope")}, DefaultSocket},
+	} {
+		if got := resolveHost(env(c.env), "/nonexistent"); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+	// HOME fallback: ~/.docker when DOCKER_CONFIG is unset.
+	home := t.TempDir()
+	if err := os.Rename(dir, filepath.Join(home, ".docker")); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveHost(env(nil), home); got != "unix:///home/u/.docker/run/docker.sock" {
+		t.Errorf("home fallback: %q", got)
+	}
+}
+
 // TestLive runs the whole path against a real daemon when
-// SAP_DOCKER_LIVE=1 (DOCKER_HOST or the default socket): pull a tiny
+// SAP_DOCKER_LIVE=1 (DefaultHost: DOCKER_HOST, the docker context, the socket): pull a tiny
 // image by digest, start, list, kill, list.
 func TestLive(t *testing.T) {
 	if os.Getenv("SAP_DOCKER_LIVE") != "1" {

@@ -36,8 +36,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"errors"
 	"flag"
 	"fmt"
@@ -51,6 +49,7 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/actors/child"
+	"github.com/marnyg/talos-config/actors/keyfile"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
@@ -81,7 +80,7 @@ func main() {
 	if err := os.MkdirAll(*stateDir, 0o700); err != nil {
 		log.Fatal(err)
 	}
-	priv, minted, err := loadKey(filepath.Join(*stateDir, keyFile))
+	priv, minted, err := keyfile.Load(filepath.Join(*stateDir, keyFile))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -242,27 +241,4 @@ func ping(ctx context.Context, a *actor.Actor, id cert.ActorID) {
 		}
 	}
 	slog.Warn("parent: #ping failed", "child", id, "err", err)
-}
-
-// loadKey reads the 32-byte seed at path, or mints and writes one.
-func loadKey(path string) (ed25519.PrivateKey, bool, error) {
-	b, err := os.ReadFile(path)
-	switch {
-	case err == nil:
-		if len(b) != ed25519.SeedSize {
-			return nil, false, fmt.Errorf("%s: %d bytes, want %d", path, len(b), ed25519.SeedSize)
-		}
-		return ed25519.NewKeyFromSeed(b), false, nil
-	case errors.Is(err, os.ErrNotExist):
-		seed := make([]byte, ed25519.SeedSize)
-		if _, err := rand.Read(seed); err != nil {
-			return nil, false, err
-		}
-		if err := os.WriteFile(path, seed, 0o600); err != nil {
-			return nil, false, err
-		}
-		return ed25519.NewKeyFromSeed(seed), true, nil
-	default:
-		return nil, false, err
-	}
 }

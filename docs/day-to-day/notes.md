@@ -952,9 +952,10 @@
   (`9l67`, noted there).
 - 2026-09-29 — **`/var/run/docker.sock` on the Mac is podman's**
   (a symlink into `~/.local/share/containers/podman/`), not Docker
-  Desktop's. Anything defaulting to it (the actors provisioner's
-  `-driver docker`) talks to podman: pass
-  `-docker-host unix://$HOME/.docker/run/docker.sock`.
+  Desktop's. Anything defaulting to it talks to podman. The actors
+  docker driver now resolves like the docker CLI (DOCKER_HOST → docker
+  context → socket), so it follows `docker context show`; other tools
+  may not.
 - 2026-09-29 — **The sap-actors image has no shell or `cat`**; to read
   the in-cluster provisioner's `location.json`:
   `kubectl debug -n sap <pod> --target=provisioner --image=busybox:1.36

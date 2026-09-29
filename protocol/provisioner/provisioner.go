@@ -182,8 +182,11 @@ type Provisioner struct {
 	// AdoptGrace is the deadline Adopt gives each lease it takes over,
 	// counted from the actor's clock; 0 ⇒ DefaultAdoptGrace.
 	AdoptGrace time.Duration
-	// Log receives what is not surfaced on the wire: Sweep's kills and
-	// their failures, Adopt's takeovers. nil ⇒ slog.Default().
+	// Log receives the lease history an operator needs and the wire
+	// does not carry: each #spawn/#extend/#kill that reached the driver
+	// (Info on success, Warn on a driver failure — the caller sees only
+	// the error), Sweep's kills and their failures, Adopt's takeovers.
+	// nil ⇒ slog.Default().
 	Log *slog.Logger
 
 	a      *actor.Actor
@@ -340,10 +343,12 @@ func (p *Provisioner) spawn(ctx context.Context, inv *actor.Invocation) ([]byte,
 	defer p.mu.Unlock()
 	if err != nil {
 		delete(p.leases, id)
+		p.log().Warn("provisioner: #spawn start failed", "lease", id, "owner", inv.From, "image", req.Image, "err", err)
 		return nil, fmt.Errorf("start: %w", err)
 	}
 	l.Handle = h
 	l.State = StateRunning
+	p.log().Info("provisioner: #spawn", "lease", id, "owner", inv.From, "image", req.Image, "until", req.Until)
 	return json.Marshal(spawn.SpawnReply{Lease: id})
 }
 
@@ -385,8 +390,10 @@ func (p *Provisioner) extend(ctx context.Context, inv *actor.Invocation) ([]byte
 	err = p.Driver.Extend(dctx, l.Handle, req.Until)
 	cancel()
 	if err != nil {
+		p.log().Warn("provisioner: #extend failed", "lease", req.Lease, "owner", inv.From, "until", req.Until, "err", err)
 		return nil, fmt.Errorf("extend: %w", err)
 	}
+	p.log().Info("provisioner: #extend", "lease", req.Lease, "owner", inv.From, "from", l.Until, "until", req.Until)
 	l.Until = req.Until
 	return json.Marshal(spawn.ExtendReply{Until: l.Until})
 }
@@ -410,8 +417,10 @@ func (p *Provisioner) kill(ctx context.Context, inv *actor.Invocation) ([]byte, 
 	err = p.Driver.Kill(dctx, l.Handle)
 	cancel()
 	if err != nil {
+		p.log().Warn("provisioner: #kill failed", "lease", req.Lease, "owner", inv.From, "err", err)
 		return nil, fmt.Errorf("kill: %w", err)
 	}
+	p.log().Info("provisioner: #kill", "lease", req.Lease, "owner", inv.From)
 	l.State = StateKilled
 	delete(p.leases, req.Lease)
 	return []byte(`{}`), nil

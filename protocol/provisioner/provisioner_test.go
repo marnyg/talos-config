@@ -1,9 +1,12 @@
 package provisioner_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -297,6 +300,64 @@ func TestDriverFailures(t *testing.T) {
 	}
 }
 
+// syncBuf is a bytes.Buffer safe to write from handler goroutines.
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// TestLeaseLog: every call that reaches the driver leaves a line in
+// Log — the operator's only view of lease history (a live run once
+// showed nothing between start and the first lapse). A refusal that
+// never reaches the driver logs nothing; the caller already has it.
+func TestLeaseLog(t *testing.T) {
+	r := setup(t)
+	var buf syncBuf
+	r.p.Log = slog.New(slog.NewTextHandler(&buf, nil))
+
+	_, err := r.call(r.customer, spawn.FacetSpawn, spawn.SpawnRequest{Image: "img:latest", Until: t0 + 600})
+	refused(t, err, provisioner.RefuseImage)
+	id := r.spawn(r.customer, t0+600)
+	if _, err := r.call(r.customer, spawn.FacetExtend, spawn.ExtendRequest{Lease: id, Until: t0 + 7200}); err != nil {
+		t.Fatal(err)
+	}
+	r.drv.set(func(d *driver) { d.extendErr = errors.New("quota") })
+	_, err = r.call(r.customer, spawn.FacetExtend, spawn.ExtendRequest{Lease: id, Until: t0 + 9000})
+	refused(t, err, "quota")
+	r.drv.set(func(d *driver) { d.extendErr = nil })
+	if _, err := r.call(r.customer, spawn.FacetKill, spawn.KillRequest{Lease: id}); err != nil {
+		t.Fatal(err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{
+		`level=INFO msg="provisioner: #spawn" lease=` + id,
+		`level=INFO msg="provisioner: #extend" lease=` + id,
+		`from=` + fmt.Sprint(t0+600) + ` until=` + fmt.Sprint(t0+7200),
+		`level=WARN msg="provisioner: #extend failed" lease=` + id,
+		`level=INFO msg="provisioner: #kill" lease=` + id,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log lacks %q\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "img:latest") {
+		t.Errorf("a refused #spawn was logged:\n%s", out)
+	}
+}
+
 // TestDriverTimeout: a Start that outlives Provisioner.DriverTimeout
 // is cancelled; the #spawn fails and no lease is left behind.
 func TestDriverTimeout(t *testing.T) {
@@ -359,7 +420,9 @@ func TestAdopt(t *testing.T) {
 	}
 
 	// An adopted lease nobody extends lapses at the grace, through Kill.
-	r.drv.set(func(d *driver) { d.alive = []provisioner.Running{{Lease: "cc", Owner: r.customer.ID(), Image: image, Handle: "ctr-cc"}} })
+	r.drv.set(func(d *driver) {
+		d.alive = []provisioner.Running{{Lease: "cc", Owner: r.customer.ID(), Image: image, Handle: "ctr-cc"}}
+	})
 	if err := r.p.Adopt(r.Ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +442,10 @@ func TestAdopt(t *testing.T) {
 	}
 
 	// List failing adopts nothing and says so.
-	r.drv.set(func(d *driver) { d.listErr = errors.New("api down"); d.alive = []provisioner.Running{{Lease: "dd", Owner: r.customer.ID(), Handle: "ctr-dd"}} })
+	r.drv.set(func(d *driver) {
+		d.listErr = errors.New("api down")
+		d.alive = []provisioner.Running{{Lease: "dd", Owner: r.customer.ID(), Handle: "ctr-dd"}}
+	})
 	if err := r.p.Adopt(r.Ctx); err == nil || !strings.Contains(err.Error(), "api down") {
 		t.Fatalf("adopt with a failing List: %v", err)
 	}

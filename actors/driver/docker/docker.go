@@ -28,6 +28,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +38,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/marnyg/talos-config/actors/driver"
@@ -51,9 +54,67 @@ const APIVersion = "v1.40"
 // Config is one daemon.
 type Config struct {
 	// Host is where the daemon listens: unix:///path/to/docker.sock or
-	// tcp://host:port (plain HTTP). Empty ⇒ DOCKER_HOST, then
-	// /var/run/docker.sock.
+	// tcp://host:port (plain HTTP). Empty ⇒ DefaultHost().
 	Host string
+}
+
+// DefaultSocket is the daemon when nothing names one.
+const DefaultSocket = "unix:///var/run/docker.sock"
+
+// DefaultHost resolves the daemon the way the docker CLI does, so a
+// provisioner started next to `docker` talks to the same daemon:
+// DOCKER_HOST; else the context named by DOCKER_CONTEXT or by
+// currentContext in $DOCKER_CONFIG/config.json (default ~/.docker),
+// read from contexts/meta/<sha256(name)>/meta.json; else
+// DefaultSocket. A context that cannot be read falls through to
+// DefaultSocket — it never fails the start (Docker Desktop on a Mac
+// whose /var/run/docker.sock belongs to another runtime is the case
+// this exists for).
+func DefaultHost() string {
+	home, _ := os.UserHomeDir()
+	return resolveHost(os.Getenv, home)
+}
+
+func resolveHost(getenv func(string) string, home string) string {
+	if h := getenv("DOCKER_HOST"); h != "" {
+		return h
+	}
+	dir := getenv("DOCKER_CONFIG")
+	if dir == "" {
+		if home == "" {
+			return DefaultSocket
+		}
+		dir = filepath.Join(home, ".docker")
+	}
+	name := getenv("DOCKER_CONTEXT")
+	if name == "" {
+		var cfg struct {
+			CurrentContext string `json:"currentContext"`
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, "config.json")); err == nil {
+			_ = json.Unmarshal(b, &cfg)
+		}
+		name = cfg.CurrentContext
+	}
+	if name == "" || name == "default" {
+		return DefaultSocket
+	}
+	sum := sha256.Sum256([]byte(name))
+	b, err := os.ReadFile(filepath.Join(dir, "contexts", "meta", hex.EncodeToString(sum[:]), "meta.json"))
+	if err != nil {
+		return DefaultSocket
+	}
+	var meta struct {
+		Endpoints struct {
+			Docker struct {
+				Host string `json:"Host"`
+			} `json:"docker"`
+		} `json:"Endpoints"`
+	}
+	if json.Unmarshal(b, &meta) != nil || meta.Endpoints.Docker.Host == "" {
+		return DefaultSocket
+	}
+	return meta.Endpoints.Docker.Host
 }
 
 // Driver implements provisioner.Driver on one daemon.
@@ -68,10 +129,7 @@ var _ provisioner.Driver = (*Driver)(nil)
 func New(cfg Config) (*Driver, error) {
 	host := cfg.Host
 	if host == "" {
-		host = os.Getenv("DOCKER_HOST")
-	}
-	if host == "" {
-		host = "unix:///var/run/docker.sock"
+		host = DefaultHost()
 	}
 	u, err := url.Parse(host)
 	if err != nil {
