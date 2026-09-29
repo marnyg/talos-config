@@ -105,7 +105,7 @@ spec:
         - name: provisioner
           # actors/build.sh prints the tag@digest to pin here; the SAME
           # digest is what the parent names in #spawn (-image).
-          image: ghcr.io/marnyg/sap-actors:53b84b4@sha256:f9de434d0ffc3f3798dc3187213c7363a4499e6e37e139f8a0229840c0997c8f
+          image: ghcr.io/marnyg/sap-actors:47bae97@sha256:879d6580e45f734fa88e6ff59112b1efc2ed490e4bfd020a170612b020df7e80
           command: ["/usr/local/bin/provisioner"]
           args:
             - -driver=k8s
