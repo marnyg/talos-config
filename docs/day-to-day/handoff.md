@@ -23,12 +23,15 @@ workload deployed; ArgoCD un-stuck.**
 
 ## Loose threads
 
-- `apps` shows `OutOfSync` / `Progressing` after the catch-up sync
-  (the `cdis.cdi.kubevirt.io` CRD is the one OutOfSync resource). Not
-  investigated; may be long-standing (compare `p0ar`).
-- The other argocd Deployment replicas on w1 are ghost `Terminating`
-  pods too. They're harmless (replacements run on cp1), but they're the
-  same class of problem.
+- Broken windows fixed (`70c2531`). The CDI CRD no longer declares
+  `v1alpha1`: ArgoCD selfHeal and cdi-operator had been rewriting it
+  against each other (generation 7210), and `apps` is **Synced** now.
+  33 ghost ReplicaSet pods on w1 were force-deleted.
+- **Held on purpose:** the ghost `gateway` pod on w1 (Recreate: deleting
+  it would restart the gateway, which undoes the "not by hand" call,
+  `9l67`), Longhorn's instance-manager and the `win2k25` virt-launcher
+  (their operators own them). `apps` health reads Progressing only
+  because of `gateway` 0/1.
 - nas1 is Ready and carries the provisioner. w1 is still off (`9l67`).
 - Carried: nas1's SATA bays empty; `5q33`, `4te`, `t7b2`, `c4vd`,
   `etzl`.

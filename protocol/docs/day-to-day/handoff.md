@@ -33,8 +33,9 @@ and ADR-0009 Accepted.** Nothing under `protocol/` code changed.
   the child's own "lapsed" line was lost, so which mechanism ended the
   pod (platform deadline or self-lapse) is not recorded. Both converge
   by design; a longer TTL or a log tail would settle it.
-- **The provisioner logs nothing per facet.** Between "adopted" and
-  "lease lapsed" there is silence on `#spawn`/`#extend`/`#kill`.
+- Fixed after the run (`70c2531`): the provisioner logs each
+  `#spawn`/`#extend`/`#kill` (`TestLeaseLog`); `actors/keyfile` is the
+  one key loader; the docker driver follows the docker context.
 - Discovery is still a file (`location.json`, 10 min); the in-cluster
   one has to be read with `kubectl debug` (the image has no shell).
 - Carried: customer consent = a year-long flag; registry auth not v0;
@@ -43,6 +44,5 @@ and ADR-0009 Accepted.** Nothing under `protocol/` code changed.
 
 ## Suggested next steps
 
-- Close `0bc.4.6` and the M4 parent `0bc.4` (owner's call).
 - Owner picks the next direction: M5 money (`0bc.5`), or the
   lighthouse `#publish` for provisioners (removes the file handoff).
