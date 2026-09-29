@@ -5,44 +5,54 @@
 
 ## Last session
 
-2026-09-29 — **M4.6 acceptance run passed on both drivers; ADR-0008
-and ADR-0009 Accepted.** Nothing under `protocol/` code changed.
+2026-09-29 (second session) — **Lighthouse discovery for
+provisioners (`0bc.6`): built and accepted on docker.** The
+`location.json` handoff is no longer the only way to find a
+provisioner.
 
-- **`actors/cmd/spawn`** (`676a791`): the laptop parent. Persisted
-  key (`-state`, default `~/.sap-parent`), `-print-id` for the
-  provisioner's `-customer`, loads the provisioner's `location.json`,
-  `#spawn` by digest, one `#ping`, then counts `#renew → #extend`
-  rounds and **goes deaf after `-renewals`** (default 1: refuses
-  `#renew`), exiting when its born table drops the child. Defaults
-  `-window 3m`, `-kit-ttl 5m` so the first beat extends.
-- **docker** (native provisioner on the laptop against Docker
-  Desktop): born 1.5 s, ping ok, 1 extend, child self-lapsed at the
-  chain's exp (12:18:28), provisioner swept at 12:18:44.
-- **k8s** (`k8s/apps/sap-provisioner`, nas1): born 0.7 s, ping ok,
-  1 extend. The Job outlived its 180 s window deadline, so the
-  `activeDeadlineSeconds` patch works live; it then ended
-  `DeadlineExceeded` at the extended `until`, the same second the
-  child's own lapse was due. Logs in `/tmp/sap-run/` (ephemeral).
-- Sketch § Spawning rewritten to the built shape (provisioner actor,
-  birth consent, nonce-as-correlation, passive leases, self-lapse);
-  exploration-log §M4 pruned (all of it is in the ADRs' options).
+- **`Actor.Bootstrap map[ActorID][]string`** (`protocol/actor`): raw
+  dial hints for an id with no live cached record — the network
+  bundle's "lighthouse endpoints", invariant 11's sanctioned artifact.
+  `Send` consults it only then; the first reply's piggyback supplies
+  the record. `TestBootstrapHints` pins: a hint naming the wrong peer
+  is `ErrPeerMismatch`, the right hint is used once, the cached record
+  wins after. Rejected alternatives in ADR-0007 § Run live (transport
+  fallback to the relay breaks `actor.Multi`'s `ErrUnreachable`
+  contract; a long-TTL lighthouse file is still a file).
+- **`actors/cmd/lighthouse -state DIR -member ID…`**: persisted key,
+  per-member direct consents `publish #publish` + `invoke #lookup`
+  (its own founder, `-customer`'s shape), beat re-publishes its own
+  location and logs the directory size.
+- **`provisioner -lighthouse ID`**: each beat `#publish`es the fresh
+  record after writing `location.json` (kept: the no-lighthouse mode).
+  **`spawn -lighthouse ID -provisioner-id ID`**: `#lookup`, validate,
+  then `#spawn` unchanged; `-provisioner file` stays.
+- **Docker acceptance:** first `#publish` on the relay hint alone was
+  refused `unauthorized` (not yet a member) — the bootstrap dial works
+  and the fold decides. After the member restart: `#publish ok` on
+  every beat, directory 1; parent `#lookup ok → #spawn → born 0.9 s →
+  #ping ok → 1 extend → lapse`. No file copied.
+- `actors/image.nix` ships `lighthouse`; `k8s/apps/sap-lighthouse`
+  Deployment + PVC written (members: sap-provisioner + laptop parent),
+  provisioner manifest carries a commented `-lighthouse=` awaiting the
+  in-cluster id. **Not deployed yet** — needs an image push
+  (`actors/build.sh`), then the two-step: deploy the lighthouse, read
+  its id from `kubectl logs`, fill in the provisioner's flag.
 
 ## Loose threads
 
-- **Child logs die with the Job** (`ttlSecondsAfterFinished`): on k8s
-  the child's own "lapsed" line was lost, so which mechanism ended the
-  pod (platform deadline or self-lapse) is not recorded. Both converge
-  by design; a longer TTL or a log tail would settle it.
-- Fixed after the run (`70c2531`): the provisioner logs each
-  `#spawn`/`#extend`/`#kill` (`TestLeaseLog`); `actors/keyfile` is the
-  one key loader; the docker driver follows the docker context.
-- Discovery is still a file (`location.json`, 10 min); the in-cluster
-  one has to be read with `kubectl debug` (the image has no shell).
+- **k8s cut-over pending** (above). Until then the in-cluster
+  provisioner is still found through `location.json` + `kubectl debug`.
+- The lighthouse's own `-member` list is a restart to change, as the
+  provisioner's `-customer` is; the founder indirection (`-founder`,
+  delegable consent to F who mints caps) is the way out when it itches.
+- Child logs die with the Job (`ttlSecondsAfterFinished`) — carried.
 - Carried: customer consent = a year-long flag; registry auth not v0;
   `payment` absent (M5); `fh2y`; open problems 8, 9; `bh74` shows on
-  provisioners too.
+  provisioners too; `lm2a` (lookup-cap in the intro) now has a
+  lighthouse to point at.
 
 ## Suggested next steps
 
-- Owner picks the next direction: M5 money (`0bc.5`), or the
-  lighthouse `#publish` for provisioners (removes the file handoff).
+- Push the image and cut the k8s provisioner over to the lighthouse
+  (closes `0bc.6`), or go straight to M5 money (`0bc.5`).

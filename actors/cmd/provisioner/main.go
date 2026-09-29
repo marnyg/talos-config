@@ -13,8 +13,16 @@
 // run — a provisioner's id must outlive its process, customers hold
 // chains to it). Everything else in DIR is derived and safe to lose:
 // location.json is the current signed reach-me-at, rewritten each
-// beat, for a customer to load out of band (v0's "how do I find the
-// provisioner" — replies piggyback fresh ones after that).
+// beat, for a customer to load out of band (the no-lighthouse answer
+// to "how do I find the provisioner" — replies piggyback fresh ones
+// after that).
+//
+// Lighthouse: -lighthouse ID names a lighthouse this provisioner is a
+// -member of (0bc.6, ADR-0007); every beat #publishes the fresh
+// reach-me-at there, so a customer finds it by #lookup with no file
+// copied. The lighthouse is dialled on the relay alone the first time
+// (actor.Bootstrap; the reply piggybacks its record). The consent is
+// the lighthouse's, presented empty.
 //
 // Customers: -customer ID (repeatable) mints, at start, one consent
 // {iss: me, aud: ID, invoke, cav: {target: [me], facet: [#spawn,
@@ -48,6 +56,7 @@ import (
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/talos-config/protocol/lighthouse"
 	"github.com/marnyg/talos-config/protocol/provisioner"
 	"github.com/marnyg/talos-config/protocol/spawn"
 )
@@ -80,6 +89,7 @@ func main() {
 		bindAddr   = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 		namespace  = flag.String("namespace", "", "k8s: namespace for Jobs (default the pod's own)")
 		dockerHost = flag.String("docker-host", "", "docker: daemon (default as the docker CLI: DOCKER_HOST, then the current docker context, then unix:///var/run/docker.sock)")
+		lhID       = flag.String("lighthouse", "", "lighthouse actor id to #publish each reach-me-at to (this id must be one of its -member); dialled on -relay")
 		custTTL    = flag.Duration("customer-ttl", 365*24*time.Hour, "lifetime of each -customer consent, from start")
 		beat       = flag.Duration("beat", time.Minute, "sweep + reach-me-at interval")
 		locTTL     = flag.Duration("location-ttl", 10*time.Minute, "lifetime of each published reach-me-at; keep well above -beat")
@@ -91,6 +101,12 @@ func main() {
 	irohtransport.SetLogLevel(os.Getenv("SAP_LOG")) // trace|debug|info|warn
 	if len(cust) == 0 {
 		log.Fatal("no -customer: nobody could #spawn")
+	}
+	lh := cert.ActorID(strings.TrimSpace(*lhID))
+	if lh != "" {
+		if err := lh.Validate(); err != nil {
+			log.Fatalf("-lighthouse: %v", err)
+		}
 	}
 
 	if err := os.MkdirAll(*stateDir, 0o700); err != nil {
@@ -110,7 +126,10 @@ func main() {
 	if minted {
 		slog.Info("provisioner: key minted", "state", *stateDir)
 	}
-	slog.Info("provisioner: up", "id", a.ID(), "driver", *drv, "relay", *relay)
+	if lh != "" {
+		a.Bootstrap = map[cert.ActorID][]string{lh: {irohtransport.TagRelay + *relay}}
+	}
+	slog.Info("provisioner: up", "id", a.ID(), "driver", *drv, "relay", *relay, "lighthouse", lh)
 
 	now := a.Now()
 	for _, id := range cust {
@@ -168,6 +187,16 @@ func main() {
 		}
 		if err != nil {
 			slog.Warn("provisioner: location.json", "err", err)
+		}
+		if lh == "" {
+			return
+		}
+		pctx, cancel := context.WithTimeout(ctx, *beat/2)
+		defer cancel()
+		if err := lighthouse.Publish(pctx, a, lh, nil); err != nil {
+			slog.Warn("provisioner: #publish", "lighthouse", lh, "err", err)
+		} else {
+			slog.Info("provisioner: #publish ok", "lighthouse", lh, "exp", loc.Exp)
 		}
 	}
 	publish()

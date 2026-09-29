@@ -116,6 +116,19 @@ func (a *Actor) hintsLocked(id cert.ActorID) []string {
 	return append([]string(nil), loc.Cav.Endpoints...)
 }
 
+// dialHintsLocked is hintsLocked with the Bootstrap fallback: a cached
+// live record wins; without one, the raw bootstrap hints for id, if
+// any (nil when neither). Caller holds mu.
+func (a *Actor) dialHintsLocked(id cert.ActorID) []string {
+	if hints := a.hintsLocked(id); hints != nil {
+		return hints
+	}
+	if hints := a.Bootstrap[id]; len(hints) > 0 {
+		return append([]string(nil), hints...)
+	}
+	return nil
+}
+
 // CurrentLocation returns the actor's own current reach-me-at record
 // (nil until PublishLocation / SetLocation, and nil again once it has
 // expired under the effective clock), the value piggybacked on every

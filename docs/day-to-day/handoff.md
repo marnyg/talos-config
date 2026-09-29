@@ -5,6 +5,24 @@
 
 ## Last session
 
+2026-09-29 (second session) — **Lighthouse discovery for provisioners
+(`0bc.6`) built and accepted on docker; k8s manifests written, not
+applied.** Detail in `protocol/docs/day-to-day/handoff.md`.
+
+- `protocol/actor` gains `Bootstrap` hints (the network bundle's raw
+  endpoints, invariant 11); `actors/cmd/lighthouse` is new; the
+  provisioner `#publish`es and `spawn` `#lookup`s. `actors-bin`
+  vendorHash bumped (first import of `protocol/lighthouse`).
+- `k8s/apps/sap-lighthouse` + a commented `-lighthouse=` on the
+  provisioner Deployment. **The pinned image (`53b84b4`) has no
+  `lighthouse` binary** — ArgoCD will sync the new Deployment into
+  CrashLoop until `actors/build.sh` pushes a new digest and both
+  manifests are re-pinned. Then: read the lighthouse id from its log,
+  fill in the provisioner flag, run `spawn -lighthouse …
+  -provisioner-id ed:9c3ae5ec…` from the laptop.
+
+## Session before
+
 2026-09-29 — **Protocol M4 accepted live; the cluster's first actor
 workload deployed; ArgoCD un-stuck.**
 

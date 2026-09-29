@@ -178,6 +178,15 @@ type Actor struct {
 	// advertisement only — it authorizes nothing; the receiver's own
 	// consent and accept table decide at admission. nil ⇒ absent (∅).
 	Serves []string
+	// Bootstrap holds raw dial hints for actors this one has NO signed
+	// location record of yet — invariant 11's sanctioned artifact (the
+	// lighthouse endpoints in a network bundle, the intro's parent
+	// location): the one place a literal endpoint may stand in for a
+	// reach-me-at. Send consults it only when no live record is cached
+	// for the receiver; the first reply piggybacks the real record and
+	// the hint goes unused. It authorizes nothing (the transport still
+	// pins the peer to its key) and is never advertised or forwarded.
+	Bootstrap map[cert.ActorID][]string
 
 	hwm  *envelope.HWM
 	mail chan *inbound
@@ -694,7 +703,7 @@ func (a *Actor) Send(ctx context.Context, to cert.ActorID, facet string, payload
 	a.seqOut[to]++
 	seq := a.seqOut[to]
 	loc := a.currentLocationLocked(a.now())
-	hints := a.hintsLocked(to)
+	hints := a.dialHintsLocked(to)
 	a.mu.Unlock()
 
 	proof, req := a.proofFor(to, facet)

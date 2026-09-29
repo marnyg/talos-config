@@ -963,3 +963,6 @@
   /proc/1/root/var/lib/sap-provisioner/location.json`, then
   `kubectl logs <pod> -c <debugger>` (without `-it` stdout is not
   attached). Ephemeral containers stay in the pod spec until restart.
+  _Superseded once `k8s/apps/sap-lighthouse` is live (`0bc.6`): the
+  parent `#lookup`s the provisioner by id; only the lighthouse's own
+  id is read, from `kubectl logs` at its start._

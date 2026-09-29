@@ -9,8 +9,10 @@
 # Identity: the key on the PVC is minted here and never travels; it
 # persists because customers hold chains to this id (Recreate: one
 # holder at a time). Everything else on the volume is derived —
-# location.json is the signed reach-me-at a customer copies out of band
-# (`kubectl cp` / `kubectl exec cat`); v0's discovery.
+# location.json is the signed reach-me-at a customer could copy out of
+# band (the image has no shell: `kubectl debug`); since 0bc.6 the
+# provisioner #publishes it to the sap-lighthouse each beat instead and
+# a customer #lookups it there by id (ADR-0007).
 #
 # Customers: each -customer is one actor consented to the three facets
 # for a year from start (ADR-0009's open item, v0 answer: a flag).
@@ -111,6 +113,9 @@ spec:
             - -relay=https://marnyg-talos-config.fly.dev
             # The laptop parent of the acceptance run (spawn -print-id).
             - -customer=ed:79547a961cf58b525d4a65c32dca8db46c5aa568526f56911433f7410dcd769b
+            # The sap-lighthouse (k8s/apps/sap-lighthouse); this id is
+            # one of its -member. Filled in once its key is minted.
+            # - -lighthouse=ed:…
           env:
             - name: SAP_LOG
               value: warn

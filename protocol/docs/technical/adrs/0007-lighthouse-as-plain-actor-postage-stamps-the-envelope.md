@@ -5,7 +5,9 @@
 - Builds: `talos-config-0bc.3` (M3). Amends: ADR-0001 (envelope
   canonical form gains an optional `postage` key; the sketch's
   `max_bytes` on the frontdoor is not adopted), glossary **Lighthouse**,
-  **Frontdoor**, **Postage**, **Envelope**.
+  **Frontdoor**, **Postage**, **Envelope**. _Amended 2026-09-29
+  (`0bc.6`): the network bundle's "lighthouse endpoints" are
+  `Actor.Bootstrap` hints; first lighthouse run live — see § Run live._
 
 ## Context and Problem Statement
 
@@ -204,3 +206,50 @@ signature when stamped, preimage independent of the stamp.
 new publisher, re-publish by a listed member succeeds, an expired slot
 is reused) and `TestFrontdoorMintRefusesNonPositiveTTL` pin the chosen
 numbers' rules; `TestDefaultRequireIsInVocabulary` pins the default.
+
+### Run live (2026-09-29, `0bc.6`)
+
+M3 left the lighthouse as a package nobody ran; the M4 provisioner
+was found through a `location.json` copied out of band (10-minute
+record; in-cluster, `kubectl debug`). Putting a lighthouse in front of
+it surfaced the one thing the ADR had not said: **how a client dials
+the lighthouse itself** before holding its signed record. The sketch's
+answer is the network bundle `{lighthouse endpoints, lighthouse
+identity, your publish-cap}` — raw endpoints, invariant 11's
+sanctioned artifact — but `Send` only dialled from cached
+`reach-me-at` records.
+
+- **`Actor.Bootstrap map[ActorID][]string`**: raw dial hints,
+  consulted only when no live record is cached for the receiver; the
+  first reply piggybacks the real record and the hint goes unused. It
+  authorizes nothing (the transport pins the peer to its key — a hint
+  naming the wrong peer is `ErrPeerMismatch`) and is never advertised
+  or forwarded. Pinned by `TestBootstrapHints` (bad hint refused, good
+  hint used once, cached record wins thereafter).
+  _Rejected:_ a transport-level fallback to the home relay for any
+  unknown id — `actor.Multi` relies on `ErrUnreachable` meaning "not
+  my hint" to try the next transport, and it would make every
+  transport claim every id.
+  _Rejected:_ a long-lived `location.json` for the lighthouse — still
+  a file, and two pods cannot share one without a mount.
+- On iroh the whole bundle collapses to **the lighthouse's id**: its
+  endpoint is `iroh:relay=<url>`, which every actor already holds as
+  `-relay`. `provisioner -lighthouse ID` and `spawn -lighthouse ID
+  -provisioner-id ID` seed the hint from that flag.
+- **`actors/cmd/lighthouse -member ID`** mints, per member, direct
+  consents `publish #publish` and `invoke #lookup` for `-member-ttl`
+  — the lighthouse is its own founder, the same v0 shape as the
+  provisioner's `-customer` (ADR-0009). Members present the consent
+  empty. The founder indirection (F mints caps without the lighthouse
+  restarting) is unchanged as the upgrade path: a `-founder` flag
+  consenting delegably to F instead.
+- The provisioner keeps writing `location.json` (its no-lighthouse
+  mode) and additionally `#publish`es each beat's fresh record; the
+  parent `#lookup`s by id, validates the record as the provisioner's
+  own, and proceeds to `#spawn` unchanged.
+- **Acceptance (docker, laptop, 2026-09-29):** provisioner's first
+  `#publish` reached the lighthouse on the relay hint alone and was
+  refused `unauthorized` (not yet a `-member`) — the bootstrap dial
+  works and the fold decides; after a restart with the member, `#publish
+  ok` on the beat, directory 1; parent `#lookup ok` → `#spawn` → born
+  in 0.9 s → `#ping ok` → one extend → lapse. No file copied.

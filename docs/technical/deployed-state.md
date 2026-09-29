@@ -126,6 +126,13 @@ history and, where the numbers still matter, in ADR-0006 and
   `~/.sap-parent/key`). Children run as Jobs in `sap`; none live
   between runs. Egress only (fly relay); no Service. The image has no
   shell — read `location.json` with `kubectl debug --target` (notes).
+  _Pending (`0bc.6`, written 2026-09-29, not yet applied):_
+  `k8s/apps/sap-lighthouse` — Deployment `sap-lighthouse` (same
+  image, `command: lighthouse`, 16Mi PVC `sap-lighthouse-state`, no
+  SA/RBAC/Service) with the provisioner and the laptop parent as
+  `-member`; the provisioner then gets `-lighthouse=<its id>` and the
+  parent finds it by `#lookup` — no `location.json` read. Needs an
+  image push first (the pinned digest predates `cmd/lighthouse`).
 - Provenance of the image line: 2026-09-15 cp1 first booted an
   imager build (`p0agent` 0.0.3, scratch relay); 2026-09-16 it became
   the declared image (ADR-0023); 2026-09-19/20 w1 followed and both

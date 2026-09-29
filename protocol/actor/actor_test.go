@@ -639,6 +639,76 @@ func TestSequenceValidation(t *testing.T) {
 
 // ---- 4. location piggyback + cache ----------------------------------------
 
+// hintSpy records the hints each Dial received (the memory network
+// discovers by id natively, so the hints are observed at the seam).
+type hintSpy struct {
+	Transport
+	mu   sync.Mutex
+	last []string
+}
+
+func (s *hintSpy) Dial(ctx context.Context, id cert.ActorID, hints []string) (Stream, error) {
+	s.mu.Lock()
+	s.last = append([]string(nil), hints...)
+	s.mu.Unlock()
+	return s.Transport.Dial(ctx, id, hints)
+}
+
+func (s *hintSpy) hints() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.last
+}
+
+// Bootstrap hints stand in for a record the sender does not hold yet
+// (invariant 11's sanctioned artifact); a cached live record wins, and
+// the first reply's piggyback supplies one.
+func TestBootstrapHints(t *testing.T) {
+	w := newWorld(t)
+	now := w.clk.Now()
+	b, bs, _ := w.actor("b")
+	a, _, aep := w.actor("a")
+	spy := &hintSpy{Transport: aep}
+	a.Transport = spy
+	B, A := b.ID(), a.ID()
+	b.AcceptTable["echo"] = echo
+	b.Consents = []cert.Cert{issue(t, bs, string(A), []cert.ActorID{B}, []string{"echo"}, false, now-1, now+3600)}
+	if _, err := b.PublishLocation(3600); err != nil {
+		t.Fatal(err)
+	}
+	w.start(b)
+	w.start(a)
+
+	// A wrong hint names an endpoint that is not B: the transport
+	// refuses (a hint authorizes nothing; the peer is pinned to its key).
+	a.Bootstrap = map[cert.ActorID][]string{B: {"mem:a"}}
+	if _, err := a.Send(w.ctx, B, "echo", nil); !errors.Is(err, ErrPeerMismatch) {
+		t.Fatalf("want ErrPeerMismatch on a hint naming the wrong peer, got %v", err)
+	}
+	if a.GetLocation(B) != nil {
+		t.Fatal("no record should be cached after a failed dial")
+	}
+	// The right hint reaches B; the reply piggybacks B's record.
+	a.Bootstrap[B] = []string{"mem:b"}
+	if _, err := a.Send(w.ctx, B, "echo", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := spy.hints(); len(got) != 1 || got[0] != "mem:b" {
+		t.Fatalf("dial should have used the bootstrap hint, got %v", got)
+	}
+	if loc := a.GetLocation(B); loc == nil || loc.Cav.Endpoints[0] != "mem:b" {
+		t.Fatalf("A did not cache B's record off the reply: %+v", loc)
+	}
+	// From here the record wins: the (now wrong) hint is never consulted.
+	a.Bootstrap[B] = []string{"mem:a"}
+	if _, err := a.Send(w.ctx, B, "echo", nil); err != nil {
+		t.Fatalf("cached record should win over the hint: %v", err)
+	}
+	if got := spy.hints(); len(got) != 1 || got[0] != "mem:b" {
+		t.Fatalf("dial should have used the cached record, got %v", got)
+	}
+}
+
 func TestLocationCaching(t *testing.T) {
 	w := newWorld(t)
 	now := w.clk.Now()

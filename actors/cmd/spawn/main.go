@@ -6,6 +6,7 @@
 // product — one spawn per process, everything logged.
 //
 //	spawn -state DIR -print-id
+//	spawn -state DIR -lighthouse ed:… -provisioner-id ed:… -image ghcr.io/…@sha256:…
 //	spawn -state DIR -provisioner location.json -image ghcr.io/…@sha256:…
 //
 // Identity: -state DIR holds the key (a 32-byte seed, minted on first
@@ -13,10 +14,14 @@
 // this id at ITS start: print the id first, start the provisioner with
 // it, then spawn. Nothing else in DIR.
 //
-// Finding the provisioner: -provisioner is the location.json its
-// process writes (a signed, expiring reach-me-at), copied out of band —
-// v0's answer to discovery; after the first reply piggyback keeps it
-// fresh. Its iss is the provisioner's id.
+// Finding the provisioner (0bc.6): -lighthouse + -provisioner-id
+// #lookup the provisioner's record at a lighthouse both are -member of
+// (protocol ADR-0007) — the lighthouse is dialled on -relay alone the
+// first time (actor.Bootstrap), and the looked-up record is validated
+// as the provisioner's own before it is used. The alternative,
+// -provisioner, is the location.json the provisioner's process writes
+// (a signed, expiring reach-me-at), copied out of band. Either way the
+// first reply's piggyback keeps the record fresh after that.
 //
 // Life of the run: #spawn → the child knocks on #birth (the promise
 // resolves: id, location, lease) → one #ping on the child's own
@@ -53,6 +58,7 @@ import (
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/talos-config/protocol/lighthouse"
 	"github.com/marnyg/talos-config/protocol/spawn"
 )
 
@@ -64,7 +70,9 @@ func main() {
 	var (
 		stateDir = flag.String("state", filepath.Join(os.Getenv("HOME"), ".sap-parent"), "state dir: key (persisted identity)")
 		printID  = flag.Bool("print-id", false, "print this parent's actor id and exit (the provisioner's -customer)")
-		provFile = flag.String("provisioner", "", "the provisioner's location.json (its signed reach-me-at)")
+		provFile = flag.String("provisioner", "", "the provisioner's location.json (its signed reach-me-at); the no-lighthouse path")
+		lhID     = flag.String("lighthouse", "", "lighthouse actor id to #lookup the provisioner at (this id must be one of its -member); dialled on -relay")
+		provID   = flag.String("provisioner-id", "", "the provisioner's actor id, with -lighthouse")
 		image    = flag.String("image", "", "child image by content digest (name@sha256:…)")
 		relay    = flag.String("relay", "https://marnyg-talos-config.fly.dev", "iroh home relay URL")
 		bindAddr = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
@@ -89,18 +97,33 @@ func main() {
 		fmt.Println(signer.ActorID())
 		return
 	}
-	if *provFile == "" || *image == "" {
-		log.Fatal("need -provisioner location.json and -image name@sha256:… (or -print-id)")
+	lh, prov := cert.ActorID(*lhID), cert.ActorID(*provID)
+	byLighthouse := lh != "" || prov != ""
+	switch {
+	case *image == "", byLighthouse == (*provFile != ""):
+		log.Fatal("need -image name@sha256:… and either -lighthouse + -provisioner-id or -provisioner location.json (or -print-id)")
+	case byLighthouse && (lh == "" || prov == ""):
+		log.Fatal("-lighthouse and -provisioner-id go together")
 	}
-	raw, err := os.ReadFile(*provFile)
-	if err != nil {
-		log.Fatal(err)
+	var provLoc *cert.Cert
+	if byLighthouse {
+		if err := lh.Validate(); err != nil {
+			log.Fatalf("-lighthouse: %v", err)
+		}
+		if err := prov.Validate(); err != nil {
+			log.Fatalf("-provisioner-id: %v", err)
+		}
+	} else {
+		raw, err := os.ReadFile(*provFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		loc, err := cert.DecodeCert(raw)
+		if err != nil {
+			log.Fatalf("%s: %v", *provFile, err)
+		}
+		provLoc, prov = &loc, loc.Iss
 	}
-	provLoc, err := cert.DecodeCert(raw)
-	if err != nil {
-		log.Fatalf("%s: %v", *provFile, err)
-	}
-	prov := provLoc.Iss
 
 	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: *bindAddr, Relay: *relay})
 	if err != nil {
@@ -112,11 +135,28 @@ func main() {
 	if minted {
 		slog.Info("parent: key minted", "state", *stateDir)
 	}
-	if provLoc.Exp <= a.Now() {
-		slog.Warn("parent: provisioner location expired; the #spawn will likely not reach it", "exp", provLoc.Exp)
-	}
-	if err := a.UpdateLocation(prov, &provLoc); err != nil {
-		log.Fatalf("%s: %v", *provFile, err)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if byLighthouse {
+		a.Bootstrap = map[cert.ActorID][]string{lh: {irohtransport.TagRelay + *relay}}
+		lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		recs, err := lighthouse.Lookup(lctx, a, lh, prov)
+		cancel()
+		if err != nil {
+			log.Fatalf("parent: #lookup at %s: %v", lh, err)
+		}
+		rec, ok := recs[prov]
+		if !ok {
+			log.Fatalf("parent: #lookup at %s: no live record for %s (is the provisioner up and a -member there?)", lh, prov)
+		}
+		slog.Info("parent: #lookup ok", "lighthouse", lh, "provisioner", prov, "exp", rec.Loc.Exp, "endpoints", rec.Loc.Cav.Endpoints)
+	} else {
+		if provLoc.Exp <= a.Now() {
+			slog.Warn("parent: provisioner location expired; the #spawn will likely not reach it", "exp", provLoc.Exp)
+		}
+		if err := a.UpdateLocation(prov, provLoc); err != nil {
+			log.Fatalf("%s: %v", *provFile, err)
+		}
 	}
 
 	sp := spawn.New(a)
@@ -126,8 +166,6 @@ func main() {
 	var extends atomic.Int64
 	deaf := gate(a, sp, *renewals, &extends)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	listen := make(chan error, 1)
 	go func() { listen <- a.Listen(ctx) }()
 	publish := func() {

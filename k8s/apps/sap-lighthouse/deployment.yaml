@@ -1,0 +1,95 @@
+# The in-cluster lighthouse (sovereign-actor protocol ADR-0007,
+# talos-config-0bc.6): an ordinary actor serving #publish/#lookup — the
+# rendezvous point members find each other through when no piggybacked
+# record is at hand. It holds a volatile directory of what members
+# published (nothing survives a restart; members re-publish on their
+# beat) and cannot forge a record: a client validates every looked-up
+# record against its issuer's signature. Same image as the provisioner
+# and the children (actors/image.nix), `command: lighthouse`.
+#
+# Identity: the key on the PVC is minted here and never travels; it
+# persists because this id IS the network bundle its members hold
+# (`-lighthouse <id>` on the provisioner and the laptop parent; the
+# endpoint is the shared relay, so nothing else is copied). Recreate:
+# one holder at a time. Nothing else on the volume.
+#
+# Members: each -member is one actor consented to #publish and #lookup
+# for a year from start — the lighthouse is its own founder (v0; a
+# founder minting caps without a restart is the upgrade path). Today
+# that is the sap-provisioner (publishes) and the acceptance run's
+# laptop parent (looks up). Revocation is a restart without the flag.
+#
+# No RBAC, no Service: it talks to the cluster API for nothing and is
+# reached over the relay by identity. Egress only.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sap-lighthouse-state
+  namespace: sap
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 16Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sap-lighthouse
+  namespace: sap
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sap-lighthouse
+  template:
+    metadata:
+      labels:
+        app: sap-lighthouse
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: lighthouse
+          # actors/build.sh prints the tag@digest to pin here (keep in
+          # step with sap-provisioner's).
+          image: ghcr.io/marnyg/sap-actors:53b84b4@sha256:f9de434d0ffc3f3798dc3187213c7363a4499e6e37e139f8a0229840c0997c8f
+          command: ["/usr/local/bin/lighthouse"]
+          args:
+            - -state=/var/lib/sap-lighthouse
+            - -relay=https://marnyg-talos-config.fly.dev
+            # The sap-provisioner (its id is on its PVC; `kubectl logs`
+            # prints it at start).
+            - -member=ed:9c3ae5ecc9a7eeacc4138fb91977d0e2fe6318bdde8429a12198b814ebb41c86
+            # The laptop parent of the acceptance run (spawn -print-id).
+            - -member=ed:79547a961cf58b525d4a65c32dca8db46c5aa568526f56911433f7410dcd769b
+          env:
+            - name: SAP_LOG
+              value: warn
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/sap-lighthouse
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: sap-lighthouse-state

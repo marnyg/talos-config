@@ -138,7 +138,9 @@ short expiry). Distribution is layered:
    network — network authority is just an identity issuing certs, the
    CA pattern rebuilt voluntarily, subordinate to the identities that
    join. One identity may hold caps in many networks. _(Built
-   2026-09-22 as `protocol/lighthouse`, ADR-0007.)_
+   2026-09-22 as `protocol/lighthouse`, ADR-0007; run live 2026-09-29,
+   `0bc.6`: the bundle's raw endpoints are `Actor.Bootstrap` hints,
+   and on iroh the bundle is the lighthouse's id alone.)_
 
 ## Spawning
 
@@ -410,7 +412,19 @@ whose deployment-free form differs from the talos wording. Source:
   aud binding ruled 2026-09-14, `7ei`.)_
 - **Network** — a bundle a founder roots: `{lighthouse endpoints,
   lighthouse identity, your publish-cap}`. Holding a publish-cap is
-  what "being in a network" means. One identity, many networks.
+  what "being in a network" means. One identity, many networks. The
+  endpoints are raw (invariant 11's sanctioned artifact) because a
+  member has no signed record of the lighthouse before its first
+  reply: they seed **`Actor.Bootstrap`**, dial hints `Send` consults
+  only for an id with no live cached record; the first reply's
+  piggyback supplies the record and the hint goes unused. A hint
+  authorizes nothing (the transport pins the peer to its key). _(Run
+  live 2026-09-29, `0bc.6`:)_ on iroh the endpoint is the shared
+  `iroh:relay=<url>` every actor already holds, so the bundle collapses
+  to the lighthouse's id; `actors/cmd/lighthouse -member ID` is its own
+  founder (direct `publish #publish` + `invoke #lookup` consents, the
+  provisioner's `-customer` shape), the founder indirection being the
+  upgrade path.
 - **Lighthouse** — an ordinary actor exposing `#publish` (membership-
   gated) and `#lookup` (per-network policy). The rendezvous point;
   replicated on stable endpoints. The one place stable machine
