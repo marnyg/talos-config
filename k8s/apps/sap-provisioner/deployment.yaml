@@ -114,8 +114,8 @@ spec:
             # The laptop parent of the acceptance run (spawn -print-id).
             - -customer=ed:79547a961cf58b525d4a65c32dca8db46c5aa568526f56911433f7410dcd769b
             # The sap-lighthouse (k8s/apps/sap-lighthouse); this id is
-            # one of its -member. Filled in once its key is minted.
-            # - -lighthouse=ed:…
+            # one of its -member (id minted on its PVC 2026-09-29).
+            - -lighthouse=ed:5cad808a3ed6be7628401c714409311cee59007d06e0aecbcdff2c1f81c662d7
           env:
             - name: SAP_LOG
               value: warn
