@@ -388,6 +388,7 @@ var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("
  {{else}}
  <tr><th>auto-bootstrap</th><td>disabled</td></tr>
  {{end}}
+ {{if .GitOps}}<tr><th>gitops</th><td{{if .GitOpsWarn}} class="warn"{{end}}>{{.GitOps}}</td></tr>{{end}}
 </table>
 {{range .UndeclaredKMS}}
 <div class="msg warn">machine sealed disk keys under UNDECLARED uuid <code>{{.}}</code> —
@@ -653,6 +654,8 @@ type statusData struct {
 	Relay         string      // iroh relay child line ("" = no relay)
 	RelayWarn     bool
 	Boot          *bootSnapshot
+	GitOps        string // ArgoCD root app line (gitops.go), "" when not watching
+	GitOpsWarn    bool
 	Pending       []verifyEntry
 	UndeclaredKMS []string
 	Rows          []statusRow
@@ -746,6 +749,9 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 	if s.boot != nil {
 		snap := s.boot.status()
 		data.Boot = &snap
+	}
+	if s.gitops != nil {
+		data.GitOps, data.GitOpsWarn = s.gitops.status().line(now)
 	}
 	for _, da := range s.store.Pending() {
 		if da.Kind == deviceflow.KindMeshEnroll {

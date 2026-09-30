@@ -107,6 +107,7 @@ type server struct {
 	adminAddrs   []string         // allowlisted wallet addresses (lowercase 0x)
 	hub          *hubManager      // nil = no identity plane (no --iroh-relay): plain config server
 	boot         *bootstrapper    // nil unless --auto-bootstrap
+	gitops       *gitopsWatcher   // nil unless --auto-bootstrap (rides its observation)
 	kms          *kmsServer       // nil unless KMS enabled
 	kmsAdvertise string           // endpoint machines dial for disk unseal
 	relay        *relaySupervisor // nil unless --relay-bin (iroh home relay, ADR-0022)
@@ -423,6 +424,8 @@ func main() {
 		}
 		s.boot = newBootstrapper(*root, hub)
 		go s.boot.run(context.Background())
+		s.gitops = newGitopsWatcher(*root, s.boot)
+		go s.gitops.run(context.Background())
 	}
 
 	addr := fmt.Sprintf("%s:%d", *bind, *port)

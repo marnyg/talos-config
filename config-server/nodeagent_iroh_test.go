@@ -131,13 +131,17 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 
 	// The hub as an ordinary caller (P2.2, 359.9.2): auto-bootstrap's
 	// apid dial is the hub's own bundle — a member cert for its key
-	// named "hub", the recipe's one host row compiled for it — on the
-	// node's apid facet, found through the name map the node's beat
-	// filled. A name nobody has beaten under is unknown, not
-	// unreachable: that is what auto-bootstrap shows until the beat.
+	// named "hub", the recipe's host rows compiled for it (apid for
+	// bootstrap, kube-api for the gitops row, 9l67) — on the node's
+	// apid facet, found through the name map the node's beat filled. A
+	// name nobody has beaten under is unknown, not unreachable: that is
+	// what auto-bootstrap shows until the beat.
 	hb, err := m.present()
-	if err != nil || hb.Member.Cav.Name != HubMemberName || hb.Member.Aud != string(m.issuer.ID()) || len(hb.Grants) != 1 || hb.Grants[0].Cav.Facet[0] != "apid" {
+	if err != nil || hb.Member.Cav.Name != HubMemberName || hb.Member.Aud != string(m.issuer.ID()) || len(hb.Grants) != 2 {
 		t.Fatalf("hub bundle: %+v %v", hb, err)
+	}
+	if facets := []string{hb.Grants[0].Cav.Facet[0], hb.Grants[1].Cav.Facet[0]}; !slices.Contains(facets, "apid") || !slices.Contains(facets, "kube-api") {
+		t.Fatalf("hub grants name %v, want apid + kube-api", facets)
 	}
 	hc, err := m.dialMember(ctx, "aa-bb-cc-dd-ee-ff", "apid", 5*time.Second)
 	if err != nil {

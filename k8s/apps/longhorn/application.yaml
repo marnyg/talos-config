@@ -71,6 +71,20 @@ spec:
           # nodeAffinity hazard (bug 0b374653) by design rather than by
           # pinning.
           defaultDataLocality: best-effort
+          # A node that goes away takes its RWO volumes' pods with it:
+          # Kubernetes leaves them Terminating on the unreachable node
+          # forever, the VolumeAttachment stays, and the replacement pod
+          # sits ContainerCreating on a healthy replica it may not
+          # attach. w1 off 2026-09-21 held the gateway (and every
+          # *.gw.mesh.internal name) and the win2k25 VM that way for 8
+          # days until an out-of-service taint was applied by hand
+          # (talos-config-9l67). The chart default is do-nothing; with
+          # this Longhorn force-deletes the terminating pod once it sees
+          # the node down, releases the volume, and the pod reschedules.
+          # Pods WITHOUT a Longhorn volume are not Longhorn's to touch
+          # (argocd-application-controller: pinned to the control plane
+          # instead, k8s/apps/argocd/controller-patch.yaml).
+          nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
         persistence:
           defaultClass: true
           # Two nodes, so two replicas — one per node. Deliberately set

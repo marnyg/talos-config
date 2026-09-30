@@ -1,0 +1,35 @@
+# The application controller is what makes git the source of truth
+# (invariant 2): nothing lands in the cluster unless this pod runs. It
+# is a StatefulSet, and a StatefulSet pod on a node that stops
+# answering stays `Terminating` forever — the controller never
+# reschedules it (at-most-one semantics; only a force delete or an
+# out-of-service taint moves it). argocd-application-controller-0 sat
+# that way on dead w1 from 2026-09-21 to 2026-09-29: GitOps silently
+# reconciled nothing for 8 days and the only symptom was a push that
+# never deployed (talos-config-9l67).
+#
+# Pin it to the control plane. If cp1 is down there is no API server
+# and nothing to reconcile against, so co-locating costs no
+# availability; what it buys is that losing a worker can never take
+# GitOps with it. The same holds for every other argocd component
+# (server, repo-server, redis, applicationset, notifications) — all
+# Deployments, which do reschedule, so they are left alone; a spread
+# for the ingress path is the HA sweep's slice 2.
+#
+# Partial StatefulSet on purpose: upstream install.yaml owns the
+# resource; ArgoCD server-side-applies this and owns only the field
+# declared here (same pattern as server-patch.yaml). Talos allows
+# scheduling on control planes here (the gateway and the VMs already
+# run on cp1), so no toleration is needed.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: argocd-application-controller
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=true,Validate=false
+spec:
+  template:
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""

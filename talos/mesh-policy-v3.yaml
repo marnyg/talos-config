@@ -41,6 +41,12 @@ node:
     # cert it mints for its own key under the name `hub` — the one
     # `host:` row, compiled like any other (config-server/hubcaller.go).
     - {facet: apid, host: hub}
+    # And the API server, read-only by construction (config-server/
+    # gitops.go): one GET of ArgoCD's root Application per poll, so
+    # /status can say when GitOps has stopped reconciling or a sync op
+    # is stuck (talos-config-9l67). Same authority as apid: the hub
+    # composes the control-plane config and so holds the cluster CA.
+    - {facet: kube-api, host: hub}
 gateway:
   inbound:
     # One class for every HTTP UI; per-app authorization stays at the
