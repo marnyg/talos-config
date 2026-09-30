@@ -815,3 +815,20 @@
   auto-sync starts a fresh op that applies wave 0 and hangs again.
   Check `.status.operationState.{phase,startedAt,message}`, not the
   sync status, when a push seems not to land.
+- 2026-09-30 — **Required pod anti-affinity + replicas == schedulable
+  nodes deadlocks a default rolling update**: the surge pod has no
+  node, and `maxUnavailable: 25%` rounds to 0 so no old pod is ever
+  retired — the new pod sits `Pending` forever and the Deployment is
+  `Progressing` forever (no `progressDeadlineSeconds`, so never
+  Degraded). Hit on the slice-2 rollout with only cp1 + nas1
+  schedulable. Any anti-affine Deployment needs `maxUnavailable: 1`
+  (ingress-nginx via `controller.updateStrategy`, oauth2-proxy via
+  `strategy`). **Unsticking the ArgoCD op it wedged** (both the
+  parent `apps` and the chart app `ingress-nginx`): `kubectl patch
+  app <name> -n argocd --type json -p
+  '[{"op":"remove","path":"/operation"}]'` — then the controller
+  may not notice for minutes; `kubectl annotate app <name> -n argocd
+  argocd.argoproj.io/refresh=normal --overwrite` makes it reconcile
+  at once, and auto-sync picks up the newest revision. Watch
+  `.status.operationState.startedAt` change; a Running op whose
+  `startedAt` predates your push applied the *old* spec.

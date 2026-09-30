@@ -15,10 +15,11 @@ binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 **Next candidates** (owner to pick):
 - **Fill nas1's four SATA bays** — live `UserVolumeConfig` per disk;
   the reason the node exists, and it makes the HA sweep affordable.
-- **HA sweep** (`9l67`) — **slice 1 done 2026-09-30** (a dead node no
-  longer freezes GitOps or pins RWO volumes; `/status` watches ArgoCD).
-  Next: slice 2, ingress-path replicas/anti-affinity across the three
-  nodes; slice 3 (gateway ephemeral key) needs an invariant-2 ruling.
+- **HA sweep** (`9l67`) — **slices 1–2 done 2026-09-30** (a dead node
+  no longer freezes GitOps or pins RWO volumes; `/status` watches
+  ArgoCD; ingress-nginx + oauth2-proxy are 2× anti-affine, siwe-oidc
+  fails over in ~1 min). Left: slice 3 (gateway ephemeral key), which
+  needs an invariant-2 ruling before code.
 - **Sovereign-actor protocol v0** (`0bc`, M1–M5) — **M1–M4 built;
   M4 accepted live 2026-09-29** (`0bc.4.6`: laptop parent → k8s
   provisioner in ns `sap` + a docker one; ADR-0008/0009 Accepted).

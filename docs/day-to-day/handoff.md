@@ -5,41 +5,42 @@
 
 ## Last session
 
-2026-09-29/30 — **HA sweep slice 1 (`9l67`) done, plus a runway bug
-it uncovered (`5hek`).**
+2026-09-30 — **HA sweep slice 2 (`9l67`) done: the ingress path
+survives a node loss.** `9171c87`, `56e193d`, live and verified.
 
-- **GitOps unfrozen**: out-of-service taint on (powered-off) w1
-  released the ghost pods + VolumeAttachments in 30 s; ArgoCD op
-  completed. Structural: Longhorn `nodeDownPodDeletionPolicy:
-  delete-both-…`, argocd controller pinned to the control plane
-  (`k8s/apps/argocd/controller-patch.yaml`), and a `/status` **gitops**
-  row — the hub reads `argocd/apps` over cp1's `kube-api` facet
-  (`config-server/gitops.go`, policy row `{facet: kube-api, host: hub}`)
-  and warns on reconcile > 20 min / op Running > 30 min. `c33c305`.
-- **Member runway was 3.5 d, not 30 d** (`5hek`, `6ccabed`): the beat
-  grant that authorises `#renew` was 7 d, so the gateway (8 d on dead
-  w1) was stranded with a live member cert. `BeatGrantTTL = MemberTTL`,
-  `actor.RenewLifetime` migrates old 7 d grants on first renewal, the
-  agent re-enrols instead of retrying an expired kit; `runway.qnt`
-  finding 8, domain model updated. Hub deployed + unsealed; cp1
-  renewed; gateway re-enrolled (image `ff7c478`, same NodeId), kit
-  verified 90 d/90 d. `*.gw.mesh.internal` back.
+- **ingress-nginx** and **oauth2-proxy** run 2 replicas with required
+  hostname anti-affinity + PDB `minAvailable: 1` (chart-generated for
+  nginx, explicit in `k8s/apps/oauth2-proxy/deployment.yaml`). Both
+  are stateless across replicas — oauth2-proxy's session and PKCE
+  verifier ride cookies under the sealed cookie secret. Live: one
+  replica each on cp1 and nas1.
+- **siwe-oidc stays at 1 replica on purpose**: its RS256 key and
+  auth-code/token maps are per-pod, so a second replica fails
+  redemption at random. It gets 30 s `unreachable`/`not-ready`
+  tolerations instead (failover ≈ 1 min, cost = one re-login). The
+  redesign (durable signing key vs. invariant 1, self-contained codes)
+  is thread `4ze8`.
+- **Found the hard way**: required anti-affinity with replicas ==
+  schedulable nodes deadlocks the default rolling update (surge pod
+  has no node; `25%` maxUnavailable rounds to 0). `maxUnavailable: 1`
+  is now set on both. The wedge also stalled ArgoCD's wave-0 health
+  gate; the working unstick is in notes 2026-09-30.
 
 ## Loose threads
 
-- **w1 still carries the out-of-service taint** — remove it before it
-  rejoins; its kit is expired, so it needs its config re-served (one
-  wallet act). Recipe in notes 2026-09-29.
-- The gitops row's first live poll was admitted at cp1 (09:12:50Z); I
-  did not see the row rendered — owner confirms on `/status`.
-- `5q33`: gateway done; phone/TV APK and Mac daemon still pre-P4.2.
-- Test flake filed: `d4p8` (`wg0` substring in base64).
+- **w1 still off**, still carries the out-of-service taint, kit
+  expired — untaint + re-serve config when it returns (notes
+  2026-09-29). Everything HA-wise is currently proven only across
+  cp1 + nas1.
+- Gateway pod was ~20 min old on nas1 at session start (moved from
+  cp1 since 2026-09-30 morning) — not investigated.
+- `4ze8` (siwe-oidc replication), `5q33` (phone/TV APK, Mac daemon
+  pre-P4.2), `d4p8` (test flake).
 
 ## Suggested next steps
 
-- HA sweep slice 2: ingress-nginx / siwe-oidc / oauth2-proxy replicas
-  + anti-affinity (three nodes now).
-- Slice 3 (gateway ephemeral key) needs a decision against invariant 2
-  (`359.9.3`) before any code — and `5hek` makes the stateful gateway
-  cheaper to keep (a 90 d kit survives a long outage).
-- Populate nas1's SATA bays.
+- Slice 3 of `9l67` (gateway ephemeral key, no PVC) — needs an
+  invariant-2 ruling first (`359.9.3` placed the gateway's key on its
+  own volume; `5hek` makes the stateful gateway cheaper to keep).
+- Or leave the sweep here and fill nas1's SATA bays.
+- Small ops: `t7b2`, `c4vd`, `etzl`.

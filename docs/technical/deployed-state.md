@@ -103,7 +103,9 @@ history and, where the numbers still matter, in ADR-0006 and
   64Mi RWO PVC `gateway-state`) terminates `ingress-http` and
   reverse-proxies to a ClusterIP-only ingress-nginx (no hostNetwork,
   PSS baseline), injecting `X-Mesh-Node/Name/Groups`; `jellyfin` is a
-  raw TCP splice to :8096. Ingress hosts, all `<svc>.gw.mesh.internal`:
+  raw TCP splice to :8096. **ingress-nginx runs 2 replicas** on
+  distinct nodes (required anti-affinity, PDB minAvailable 1,
+  `maxUnavailable: 1`) _(2026-09-30, `9l67` slice 2)_. Ingress hosts, all `<svc>.gw.mesh.internal`:
   argocd, auth, oauth2, jackett, jellyfin, nzbget, radarr, sonarr,
   transmission. No `*.cp1` names remain. The only web NodePort left is
   Jellyfin's 30096 for LAN-direct clients, plus transmission's peer
@@ -114,7 +116,12 @@ history and, where the numbers still matter, in ADR-0006 and
   five media UIs behind oauth2-proxy `auth_request`, Jellyfin via
   jellyfin-plugin-sso (local login kept for the TV). A bridge restart
   rotates the JWKS — re-sign, nothing lost. Known gap: the bridge
-  hardcodes `groups: ["admins"]` (`5kh`).
+  hardcodes `groups: ["admins"]` (`5kh`). **oauth2-proxy runs 2
+  replicas** on distinct nodes (anti-affinity, PDB, `maxUnavailable:
+  1`; cookie-backed sessions make it replica-safe); **siwe-oidc is 1
+  replica by design** (per-pod signing key and auth codes, `4ze8`)
+  with 30 s unreachable/not-ready tolerations so it fails over in
+  about a minute _(2026-09-30, `9l67` slice 2)_.
 - Media stack pods split across both nodes on Longhorn RWX volumes;
   SealedSecrets (`newshosting`, `nzbgeek`) unseal via the
   inlineManifest-provisioned key pair. **Reinstall**:
