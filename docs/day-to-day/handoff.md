@@ -5,42 +5,37 @@
 
 ## Last session
 
-2026-09-30 — **HA sweep slice 2 (`9l67`) done: the ingress path
-survives a node loss.** `9171c87`, `56e193d`, live and verified.
+2026-10-01 — **HA sweep (`9l67`) closed by ruling, no code.**
 
-- **ingress-nginx** and **oauth2-proxy** run 2 replicas with required
-  hostname anti-affinity + PDB `minAvailable: 1` (chart-generated for
-  nginx, explicit in `k8s/apps/oauth2-proxy/deployment.yaml`). Both
-  are stateless across replicas — oauth2-proxy's session and PKCE
-  verifier ride cookies under the sealed cookie secret. Live: one
-  replica each on cp1 and nas1.
-- **siwe-oidc stays at 1 replica on purpose**: its RS256 key and
-  auth-code/token maps are per-pod, so a second replica fails
-  redemption at random. It gets 30 s `unreachable`/`not-ready`
-  tolerations instead (failover ≈ 1 min, cost = one re-login). The
-  redesign (durable signing key vs. invariant 1, self-contained codes)
-  is thread `4ze8`.
-- **Found the hard way**: required anti-affinity with replicas ==
-  schedulable nodes deadlocks the default rolling update (surge pod
-  has no node; `25%` maxUnavailable rounds to 0). `maxUnavailable: 1`
-  is now set on both. The wedge also stalled ArgoCD's wave-0 health
-  gate; the working unstick is in notes 2026-09-30.
+- **Decision `nfmt`**: the in-cluster gateway stays a stateful
+  member — key + Kit on the `gateway-state` RWO PVC, invariant 2's
+  `359.9.3` sentence unchanged. A ~30–60 s `*.gw.mesh.internal`
+  outage on node loss is accepted. The ephemeral-key gateway (slice
+  3) is dropped: what made the stateful gateway painful was `5hek`
+  (3.5 d runway, fixed to 90 d) and Longhorn never releasing the
+  volume (`nodeDownPodDeletionPolicy=delete-both`, slice 1) — both
+  gone.
+- The sweep's last unticked item, "which control-loop pods must
+  survive a node", split out as `jko0` (longhorn manager/CSI,
+  cert-manager, external-dns, sealed-secrets, kms, siwe-oidc).
+
+Slices 1–2 (2026-09-29/30) remain as landed: dead node no longer
+freezes GitOps or pins RWO volumes; ingress-nginx + oauth2-proxy 2×
+anti-affine with `maxUnavailable: 1`; siwe-oidc failover-only.
 
 ## Loose threads
 
-- **w1 still off**, still carries the out-of-service taint, kit
-  expired — untaint + re-serve config when it returns (notes
-  2026-09-29). Everything HA-wise is currently proven only across
-  cp1 + nas1.
-- Gateway pod was ~20 min old on nas1 at session start (moved from
-  cp1 since 2026-09-30 morning) — not investigated.
+- **w1 still off**, out-of-service taint, kit expired — untaint +
+  re-serve config when it returns (notes 2026-09-29). HA is proven
+  only across cp1 + nas1.
+- Gateway pod moved cp1 → nas1 on 2026-09-30 morning unexplained —
+  not investigated.
 - `4ze8` (siwe-oidc replication), `5q33` (phone/TV APK, Mac daemon
   pre-P4.2), `d4p8` (test flake).
 
 ## Suggested next steps
 
-- Slice 3 of `9l67` (gateway ephemeral key, no PVC) — needs an
-  invariant-2 ruling first (`359.9.3` placed the gateway's key on its
-  own volume; `5hek` makes the stateful gateway cheaper to keep).
-- Or leave the sweep here and fill nas1's SATA bays.
+- Fill nas1's four SATA bays (`UserVolumeConfig` per disk).
+- `jko0` control-loop survivability pass (cheap: mostly tolerations
+  and a replica count or two).
 - Small ops: `t7b2`, `c4vd`, `etzl`.

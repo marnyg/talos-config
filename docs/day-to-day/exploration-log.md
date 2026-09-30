@@ -193,3 +193,13 @@ them:
   `config-server/mobile` over the same `nodeagent` + `meshtun` the
   desktop daemon runs, so there is one zone rule and one pool; the
   spike package is superseded and can be deleted.
+- 2026-10-01 — Considered an ephemeral-key in-cluster gateway (no
+  PVC, fresh key + headless re-enrollment on every reschedule) to end
+  the RWO-volume node pin (`9l67` slice 3). Ruled out (decision
+  `nfmt`): the two things that made the stateful gateway hurt were
+  fixed elsewhere — member runway 3.5 d → 90 d (`5hek`) and Longhorn
+  never releasing a dead node's volume (`nodeDownPodDeletionPolicy=
+  delete-both`) — leaving ~30–60 s of `*.gw` downtime per node loss,
+  which is accepted. Invariant 2's `359.9.3` placement stands. Revisit
+  only if gateway failover must be sub-10 s or if the gateway becomes
+  multi-replica (then the per-pod key question returns as `4ze8`'s).
