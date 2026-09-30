@@ -962,6 +962,32 @@
   `sap-lighthouse` (`0bc.6`). If a file must be read anyway:
   `kubectl debug --target=<container> --image=busybox` and
   `/proc/1/root/…` (ephemeral containers stay until the pod restarts).
+- 2026-09-29 — **A node that is truly off: taint it out of service.**
+  `kubectl taint node w1 node.kubernetes.io/out-of-service=nodeshutdown:NoExecute`
+  made KCM force-delete every ghost pod on w1 and release its three
+  `VolumeAttachment`s within 30 s; the gateway attached on cp1, the
+  win2k25 VM rescheduled, the hung ArgoCD op completed by itself.
+  Precondition: the node is powered off, not merely unreachable — the
+  taint asserts nothing runs there. **Before w1 rejoins, remove it**
+  (`kubectl taint node w1 node.kubernetes.io/out-of-service-`); a
+  kubelet does not tolerate it. Structural successors: Longhorn
+  `nodeDownPodDeletionPolicy` (volumes) and the argocd controller pin
+  (`k8s/apps/argocd/controller-patch.yaml`), both from `9l67` slice 1.
+- 2026-09-29 — **A member that missed > 7 d of beats before `6ccabed`
+  is stranded** — `renew: … effective chain is expired (beating with
+  the held certs)` in its log forever, its names gone from the map,
+  though the pod/agent looks healthy (`5hek`). The gateway was; **w1
+  will be when it comes back** (off since 09-21). Recovery is one
+  wallet act each: gateway — delete `kit.json` in `gateway-state` (or
+  the PVC) and sign the URL from `kubectl logs -n gateway
+  deploy/gateway`; w1 — re-serve its config (device-code recipe,
+  2026-09-19 note) and `apply-config`. Agents built after `6ccabed`
+  print that themselves instead of retrying; kits minted or renewed
+  after the fix carry 90 d beat grants and never hit it inside 45 d.
+- 2026-09-29 — **The `wg0` assertion in `TestConfigRefusedWhileSealed`
+  is a flake**: the served config embeds base64 cert material, and a
+  random signature can contain the substring `wg0`. Seen once in a
+  full tagged run, passes alone. Fix is a real assertion (bead).
 - 2026-09-29 — **An ArgoCD sync op can sit "Running" for hours** on
   "waiting for healthy state of <wave-0 resource>" when any later
   wave exists (`vms/` uses waves 1–2): the gateway's ghost pod on w1
