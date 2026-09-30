@@ -42,7 +42,15 @@ spec:
           # within the node-monitor grace period. Required, not
           # preferred: a second replica on the same node buys nothing.
           # The chart adds a PDB (minAvailable 1) once replicaCount > 1.
+          # maxUnavailable 1: with replicas == schedulable nodes, a
+          # rollout's surge pod has nowhere to go and the default
+          # (25% -> 0) never retires an old pod — seen on this change's
+          # own rollout with w1 out. Retiring one first frees a node.
           replicaCount: 2
+          updateStrategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxUnavailable: 1
           affinity:
             podAntiAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:

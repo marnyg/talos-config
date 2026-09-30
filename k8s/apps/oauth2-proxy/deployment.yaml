@@ -47,6 +47,12 @@ metadata:
   namespace: sso
 spec:
   replicas: 2
+  # With replicas == schedulable nodes, a rollout's surge pod has no
+  # node and the default maxUnavailable (25% -> 0) never retires an old
+  # pod: deadlock, seen on this change's own rollout with w1 out.
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: oauth2-proxy
