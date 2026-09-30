@@ -19,13 +19,16 @@ history and, where the numbers still matter, in ADR-0006 and
   apps as a header from the gateway. IP survives only as each device's
   own fake-IP zone (`198.18/15`, `*.mesh.internal`).
 - **Three nodes since 2026-09-22**: nas1 (storage) joined; hub runs
-  `4518c2f`.
+  `c33c305` _(2026-09-30: BeatGrantTTL = MemberTTL, `5hek`; `/status`
+  gitops row, `9l67`)_.
 - **Cluster endpoint is a LAN address** (`https://10.0.0.68:6443`); the
   cluster needs no mesh to be a cluster (invariant 4 unqualified).
-- **w1 is off** (owner closed it 2026-09-21 ~07:20Z). With it, the
-  gateway pod and every `*.gw.mesh.internal` service are down until
-  Longhorn releases the gateway's RWO volume to cp1 — filed as the HA
-  sweep `talos-config-9l67`; not being fixed by hand.
+- **w1 is off** (owner closed it 2026-09-21 ~07:20Z; it will come
+  back) and **carries `node.kubernetes.io/out-of-service=nodeshutdown:
+  NoExecute`** since 2026-09-29 19:10Z — remove it before w1 rejoins.
+  The taint released its ghost pods and volume attachments; the
+  gateway and win2k25 run elsewhere. When w1 returns its kit is
+  expired (`5hek`): re-serve its config (notes 2026-09-29).
 
 ## Cluster — _verified 2026-09-22_
 
@@ -137,14 +140,13 @@ history and, where the numbers still matter, in ADR-0006 and
   -provisioner-id <P>` — nothing is read off a pod. Directory is
   volatile: a restart empties it until the provisioner's next beat
   (≤ 1 min).
-- **ArgoCD sync waves and the gateway**: the `apps` sync operation
-  had been *Running* since 2026-09-29 10:35Z, waiting for wave-0 health
-  (Deployment `gateway` 0/1, the ghost pod on dead w1) before wave 1
-  (the VMs); while it ran, no newer revision synced. Terminated twice
-  by hand (`kubectl patch app apps --type merge -p
-  '{"status":{"operationState":{"phase":"Terminating"}}}'`) to land
-  `0bc.6`; each fresh op applies wave 0 and hangs the same way. It
-  stays that way until `9l67` (or the ghost pod goes).
+- **ArgoCD** _(verified 2026-09-30)_: `apps` Synced/Healthy at
+  `64dbc94`, ops completing. `argocd-application-controller` is pinned
+  to the control plane (`k8s/apps/argocd/controller-patch.yaml`).
+  The hub's `/status` **gitops** row reads the root app over cp1's
+  `kube-api` every 5 min and warns on a reconcile > 20 min old or a
+  sync op Running > 30 min (`config-server/gitops.go`). The 09-29
+  hang (op waiting on the ghost gateway pod) ended with the w1 taint.
 - Provenance of the image line: 2026-09-15 cp1 first booted an
   imager build (`p0agent` 0.0.3, scratch relay); 2026-09-16 it became
   the declared image (ADR-0023); 2026-09-19/20 w1 followed and both
@@ -153,9 +155,12 @@ history and, where the numbers still matter, in ADR-0006 and
 ## Mesh (identity plane) — _verified 2026-09-21_
 
 - **Members and kits.** Each member holds a Kit: its member cert
-  (`aud` = its NodeId, `cav.name`, `cav.groups`, 90 d) + `invoke`
-  grants compiled from `talos/mesh-policy-v3.yaml` (7 d, renewed on
-  the daily beat) + its own self-issued `reach-me-at` (1 h). Groups in
+  (`aud` = its NodeId, `cav.name`, `cav.groups`, 90 d) + the beat
+  grant for `#renew`/`#bundle` (90 d since `c33c305`; older kits
+  re-issue at 90 d on their first renewal) + `invoke` grants compiled
+  from `talos/mesh-policy-v3.yaml` (7 d, renewed on the daily beat) +
+  its own self-issued `reach-me-at` (1 h). Gateway re-enrolled
+  2026-09-30 (same NodeId `ed:45fc82fc…`, image `ff7c478`). Groups in
   use: `admins`, `machines`, `media`. Enrolled: cp1, w1 (machines,
   auto at boot via single-use token), gateway (headless device flow),
   `marius-mac` (admins), `phone` (media; Sony XQ-BQ52, 2026-09-20).
@@ -176,12 +181,14 @@ history and, where the numbers still matter, in ADR-0006 and
   direct endpoint (`bh74`).
 - **Policy.** One recipe, `talos/mesh-policy-v3.yaml` (ADR-0017;
   Nickel contract `verification/nickel/mesh-policy-v3.ncl`): node
-  `apid`/`kube-api` for admins + the hub's own `apid` row; gateway
+  `apid`/`kube-api` for admins + the hub's own `apid` and `kube-api`
+  rows; gateway
   `ingress-http` for admins and media, `jellyfin` for media; hub
   `hub-http`. No receiver holds a table; the blocklist is the git list.
-- **Stale binaries** (`5q33`, P3): phone/TV APK, gateway image and the
-  Mac daemon still send `enrollmsg` v2; harmless while every member
-  holds a kit, fails only at a *new* enrollment.
+- **Stale binaries** (`5q33`, P3): phone/TV APK and the Mac daemon
+  predate `600d2d4`; harmless while every member holds a kit, fails
+  only at a *new* enrollment (the gateway's did, 2026-09-30, until
+  rebuilt).
 
 ## Hub on fly — _verified 2026-09-21_
 
@@ -247,11 +254,12 @@ ADR-0011.
   app state — **users: `gateway-state` (64Mi)** and nothing else, every
   media app still keeps config on `emptyDir`; `longhorn-bulk` (RWX, 1
   replica, `Retain`) for `media/{tv,movies,downloads}` (200/200/50Gi).
-- **2026-09-21 with w1 off**: Longhorn node `w1` not ready; the three
-  media volumes `faulted` (single replica, on w1), `gateway-state` and
-  two others `attaching` — the gateway's replacement pod on cp1 sits in
-  `Multi-Attach error` until the old attachment is released. Expected
-  to self-heal when w1 returns; the structural fix is `9l67`.
+- **With w1 off** _(2026-09-30)_: Longhorn node `w1` not ready; the
+  three media volumes `faulted` (single replica, on w1 — back when w1
+  is); `gateway-state` attached healthy (gateway on nas1), win2k25's
+  two volumes attached degraded on cp1. `nodeDownPodDeletionPolicy:
+  delete-both-statefulset-and-deployment-pod` since `c33c305`, so the
+  next node loss releases RWO volumes without a hand-applied taint.
 - Volume mobility was verified 2026-07-31 (write on cp1, read after
   reschedule to w1). `talosctl wipe disk` needs `--drop-partition` to
   actually free a user volume. The chart's `preUpgradeChecker` job is

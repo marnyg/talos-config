@@ -256,8 +256,10 @@ Rules that fall out of the cut:
   2026-09-18, `359.8.5`)_: auto-bootstrap's `apid` dials to the
   control plane are stream-facet connections like any device's. The
   Issuer mints a member cert for **its own key**, `{aud: hubkey, name:
-  hub, groups: []}`, and the recipe's one `host:` row (`{facet: apid,
-  host: hub}` under node) compiles to its grant, signed by the same hot
+  hub, groups: []}`, and the recipe's `host:` rows (`{facet: apid,
+  host: hub}` under node, and since 2026-09-30 `{facet: kube-api,
+  host: hub}` for the `/status` gitops watch, `9l67`) compile to its
+  grants, signed by the same hot
   key under the same `speak-as`; the node's `Authorize` resolves both
   through the wallet exactly as it resolves a laptop's. **No new
   authorize rule.** The cert is never presented at `#bundle`, so it is

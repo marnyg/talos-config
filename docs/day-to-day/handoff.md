@@ -5,60 +5,41 @@
 
 ## Last session
 
-2026-09-29 (second session) — **Lighthouse discovery for provisioners
-(`0bc.6`) built, accepted on docker and k8s, live in `sap`.** Detail
-in `protocol/docs/day-to-day/handoff.md`.
+2026-09-29/30 — **HA sweep slice 1 (`9l67`) done, plus a runway bug
+it uncovered (`5hek`).**
 
-- `protocol/actor` gains `Bootstrap` hints (the network bundle's raw
-  endpoints, invariant 11); `actors/cmd/lighthouse` is new; the
-  provisioner `#publish`es and `spawn` `#lookup`s. `actors-bin`
-  vendorHash bumped (first import of `protocol/lighthouse`).
-- Image `47bae97@sha256:879d6580…` pushed; `k8s/apps/sap-lighthouse`
-  Deployment + PVC live (id `ed:5cad808a…`), provisioner re-pinned
-  and carrying `-lighthouse`. `technical/deployed-state.md` updated.
-- **ArgoCD had not applied anything since the 10:35Z op**: that sync
-  was still *Running*, waiting on the gateway's health (ghost pod on
-  w1) before wave 1 (the VMs). `Synced` last session was a live-state
-  match. Terminated it twice by hand to land this; the fresh op hangs
-  the same way (notes.md has the recipe). A third reason for `9l67`.
-
-## Session before
-
-2026-09-29 — **Protocol M4 accepted live; the cluster's first actor
-workload deployed; ArgoCD un-stuck.**
-
-- `actors/cmd/spawn` (laptop parent) + `k8s/apps/sap-provisioner`
-  (ns `sap`, Jobs-only Role, PVC; `676a791`). The M4.6 acceptance run
-  passed on the in-cluster k8s provisioner (nas1) and a docker one on
-  the laptop. ADR-0008/0009 Accepted. Detail in
-  `protocol/docs/day-to-day/handoff.md`; deployed facts in
-  `technical/deployed-state.md`.
-- `ghcr.io/marnyg/sap-actors` is **public** now (owner, GitHub UI).
-- **ArgoCD had reconciled nothing since 2026-09-21**: its controller
-  StatefulSet pod was stuck `Terminating` on dead w1. Force-deleted, so
-  it now runs on cp1 and synced `676a791`. Nothing was lost: the only
-  `k8s/` change in the gap was a comment. Noted on `9l67` and in
-  `notes.md`.
+- **GitOps unfrozen**: out-of-service taint on (powered-off) w1
+  released the ghost pods + VolumeAttachments in 30 s; ArgoCD op
+  completed. Structural: Longhorn `nodeDownPodDeletionPolicy:
+  delete-both-…`, argocd controller pinned to the control plane
+  (`k8s/apps/argocd/controller-patch.yaml`), and a `/status` **gitops**
+  row — the hub reads `argocd/apps` over cp1's `kube-api` facet
+  (`config-server/gitops.go`, policy row `{facet: kube-api, host: hub}`)
+  and warns on reconcile > 20 min / op Running > 30 min. `c33c305`.
+- **Member runway was 3.5 d, not 30 d** (`5hek`, `6ccabed`): the beat
+  grant that authorises `#renew` was 7 d, so the gateway (8 d on dead
+  w1) was stranded with a live member cert. `BeatGrantTTL = MemberTTL`,
+  `actor.RenewLifetime` migrates old 7 d grants on first renewal, the
+  agent re-enrols instead of retrying an expired kit; `runway.qnt`
+  finding 8, domain model updated. Hub deployed + unsealed; cp1
+  renewed; gateway re-enrolled (image `ff7c478`, same NodeId), kit
+  verified 90 d/90 d. `*.gw.mesh.internal` back.
 
 ## Loose threads
 
-- Broken windows fixed (`70c2531`). The CDI CRD no longer declares
-  `v1alpha1`: ArgoCD selfHeal and cdi-operator had been rewriting it
-  against each other (generation 7210), and `apps` is **Synced** now.
-  33 ghost ReplicaSet pods on w1 were force-deleted.
-- **Held on purpose:** the ghost `gateway` pod on w1 (Recreate: deleting
-  it would restart the gateway, which undoes the "not by hand" call,
-  `9l67`), Longhorn's instance-manager and the `win2k25` virt-launcher
-  (their operators own them). `apps` health reads Progressing only
-  because of `gateway` 0/1.
-- nas1 is Ready and carries the provisioner. w1 is still off (`9l67`).
-- Carried: nas1's SATA bays empty; `5q33`, `4te`, `t7b2`, `c4vd`,
-  `etzl`.
+- **w1 still carries the out-of-service taint** — remove it before it
+  rejoins; its kit is expired, so it needs its config re-served (one
+  wallet act). Recipe in notes 2026-09-29.
+- The gitops row's first live poll was admitted at cp1 (09:12:50Z); I
+  did not see the row rendered — owner confirms on `/status`.
+- `5q33`: gateway done; phone/TV APK and Mac daemon still pre-P4.2.
+- Test flake filed: `d4p8` (`wg0` substring in base64).
 
 ## Suggested next steps
 
-- The HA sweep (`9l67`) has a second, sharper reason now: one node
-  down silently stops GitOps.
+- HA sweep slice 2: ingress-nginx / siwe-oidc / oauth2-proxy replicas
+  + anti-affinity (three nodes now).
+- Slice 3 (gateway ephemeral key) needs a decision against invariant 2
+  (`359.9.3`) before any code — and `5hek` makes the stateful gateway
+  cheaper to keep (a 90 d kit survives a long outage).
 - Populate nas1's SATA bays.
-- Protocol: owner picks M5 (`0bc.5`) or lighthouse discovery for
-  provisioners.
