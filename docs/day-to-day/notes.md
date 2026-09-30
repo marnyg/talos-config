@@ -10,24 +10,15 @@
      (struck-through entries live in git history before this date).
      Pruned 2026-09-16: Phase-0-gate-era cautions, stock Mobile Nebula,
      zitadel-era kubeconfig reason, duplicated gotchas.
+     Pruned 2026-09-30: nebula-era facts (mesh/, meshIP, v2 recipe/blocklist,
+     leaf re-mint, spike relay app), superseded milestones (ADR-0001/0018
+     "not built", v2 enrollment, poisoned seq, irohup stranding), entries
+     contradicted by later ones (DHCP cp1, w1 back, CI-built APK), and
+     duplicate vendorHash/tagged-test notes (AGENTS.md carries those).
      Reference beads issues by id (`talos-config-xxx`). -->
 
 ## Read first
 
-- 2026-09-25 — **nas1 is `NotReady,SchedulingDisabled`, w1 `NotReady`**;
-  only cp1 serves (seen at 10:00Z, not investigated). Nothing in git
-  cordoned nas1. Check `kubectl get nodes` before trusting the
-  2026-09-22 deployed-state picture.
-
-- 2026-09-22 — **`go test ./...` in `config-server/` does not gate the
-  hub.** The iroh half is behind `-tags iroh` and only the nix build
-  runs it, so `main` sat undeployable for three commits (M3 broke the
-  node beat; `ydq0`) and the *deploy* was what noticed — at the worst
-  moment, mid-provisioning, with the hub already sealed. Run the
-  tagged suite by hand before pushing anything under `protocol/`,
-  `config-server/` or `iroh-transport/` (incantation: notes 2026-09-18
-  below, or `nix build .#config-server-bin`). Wrapping it in a script
-  and naming it a quality gate is filed but not done.
 - 2026-09-22 — **nas1's two 2.5GbE ports are a trap.** `:a8` and `:a9`
   are consecutive; Talos reports `${mac}` — the identity the device
   flow selects `talos/machines/<mac>/` by — from the **first** port,
@@ -142,10 +133,6 @@
   gradle --no-daemon assembleDebug && ./publish.sh`. The workflow still
   exists but is dispatch-only and fails fast without the `.a`.
   `adb` on the Mac: `nix shell nixpkgs#android-tools`.
-- 2026-09-20 — `config-server/mesh`'s `TestMeshHTTPOverOverlay` can
-  flake under a full parallel `go test ./...` (2 s client deadline in
-  an e2e that stands up an overlay); it passes alone, repeatedly. Not
-  P2.4's doing — re-run the package before believing it.
 - 2026-09-20 — **`--auto-bootstrap` now needs `--iroh-relay`** (P2.2,
   `49a7bdb`): the hub dials the control plane's `apid` over the
   identity plane, so a hub without a wan endpoint reports
@@ -164,39 +151,12 @@
   *Proposed*: the running system is still nebula's receiver-side
   firewall, and `mesh-policy.yaml`'s nebula render is what executes
   until Mesh v3 Phase 1.
-- 2026-09-03 — **Mesh v3 is in the tracker and on cp1's extension, not
-  in the running mesh.** Nebula is the mesh until Phase 4. Deferred
-  nebula-era issues (`cjo en6 4ns 41b 6gq ap2 90a`) were parked on the
-  Phase 0 gate; the gate passed 2026-09-16 — re-triage them under
-  `359.8`/`359.9` rather than closing. _(Re-triaged 2026-09-20: `en6`
-  and `4ns` closed — nebup and Mobile Nebula are on `359.11.2`'s
-  deletion list, so their premises are gone; `90a` rescoped from a
-  nebula CA in the host trust store to HTTPS on mesh names terminated
-  at the v3 gateway. `cjo 41b 6gq ap2` still parked and still
-  nebula-era — read them with the same suspicion.)_
 - 2026-09-05 — **The Quint models are the sharper spec for
   ADR-0015/0017.** Five doc sentences were refuted and ruled the same
   day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
   `verification/quint/{authorize,runway,approval}.qnt` record the
   trace). When the glossary and a model disagree, check the model's
   header first — it says which ruling applied.
-- 2026-09-06 — **ADR-0018 is Proposed, not built.** The running unseal
-  is still the KDF (`masterderive.MasterMessage` → master → CA); the
-  `speak-as` unseal, per-process hub key and hub-as-actors split are
-  design only. The domain model §2 and glossary describe the *desired*
-  shape; `hubseal.go`/`masterderive` describe what runs. **Owner
-  ruling 2026-09-06: nothing depends on the running system — break
-  nebula-era code wherever the new shape needs it.** (Supersedes the
-  2026-09-03 "don't fix nebula code toward ADR-0017" caution above.)
-- 2026-09-13 — **Protocol ADR-0001 is Accepted and built** (M2 swarm,
-  `0bc.2.1–.6`): `cert.VerifyChain` folds `Attenuate` over N links,
-  `Authorize` is its `[g]` special case + group rule, `envelope/` and
-  `actor/` exist, `iroh-transport/` is the iroh adapter module. The
-  Quint model still leads: change `authorize.qnt` before the Go — the
-  chain laws (`authorize_chain_laws_test.go`, 18) pin them 1:1.
-  **Canonical cert form changed** (`postage` always emitted): no signed
-  certs existed in-repo, but any cert signed before `40c1755` will not
-  verify.
 - 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed and
   partly built** (2026-09-17: Issuer listens in-process, Enroll →
   `#mint-device`, relay child, `/.well-known`; 2026-09-18: `#bundle`
@@ -205,20 +165,6 @@
   HTTP over a stream facet) is revised by `mdv`: `/hosts` and `/policy`
   will not exist over the mesh — don't build them; the beat is
   `#renew` + `#bundle`.
-- 2026-09-18 — **Two recipe files, one live.** `talos/mesh-policy.yaml`
-  (v2) is **frozen** except for emergencies and is what nebula
-  enforces. `talos/mesh-policy-v3.yaml` is the compiler's input
-  (`config-server/policy`, protocol ADR-0004 built) and `Issuer#bundle`
-  signs its output (same day), but **no caller receives its grants
-  yet** — ~~the Issuer's transport is in-memory until `e8d`~~ (landed
-  the same day: the hub answers over iroh) but no member client exists
-  (`359.8.3`/`359.8.4`), so a v3 edit changes nothing at runtime until
-  they land. Same for
-  `talos/mesh-blocklist-v3.txt` (ed: ids; v2's `mesh-blocklist.txt`
-  stays the one nebula enforces). Its
-  closed sets live in three places kept in step by tests
-  (`mesh-policy-v3.ncl` ← `TestVocabularyMatchesNickel`, `policy.Groups`
-  ← `mesh.Groups()`); change the glossary first, then all three.
 - 2026-09-18 — **Touching `protocol/*.go` stales TWO `vendorHash`es**
   (`config-server/nix`, `iroh-transport/nix`) and a cached FOD hides
   it — `nix build` then fails with an "undefined: actor.X" that looks
@@ -230,20 +176,6 @@
 
 ## Mesh v3 spike infra (scratch)
 
-- 2026-09-13 — **A second public surface exists on purpose:**
-  `marnyg-iroh-relay-spike.fly.dev` (fly app of the same name, region
-  `arn`, `fly/relay-spike/fly.toml`) runs `n0computer/iroh-relay:v1.1.0`
-  as an **open relay** (`access = "everyone"`) for the Phase 0 probes.
-  Owner accepted this as spike scope against invariant 5 (2026-09-13);
-  gate ruling 2026-09-16: **stays up until Phase 1.2** embeds the relay
-  in the hub — done 2026-09-17 (`359.8.2.2`), but cp1's `ext-p0agent`
-  still dials the scratch app on every boot until `359.8.3` repoints
-  it (`kql`). Deploy with
-  `fly deploy -c fly/relay-spike/fly.toml`; `curl …/ping` → 200 is the
-  liveness check (`/generate_204` is 404 in plain-HTTP mode).
-  Registry tag `registry.fly.io/marnyg-iroh-relay-spike:p0peer` is a
-  throwaway alpine + static `p0relay` for far-NAT peers
-  (`fly machine run … --rm -- dial …`; `--file-local` hangs on 18 MB).
 - 2026-09-13 — **The owner laptop is a relay-only peer.** Cisco Secure
   Client's socket-filter extension (+ Defender netext) returns `EPIPE`
   from `sendmsg` for unsigned binaries to any `en0` destination, so no
@@ -260,32 +192,11 @@
   relay for 3 s and times out (relay has no QUIC); harmless, silenced
   by `p5g`.
 
-- 2026-09-15 — **cp1 boots an imager-built installer, not the factory
-  schematic**: `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.0.3`
-  = stock v1.12.6 + iscsi-tools + nebula + util-linux-tools +
-  `p0agent` 0.0.3 (`ext-p0agent`, NodeId `7dd90eb3…`, key at
-  `/var/lib/p0agent/key` on EPHEMERAL). Since the gate ruling
-  2026-09-16 (`5cz`) this is **the declared image** in
-  `talos/hardware/minipc.yaml`, pinned by digest; a `talosctl upgrade`
-  back to `6a9acc…` would drop the agent. Rebuild:
-  `talos/extensions/p0agent/build.sh <static-binary> <ver>` (needs
-  docker + ghcr login; both ghcr packages are public and must stay so —
-  the node pulls unauthenticated), then update tag + digest in
-  minipc.yaml.
 - 2026-09-15 — **Any Talos extension that mounts under `/var` needs
   `depends: - service: cri`**, or `talosctl upgrade`/`reboot` hangs at
   `teardownLifecycle` ("luks2-EPHEMERAL … still in use"). Symptom:
   `talosctl services` shows `ext-nebula`/`ext-iscsid` Finished and the
   offender still Running; `talosctl service ext-<x> stop` unblocks it.
-- 2026-09-15 — **Upgrades on cp1 take ~10 min of drain** while w1 is
-  down (evictions time out one by one); install + reboot is < 1 min.
-  Use `--wait --debug` into a file, not a foreground tool call.
-- 2026-09-15 — `talosctl` over the iroh bridge: `p0agent bridge -relay
-  … -id 7dd90eb3… -listen 127.0.0.1:50000`, then `-e talos-wu6-eib -n
-  talos-wu6-eib` with `127.0.0.1 talos-wu6-eib` in `/etc/hosts` (apid's
-  SANs: node IPs, `cp1.mesh.internal`, hostname — not `127.0.0.1`).
-  The laptop's wired `en7` gets LAN-direct paths; Wi-Fi `en0` is
-  relay-only (Cisco filter, 2026-09-13 note).
 
 - 2026-09-16 — **P0.2 scratch on the NixOS box was torn down at the
   gate** (same day): `p0agent-standin`, `~/p0-jf/`, the `/data/p0test`
@@ -341,11 +252,6 @@
   outputs out of `talos/`. Locally, `docker run` needs
   `--shm-size=256m` for the same `cp`. And the image must carry
   `protocol/` beside `config-server/` (go.mod `replace`).
-- 2026-09-17 — **v2 enrollment exists server-side only.** Sending
-  `node=ed:<hex>` on `/mesh/enroll/challenge`, `/mesh/enroll` or
-  `/mesh/enroll/device` switches the payload to JSON `{config, kit}`
-  and requires the identity plane unsealed (503 otherwise). No client
-  sends it yet; nebup/Android are v1 and unaffected.
 
 - Every fly deploy **re-seals the hub**: derived roles (mesh CA, KMS,
   enrollment, DNS) are down until a wallet unseal at `/status`. The
@@ -361,29 +267,12 @@
   `hub/hub-http: connected to <new id>` before `nix run .#apply`
   _(2026-09-20; nebula-era version of this note: cp1 unreachable
   ~45–60 s while the lighthouse re-registered)_.
-- The hub **re-mints its own nebula leaf at every unseal** — never pin
-  the hub's leaf fingerprint; pin the CA (`MESH_CA_PIN` in fly.toml,
-  derived CA `b881d6ff…`). A wrong-wallet unseal fails loudly.
-- A node's overlay firewall lives in its *stored config*: changing
-  policy does nothing on nodes until `nix run .#apply`; devices pick it
-  up on re-enrollment or `/policy` poll. A `/policy` overlay never
-  changes the hub's *own* running firewall (hub scope renders at
-  unseal) and every deploy drops the overlay — export first if it
-  should survive.
-- A mesh derivation error (address collision, bad `meshIP`) refuses
-  the whole `/config` serve, provisioning included.
 - **Any overlay carrying the route to the hub/peer poisons a punch
   measurement** (Tailscale exit node, another VPN) — nebula hairpins
   through it. Pre-flight: `route get <peer-ip>` (macOS) / `ip route
   get` must show a physical NIC.
 - Home network has **no native IPv6** — the blocker on ADR-0006's
   revisit trigger (`talos-config-41b`, deferred under v3).
-- The office MacBook and the home laptop are both enrolled as device
-  name `laptop` — same address; do not run both simultaneously.
-  Decided to leave as-is; revocation path is `talos/mesh-blocklist.txt`.
-- **ADR-0012 is live**: enrollment mints only device-born keys.
-  Pre-ADR master-derived device certs stay valid until their 90-day
-  expiry. Re-enrolling under the same name keeps the same address.
 
 ## Cluster / Talos
 
@@ -427,11 +316,6 @@
 
 ## Workloads / storage
 
-- **w1 is back** (2026-09-18, `kso`; on the identity plane since
-  2026-09-19, `qb5q`). Its `longhorn-bulk` volumes are `attached` /
-  `healthy` again — the media library is online and the
-  2026-08-04→09-18 outage entry that used to sit here is retired.
-  Storage work is unblocked.
 - **Knowing deviation from invariant 2**: `longhorn-bulk` runs 1
   replica — the media library is neither git-derivable nor
   replicated. Wrong implementation, not a relaxed invariant.
@@ -471,17 +355,6 @@
 - jellyfin's admin password: `kubectl -n media get secret
   jellyfin-admin -o jsonpath='{.data.password}' | base64 -d` (the new
   pod is blocked on the faulted media volumes until w1 returns).
-
-## Android app
-
-- Distributed via the rolling `android-latest` GitHub release; every
-  push touching `android/` or `config-server/{mobile,devkey}`
-  re-clobbers `talos-mesh.apk`. CI is the only builder (no local SDK).
-- The app pushes **no DNS server to the VpnService** (Android sends all
-  device DNS to a VPN resolver; the hub only answers the mesh zone).
-  Mesh names don't resolve on the TV; services are reached by IP from
-  the app's host list. Superseded under Mesh v3 by client-side fake-IP
-  resolution (`talos-config-359.9.4`).
 
 ## Tooling
 
@@ -602,15 +475,6 @@
   plane is sealed or in the nag window** on a hub run with
   `--iroh-relay` (members depend on the hubkey); a dev run without it
   only reports.
-- 2026-09-18 — `config-server-bin` vendors `protocol/` via the go.mod
-  `replace`, so its `vendorHash` (and `iroh-transport`'s) drifts on
-  every `protocol/*.go` change and a cached FOD hides it locally.
-  After touching `protocol/`, run
-  `nix build .#config-server-bin.goModules --rebuild` and
-  `nix build .#iroh-transport.goModules --rebuild`; the canonical
-  caveat list is on `config-server-bin` in `flake.nix`
-  (2026-09-18 later: moved to `config-server/nix/default.nix`, and the
-  replaces now include `iroh-transport/` and `iroh-go/iroh` too).
 - 2026-09-18 — **Hub deploys are `fly/deploy.sh`, not `fly deploy`**
   (`e8d`): the image is nix-built (cgo hub), `fly.toml` has no
   `[build]`, and a bare `fly deploy` fails on purpose. From the Mac:
@@ -623,21 +487,6 @@
   Fallback without the box: `hub-image.yml` builds on every push;
   `workflow_dispatch` with `push=true` needs a `FLY_API_TOKEN` repo
   secret (not set yet).
-- 2026-09-18 — **`go test ./...` in `config-server/` is still C-free**:
-  the iroh binding is behind build tag `iroh` (`hubiroh.go`, stub in
-  `hubiroh_stub.go`). To run the tagged suite by hand: `CGO_ENABLED=1
-  CGO_LDFLAGS=-L$(nix build .#iroh-ffi-static --print-out-paths)/lib
-  IROH_RELAY_BIN=$(nix build .#iroh-relay --print-out-paths)/bin/iroh-relay
-  go test -tags iroh .` — `nix build .#config-server-bin` does exactly
-  that. `--iroh-relay` on an untagged binary refuses at startup.
-- 2026-09-19 — **cp1's LAN address changes on every reboot** (DHCP:
-  `.58 → .59 → .62` in one afternoon). Direct access, no mesh needed:
-  `talosctl -n <ip> -e <ip> --talosconfig talos/talosconfig …`. The
-  identity plane never notices (the agent redials its relay by key).
-  ~~`nix run .#apply` dials the *overlay* address and needs the laptop on
-  nebula.~~ _(2026-09-20: `apply` fetches from `http://hub.mesh.internal`
-  over the irohup tun and dials `-e cp1.mesh.internal -n <hostname>`;
-  no overlay anywhere on its path since P4.1.)_
 - 2026-09-19 — **Talos restarts an extension service when its
   ExtensionServiceConfig document is *updated*, but not when it is
   first *created* under a running service.** Corrected on w1 (qb5q):
@@ -683,9 +532,6 @@
   within one 30 s poll of the unseal. 2026-09-20: 42 s. A scratch rootfs has
   no CA bundle: Go's HTTPS client needs the `/etc/ssl/certs` bind the
   0.1.1 spec adds (iroh's relay client carries webpki roots itself).
-- 2026-09-19 — `talosctl upgrade --wait` on cp1 takes ~11 min (drain
-  with w1 down) and this shell aborts long foreground commands;
-  background it (`> /tmp/cp1-upgrade.log &`) and poll `get extensions`.
 
 - 2026-09-19 — **`talosctl`/`kubectl` over the identity plane**: run
   `irohup` (bridges default to `cp1/apid=127.0.0.1:50000` and
@@ -697,20 +543,11 @@
   API server cert does carry `localhost`). Enrollment state lives in
   `~/.config/talos-mesh/<name>.iroh/` beside nebup's two files; one
   wallet signature enrolls both planes.
-- 2026-09-19 — **A hub redeploy is the only way to clear a poisoned
-  `seq` high-water mark** (the mark is volatile, per hub process, and
-  there is no admin endpoint). Relevant only to members built before
-  `envelope.MaxSeq`; both cp1 (`p0agent` 0.1.2) and irohup carry the
-  fix now, and the hub refuses out-of-range seq since this deploy.
 - 2026-09-19 — **After a hub deploy the name map is empty until each
   member beats** (up to 6 h). Members merge their own last map now, so
   bridges keep working; to reconverge *now*, force a beat on both
   sides: `talosctl service ext-p0agent restart` on the node, restart
   `irohup` on the desktop.
-- 2026-09-19 — **`/sealed` now 503s while the identity plane is sealed
-  or nagging** on the deployed hub (`tqr`). A local dev run without
-  `--iroh-relay` still reports only — don't read a local 200 as proof
-  the check is off in production.
 - 2026-09-19 — **Enrolling a headless member**: `irohup` serves its
   signing page on loopback of the machine being enrolled, so from the
   Mac run it over ssh, read the `http://127.0.0.1:PORT/TOKEN` line out
@@ -767,18 +604,6 @@
   resolves only after the first beat and goes with the hub record's
   expiry. A media member is *admitted* on hub-http (recipe row) and
   gets 403 on `/config`; that is the per-route gate, not a bug.
-- 2026-09-19 — **w1 is on the identity plane** (`qb5q` done):
-  `ed:40c9d1ca…`, member `w1`, group `machines`, `w1.mesh.internal`
-  on the tun; `-e w1.mesh.internal -n w1` dials it directly. Both
-  nodes now declare the same installer
-  (`v1.12.6-p0agent-0.1.2`) — change the two hardware yamls together.
-- 2026-09-19 — **A hub redeploy strands every running `irohup -tun`
-  daemon** (`ipt7`): the member learns the hubkey at beat, and the
-  beat is `DefaultBeat` = **6 h**, so until then `hub.mesh.internal`
-  streams dial the dead key and the name map is stale. The Mac's mesh
-  names went dark this way during this session's deploy. **Fixed
-  2026-09-20** (`5c6e506`): the member re-beats on staleness evidence;
-  no restart needed — see the 09-20 entry.
 - 2026-09-20 — **After a hub redeploy + unseal, the first mesh flow to
   the hub takes ~15 s** (`DialTimeout` on the dead hubkey, then a
   rebeat: `renewed … at ed:<new>` + `beat ok` in
@@ -810,10 +635,6 @@
   session's restart and the hub took `.1.1` after. The 60 s answer TTL
   bounds the staleness, so never hard-code a fake IP or cache one
   across a daemon restart.
-- 2026-09-19 — **`fly/deploy.sh` runs the *linux* test suite** on the
-  builder, including `mesh/nebhttp_e2e_test.go` (`!race`, real nebula
-  sockets) that a Mac `go test -race` skips. Run `go test ./mesh` (no
-  `-race`) before a deploy to catch it locally.
 - 2026-09-19 — **`config-server-bin` vendorHash changes whenever
   `fakeip` (or anything) imports a new package from an already-required
   module** — the vendor dir is per-package. Recompute with a bogus
@@ -836,10 +657,6 @@
   echoes request headers; `curl http://whoami.gw.mesh.internal/` from
   the Mac shows `X-Mesh-*`, `curl -H Host:… http://<node>/` from the
   LAN must show none. The `media` namespace's PSS warns but admits it.
-- 2026-09-20 — **`config-server` vendorHash moves whenever
-  `protocol/*.go` changes** (local replace vendored from the tree);
-  the remote nix build failed with "a.actor.Serves undefined" from a
-  stale FOD. Bogus hash → read `got:` (default.nix caveat 2).
 - 2026-09-20 — **The TV is driven over network adb, not a remote**:
   `adb connect 10.0.0.2:5555` after Settings → Device Preferences →
   Developer options → Network debugging (the first connect needs the

@@ -28,10 +28,15 @@ if [ -n "${HUB_BUILDER:-}" ]; then
     store=(--store "ssh-ng://$HUB_BUILDER" --eval-store auto)
 fi
 
-echo "building $attr${HUB_BUILDER:+ on $HUB_BUILDER}"
-push=$(nix build "${store[@]}" --no-link --print-out-paths "$attr.copyToRegistry")
-tag=$(nix eval --raw "$attr.imageTag")
+# Tag and push derivation come from ONE evaluation, then that exact drv
+# is built (scripts/ghcr-push.sh does the same). Evaluating them apart
+# let a working tree that changed mid-build give the pushed image one
+# tag and the deploy another — 2026-09-30: pushed c33c305, `fly deploy`
+# looked for c33c305-dirty.
+eval "$(nix eval --raw "$attr" --apply 'i: "tag=${i.imageTag}; drv=${i.copyToRegistry.drvPath}"')"
 image="registry.fly.io/$app:$tag"
+echo "building $image${HUB_BUILDER:+ on $HUB_BUILDER}"
+push=$(nix build "${store[@]}" --no-link --print-out-paths "$drv^out")
 
 token=$(fly auth token)
 auth=$(printf '{"auths":{"registry.fly.io":{"auth":"%s"}}}' "$(printf 'x:%s' "$token" | base64 | tr -d '\n')")
