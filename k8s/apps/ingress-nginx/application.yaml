@@ -35,6 +35,22 @@ spec:
             type: ClusterIP
           ingressClassResource:
             default: true
+          # HA sweep slice 2 (talos-config-9l67): the controller is
+          # stateless, so two replicas on distinct nodes keep every
+          # *.gw name up through a node loss — the gateway dials the
+          # Service, and a NotReady node's pod leaves the endpoints
+          # within the node-monitor grace period. Required, not
+          # preferred: a second replica on the same node buys nothing.
+          # The chart adds a PDB (minAvailable 1) once replicaCount > 1.
+          replicaCount: 2
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: ingress-nginx
+                      app.kubernetes.io/component: controller
   destination:
     server: https://kubernetes.default.svc
     namespace: ingress-nginx

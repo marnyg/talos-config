@@ -14,6 +14,19 @@
 # New relying party = new -client arg here + the client-side config.
 # Image: built by .github/workflows/siwe-oidc-image.yml; :latest +
 # imagePullPolicy Always, so a rollout restart picks up a new build.
+#
+# Deliberately ONE replica (HA sweep slice 2, talos-config-9l67): the
+# per-boot state above is per-*pod* — a second replica would hold a
+# different signing key and would not know the first one's auth codes,
+# so a code minted by one and redeemed at the other (the browser and
+# oauth2-proxy take different paths in) fails at random. Replicating it
+# means a durable signing key and self-contained codes — a design
+# change, filed as a thread. What HA it has is fast failover: no volume,
+# and the tolerations below evict it from an unreachable node after 30 s
+# instead of the 300 s default, so the ReplicaSet respawns it elsewhere
+# in about a minute. Cost of a failover is one re-login everywhere
+# (ArgoCD verifies against the rotated JWKS; oauth2-proxy sessions ride
+# their own cookie and survive).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,6 +42,15 @@ spec:
       labels:
         app: siwe-oidc
     spec:
+      tolerations:
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
       containers:
         - name: siwe-oidc
           image: ghcr.io/marnyg/siwe-oidc:latest

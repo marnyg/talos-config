@@ -34,13 +34,19 @@
 #
 # The ClusterIP is pinned in the siwe-oidc Service manifest so this
 # literal cannot go stale.
+#
+# Two replicas on distinct nodes (HA sweep slice 2, talos-config-9l67):
+# safe because the pod holds no state of its own — the session and the
+# PKCE verifier ride cookies sealed with the shared cookie secret, so
+# any replica can serve any request. The auth_request subrequest and
+# the browser redirect both reach it through the Service.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: oauth2-proxy
   namespace: sso
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: oauth2-proxy
@@ -49,6 +55,13 @@ spec:
       labels:
         app: oauth2-proxy
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app: oauth2-proxy
       hostAliases:
         - ip: 10.107.226.217
           hostnames: [auth.gw.mesh.internal]
@@ -100,6 +113,17 @@ spec:
               drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: oauth2-proxy
+  namespace: sso
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: oauth2-proxy
 ---
 apiVersion: v1
 kind: Service
