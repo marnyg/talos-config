@@ -2,7 +2,8 @@ package main
 
 // GitOps watch: the hub reads ArgoCD's root Application (`apps`, the
 // one that recurses k8s/apps) over the control plane's kube-api facet
-// and shows its age on /status. Nothing here acts; it is an eye.
+// and shows its age on /status. Nothing here acts; it is an eye
+// (ADR-0027: why this and not an in-cluster alerter or a scoped token).
 //
 // Why (talos-config-9l67, 2026-09-29): argocd-application-controller-0
 // sat Terminating on a dead node from 09-21 to 09-29 and nothing

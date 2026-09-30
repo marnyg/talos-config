@@ -44,7 +44,7 @@ node:
     # And the API server, read-only by construction (config-server/
     # gitops.go): one GET of ArgoCD's root Application per poll, so
     # /status can say when GitOps has stopped reconciling or a sync op
-    # is stuck (talos-config-9l67). Same authority as apid: the hub
+    # is stuck (talos-config-9l67, ADR-0027). Same authority as apid: the hub
     # composes the control-plane config and so holds the cluster CA.
     - {facet: kube-api, host: hub}
 gateway:
