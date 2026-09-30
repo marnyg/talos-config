@@ -535,6 +535,13 @@ provisioning or recovery path may depend on it.
   30 d; **6 days of starvation lose no access**, and only starvation
   beyond 30 d costs a human act (re-enrollment). Checked by
   `verification/quint/runway.qnt`. _(Restated 2026-09-05, `z1z`.)_
+  **The chain that renews is in the member class too** _(2026-09-29,
+  `5hek`)_: whatever cert authorises `#renew` for a member (the Kit's
+  beat grant) must carry the member runway, or the member runway is
+  that cert's. A member whose kit has run out (beat grant or member
+  cert expired at its clock) does not beat with it: it enrolls again
+  — a device prints its approval URL, a machine needs its config
+  re-served — rather than being refused at every beat forever.
 - **Attenuation** — a chain link adds caveats, never removes;
   effective authority is field-wise intersection over `target`,
   `facet` and every recognised caveat; an unknown caveat rejects.
@@ -773,9 +780,15 @@ provisioning or recovery path may depend on it.
   the agent's restarts.
 - **Kit** — what `Issuer.Mint` hands a new member: its `member` cert
   (90 d), the **beat grant** — one `invoke` grant to the Owner's
-  `#renew` + `#bundle` facets (7 d, `target: wallet`,
-  `issuer.BeatFacets`) — and the `speak-as` that resolves both certs'
-  hot-key issuer. Enough to run the first beat; everything else comes
+  `#renew` + `#bundle` facets (`target: wallet`, `issuer.BeatFacets`;
+  **member-class lifetime, 90 d, renewed with the member cert** — it
+  is the chain that presents the membership at `#renew`, so at the
+  compiled grants' 7 d it capped the member runway at 3.5 d: a member
+  starved > 7 d held an unexpired member cert it could never renew;
+  `talos-config-5hek`, found 2026-09-29 on the gateway after w1's
+  8 d outage. Re-issued at 90 d on the first renewal, so pre-fix kits
+  migrate on their first beat after the hub key rotates) — and the
+  `speak-as` that resolves both certs' hot-key issuer. Enough to run the first beat; everything else comes
   from `#bundle`. On the wire (`issuer.EncodeKit`): JSON `{member,
   beat_grant, speak_as}`, each a cert in its JSON form — the whole
   answer to an enrollment, direct or device-flow. _The protocol's

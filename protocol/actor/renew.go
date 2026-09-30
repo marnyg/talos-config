@@ -122,7 +122,8 @@ func DecodeRenewResponse(body []byte) ([]cert.Cert, []error, error) {
 //     renewing on behalf of a third party is a new negotiation
 //  5. build the replacement: same aud/can, caveats = held (or Want if
 //     cert.Attenuate(held, want) == want, i.e. same-or-narrower —
-//     never wider), iat = now, exp = now + lifetime, signed by a.Signer
+//     never wider), iat = now, exp = now + lifetime (RenewLifetime(held),
+//     else RenewTTL, else the held cert's own), signed by a.Signer
 //  6. if the held cert is one of this actor's own consents, install the
 //     replacement beside it (reinstallConsent, talos-config-6sax) so the
 //     holder's next chain still roots
@@ -171,7 +172,13 @@ func (a *Actor) renewOne(it RenewItem, caller cert.ActorID, proofSpeakAs []cert.
 		}
 		fresh.Cav = want.Cav
 	}
-	ttl := a.RenewTTL
+	var ttl int64
+	if a.RenewLifetime != nil {
+		ttl = a.RenewLifetime(old)
+	}
+	if ttl <= 0 {
+		ttl = a.RenewTTL
+	}
 	if ttl <= 0 {
 		ttl = old.Exp - old.Iat
 	}

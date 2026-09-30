@@ -158,6 +158,12 @@ type Actor struct {
 	// RenewTTL is the lifetime of a re-issued cert in seconds; 0 ⇒ the
 	// original cert's own lifetime (exp − iat).
 	RenewTTL int64
+	// RenewLifetime, when set, picks the re-issued lifetime per held
+	// cert and takes precedence over RenewTTL when it returns > 0. A
+	// grantor whose certs fall in classes with different runways (a
+	// long-lived beat grant beside short-lived compiled grants) decides
+	// here; a single number cannot.
+	RenewLifetime func(held cert.Cert) int64
 	// SeqBase, when set, seeds the outbound seq to a receiver this actor
 	// has not sent to yet IN THIS PROCESS: the first seq is
 	// max(SeqBase(), 1), later ones count up from it. seq must be

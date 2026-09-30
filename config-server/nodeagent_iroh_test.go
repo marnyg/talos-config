@@ -633,6 +633,55 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	if dev2.Beats() != 1 {
 		t.Fatalf("a beat seconds old must absorb the staleness signal: %d beats", dev2.Beats())
 	}
+
+	// A kit whose beat grant has expired is not loaded (talos-config-5hek):
+	// nothing it holds can be presented at #renew, so the agent must
+	// start kit-less and let Run enroll again rather than beat with it
+	// forever. The member cert alone being live does not save it.
+	staleState := nodeagent.State{Dir: t.TempDir()}
+	stalePriv, _, err := staleState.Key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The kit's shape is all that matters here (CheckKit), so a dead
+	// hub key and its wallet are throwaway signers.
+	staleNode := cert.NewEdSigner(stalePriv).ActorID()
+	_, deadHubPriv, _ := ed25519.GenerateKey(rand.Reader)
+	_, deadWalletPriv, _ := ed25519.GenerateKey(rand.Reader)
+	deadHub, deadWallet := cert.NewEdSigner(deadHubPriv), cert.NewEdSigner(deadWalletPriv)
+	now := time.Now().Unix()
+	mustSign := func(c cert.Cert, s cert.Signer) cert.Cert {
+		signed, err := cert.Sign(c, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return signed
+	}
+	staleKit := issuer.Kit{
+		SpeakAs: mustSign(cert.Cert{Aud: string(deadHub.ActorID()), Can: cert.VerbSpeakAs,
+			Cav: cert.Caveats{Verbs: []string{string(cert.VerbMember), string(cert.VerbInvoke)}, Groups: []string{"admins"}},
+			Iat: now - 10*issuer.Day, Exp: now + issuer.SpeakAsTTL}, deadWallet),
+		Member: mustSign(cert.Cert{Aud: string(staleNode), Can: cert.VerbMember,
+			Cav: cert.Caveats{Name: "drawer", Groups: []string{"admins"}},
+			Iat: now - 10*issuer.Day, Exp: now + issuer.MemberTTL}, deadHub),
+		BeatGrant: mustSign(cert.Cert{Aud: string(staleNode), Can: cert.VerbInvoke,
+			Cav: cert.Caveats{Target: []cert.ActorID{deadWallet.ActorID()}, Facet: issuer.BeatFacets},
+			Iat: now - 10*issuer.Day, Exp: now - 3*issuer.Day}, deadHub),
+	}
+	if err := staleState.SaveKit(staleKit); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := nodeagent.Start(nodeagent.Options{
+		Config: nodeagent.Config{Hub: cfg.Hub, Relay: public}, State: staleState,
+		BindAddr: "127.0.0.1:0", Log: log.New(testWriter{t}, "drawer: ", 0), BeatEvery: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = stale.Close() })
+	if stale.Kit() != nil {
+		t.Fatal("a kit with an expired beat grant was loaded")
+	}
 }
 
 func mustEncodeBundle(t *testing.T, b cert.Bundle) []byte {

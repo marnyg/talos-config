@@ -370,7 +370,7 @@ func TestMintProperties(t *testing.T) {
 		if !slices.Equal(g.Cav.Target, []cert.ActorID{w.id}) || !slices.Equal(g.Cav.Facet, BeatFacets) {
 			rt.Fatalf("grant names %v/%v, want target wallet, facets #renew + #bundle", g.Cav.Target, g.Cav.Facet)
 		}
-		if g.Iat != now || g.Exp != now+GrantTTL || cert.Verify(g) != nil {
+		if g.Iat != now || g.Exp != now+BeatGrantTTL || cert.Verify(g) != nil {
 			rt.Fatalf("grant time/sig: %+v", g)
 		}
 		if held := iss.SpeakAs(); kit.SpeakAs.Iss != held.Iss || !slices.Equal(kit.SpeakAs.Sig, held.Sig) {
@@ -576,6 +576,14 @@ func TestRenewAcrossIssuerRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A kit minted before BeatGrantTTL: the beat grant at the compiled
+	// grant's 7 d (talos-config-5hek). Renewal must re-issue it at
+	// BeatGrantTTL, not carry the held lifetime forward.
+	old := kit.BeatGrant
+	old.Iat, old.Exp, old.Sig = clk.Now(), clk.Now()+GrantTTL, nil
+	if kit.BeatGrant, err = cert.Sign(old, a.signer); err != nil {
+		t.Fatal(err)
+	}
 
 	// Process B: fresh hubkey, bound to the network, unsealed BEFORE it
 	// listens (Issuer's contract), same wallet.
@@ -645,8 +653,8 @@ func TestRenewAcrossIssuerRotation(t *testing.T) {
 		t.Fatalf("member not re-issued by B: %+v", m)
 	}
 	if g.Iss != B || g.Can != cert.VerbInvoke || !slices.Equal(g.Cav.Target, []cert.ActorID{w.id}) ||
-		g.Iat != now || g.Exp != now+GrantTTL {
-		t.Fatalf("grant not re-issued by B: %+v", g)
+		g.Iat != now || g.Exp != now+BeatGrantTTL {
+		t.Fatalf("grant not re-issued by B at BeatGrantTTL: %+v", g)
 	}
 	// The renewed pair, with B's own speak-as, is a kit that admits at B.
 	kitB := Kit{Member: m, BeatGrant: g, SpeakAs: *b.SpeakAs()}

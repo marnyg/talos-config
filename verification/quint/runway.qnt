@@ -101,6 +101,19 @@
 //    let one beat run, THEN deploy. The link expiry is not the cert's expiry: the
 //    glossary's strict rule should say "expired or unresolvable".
 //
+// 8. (2026-09-29, talos-config-5hek, found live.) Renewal is not free:
+//    #renew is an ordinary facet behind the Kit's BEAT GRANT, and this
+//    model had let the member cert renew on its own say-so. The issuer
+//    minted the beat grant at INVOKE_LIFE (7 d, renewed at ½), so the
+//    chain that PRESENTS the membership ran out after 3.5 d of
+//    starvation with 80+ d of member cert behind it — the gateway after
+//    an 8 d node outage. BEAT_GRANT_LIFE models it: at 7*24 both
+//    invLifetimesCoverWindow (statically) and
+//    invReenrollOnlyAfterLongStarvation (from init) fail; at
+//    MEMBER_LIFE, renewed with the member cert, the 30 d promise holds
+//    again. Ruling: whatever authorises #renew for a member carries the
+//    member runway (issuer.BeatGrantTTL = MemberTTL).
+//
 // Check:
 //   quint test   runway.qnt
 //   quint run    --invariant=invAll --max-steps=60 runway.qnt
@@ -110,6 +123,11 @@ module runway {
   pure val MEMBER_LIFE = 90 * 24
   pure val MEMBER_RENEW_AGE = 60 * 24      // ⅔ life elapsed ⇒ renew on the next beat
   pure val INVOKE_LIFE = 7 * 24
+  // Finding 8: the beat grant — the chain that authorises #renew — is
+  // minted with the member cert and renewed with it (at ½ its life,
+  // nodeagent.renewDue). 7*24 reproduces talos-config-5hek.
+  pure val BEAT_GRANT_LIFE = MEMBER_LIFE
+  pure val BEAT_RENEW_AGE = BEAT_GRANT_LIFE / 2
   pure val POLL_EVERY = 24
   pure val RMA_LIFE = 1
   pure val RMA_HUB_ISSUED = false           // ruled xwz: actors self-issue reach-me-at
@@ -130,6 +148,9 @@ module runway {
   pure val MAX_UNATTENDED_LIFE = SPEAKAS_LIFE - MEMBER_RUNWAY
 
   pure def min(a: int, b: int): int = if (a < b) a else b
+  // The member and its beat grant renew together, on the earlier trigger.
+  pure val RENEW_AGE = min(MEMBER_RENEW_AGE, BEAT_RENEW_AGE)
+  pure val BEAT_RUNWAY = BEAT_GRANT_LIFE - BEAT_RENEW_AGE
 
   var t: int
   var proc: int          // hub process generation; a deploy starts a new one
@@ -166,8 +187,12 @@ module runway {
   // covered by its current speak-as (a re-unseal of the same process
   // rescues link-expired certs); one from a dead process only by the
   // speak-as that process held.
-  def memberRenewable =
-    t < min(memberIssued + MEMBER_LIFE, if (memberProc == proc) speakAsExp else memberSAExp)
+  // Finding 8: and only while the beat grant that asks is itself live
+  // (issued with the member cert, so it shares memberIssued).
+  def renewableAt(h: int): bool =
+    h < min(min(memberIssued + MEMBER_LIFE, memberIssued + BEAT_GRANT_LIFE),
+            if (memberProc == proc) speakAsExp else memberSAExp)
+  def memberRenewable = renewableAt(t)
   def invokeValid = t < invokeEffExp
   def rmaValid = t < rmaIssued + RMA_LIFE
   def starved = t - lastServed
@@ -184,7 +209,7 @@ module runway {
     nondet s = Bool.oneOf()
     nondet since = (0 - INIT_LOOKBACK).to(0).oneOf()
     nondet pollAge = 0.to(POLL_EVERY - 1).oneOf()
-    nondet memberAge = 0.to(MEMBER_RENEW_AGE - 1).oneOf()
+    nondet memberAge = 0.to(RENEW_AGE - 1).oneOf()
     nondet saLeft = (if (NAG_SEALS) NAG else 1).to(SPEAKAS_LIFE).oneOf()   // speak-as left at the last served beat
     nondet epochs = 0.to(2).oneOf()
     val anchor = if (s) since else 0
@@ -221,9 +246,9 @@ module runway {
     val serving1 = servingAt(t1)   // the beat runs at hour t1 iff the hub serves at t1
     val pollDue = serving1 and (t1 - lastPoll >= POLL_EVERY)
     val renewDue = serving1
-                   and ((t1 - memberIssued >= MEMBER_RENEW_AGE)
+                   and ((t1 - memberIssued >= RENEW_AGE)
                         or (RENEW_ON_ROTATION and memberProc != proc))
-                   and (t1 < min(memberIssued + MEMBER_LIFE, if (memberProc == proc) speakAsExp else memberSAExp))
+                   and renewableAt(t1)
     val rmaRefresh = not(RMA_HUB_ISSUED) or serving1
     val served1 = if (serving1) t1 else lastServed
     all {
@@ -325,6 +350,7 @@ module runway {
   val invLifetimesCoverWindow = and {
     INVOKE_RUNWAY >= SEALED_WINDOW,
     MEMBER_RUNWAY >= SEALED_WINDOW,
+    BEAT_RUNWAY >= MEMBER_RUNWAY,            // finding 8: the chain that renews outlives what it renews
     RMA_HUB_ISSUED implies (RMA_LIFE >= SEALED_WINDOW),
     NAG_SEALS and NAG >= MEMBER_RUNWAY,
     SPEAKAS_LIFE - NAG <= MAX_UNATTENDED_LIFE,

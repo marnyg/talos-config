@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -358,6 +359,33 @@ func TestRenewHandler(t *testing.T) {
 	if errs[0] != nil || fresh[0].Exp != now+42 {
 		t.Fatalf("RenewTTL not honoured: %v %+v", errs[0], fresh[0])
 	}
+
+	// RenewLifetime picks per held cert and wins over RenewTTL when it
+	// answers > 0; 0 falls through to RenewTTL.
+	b.RenewLifetime = func(h cert.Cert) int64 {
+		if bytes.Equal(h.Sig, held.Sig) {
+			return 99
+		}
+		return 0
+	}
+	rep, err = a.Send(w.ctx, B, FacetRenew, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, errs, _ = DecodeRenewResponse(rep.Payload)
+	if errs[0] != nil || fresh[0].Exp != now+99 {
+		t.Fatalf("RenewLifetime not honoured: %v %+v", errs[0], fresh[0])
+	}
+	b.RenewLifetime = func(cert.Cert) int64 { return 0 }
+	rep, err = a.Send(w.ctx, B, FacetRenew, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, errs, _ = DecodeRenewResponse(rep.Payload)
+	if errs[0] != nil || fresh[0].Exp != now+42 {
+		t.Fatalf("RenewLifetime 0 did not fall through to RenewTTL: %v %+v", errs[0], fresh[0])
+	}
+	b.RenewLifetime = nil
 
 	// Speak-as expired ⇒ hot-key issuance no longer recognised.
 	w.clk.Advance(3601)

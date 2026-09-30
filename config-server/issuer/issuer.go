@@ -54,10 +54,20 @@ const (
 	SpeakAsTTL int64 = 120 * Day
 	// MemberTTL is a member cert's lifetime.
 	MemberTTL int64 = 90 * Day
-	// GrantTTL is an invoke grant's lifetime — the Kit's beat grant and
-	// every compiled grant share it (runway.qnt: 6 d starvation, one
-	// day inside), so it is policy's constant, not a second one.
+	// GrantTTL is a compiled invoke grant's lifetime (runway.qnt: 6 d
+	// starvation, one day inside), policy's constant, not a second one.
+	// The Kit's beat grant does NOT share it: it is the chain that
+	// authorises #renew itself, so its runway IS the member runway — a
+	// 7 d beat grant made a member starved > 7 d unable to renew a
+	// member cert with 80 d left (talos-config-5hek, the gateway after
+	// w1's 8 d outage). Beat grants take BeatGrantTTL.
 	GrantTTL int64 = policy.GrantTTL
+	// BeatGrantTTL is the Kit's beat grant lifetime: the member cert's,
+	// renewed alongside it, so "30 d of starvation lose no membership"
+	// holds for the chain that presents the membership, not only for
+	// the cert. It grants nothing but #renew/#bundle at the hub, whose
+	// handlers consult the blocklist, so the longer life widens nothing.
+	BeatGrantTTL int64 = MemberTTL
 	// NagBefore is the seal threshold: with less than this left on the
 	// speak-as the Issuer stops serving beats (ADR-0018 q8h — the nag IS
 	// a seal), so no cert leaves with less than the member runway
@@ -158,9 +168,30 @@ func NewWithKey(priv ed25519.PrivateKey, groups []string, t actor.Transport, clo
 		}
 		return renew(ctx, inv)
 	}
+	// A beat grant re-issues at BeatGrantTTL whatever lifetime the held
+	// one had (members minted before BeatGrantTTL hold 7 d ones and
+	// renew on the first beat after this hub key rotates in); every
+	// other cert keeps its own.
+	a.RenewLifetime = func(held cert.Cert) int64 {
+		if i.isBeatGrant(held) {
+			return BeatGrantTTL
+		}
+		return 0
+	}
 	a.AcceptTable[FacetBundle] = i.bundleHandler
 	a.AcceptTable[FacetMintDevice] = i.mintDeviceHandler
 	return i
+}
+
+// isBeatGrant recognises a Kit beat grant by shape: a non-delegable
+// invoke grant on exactly BeatFacets at exactly the wallet's target —
+// what Mint signs. A compiled grant (policy.Compile) names a member's
+// facet, never #renew/#bundle, so no compiled grant matches.
+func (i *Issuer) isBeatGrant(c cert.Cert) bool {
+	sa := i.SpeakAs()
+	return c.Can == cert.VerbInvoke && !c.Cav.Delegable &&
+		sa != nil && slices.Equal(c.Cav.Target, []cert.ActorID{sa.Iss}) &&
+		slices.Equal(c.Cav.Facet, BeatFacets)
 }
 
 // Listen runs the Issuer's actor on its transport until ctx ends. Safe
@@ -405,7 +436,7 @@ func (i *Issuer) Mint(node cert.ActorID, name string, groups []string) (Kit, err
 			Delegable: false,
 		},
 		Iat: now,
-		Exp: now + GrantTTL,
+		Exp: now + BeatGrantTTL,
 	}, i.signer)
 	if err != nil {
 		return Kit{}, fmt.Errorf("issuer: signing beat grant: %w", err)
