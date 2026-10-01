@@ -832,3 +832,13 @@
   at once, and auto-sync picks up the newest revision. Watch
   `.status.operationState.startedAt` change; a Running op whose
   `startedAt` predates your push applied the *old* spec.
+- 2026-10-01 — **Longhorn `nodeDownPodDeletionPolicy=delete-both` only
+  force-deletes pods that are already `Terminating`** — it does not
+  evict. A Deployment pod with a Longhorn RWO volume on an unreachable
+  node still waits out its `node.kubernetes.io/unreachable` toleration
+  (300 s default) before Longhorn touches it; slice 1 saw 30 s only
+  because the out-of-service taint evicts at once. Any single-replica
+  pod on a Longhorn volume that should fail over in ~1 min needs the
+  30 s `unreachable`/`not-ready` tolerations (gateway, siwe-oidc have
+  them). cp1 is the only control plane, so pods pinned there have no
+  node-loss story to tell — only nas1/w1 residents matter.
