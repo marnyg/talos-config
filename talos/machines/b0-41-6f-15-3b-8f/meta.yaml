@@ -8,7 +8,10 @@ name: cp1
 # What the machine calls itself — apid's -n target and cert SAN. cp1's
 # patch never pinned machine.network.hostname (w1's does), so it runs
 # under Talos's generated stable hostname until the next reinstall
-# (talos-config-t7b2); drop this field when that lands.
+# (talos-config-t7b2, deferred: a live rename registers a new Node,
+# etcd member and Longhorn node while the old ones linger — on the
+# only control plane). The pre-wipe steps, this field's
+# removal among them, are in docs/technical/guides/reinstall.md.
 hostname: talos-wu6-eib
 uuid: 37a1f6ed-580e-054c-8392-98bd8090d21a
 diskEncryption: true

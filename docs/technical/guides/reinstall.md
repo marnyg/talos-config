@@ -41,10 +41,12 @@ disk unattended.
   name only, KMS is keyed by UUID) and deploy the hub.
 - **cp1 only — pin the hostname in the same commit** (`t7b2`). cp1
   runs under Talos' generated `talos-wu6-eib` because a live
-  `machine.network.hostname` change registers a *new* Node and
-  orphans the Longhorn replicas bound to the old node name
-  (`longhorn-bulk` is single-replica). A wipe loses those anyway, so
-  the reinstall is the one moment the rename is free: before the
+  `machine.network.hostname` change registers a *new* Node (and etcd
+  member name, and Longhorn node) while the old ones linger: every
+  volume with a replica on cp1 degrades until the old Longhorn node CR
+  is deleted and the disk re-adopted — on the only control plane. A
+  wipe does all of that anyway, so the reinstall is the one moment the
+  rename is free: before the
   wipe, add `hostname: cp1` under `machine.network` in
   `machines/b0-41-6f-15-3b-8f/patch.yaml` (w1's patch is the model),
   delete the `hostname: talos-wu6-eib` override from its `meta.yaml`,
@@ -116,23 +118,29 @@ disk unattended.
   generated name and the old `Node` object lingers as `NotReady` —
   delete it with `kubectl delete node <old-name>`.
 
-## Where this is not yet cheap (transitional, 2026-07-31)
+## Where this is not yet cheap (2026-10-01)
 
-The thesis above is the target state. Two gaps make a **control-plane**
-wipe more expensive than a worker wipe today:
+The thesis above is the target state. Longhorn has been the data plane
+since 2026-09-22 (ADR-0011; `longhorn` class 2 replicas, `longhorn-bulk`
+1 replica) and the ingress path spreads across nodes (`9l67`), so a
+**worker** wipe is cheap and routine: no etcd, no unique data — a
+2-replica volume rebuilds from its peer. Two gaps keep a
+**control-plane** wipe from being the same act:
 
-- **Longhorn is not deployed yet** (`ca77f427`, `214661d2`). Until it
-  is, media PVs are `hostPath` on cp1 with no `nodeAffinity`
-  (`0b374653`) and app state lives on EPHEMERAL. A cp1 wipe still loses
-  sonarr/radarr/jellyfin metadata — the thing ADR-0008 never protected
-  either.
-- **etcd is single-node and there is no backup target.** Longhorn's
-  volume/replica/snapshot CRDs live in etcd, so once Longhorn *is*
-  deployed, wiping cp1 destroys Longhorn's bookkeeping and leaves
-  replicas on other nodes as orphaned data needing salvage. Invariant 2
-  is explicit that this bookkeeping is a backup problem, not a git
-  problem — so a backup target is a prerequisite for a cp1 wipe being
-  routine, not a nice-to-have.
+- **etcd is single-node and there is no backup target** (`bsj`).
+  Longhorn's volume/replica/snapshot CRDs live in etcd, so wiping cp1
+  destroys Longhorn's bookkeeping and leaves every replica on nas1/w1
+  as orphaned data needing salvage. Invariant 2 is explicit that this
+  bookkeeping is a backup problem, not a git problem — so a backup
+  target (and an etcd snapshot off the node) is the prerequisite for a
+  routine cp1 wipe, not a nice-to-have.
+- **`longhorn-bulk` volumes are single-replica** (`media/{tv,movies,
+  downloads}`), so whichever node holds the replica takes the media
+  library down with it — re-downloadable by ADR-0004's reasoning, but
+  not free, and the symptom is silent (Jellyfin keeps Running on a
+  hung NFS mount; w1 off 2026-09-21 → faulted volumes, noticed
+  2026-10-01, `cnb5`). Check `kubectl get volumes.longhorn.io -n
+  longhorn-system` for where they live before wiping *any* node; move
+  them to nas1 once its bays are filled.
 
-Wiping a **worker** is already cheap and routine: no etcd, no unique
-data. Do it while a node is empty — the cost only grows.
+Do a worker wipe while the node is empty — the cost only grows.

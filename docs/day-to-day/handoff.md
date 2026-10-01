@@ -48,6 +48,12 @@ anti-affine with `maxUnavailable: 1`; siwe-oidc failover-only.
   2026-09-29; the directory was renamed, its installed boot token names
   the old MAC, so the re-serve is required, not optional). HA is
   proven only across cp1 + nas1.
+- **Media library is down and has been since w1 went off (10 d,
+  `cnb5`, P1)**: `media/{tv,movies,downloads}` are 1-replica
+  `longhorn-bulk` volumes whose replica is on w1; the pods run on hung
+  NFS mounts. Data is intact on w1; it recovers when w1 returns. Found
+  while correcting `reinstall.md`. Also corrects `t7b2`'s premise: no
+  bulk volume is bound to cp1.
 - Gateway pod moved cp1 → nas1 on 2026-09-30 morning unexplained —
   not investigated.
 - `4ze8` (siwe-oidc replication), `5q33` (phone/TV APK, Mac daemon
@@ -58,6 +64,5 @@ anti-affine with `maxUnavailable: 1`; siwe-oidc failover-only.
 - Fill nas1's four SATA bays (`UserVolumeConfig` per disk) — blocked
   on the disks arriving.
 - Protocol v0 M5 money (`0bc.5`) or lighthouse discovery.
-- `guides/reinstall.md` "Where this is not yet cheap" section is stale
-  (Longhorn has been deployed since 2026-09-22; the etcd-backup gap is
-  still real) — rewrite before the next wipe.
+- `cnb5`: bring w1 back (the quickest fix), then decide bulk replica
+  placement with the nas1 disks, and a faulted-volume row on `/status`.
