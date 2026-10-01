@@ -78,6 +78,36 @@ these are properties of the tools, not current weather (that lives in
   need per-pod `hostAliases`. Also: Talos re-applies its bootstrap
   manifests, so hand-edits to the CoreDNS ConfigMap revert on reboot.
 
+- **Changing `cluster.controlPlane.endpoint` rotates the ServiceAccount
+  issuer.** Talos derives `--service-account-issuer` and
+  `--api-audiences` from the endpoint. Every pod whose kubelet fetched
+  a projected token *before* the apiserver flipped holds a token for
+  the old issuer, and the kubelet never refreshes a token that is
+  still within its (1-year) lifetime — so each API-using pod gets
+  `Unauthorized` until it is recreated. P2.5 (2026-09-20) did this
+  with 14 control-loop pods bounced by hand. Runbook, right after the
+  endpoint apply (`FLIP` = the apply time, RFC 3339):
+
+  ```bash
+  FLIP=2026-09-20T18:15:00Z
+  kubectl get pods -A -o json | jq -r --arg t "$FLIP" '
+    .items[] | select(.status.startTime < $t)
+    | select([.spec.volumes[]? | select(.projected.sources[]?.serviceAccountToken)] | length > 0)
+    | "\(.metadata.namespace) \(.metadata.name)"' \
+  | xargs -L1 kubectl delete pod -n
+  ```
+
+  Only pods with a projected SA token are touched (those are the ones
+  that can talk to the API); pods under `automountServiceAccountToken:
+  false` and the VMs are skipped. Watch for `Unauthorized` in
+  controller logs afterwards — anything still failing was created
+  before the flip and missed by the filter. Not verified: whether
+  Talos accepts a second `--service-account-issuer` via
+  `apiServer.extraArgs` to carry both issuers through a transition
+  (kube-apiserver supports the flag repeated; Talos' `extraArgs` is a
+  map, so at most one value). The endpoint changes rarely enough that
+  the recreate is the runbook.
+
 ## OAuth / OIDC
 
 - **`golang.org/x/oauth2` sends `client_id` as HTTP Basic auth first**

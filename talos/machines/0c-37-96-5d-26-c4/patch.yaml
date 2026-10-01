@@ -16,16 +16,15 @@ machine:
     # (it caches the name), so the flannel-pod restart from that note is
     # still needed after a rename.
     #
-    # This MAC is NOT this directory's MAC. 98:e7:43:11:97:b8 is the
-    # laptop's Dell pass-through address, which only a Dell-branded
-    # dock/adapter inherits; the box has no wired PCI NIC (Wi-Fi only,
-    # undriven). It provisioned through such a dock, and that MAC still
-    # selects this config at (re)install — but the LAN NIC today is a
-    # plain Realtek r8152 dongle with its own MAC, so a selector on the
-    # directory MAC matched nothing and the node silently fell back to
-    # DHCP (found by the mesh v3 soak reboot, 2026-09-20). Swapping the
-    # dongle means updating this line; reinstalling means reattaching
-    # the dock or renaming the directory (talos-config bead filed).
+    # This MAC is the Realtek r8152 USB dongle's, and since 2026-10-01
+    # (c4vd) also this directory's. The box has no wired PCI NIC (Wi-Fi
+    # only, undriven); it first provisioned through a Dell dock, whose
+    # pass-through address 98:e7:43:11:97:b8 named the directory until
+    # then — a selector on *that* MAC matched nothing and the node
+    # silently fell back to DHCP (mesh v3 soak reboot, 2026-09-20), and
+    # a reinstall on the dongle would have fetched a config that did not
+    # exist. Swapping the dongle means updating this line AND renaming
+    # the directory (guides/reinstall.md); nothing else is keyed by it.
     interfaces:
       - deviceSelector:
           hardwareAddr: 0c:37:96:5d:26:c4

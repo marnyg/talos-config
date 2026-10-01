@@ -48,11 +48,11 @@ history and, where the numbers still matter, in ADR-0006 and
     `10.0.0.1`). NodeId `7dd90eb3…`, key on EPHEMERAL at
     `/var/lib/p0agent/key`. Mini-PC; STATE + EPHEMERAL (LUKS2, capped)
     + former `u-media` partition now Longhorn's (322GB).
-  - **w1** — worker, dir `talos/machines/98-e7-43-11-97-b8` (Dell
-    pass-through MAC: only a dock carries it; the box has no wired PCI
-    NIC — a reinstall needs the dock or a renamed dir, `c4vd`), node
-    name `w1` (**pinned**), **static `10.0.0.71`** on the r8152 USB
-    dongle `0c:37:96:5d:26:c4` (selector by *that* MAC). NodeId
+  - **w1** — worker, dir `talos/machines/0c-37-96-5d-26-c4` (the r8152
+    USB dongle's MAC since 2026-10-01, `c4vd`; was the Dell
+    pass-through `98-e7-43-11-97-b8` it first provisioned through —
+    the box has no wired PCI NIC), node name `w1` (**pinned**),
+    **static `10.0.0.71`** on that dongle (selector by the same MAC). NodeId
     `40c9d1ca…`. Alienware x15 R1, i9-11900H, 1TB NVMe: STATE (LUKS2) +
     EPHEMERAL 200GiB (LUKS2) + `u-longhorn` 700GiB (xfs, unencrypted —
     ADR-0004 posture) at `/var/mnt/longhorn`. Beware `sda`, a USB boot

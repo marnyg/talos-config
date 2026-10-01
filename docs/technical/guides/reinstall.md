@@ -31,6 +31,28 @@ disk unattended.
   creation: capping EPHEMERAL or adding a user volume in `patch.yaml`
   does nothing to an installed node. Commit and deploy the hub *before*
   the wipe, or the node comes back with the old layout.
+- **The directory MAC is the MAC the node will boot with.** The node
+  fetches `/config?mac=<NIC it booted on>`; a directory named after
+  any other address serves nothing and the node sits in maintenance
+  mode. w1's directory was the laptop's Dell pass-through MAC (a Dell
+  dock inherits it) until 2026-10-01, when it was renamed to the r8152
+  dongle's — if the dongle is swapped, rename the directory again
+  (`git mv`; nothing else is keyed by it under v3 — the role owns a
+  name only, KMS is keyed by UUID) and deploy the hub.
+- **cp1 only — pin the hostname in the same commit** (`t7b2`). cp1
+  runs under Talos' generated `talos-wu6-eib` because a live
+  `machine.network.hostname` change registers a *new* Node and
+  orphans the Longhorn replicas bound to the old node name
+  (`longhorn-bulk` is single-replica). A wipe loses those anyway, so
+  the reinstall is the one moment the rename is free: before the
+  wipe, add `hostname: cp1` under `machine.network` in
+  `machines/b0-41-6f-15-3b-8f/patch.yaml` (w1's patch is the model),
+  delete the `hostname: talos-wu6-eib` override from its `meta.yaml`,
+  change `nodes:` in `talos/talosconfig` to `cp1`, drop
+  `talos-wu6-eib` from `deployed-state.md`, deploy the hub, then
+  wipe. After: `kubectl delete node talos-wu6-eib` and delete the
+  Longhorn `nodes.longhorn.io/talos-wu6-eib` CR once its replicas are
+  gone.
 
 ## Steps
 
