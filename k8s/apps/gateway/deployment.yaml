@@ -19,6 +19,15 @@
 # shows the approve URL + user code; sign on /status as `gw`, group
 # media (it calls nothing; the group is the approver's call).
 #
+# Failover (HA sweep 9l67, decision nfmt): the gateway stays a
+# stateful member on this RWO volume; the price is that it is down
+# while its node is. The tolerations below evict it from an unreachable
+# node after 30 s instead of the 300 s default; Longhorn's
+# nodeDownPodDeletionPolicy=delete-both then force-deletes the
+# Terminating pod and releases the volume, so the ReplicaSet respawns
+# it on another node (the volume keeps 2 replicas) in about a minute.
+# Same identity, same key, same *.gw names — nothing re-enrolls.
+#
 # Image: k8s/apps/gateway/build.sh prints the tag@digest to pin below.
 # Egress only: the hub over HTTPS (enroll, /.well-known) and its relay;
 # no Service, no Ingress — the gateway is reached by key.
@@ -58,6 +67,15 @@ spec:
         fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
+      tolerations:
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
       containers:
         - name: gateway
           image: ghcr.io/marnyg/gateway:ff7c478@sha256:90c2997b5d6e827138bf0c040d1144663bc8f72eb0a30f4573d1136ed1a38241
