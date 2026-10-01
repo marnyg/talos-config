@@ -15,9 +15,20 @@
   (3.5 d runway, fixed to 90 d) and Longhorn never releasing the
   volume (`nodeDownPodDeletionPolicy=delete-both`, slice 1) — both
   gone.
-- The sweep's last unticked item, "which control-loop pods must
-  survive a node", split out as `jko0` (longhorn manager/CSI,
-  cert-manager, external-dns, sealed-secrets, kms, siwe-oidc).
+- The sweep's last item split out as `jko0` and **closed the same
+  session**: the gateway's real failover was 5–6 min, not 30–60 s —
+  Longhorn `delete-both` only force-deletes *Terminating* pods, so
+  the 300 s default toleration ruled. Gateway now has 30 s
+  `unreachable`/`not-ready` tolerations (`9e6c2ad`, live, same key).
+  Everything else control-ish sits on cp1, the sole control plane,
+  so there is no node-loss story for it (notes 2026-10-01).
+- Broken windows swept: dead kubevirt pods deleted; the cp1-stacked
+  multi-replica pods (coredns, longhorn csi-\*, longhorn-ui) now spread
+  across cp1/nas1 — a rolling restart alone does **not** spread
+  `preferred` anti-affinity (new pods avoid the *old* ones and land
+  together on the other node); delete one pod afterwards. KubeVirt's
+  operator reverts restarts of its Deployments; left on cp1.
+  `controller-patch.yaml` comment brought up to date (`3341a8d`).
 
 Slices 1–2 (2026-09-29/30) remain as landed: dead node no longer
 freezes GitOps or pins RWO volumes; ingress-nginx + oauth2-proxy 2×
