@@ -29,6 +29,13 @@
   together on the other node); delete one pod afterwards. KubeVirt's
   operator reverts restarts of its Deployments; left on cp1.
   `controller-patch.yaml` comment brought up to date (`3341a8d`).
+- **Small ops** (`cbd992e`, hub deployed on it + unsealed): `c4vd`
+  done — w1's directory is now `talos/machines/0c-37-96-5d-26-c4` (the
+  dongle's MAC); hub verified composing for it, old MAC 404. `etzl`
+  done — SA-issuer recreate runbook in `guides/gotchas.md`. `t7b2`
+  **deferred** to cp1's next reinstall: it cannot go live (`apply`
+  pushes to the running node; Longhorn single-replica volumes are bound
+  to `talos-wu6-eib`); exact pre-wipe steps in `guides/reinstall.md`.
 
 Slices 1–2 (2026-09-29/30) remain as landed: dead node no longer
 freezes GitOps or pins RWO volumes; ingress-nginx + oauth2-proxy 2×
@@ -37,8 +44,10 @@ anti-affine with `maxUnavailable: 1`; siwe-oidc failover-only.
 ## Loose threads
 
 - **w1 still off**, out-of-service taint, kit expired — untaint +
-  re-serve config when it returns (notes 2026-09-29). HA is proven
-  only across cp1 + nas1.
+  `nix run .#apply -- 0c-37-96-5d-26-c4` when it returns (notes
+  2026-09-29; the directory was renamed, its installed boot token names
+  the old MAC, so the re-serve is required, not optional). HA is
+  proven only across cp1 + nas1.
 - Gateway pod moved cp1 → nas1 on 2026-09-30 morning unexplained —
   not investigated.
 - `4ze8` (siwe-oidc replication), `5q33` (phone/TV APK, Mac daemon
@@ -46,7 +55,9 @@ anti-affine with `maxUnavailable: 1`; siwe-oidc failover-only.
 
 ## Suggested next steps
 
-- Fill nas1's four SATA bays (`UserVolumeConfig` per disk).
-- `jko0` control-loop survivability pass (cheap: mostly tolerations
-  and a replica count or two).
-- Small ops: `t7b2`, `c4vd`, `etzl`.
+- Fill nas1's four SATA bays (`UserVolumeConfig` per disk) — blocked
+  on the disks arriving.
+- Protocol v0 M5 money (`0bc.5`) or lighthouse discovery.
+- `guides/reinstall.md` "Where this is not yet cheap" section is stale
+  (Longhorn has been deployed since 2026-09-22; the etcd-backup gap is
+  still real) — rewrite before the next wipe.
