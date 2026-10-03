@@ -898,3 +898,10 @@
   the cluster today) with its media containers **stopped, not
   removed**, and Sonarr's export at `sonarr-series-2026-10-04.json`
   beside them. It is the only second copy until the owner retires it.
+- 2026-10-03 — **`irohtransport.Raw.Close` does not interrupt a Read
+  blocked in the FFI.** iroh-ffi serialises `read()`/`stop()` on one
+  tokio lock and the bindgen has no cancel, so any splice over a `Raw`
+  (gateway WebSockets, `meshtun.Pipe`, nodeagent `splice`) only returns
+  when the peer ends its side or the connection dies — `Close` resets
+  our send side to provoke that. Do not add a "Stop on Close" to
+  unblock it; that is the deadlock `vzbf` found. Thread `vh6e`.

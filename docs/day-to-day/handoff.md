@@ -5,44 +5,51 @@
 
 ## Last session
 
-2026-10-04: **nas1's bays are a mirrored bulk tier, and the media
-library moved onto the cluster.**
+2026-10-03 (evening; the storage session the previous handoff dated
+2026-10-04 was earlier the same day): **the gateway panic is fixed and
+rolled.**
 
-- **`lug3` closed**: `u-longhorn-1/-2` (two 4 TB Toshibas, selected by
-  WWID because they report no serial) declared in nas1's `patch.yaml`
-  (`a027dd1`). Hub redeployed and unsealed, and `apply` ran with no
-  reboot. They are Longhorn disks `bulk-1/-2`, tagged `bulk` (the NVMe
-  is tagged `nvme`), added to the Node CR by hand.
-- **`longhorn-bulk` = mirror inside nas1** (`2918135`, `6119ccb`; ADR-0029
-  *Proposed*): 2 replicas on different bulk disks, with the
-  share-managers pinned to nas1. With them on w1, the library had been
-  crossing w1's USB dongle twice.
-- **Library imported** from the old docker host: 466 GB tv+movies by
-  rsync through `scripts/media-import.yaml` (deleted after). Sonarr's
-  29 series re-added by API, and all 246 episode files matched. Jellyfin
-  was rescanned. App configs and downloads were not migrated (the owner
-  calls them expendable). PVCs are now 900/400/200Gi.
-- ADR-0028 → Accepted. Filed spike `r4fw` (hub reading `talos/` from
-  git at runtime) and bug `vzbf` (gateway panic).
+- **`vzbf`** (`c4a6414`, `iroh-transport/streamfacet.go`): `Raw.Read`
+  after `Close` called the FFI on a destroyed `RecvStream`; httputil's
+  WebSocket copier does exactly that once the other half closes, so
+  every Sonarr/Radarr SignalR session could take the gateway down.
+  Every FFI call now passes a per-direction in-flight gate under `mu`;
+  after `Close`, Read/Write/CloseWrite return `net.ErrClosed`, and the
+  handles are destroyed by whichever is later — `Close` or the last
+  in-flight call. Regression test in `TestStreamFacet`.
+- **Found on the way**: the old "Close unblocks a blocked Read" claim
+  was never true. iroh-ffi holds one tokio `Mutex` across `read()` and
+  `stop()`, and the Go bindgen exposes no future cancel, so `Close`
+  concurrent with a blocked `Read` *deadlocked* on `Stop`. `Close` now
+  skips the abort on a direction with a call in flight and still resets
+  the idle send side — the peer ending its stream is what returns our
+  `Read`. Thread `vh6e` holds the upstream fix.
+- vendorHash bumped in `config-server` (`a6e074c`) and `actors/`
+  (`21badd6`). Image `ghcr.io/marnyg/gateway:21badd6` pushed, pinned
+  `86cd681`; ArgoCD needed a refresh nudge; pod up with 0 restarts and
+  SignalR negotiated (the old pod had 13).
+- `scripts/ghcr-push.sh` resolves credentials before the build and
+  falls back to `~/.docker/config.json` (it died with exit 127 on
+  linux after the full build). `facethttp.Conn`'s deadline comment now
+  says the truth: `ReadHeaderTimeout` does not bite over facets.
 
 ## Loose threads
 
-- **`vzbf` (P1)**: the gateway crash-loops when a proxied WebSocket
-  (Sonarr/Radarr SignalR) hits `Raw.Read` after Close in
-  `iroh-transport`. Every `*.gw.mesh.internal` name flaps meanwhile.
-- **`jx78`**: the default `longhorn` class is not fenced to `nvme`, so
-  app-state replicas can land on spinning disk.
-- `cnb5`: placement half done. Left: show faulted volumes on `/status`.
-- Old docker host: media containers stopped, not removed. Its disk is
+- **`vzbf`** is `in_progress` pending a day of SignalR traffic with 0
+  restarts; close it then.
+- **`vh6e`** (P3 thread): a `Raw` whose peer never ends leaks its Read
+  goroutine until `DefaultConnMaxAge` (1 h); facethttp deadlines are
+  no-ops for the same reason. Needs an iroh-ffi patch (lock per call
+  or expose cancel) + Go regen; `zbgk` is the other patch candidate.
+- **ADR-0029** still *Proposed*. **`jx78`**: default `longhorn` class
+  not fenced to `nvme`. `cnb5`: faulted volumes on `/status` left.
+- Old docker host: media containers stopped, not removed; its disk is
   the library's only second copy (`notes.md`).
-- Two Sonarr series have no files ("So I'm a Spider", "Interspecies
-  Reviewers"). They weren't on the old disk either.
 - `installMAC` → `spvd`; agent fixes → `9af0` (unchanged).
 
 ## Suggested next steps
 
-- `vzbf`: fix the gateway panic (closed flag in `Raw`), run
-  `scripts/test-iroh.sh`, roll the gateway image.
-- Review ADR-0029; then `jx78`.
-- Owner `todo` leftovers: torrent/seerr/syncthing/sillytavern, Windows
-  PC as compute node.
+- Review ADR-0029 → Accepted; then `jx78` (fence the default class).
+- `cnb5` remainder: faulted Longhorn volumes on `/status`.
+- Owner `todo` leftovers: seerr/syncthing/sillytavern, old docker host
+  retirement, Windows PC as compute node.

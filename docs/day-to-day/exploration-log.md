@@ -177,3 +177,15 @@ them:
   Neither link was the bottleneck: the share-manager's placement was.
   Measure the storage path before buying a faster link.
 
+
+## Interrupting a blocked stream read from Go (2026-10-03, `vzbf`)
+
+- 2026-10-03 — Tried `RecvStream.Stop` from `Raw.Close` to unblock a
+  concurrent `Read`. Ruled out: iroh-ffi 1.1.0 holds one tokio
+  `Mutex` across `read().await` and `stop()`, so `Stop` queues behind
+  the read it is meant to end (deadlock). uniffi's
+  `rust_future_cancel` is not emitted by uniffi-bindgen-go either.
+  Landed on: never abort a direction with a call in flight; reset the
+  idle send side so the peer ends the stream; destroy by whichever of
+  `Close`/last-call is later (`c4a6414`). Real cancellation is an
+  iroh-ffi patch (`vh6e`).

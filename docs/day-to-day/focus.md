@@ -15,12 +15,13 @@ binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 **Next candidates** (owner to pick):
 - **Storage tiers**: nas1's two 4 TB bays form the `bulk` tier, and
   the media library mirrors across them. Its NFS servers are pinned to
-  nas1, and it was imported from the old docker host (2026-10-04,
+  nas1, and it was imported from the old docker host (2026-10-03,
   ADR-0029 Proposed). Left: fence the default class to `nvme` (`jx78`),
   show faulted volumes on `/status` (`cnb5`), retire the old docker
   host. Then the owner's app list (seerr, syncthing, sillytavern).
-- **Gateway panic `vzbf`** (P1): WebSocket over iroh after Close
-  crash-loops the gateway.
+- **Gateway**: the WebSocket-after-Close panic (`vzbf`) is fixed and
+  rolled 2026-10-03; what remains is the iroh-ffi read-cancellation
+  thread (`vh6e`, P3), not a goal.
 - **HA sweep `9l67` closed 2026-10-01** (a dead node no longer
   freezes GitOps or pins RWO volumes; `/status` watches ArgoCD;
   ingress-nginx + oauth2-proxy are 2× anti-affine, siwe-oidc fails
