@@ -46,6 +46,27 @@ spec:
               port: 9117
             initialDelaySeconds: 15
             periodSeconds: 10
+        - name: configurator
+          # enables the indexers listed in jackett-config via Jackett's API;
+          # same sidecar shape as sonarr/radarr
+          image: curlimages/curl:8.12.1
+          command: ["/bin/sh", "/template/configure.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: JACKETT_INDEXERS
+              valueFrom:
+                configMapKeyRef:
+                  name: jackett-config
+                  key: indexers
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: config-template
+              mountPath: /template
       volumes:
         - name: config
           emptyDir: {}

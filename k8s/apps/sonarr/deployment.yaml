@@ -87,6 +87,11 @@ spec:
                 secretKeyRef:
                   name: nzbgeek
                   key: apiKey
+            - name: JACKETT_INDEXERS
+              valueFrom:
+                configMapKeyRef:
+                  name: jackett-config
+                  key: indexers
           volumeMounts:
             - name: config
               mountPath: /config

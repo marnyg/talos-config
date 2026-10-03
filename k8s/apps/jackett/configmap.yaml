@@ -4,6 +4,13 @@ metadata:
   name: jackett-config
   namespace: media
 data:
+  # Jackett indexer ids to enable (space-separated). Single source of truth:
+  # the jackett configurator enables these, and sonarr's configurator adds
+  # one Torznab entry per id (Sonarr v4 refuses Jackett's /all aggregate).
+  # Public trackers only (no credentials). 1337x and eztv sit behind
+  # Cloudflare challenges and need a FlareSolverr sidecar; knaben is a
+  # meta-search over many trackers, so it covers a lot on its own.
+  indexers: "thepiratebay knaben"
   ServerConfig.json: |
     {
       "Port": 9117,
@@ -14,3 +21,35 @@ data:
       "BlackholeDir": "",
       "UpdateDisabled": true
     }
+  configure.sh: |
+    #!/bin/sh
+    set -e
+
+    JACKETT_URL="http://localhost:9117"
+
+    echo "Waiting for Jackett..."
+    until curl -sf "$JACKETT_URL/UI/Login" > /dev/null 2>&1; do sleep 5; done
+
+    # The admin API wants a session cookie even with an empty AdminPassword.
+    curl -sf -c /tmp/jar -o /dev/null -X POST -d "password=" "$JACKETT_URL/UI/Dashboard"
+
+    # Enabling an indexer = POSTing its config back; GET gives the defaults,
+    # which is all a public tracker needs. The file check keeps this
+    # idempotent across sidecar restarts within one pod lifetime.
+    for id in $JACKETT_INDEXERS; do
+      if [ -f "/config/Jackett/Indexers/$id.json" ]; then
+        echo "$id already configured"
+        continue
+      fi
+      echo "Enabling $id..."
+      if curl -sf -b /tmp/jar "$JACKETT_URL/api/v2.0/indexers/$id/config" > /tmp/cfg.json \
+        && curl -sf -b /tmp/jar -X POST -H "Content-Type: application/json" \
+             --data-binary @/tmp/cfg.json "$JACKETT_URL/api/v2.0/indexers/$id/config"; then
+        echo "$id enabled"
+      else
+        echo "WARN: $id failed"
+      fi
+    done
+
+    echo "Jackett configuration complete!"
+    sleep infinity
