@@ -13,8 +13,11 @@
 #
 # So: when the pushed range touches one of those inputs, realise each
 # FOD and re-run it with --rebuild (the two-step dance documented on
-# config-server/nix/default.nix). ~30 s, no iroh-ffi involved. Set
-# SKIP_VENDOR_HASH=1 to bypass. Delegates to beads' shim afterwards.
+# config-server/nix/default.nix). ~30 s, no iroh-ffi involved. The
+# flake is evaluated at the pushed commit (git+file://…?rev=), not the
+# working tree: `$repo#attr` folds uncommitted edits under a replace'd
+# module into the vendor dir and fails pushes that do not carry them.
+# Set SKIP_VENDOR_HASH=1 to bypass. Delegates to beads' shim afterwards.
 
 set -eu
 repo=$(git rev-parse --show-toplevel)
@@ -25,7 +28,8 @@ refs=$(cat)
 
 if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
   touched=""
-  while read -r _local_ref local_sha _remote_ref remote_sha; do
+  pushed="" # "<local_ref> <local_sha>" per ref whose range touches an input
+  while read -r local_ref local_sha _remote_ref remote_sha; do
     [ -z "$local_sha" ] && continue                                           # no refs (the heredoc's blank line)
     [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue # deleting a ref
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
@@ -40,6 +44,7 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
       'go.mod' 'go.sum' '*/go.mod' '*/go.sum' \
       'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 2>/dev/null || true)
     [ -n "$files" ] && touched="$touched$files
+" && pushed="$pushed$local_ref $local_sha
 "
   done <<EOF
 $refs
@@ -48,24 +53,25 @@ EOF
   if [ -n "$touched" ]; then
     echo "pre-push: vendored inputs changed in the pushed range:" >&2
     printf '%s' "$touched" | sort -u | sed 's/^/  /' >&2
-    if ! git -C "$repo" diff --quiet HEAD -- protocol iroh-transport iroh-go/iroh actors; then
-      echo "pre-push: note: working tree is dirty under a vendored tree; the check sees tracked-file contents as on disk" >&2
-    fi
     log=$(mktemp "${TMPDIR:-/tmp}/pre-push-vendor.XXXXXX")
     trap 'rm -f "$log"' EXIT
-    for attr in config-server-bin iroh-transport actors-bin; do
-      echo "pre-push: checking .#$attr.goModules vendorHash…" >&2
-      # Realise first (substitution allowed — a stale cached output is
-      # exactly the case), then --rebuild (implies --check) compares.
-      for flags in "" "--rebuild"; do
-        # shellcheck disable=SC2086
-        if ! nix build "$repo#$attr.goModules" --no-link $flags >"$log" 2>&1; then
-          grep -E "specified:|got:|error:" "$log" >&2 || cat "$log" >&2
-          echo "pre-push: .#$attr vendorHash is stale — paste the 'got:' hash into its nix/default.nix, commit, push again (SKIP_VENDOR_HASH=1 to override)" >&2
-          exit 1
-        fi
+    printf '%s' "$pushed" | sort -u | while read -r local_ref local_sha; do
+      [ -z "$local_sha" ] && continue
+      flake="git+file://$repo?ref=$local_ref&rev=$local_sha"
+      for attr in config-server-bin iroh-transport actors-bin; do
+        echo "pre-push: checking .#$attr.goModules vendorHash at ${local_sha%"${local_sha#???????}"}…" >&2
+        # Realise first (substitution allowed — a stale cached output is
+        # exactly the case), then --rebuild (implies --check) compares.
+        for flags in "" "--rebuild"; do
+          # shellcheck disable=SC2086
+          if ! nix build "$flake#$attr.goModules" --no-link $flags >"$log" 2>&1; then
+            grep -E "specified:|got:|error:" "$log" >&2 || cat "$log" >&2
+            echo "pre-push: .#$attr vendorHash is stale at $local_sha — paste the 'got:' hash into its nix/default.nix, commit, push again (SKIP_VENDOR_HASH=1 to override)" >&2
+            exit 1
+          fi
+        done
       done
-    done
+    done || exit 1
     echo "pre-push: vendorHashes OK" >&2
   fi
 fi
