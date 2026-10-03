@@ -746,6 +746,42 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	if stale.Kit() != nil {
 		t.Fatal("a kit with an expired beat grant was loaded")
 	}
+
+	// Same with the speak-as expired and the member cert and beat grant
+	// still live — the shape w1 came back in after 12 d off (2026-10-03):
+	// the receiver's effective chain is the min over every link, so the
+	// hub answers ErrChainExpired to every beat, forever. Not loaded.
+	atticState := nodeagent.State{Dir: t.TempDir()}
+	atticPriv, _, err := atticState.Key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	atticNode := cert.NewEdSigner(atticPriv).ActorID()
+	atticKit := issuer.Kit{
+		SpeakAs: mustSign(cert.Cert{Aud: string(deadHub.ActorID()), Can: cert.VerbSpeakAs,
+			Cav: cert.Caveats{Verbs: []string{string(cert.VerbMember), string(cert.VerbInvoke)}, Groups: []string{"admins"}},
+			Iat: now - 130*issuer.Day, Exp: now - 3*issuer.Day}, deadWallet),
+		Member: mustSign(cert.Cert{Aud: string(atticNode), Can: cert.VerbMember,
+			Cav: cert.Caveats{Name: "attic", Groups: []string{"admins"}},
+			Iat: now - 10*issuer.Day, Exp: now + issuer.MemberTTL}, deadHub),
+		BeatGrant: mustSign(cert.Cert{Aud: string(atticNode), Can: cert.VerbInvoke,
+			Cav: cert.Caveats{Target: []cert.ActorID{deadWallet.ActorID()}, Facet: issuer.BeatFacets},
+			Iat: now - 10*issuer.Day, Exp: now + issuer.MemberTTL}, deadHub),
+	}
+	if err := atticState.SaveKit(atticKit); err != nil {
+		t.Fatal(err)
+	}
+	attic, err := nodeagent.Start(nodeagent.Options{
+		Config: nodeagent.Config{Hub: cfg.Hub, Relay: public}, State: atticState,
+		BindAddr: "127.0.0.1:0", Log: log.New(testWriter{t}, "attic: ", 0), BeatEvery: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = attic.Close() })
+	if attic.Kit() != nil {
+		t.Fatal("a kit with an expired speak-as was loaded")
+	}
 }
 
 func mustEncodeBundle(t *testing.T, b cert.Bundle) []byte {

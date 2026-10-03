@@ -239,17 +239,24 @@ func Start(o Options) (*Agent, error) {
 	} else if ok {
 		if err := CheckKit(kit, a.ID()); err != nil {
 			a.log.Printf("ignoring %s: %v", KitFile, err)
-		} else if now := a.actor.Now(); kit.BeatGrant.Exp <= now || kit.Member.Exp <= now {
+		} else if now := a.actor.Now(); kit.BeatGrant.Exp <= now || kit.Member.Exp <= now || kit.SpeakAs.Exp <= now {
 			// The beat grant is the chain that authorises #renew: once it
-			// (or the membership) has expired nothing this kit holds can
-			// be presented, and beating with it would be refused forever
-			// (talos-config-5hek). Enroll again instead — a device prints
-			// its approval URL, a machine needs a re-served config — and
-			// keep the file: a clock that is merely ahead denies here and
-			// loads it fine after the next restart.
-			a.log.Printf("ignoring %s: beat grant until %s, member until %s, now %s — expired, enrolling again",
+			// (or the membership, or the speak-as that roots both — the
+			// receiver judges the chain's effective expiry, the min over
+			// every link and every speak-as used) has expired nothing
+			// this kit holds can be presented, and beating with it would
+			// be refused forever (talos-config-5hek; the speak-as leg was
+			// missed until w1 came back 2026-10-03 after 12 d off with a
+			// live member cert under a dead hubkey and looped on
+			// ErrChainExpired instead of redeeming its fresh boot token).
+			// Enroll again instead — a device prints its approval URL, a
+			// machine needs a re-served config — and keep the file: a
+			// clock that is merely ahead denies here and loads it fine
+			// after the next restart.
+			a.log.Printf("ignoring %s: beat grant until %s, member until %s, speak-as until %s, now %s — expired, enrolling again",
 				KitFile, time.Unix(kit.BeatGrant.Exp, 0).UTC().Format(time.RFC3339),
-				time.Unix(kit.Member.Exp, 0).UTC().Format(time.RFC3339), time.Unix(now, 0).UTC().Format(time.RFC3339))
+				time.Unix(kit.Member.Exp, 0).UTC().Format(time.RFC3339), time.Unix(kit.SpeakAs.Exp, 0).UTC().Format(time.RFC3339),
+				time.Unix(now, 0).UTC().Format(time.RFC3339))
 		} else {
 			a.kit = &kit
 			a.log.Printf("member %q groups %v until %s (issuer %s)", kit.Member.Cav.Name, kit.Member.Cav.Groups, time.Unix(kit.Member.Exp, 0).UTC().Format(time.RFC3339), kit.Member.Iss)
