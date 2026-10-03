@@ -65,6 +65,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
         - name: repack
+          # Helper pin: one tag across k8s/apps (rg 'image: alpine').
           image: alpine:3.22
           command:
             - /bin/sh

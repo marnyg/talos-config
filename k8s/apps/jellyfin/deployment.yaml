@@ -25,7 +25,7 @@ spec:
           hostnames: [auth.gw.mesh.internal]
       containers:
         - name: jellyfin
-          image: lscr.io/linuxserver/jellyfin:10.11.6
+          image: lscr.io/linuxserver/jellyfin:12.1ubu2604-ls51
           ports:
             - containerPort: 8096
           env:
@@ -49,10 +49,15 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 10
         - name: configurator
-          image: alpine:3.22
-          command: ["/bin/sh", "-c"]
-          args:
-            - apk add --no-cache curl > /dev/null 2>&1 && sh /scripts/configure.sh
+          # ships curl + sh, so no root apk install at start (same as
+          # sonarr/radarr). Helper pin: one tag across k8s/apps
+          # (rg 'image: curlimages/curl').
+          image: curlimages/curl:8.22.0
+          command: ["/bin/sh", "/scripts/configure.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: JELLYFIN_ADMIN_PASSWORD
               valueFrom:

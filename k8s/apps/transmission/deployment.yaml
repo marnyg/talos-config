@@ -15,6 +15,7 @@ spec:
     spec:
       initContainers:
         - name: config
+          # Helper pin: one tag across k8s/apps (rg 'image: busybox').
           image: busybox:1.38
           command: ["sh", "-c"]
           args:

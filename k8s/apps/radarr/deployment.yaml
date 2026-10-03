@@ -25,6 +25,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: config
+          # Helper pin: one tag across k8s/apps (rg 'image: busybox').
           image: busybox:1.38
           command: ["sh", "-c"]
           args:
@@ -75,6 +76,7 @@ spec:
             periodSeconds: 10
         - name: configurator
           # ships curl + sh, so no root apk install at start
+          # Helper pin: one tag across k8s/apps (rg 'image: curlimages/curl').
           image: curlimages/curl:8.22.0
           command: ["/bin/sh", "/scripts/configure.sh"]
           securityContext:

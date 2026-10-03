@@ -15,6 +15,7 @@ spec:
     spec:
       initContainers:
         - name: config
+          # Helper pin: one tag across k8s/apps (rg 'image: busybox').
           image: busybox:1.38
           command: ["sh", "-c"]
           args:
@@ -49,7 +50,8 @@ spec:
         - name: configurator
           # enables the indexers listed in jackett-config via Jackett's API;
           # same sidecar shape as sonarr/radarr
-          image: curlimages/curl:8.12.1
+          # Helper pin: one tag across k8s/apps (rg 'image: curlimages/curl').
+          image: curlimages/curl:8.22.0
           command: ["/bin/sh", "/template/configure.sh"]
           securityContext:
             allowPrivilegeEscalation: false

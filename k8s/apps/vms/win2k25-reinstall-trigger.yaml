@@ -67,6 +67,7 @@ spec:
           serviceAccountName: win2k25-reinstaller
           containers:
             - name: reinstall
+              # Helper pin: one tag across k8s/apps (rg 'image: curlimages/curl').
               image: curlimages/curl:8.22.0
               command:
                 - /bin/sh
