@@ -38,9 +38,8 @@ machine:
       - 10.0.0.1
   # Longhorn's disks are declared here (k8s/apps/longhorn:
   # createDefaultDiskLabeledNodes=true fails closed, so an unlabeled
-  # node gets no disk). cp1 and w1 were labeled by hand with kubectl;
-  # this one declares it, so the node comes back with its disks after a
-  # reinstall (invariant 2). NodeRestriction lets a worker self-label
+  # node gets no disk). Declared, as on cp1 and w1, so the node comes
+  # back with its disks after a reinstall (invariant 2). NodeRestriction lets a worker self-label
   # and self-annotate under node.longhorn.io/. "config" (was "true"
   # while the NVMe was the only disk, 2026-09-22..10-04): the annotation
   # lists every Longhorn disk on this node with its tag — `nvme` for

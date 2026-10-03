@@ -12,10 +12,13 @@
 # pods (tv by sonarr+jellyfin, downloads by four), which under hostPath
 # only worked because they were all on cp1. See storageclass.yaml.
 #
-# Sizes are unchanged from the ADR-0008 declarations, but they mean
-# something now: hostPath ignored them, so 450Gi of claims sat on a
-# 300GiB partition. At one replica these fit w1's disk (736GB available)
-# with room, and stay expandable.
+# Sizes mean something on Longhorn (hostPath ignored them, so 450Gi of
+# claims once sat on a 300GiB partition). Grown 2026-10-04 for the
+# library import from the old docker host (343G tv, 92G movies, 50G
+# downloads). The class mirrors across nas1's two 4 TB bays, so each
+# size counts twice against ~3.9 TB per bay: 1.5Ti of claims here is
+# 3Ti of the 8 raw. Thin-provisioned; the number is a ceiling, and
+# allowVolumeExpansion lets it move again (up only).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -27,7 +30,7 @@ spec:
   storageClassName: longhorn-bulk
   resources:
     requests:
-      storage: 200Gi
+      storage: 900Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -40,7 +43,7 @@ spec:
   storageClassName: longhorn-bulk
   resources:
     requests:
-      storage: 200Gi
+      storage: 400Gi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -53,4 +56,4 @@ spec:
   storageClassName: longhorn-bulk
   resources:
     requests:
-      storage: 50Gi
+      storage: 200Gi

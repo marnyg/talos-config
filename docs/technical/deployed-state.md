@@ -78,8 +78,9 @@ history and, where the numbers still matter, in ADR-0006 and
     is `create-default-disk=config` + a `default-disks-config`
     annotation (NVMe tag `nvme`, bays `bulk`) — what a reinstall
     reproduces; the live Node CR got `bulk-1`/`bulk-2` by hand because
-    Longhorn reads the annotation only for a node without disks. cp1's
-    and w1's labels were applied by hand and still are.
+    Longhorn reads the annotation only for a node without disks (cp1's
+    and w1's `=true` labels are declared in their patches since
+    2026-09-22).
     **Both 2.5GbE ports matter**: `:a8` and `:a9` are consecutive, the
     device flow reports `${mac}` from the first (`:a8`) regardless of
     where the cable is, so the cable must stay in `:a8` — see
