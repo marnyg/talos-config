@@ -150,7 +150,7 @@
   "presence" concept; both are defined/retired there. ADR-0017 is
   *Proposed*: the running system is still nebula's receiver-side
   firewall, and `mesh-policy.yaml`'s nebula render is what executes
-  until Mesh v3 Phase 1.
+  until Mesh v3 Phase 1. <!-- stale? -->
 - 2026-09-05 — **The Quint models are the sharper spec for
   ADR-0015/0017.** Five doc sentences were refuted and ruled the same
   day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
@@ -877,3 +877,24 @@
   packages' tests run; a test that passes under `scripts/test-iroh.sh`
   can fail in the sandbox (TestNodeAgentEndToEnd did, deterministically,
   until the sleeper rewrite). Compare both before blaming a change.
+- 2026-10-04 — **Longhorn reads `node.longhorn.io/default-disks-config`
+  only for a node it has no disks for.** Adding a disk to a registered
+  node (nas1's bays) means patching `nodes.longhorn.io/<node>`
+  `spec.disks` by hand. The annotation in the machine patch is what a
+  reinstall reproduces.
+- 2026-10-04 — **Recreating a StorageClass under ArgoCD races
+  self-heal**: deleting it before ArgoCD's target revision is the new
+  commit gets the *old* class re-applied, and the next sync fails with
+  "updates to parameters are forbidden". Push, wait until `apps` shows
+  the new revision, then `kubectl delete sc`.
+- 2026-10-04 — **Deleting an RWX share-manager pod restarts every
+  Deployment pod mounting that volume** (`rwx-volume-fast-failover`
+  off); bare Pods keep their mount and keep working. The pod lands
+  where the class's `shareManagerNodeSelector` says. Patching
+  `sharemanager.status.ownerID` does not move it (the owning manager
+  re-asserts on the pod-delete event).
+- 2026-10-04 — **The old docker host still holds the library**:
+  `mar@nixos:~/disks/1TB-old/server/{tv,movies}` (466 GB, imported into
+  the cluster today) with its media containers **stopped, not
+  removed**, and Sonarr's export at `sonarr-series-2026-10-04.json`
+  beside them. It is the only second copy until the owner retires it.

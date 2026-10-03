@@ -203,3 +203,21 @@ them:
   which is accepted. Invariant 2's `359.9.3` placement stands. Revisit
   only if gateway failover must be sub-10 s or if the gateway becomes
   multi-replica (then the per-pod key question returns as `4ze8`'s).
+
+## Bulk storage tier on nas1 (2026-10-04)
+
+- Considered mdraid / LVM mirror for "raid the two disks". Ruled out:
+  Talos user volumes are one disk or partition each, so the mirror
+  would be state outside git. Landed on a Longhorn mirror with two
+  replicas on different `bulk` disks (ADR-0029, Proposed).
+- Considered two replicas across nodes. Ruled out: only nas1 has bulk
+  disks, so the second copy would cap the library at cp1's or w1's
+  free NVMe space.
+- Tried moving a share-manager by patching
+  `sharemanager.status.ownerID` after deleting its pod. Ruled out: the
+  owning manager recreates the pod on its own node and re-asserts.
+  Landed on the class parameter `shareManagerNodeSelector`.
+- Tried rsync over Wi-Fi (25 MB/s), then wired (still ~35 MB/s).
+  Neither link was the bottleneck: the share-manager's placement was.
+  Measure the storage path before buying a faster link.
+

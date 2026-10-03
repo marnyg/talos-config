@@ -13,11 +13,14 @@ the goal: parents' TV (`4te`, ADR-0013's gate), stale `enrollmsg` v2
 binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 
 **Next candidates** (owner to pick):
-- **Storage tiers** — nas1's two 4 TB bays are Longhorn disks tagged
-  `bulk` and the media library mirrors across them (2026-10-04,
-  `lug3`/`cnb5`). Left: fence the default class to `nvme` (`jx78`),
-  faulted volumes on `/status` (`cnb5`), the other two bays when
-  filled (recipe in nas1's `patch.yaml`).
+- **Storage tiers**: nas1's two 4 TB bays form the `bulk` tier, and
+  the media library mirrors across them. Its NFS servers are pinned to
+  nas1, and it was imported from the old docker host (2026-10-04,
+  ADR-0029 Proposed). Left: fence the default class to `nvme` (`jx78`),
+  show faulted volumes on `/status` (`cnb5`), retire the old docker
+  host. Then the owner's app list (seerr, syncthing, sillytavern).
+- **Gateway panic `vzbf`** (P1): WebSocket over iroh after Close
+  crash-loops the gateway.
 - **HA sweep `9l67` closed 2026-10-01** (a dead node no longer
   freezes GitOps or pins RWO volumes; `/status` watches ArgoCD;
   ingress-nginx + oauth2-proxy are 2× anti-affine, siwe-oidc fails
