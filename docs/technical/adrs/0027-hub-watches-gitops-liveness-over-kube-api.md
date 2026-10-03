@@ -3,7 +3,7 @@
 - Status: Proposed
 - Date: 2026-09-30
 - Related: ADR-0024 (the hub as a caller), `talos-config-9l67` (HA sweep
-  slice 1), `config-server/gitops.go`
+  slice 1), `config-server/clusterwatch.go`
 
 ## Context and Problem Statement
 

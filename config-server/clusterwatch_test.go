@@ -18,10 +18,10 @@ import (
 	"github.com/marnyg/talos-config/config-server/machines"
 )
 
-// gitopsFixture: an HTTPS "API server" behind a pipeFacet, TLS'd with
+// clusterFixture: an HTTPS "API server" behind a pipeFacet, TLS'd with
 // a CA the watcher trusts as the cluster CA, requiring a client cert
 // from that CA (as kube-apiserver does).
-func newGitopsFixture(t *testing.T, handler http.Handler) (*gitopsWatcher, machines.Machine, *pipeFacet) {
+func newClusterFixture(t *testing.T, handler http.Handler) (*clusterWatcher, machines.Machine, *pipeFacet) {
 	t.Helper()
 	now := time.Now()
 	ca, err := secrets.NewTalosCA(now)
@@ -51,7 +51,7 @@ func newGitopsFixture(t *testing.T, handler http.Handler) (*gitopsWatcher, machi
 	t.Cleanup(func() { _ = srv.Close() })
 
 	b := newBootstrapper(t.TempDir(), testHubManager(t, nil))
-	g := newGitopsWatcher(b.root, b)
+	g := newClusterWatcher(b.root, b)
 	m := machines.Machine{Dir: "/fake/cp1"}
 	g.caCache[m.Dir] = &x509.PEMEncodedCertificateAndKey{Crt: ca.CrtPEM, Key: ca.KeyPEM}
 	return g, m, &pipeFacet{accept: accept}
@@ -72,7 +72,7 @@ func TestGitopsFetchOverFacet(t *testing.T) {
 	  "health":{"status":"Healthy"},
 	  "operationState":{"phase":"Running","message":"waiting for healthy state of apps/Deployment/gateway",
 	    "startedAt":"2026-09-29T18:11:26Z"}}}`
-	g, m, facet := newGitopsFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	g, m, facet := newClusterFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen.path = r.URL.Path
 		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
 			seen.cn = r.TLS.PeerCertificates[0].Subject.CommonName
@@ -98,13 +98,13 @@ func TestGitopsFetchOverFacet(t *testing.T) {
 
 	// A non-200 and a body without reconciledAt are both errors, not
 	// snapshots: the row must never show a fake "reconciled now".
-	g2, m2, facet2 := newGitopsFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	g2, m2, facet2 := newClusterFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 	}))
 	if _, err := g2.fetchOver(ctx, m2, facet2); err == nil || !strings.Contains(err.Error(), "403") {
 		t.Fatalf("403 not surfaced: %v", err)
 	}
-	g3, m3, facet3 := newGitopsFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	g3, m3, facet3 := newClusterFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"status":{}}`))
 	}))
 	if _, err := g3.fetchOver(ctx, m3, facet3); err == nil || !strings.Contains(err.Error(), "reconciledAt") {
@@ -122,7 +122,7 @@ func TestGitopsStepGatesOnBootstrap(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b.root, "machines", "aa-bb", "meta.yaml"), []byte("config: cp.yaml\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	g := newGitopsWatcher(b.root, b)
+	g := newClusterWatcher(b.root, b)
 	dialed := false
 	g.dial = func(context.Context, string, string, time.Duration) (facetClient, error) {
 		dialed = true

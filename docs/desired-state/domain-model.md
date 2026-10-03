@@ -935,6 +935,13 @@ provisioning or recovery path may depend on it.
   pinned beside them (ADR-0029). App state stays on `nvme`: the
   default class is fenced to that tier (`jx78`). The node is the
   library's availability unit, and the disk is its durability unit.
+- **Volume robustness** (Longhorn): `healthy` / `degraded` (fewer
+  healthy replicas than spec) / `faulted` (no usable replica) /
+  `unknown` (detached). A data-plane property, independent of
+  workload health: a pod on a `faulted` RWX volume stays `Running` on
+  a hung NFS mount, and ArgoCD reads `Healthy`. The hub's `/status`
+  `storage` row watches robustness for that reason (`cnb5`,
+  ADR-0027's dated note).
 
 ## Relation to the sovereign-actor sketch
 

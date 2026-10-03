@@ -160,7 +160,7 @@ history and, where the numbers still matter, in ADR-0006 and
   to the control plane (`k8s/apps/argocd/controller-patch.yaml`).
   The hub's `/status` **gitops** row reads the root app over cp1's
   `kube-api` every 5 min and warns on a reconcile > 20 min old or a
-  sync op Running > 30 min (`config-server/gitops.go`). The 09-29
+  sync op Running > 30 min (`config-server/clusterwatch.go`). The 09-29
   hang (op waiting on the ghost gateway pod) ended with the w1 taint.
 - Provenance of the image line: 2026-09-15 cp1 first booted an
   imager build (`p0agent` 0.0.3, scratch relay); 2026-09-16 it became

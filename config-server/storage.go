@@ -1,6 +1,6 @@
 package main
 
-// Storage watch: the second thing the gitops poll reads over the
+// Storage watch: the second thing the cluster watch reads over the
 // kube-api facet is Longhorn's Volume list, rendered as the /status
 // `storage` row.
 //
@@ -13,8 +13,8 @@ package main
 // than asked) the moment it happens. This row makes that visible from
 // the one place the owner already looks.
 //
-// Nothing here acts (same posture as gitops.go / ADR-0027). The poll,
-// dial and client cert are gitops.go's; this file is only the
+// Nothing here acts (same posture as clusterwatch.go / ADR-0027). The poll,
+// dial and client cert are clusterwatch.go's; this file is only the
 // Longhorn-shaped half: what we read and how the row reads.
 
 import (

@@ -655,7 +655,7 @@ type statusData struct {
 	Relay         string      // iroh relay child line ("" = no relay)
 	RelayWarn     bool
 	Boot          *bootSnapshot
-	GitOps        string // ArgoCD root app line (gitops.go), "" when not watching
+	GitOps        string // ArgoCD root app line (clusterwatch.go), "" when not watching
 	GitOpsWarn    bool
 	Storage       string // Longhorn volume line (storage.go), "" until the first read
 	StorageWarn   bool
@@ -753,9 +753,9 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 		snap := s.boot.status()
 		data.Boot = &snap
 	}
-	if s.gitops != nil {
-		data.GitOps, data.GitOpsWarn = s.gitops.status().line(now)
-		if st := s.gitops.storageStatus(); st.Total > 0 || st.Err != "" {
+	if s.cluster != nil {
+		data.GitOps, data.GitOpsWarn = s.cluster.status().line(now)
+		if st := s.cluster.storageStatus(); st.Total > 0 || st.Err != "" {
 			data.Storage, data.StorageWarn = st.line()
 		}
 	}

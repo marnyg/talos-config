@@ -1,11 +1,17 @@
 package main
 
-// GitOps watch: the hub reads ArgoCD's root Application (`apps`, the
-// one that recurses k8s/apps) over the control plane's kube-api facet
-// and shows its age on /status. Nothing here acts; it is an eye
-// (ADR-0027: why this and not an in-cluster alerter or a scoped token).
-// The same poll also reads Longhorn's Volume list for the `storage`
-// row (storage.go, cnb5): one dial, one client cert, two GETs.
+// Cluster watch: the hub's read-only eye on the cluster over the
+// control plane's kube-api facet, feeding two /status rows. Nothing
+// here acts (ADR-0027: why this and not an in-cluster alerter or a
+// scoped token). One dial, one client cert, two GETs per poll:
+//
+//   - gitops: ArgoCD's root Application (`apps`, the one that recurses
+//     k8s/apps) and its two ages — this file.
+//   - storage: Longhorn's Volume list and its robustness — storage.go
+//     (cnb5).
+//
+// A third read belongs here too, but as a conscious addition (ADR-0027
+// consequences), not a habit.
 //
 // Why (talos-config-9l67, 2026-09-29): argocd-application-controller-0
 // sat Terminating on a dead node from 09-21 to 09-29 and nothing
@@ -149,8 +155,9 @@ type argoApp struct {
 	} `json:"status"`
 }
 
-// gitopsWatcher runs the poll loop.
-type gitopsWatcher struct {
+// clusterWatcher runs the poll loop; gitopsSnapshot and
+// storageSnapshot are its two outputs.
+type clusterWatcher struct {
 	root string
 	boot *bootstrapper
 	dial func(ctx context.Context, name, facet string, timeout time.Duration) (facetClient, error)
@@ -163,8 +170,8 @@ type gitopsWatcher struct {
 	storage storageSnapshot
 }
 
-func newGitopsWatcher(root string, boot *bootstrapper) *gitopsWatcher {
-	return &gitopsWatcher{
+func newClusterWatcher(root string, boot *bootstrapper) *clusterWatcher {
+	return &clusterWatcher{
 		root:    root,
 		boot:    boot,
 		dial:    boot.dial,
@@ -173,19 +180,19 @@ func newGitopsWatcher(root string, boot *bootstrapper) *gitopsWatcher {
 	}
 }
 
-func (g *gitopsWatcher) status() gitopsSnapshot {
+func (g *clusterWatcher) status() gitopsSnapshot {
 	g.snapMu.Lock()
 	defer g.snapMu.Unlock()
 	return g.snap
 }
 
-func (g *gitopsWatcher) setSnap(f func(*gitopsSnapshot)) {
+func (g *clusterWatcher) setSnap(f func(*gitopsSnapshot)) {
 	g.snapMu.Lock()
 	defer g.snapMu.Unlock()
 	f(&g.snap)
 }
 
-func (g *gitopsWatcher) storageStatus() storageSnapshot {
+func (g *clusterWatcher) storageStatus() storageSnapshot {
 	g.snapMu.Lock()
 	defer g.snapMu.Unlock()
 	return g.storage
@@ -194,7 +201,7 @@ func (g *gitopsWatcher) storageStatus() storageSnapshot {
 // setStorage records a Longhorn read or its failure. A failure keeps
 // the last good counts (as fail does for gitops) so the row shows
 // what was last known beside why it is stale.
-func (g *gitopsWatcher) setStorage(snap storageSnapshot, err error) {
+func (g *clusterWatcher) setStorage(snap storageSnapshot, err error) {
 	g.snapMu.Lock()
 	defer g.snapMu.Unlock()
 	if err != nil {
@@ -215,7 +222,7 @@ func (g *gitopsWatcher) setStorage(snap storageSnapshot, err error) {
 	g.storage = snap
 }
 
-func (g *gitopsWatcher) run(ctx context.Context) {
+func (g *clusterWatcher) run(ctx context.Context) {
 	log.Printf("gitops: watching %s over the control plane's kube-api facet (poll %s)", gitopsApp, gitopsPollInterval)
 	ticker := time.NewTicker(gitopsPollInterval)
 	defer ticker.Stop()
@@ -237,7 +244,7 @@ func (g *gitopsWatcher) run(ctx context.Context) {
 // step polls once. It only dials while auto-bootstrap sees etcd
 // running on a known control plane — before that there is no API
 // server to ask, and the auto-bootstrap row already says why.
-func (g *gitopsWatcher) step(ctx context.Context) {
+func (g *clusterWatcher) step(ctx context.Context) {
 	bs := g.boot.status()
 	if bs.State != etcdRunning.String() || bs.Target == "" {
 		g.setSnap(func(s *gitopsSnapshot) { s.LastPoll = time.Now(); s.Idle = "auto-bootstrap: " + bs.State })
@@ -283,7 +290,7 @@ func (g *gitopsWatcher) step(ctx context.Context) {
 }
 
 // recordApp replaces the gitops snapshot with one good read.
-func (g *gitopsWatcher) recordApp(app *argoApp) {
+func (g *clusterWatcher) recordApp(app *argoApp) {
 	g.setSnap(func(s *gitopsSnapshot) {
 		prevErr := s.Err
 		*s = gitopsSnapshot{
@@ -305,7 +312,7 @@ func (g *gitopsWatcher) recordApp(app *argoApp) {
 
 // fail records a poll failure without discarding the last good read
 // (the row keeps showing the last known state, plus the failure).
-func (g *gitopsWatcher) fail(err error) {
+func (g *clusterWatcher) fail(err error) {
 	g.setSnap(func(s *gitopsSnapshot) {
 		if s.Err != err.Error() {
 			log.Printf("gitops: %v", err)
@@ -352,7 +359,7 @@ func (k *kubeClient) get(ctx context.Context, path string, out any) error {
 
 // fetchOver is kubeClient + fetchApp in one call, kept so a test can
 // drive the whole path over an in-memory facet.
-func (g *gitopsWatcher) fetchOver(ctx context.Context, m machines.Machine, fc facetClient) (*argoApp, error) {
+func (g *clusterWatcher) fetchOver(ctx context.Context, m machines.Machine, fc facetClient) (*argoApp, error) {
 	kc, err := g.kubeClient(m, fc)
 	if err != nil {
 		return nil, err
@@ -363,7 +370,7 @@ func (g *gitopsWatcher) fetchOver(ctx context.Context, m machines.Machine, fc fa
 
 // fetchApp GETs the root Application; a body without reconciledAt is
 // an error so the row never shows a fake "reconciled now".
-func (g *gitopsWatcher) fetchApp(ctx context.Context, kc *kubeClient) (*argoApp, error) {
+func (g *clusterWatcher) fetchApp(ctx context.Context, kc *kubeClient) (*argoApp, error) {
 	var app argoApp
 	if err := kc.get(ctx, gitopsAppPath, &app); err != nil {
 		return nil, err
@@ -375,7 +382,7 @@ func (g *gitopsWatcher) fetchApp(ctx context.Context, kc *kubeClient) (*argoApp,
 }
 
 // fetchVolumes GETs Longhorn's Volume list (storage.go).
-func (g *gitopsWatcher) fetchVolumes(ctx context.Context, kc *kubeClient) (*longhornVolumeList, error) {
+func (g *clusterWatcher) fetchVolumes(ctx context.Context, kc *kubeClient) (*longhornVolumeList, error) {
 	var vols longhornVolumeList
 	if err := kc.get(ctx, longhornVolumesPath, &vols); err != nil {
 		return nil, err
@@ -383,7 +390,7 @@ func (g *gitopsWatcher) fetchVolumes(ctx context.Context, kc *kubeClient) (*long
 	return &vols, nil
 }
 
-func (g *gitopsWatcher) kubeClient(m machines.Machine, fc facetClient) (*kubeClient, error) {
+func (g *clusterWatcher) kubeClient(m machines.Machine, fc facetClient) (*kubeClient, error) {
 	ca, err := g.clusterCA(m)
 	if err != nil {
 		return nil, err
@@ -428,7 +435,7 @@ func (g *gitopsWatcher) kubeClient(m machines.Machine, fc facetClient) (*kubeCli
 // clusterCA extracts the Kubernetes CA (cert + key) from the machine's
 // composed config; only control-plane configs carry the key. Sibling
 // of bootstrapper.issuingCA (the OS CA).
-func (g *gitopsWatcher) clusterCA(m machines.Machine) (*x509.PEMEncodedCertificateAndKey, error) {
+func (g *clusterWatcher) clusterCA(m machines.Machine) (*x509.PEMEncodedCertificateAndKey, error) {
 	g.caMu.Lock()
 	defer g.caMu.Unlock()
 	if ca, ok := g.caCache[m.Dir]; ok {

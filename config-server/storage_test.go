@@ -71,7 +71,7 @@ func TestStorageRidesGitopsClient(t *testing.T) {
 	const app = `{"status":{"reconciledAt":"2026-09-29T19:10:00Z","sync":{"status":"Synced","revision":"f93ebd3bec02"},"health":{"status":"Healthy"}}}`
 	const vols = `{"items":[{"metadata":{"name":"pvc-1"},"status":{"state":"attached","robustness":"faulted","kubernetesStatus":{"namespace":"media","pvcName":"tv"}}}]}`
 	var paths []string
-	g, m, facet := newGitopsFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	g, m, facet := newClusterFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 || r.TLS.PeerCertificates[0].Subject.CommonName != "hub" {
 			http.Error(w, "no client cert", http.StatusUnauthorized)
