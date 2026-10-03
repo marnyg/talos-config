@@ -916,3 +916,13 @@
   than the cluster's.** They were imported into the new PVCs that
   evening (`vu9n`); any further change happens in the cluster. Do not
   re-import. Jellyfin was *not* imported (owner's call).
+- 2026-10-03 — **ArgoCD auto-sync stalls behind an unhealthy
+  Deployment.** The `apps` sync waits for each Deployment to go
+  healthy; a crash-looping pod from one commit holds the *next*
+  commit's fix in OutOfSync until the operation times out. `kubectl
+  apply -f` the committed manifest to unblock; identical content, so
+  ArgoCD reports Synced once the pod is healthy.
+- 2026-10-03 — **Jellyfin is the upstream `jellyfin/jellyfin` image,
+  not linuxserver's**, pinned by dated tag; its four `JELLYFIN_*_DIR`
+  envs keep lsio's `/config` layout. Bumps: `skopeo list-tags` for the
+  `12.x.YYYYMMDD-HHMMSS` tag. The lsio build cannot run non-root.
