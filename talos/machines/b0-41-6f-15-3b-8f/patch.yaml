@@ -30,10 +30,18 @@ machine:
   # Declared 2026-09-22, following nas1: it was applied by hand with
   # kubectl when Longhorn landed, so a reinstall would have come back
   # with the u-longhorn partition mounted and Longhorn ignoring it.
-  # Git is the source of truth for it now (invariant 2). Applying this
-  # is a no-op on the running node — the label is already there.
+  # Git is the source of truth for it now (invariant 2).
+  #
+  # "config" + annotation (was "true", 2026-09-22..10-03): the disk
+  # carries the `nvme` tag so the default `longhorn` class can fence app
+  # state to the fast tier by diskSelector (jx78) now that nas1's SATA
+  # bays are schedulable. Longhorn reads the annotation ONLY for a node
+  # it has no disks for yet; the live disk was tagged by hand on
+  # 2026-10-03, this is what a reinstall reproduces.
   nodeLabels:
-    node.longhorn.io/create-default-disk: "true"
+    node.longhorn.io/create-default-disk: "config"
+  nodeAnnotations:
+    node.longhorn.io/default-disks-config: '[{"path":"/var/mnt/longhorn","allowScheduling":true,"tags":["nvme"]}]'
   kubelet:
     # Longhorn's data path, bind-mounted into the kubelet container with
     # `rshared` propagation — same reasoning as w1's patch: Talos

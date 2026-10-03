@@ -279,10 +279,10 @@ ADR-0011.
   only nodes labeled `node.longhorn.io/create-default-disk=true` get
   one — without it Longhorn would put replicas on EPHEMERAL scratch.
   - `w1` — `default-disk-1030500000000` at `/var/mnt/longhorn`, 751GB,
-    tag `nvme` _(2026-10-05)_.
+    tag `nvme` _(2026-10-03)_.
   - `talos-wu6-eib` (cp1) — `default-disk-1030400000000`, 322GB (the
     former `u-media` partition, handed over 2026-07-31), tag `nvme`
-    _(2026-10-05)_.
+    _(2026-10-03)_.
   - `nas1` — `default-disk-1030500000000` at `/var/mnt/longhorn`, 911GB,
     tag `nvme`; **`bulk-1`/`bulk-2`** at `/var/mnt/longhorn-{1,2}`,
     3998GB each, tag `bulk` _(2026-10-04)_.
@@ -290,10 +290,12 @@ ADR-0011.
 - StorageClasses: `longhorn` (default; RWO, 2 replicas, `Delete`) for
   app state — **users: `gateway-state` (64Mi)**, `sap-*-state`,
   win2k25's volumes; every media app still keeps config on `emptyDir`.
-  **Fenced to `diskSelector: nvme`** since 2026-10-05 (`jx78`, chart
+  **Fenced to `diskSelector: nvme`** since 2026-10-03 (`jx78`, chart
   `persistence.defaultDiskSelector`); all cp1/w1/nas1 `/var/mnt/longhorn`
-  disks carry the tag, the existing Volume CRs were patched and two
-  replicas that had landed on `bulk-1` evicted. `longhorn-bulk` (RWX,
+  disks carry the tag, the existing Volume CRs were patched and three
+  replicas that had landed on the bays deleted (Longhorn rebuilt them
+  on `nvme`; per-replica `evictionRequested` gets cancelled by the node
+  controller unless the disk itself is being evicted). `longhorn-bulk` (RWX,
   `Retain`) for `media/{tv,movies,downloads}` is since 2026-10-04 a
   **mirror inside nas1**: 2 replicas, `diskSelector: bulk`, soft node /
   hard disk anti-affinity — one replica per bay, none on w1 (cnb5's

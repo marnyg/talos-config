@@ -105,6 +105,19 @@ spec:
           # a node goes (which w1 does; `9l67`).
           defaultClassReplicaCount: 2
           defaultDataLocality: best-effort
+          # Fence app state to the NVMe tier (jx78). Since nas1's SATA
+          # bays became schedulable (lug3, 2026-10-04) a selector-less
+          # PVC could land a replica on spinning disk — two did. Every
+          # /var/mnt/longhorn disk is tagged `nvme` (nas1 by its
+          # default-disks-config, cp1/w1 by hand + the same annotation
+          # in their patches for reinstalls); the bays are `bulk` and
+          # only longhorn-bulk selects them. longhorn-manager syncs the
+          # default class from the longhorn-storageclass ConfigMap and
+          # recreates it on change; existing Volume CRs do not follow
+          # and were patched by hand (2026-10-03).
+          defaultDiskSelector:
+            enable: true
+            selector: nvme
   destination:
     server: https://kubernetes.default.svc
     namespace: longhorn-system
