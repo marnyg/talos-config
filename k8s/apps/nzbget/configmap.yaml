@@ -14,6 +14,8 @@ data:
     ScriptDir=${MainDir}/scripts
     LogFile=${MainDir}/nzbget.log
     WebDir=${AppDir}/webui
+    ConfigTemplate=${AppDir}/webui/nzbget.conf.template
+    CertStore=${AppDir}/cacert.pem
 
     Server1.Active=yes
     Server1.Name=Newshosting
