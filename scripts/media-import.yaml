@@ -1,0 +1,104 @@
+# One-off library import: an rsync daemon on nas1 writing straight into
+# the media RWX volumes (beside the running apps — RWX), reachable from
+# ONE LAN host on a NodePort for the duration of the copy. Used
+# 2026-10-04 to move 343G tv + 92G movies off the old docker host
+# (10.0.0.11, ~/disks/1TB-old/server). Deliberately under scripts/, not
+# k8s/apps: ArgoCD must never sync this. Apply, copy, DELETE:
+#
+#   K="kubectl --server=https://10.0.0.68:6443"   # or over the mesh
+#   $K apply -f scripts/media-import.yaml
+#   rsync -a --info=progress2 ~/disks/1TB-old/server/tv/ rsync://10.0.0.74:30873/tv/
+#   rsync -a --info=progress2 ~/disks/1TB-old/server/movies/ rsync://10.0.0.74:30873/movies/
+#   $K delete -f scripts/media-import.yaml
+#
+# Why a LAN NodePort and not the identity plane: the mesh tun is a
+# userspace QUIC path, fine for control traffic, not for half a
+# terabyte. The exposure is one unauthenticated rsync module set,
+# write-only in effect, allowed from one source address, on a home LAN,
+# for an hour. Runs as uid 1000 (the PUID every linuxserver image
+# here uses) so ownership needs no fixing afterwards.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: media-import
+  namespace: media
+data:
+  rsyncd.conf: |
+    # No uid/gid: the pod runs as 1000:1000 already, and a non-root
+    # rsyncd given uid= fails on setgroups.
+    use chroot = no
+    max connections = 4
+    lock file = /tmp/rsyncd.lock
+    pid file = /tmp/rsyncd.pid
+    hosts allow = 10.0.0.11
+    hosts deny = *
+    [tv]
+      path = /tv
+      read only = no
+    [movies]
+      path = /movies
+      read only = no
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: media-import
+  namespace: media
+  labels:
+    app: media-import
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: nas1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: rsyncd
+      # Carries rsync already; alpine + `apk add` would need root.
+      image: instrumentisto/rsync-ssh:alpine
+      command: ["rsync", "--daemon", "--no-detach", "--port=8873", "--config=/etc/rsyncd.conf", "--log-file=/dev/stdout"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+      ports:
+        - containerPort: 8873
+      volumeMounts:
+        - name: conf
+          mountPath: /etc/rsyncd.conf
+          subPath: rsyncd.conf
+        - name: tv
+          mountPath: /tv
+        - name: movies
+          mountPath: /movies
+  volumes:
+    - name: conf
+      configMap:
+        name: media-import
+    - name: tv
+      persistentVolumeClaim:
+        claimName: tv
+    - name: movies
+      persistentVolumeClaim:
+        claimName: movies
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-import
+  namespace: media
+spec:
+  type: NodePort
+  # Local: only nas1's address answers, and the source IP survives for
+  # `hosts allow`.
+  externalTrafficPolicy: Local
+  selector:
+    app: media-import
+  ports:
+    - port: 8873
+      targetPort: 8873
+      nodePort: 30873
