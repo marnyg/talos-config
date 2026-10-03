@@ -38,8 +38,6 @@ and ADR-0029 is Accepted.**
   repo root (untracked) lists seerr, syncthing, sillytavern, a Windows
   compute node, docker-host cleanup, TLS on VPN-exposed services —
   not yet in beads.
-- `gitopsWatcher` now owns two snapshots; rename to `clusterWatcher`
-  if a third read ever arrives, not before.
 
 ## Suggested next steps
 

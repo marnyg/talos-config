@@ -95,8 +95,10 @@ metadata:
     app.kubernetes.io/name: argocd-cmd-params-cm
     app.kubernetes.io/part-of: argocd
 data:
-  # Plain HTTP behind ingress-nginx (ADR-0009): nebula encrypts the
-  # wire, so argocd-server must not self-redirect to its own TLS.
+  # Plain HTTP behind ingress-nginx (ADR-0009): the mesh (iroh/QUIC
+  # today, nebula then) encrypts the wire, so argocd-server must not
+  # self-redirect to its own TLS. Browser-trusted TLS on mesh names is
+  # spike talos-config-9z4e.
   #
   # Caveat: this ConfigMap is consumed as env, so argocd-server only
   # picks up changes on restart. ArgoCD syncing this file does NOT

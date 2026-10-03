@@ -37,8 +37,8 @@ spec:
       # /etc/hosts entries to kube-dns — siderolabs/talos#9822), so pin
       # the issuer name — at the siwe-oidc **Service** ClusterIP (pinned
       # in its manifest), same as oauth2-proxy/argocd-server. A node's
-      # mesh address would only be dialable from pods on that node
-      # (nebula carries 10.42.0.0/16 sources; pods are 10.244.x.x).
+      # mesh address is a fake IP owned by that member's own tun (v3,
+      # 198.18/15) — not routable from pods (10.244.x.x) at all.
       hostAliases:
         - ip: 10.107.226.217
           hostnames: [auth.gw.mesh.internal]

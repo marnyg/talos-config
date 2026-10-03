@@ -132,117 +132,24 @@ Viewing `/status` requires a session (wallet login, or the admin token as break-
 
 At least one must be configured when `--require-auth` is on.
 
-### WireGuard control channel, tunnel DNS, and admin devices
+### Mesh v3 — the identity plane (no WireGuard, no nebula)
 
-The server runs a userspace WireGuard hub (fly UDP :51820). All key
-material is HKDF-derived from the wallet unseal signature — no peer
-registry, no key state. Machines get their `wg0` injected into served
-configs; the hub forwards peer↔peer (admin laptop → node).
+The hub runs an embedded iroh relay and issues member certs rooted in
+the owner's wallet (ADR-0017/0022/0024). Each member holds a **Kit**:
+member cert (`cav.name`, `cav.groups`, 90 d), the renewal-beat grant,
+`invoke` grants compiled from `talos/mesh-policy-v3.yaml` (7 d, renewed
+daily), and a self-issued `reach-me-at`. Machines enroll at boot via a
+single-use token; devices via `irohup` (wallet signs) or the RFC 8628
+device flow on `/status`. Names `<svc>.<member>.mesh.internal` resolve
+on each device from the witnessed name map to fake IPs in `198.18/15`
+(`config-server/{fakeip,meshtun}`; utun on macOS, `VpnService` on
+Android). Remote members relay through the hub; same-LAN members
+hole-punch direct. Pods reach cluster services by ClusterIP, never by
+a member's mesh address.
 
-**Tunnel DNS**: the hub answers A queries on `10.99.0.1:53` for
-`<name>.talos.wg` — `hub`, each machine (`name:` in `meta.yaml`,
-MAC-with-dashes fallback), and each admin peer. Zone is derived at
-unseal; out-of-zone queries are REFUSED (split-DNS). The DNS name is
-also added to machine certSANs, so `talosctl -e cp1.talos.wg` works.
-Disable/override with `--wg-dns-domain`.
-
-Tunnel names resolve on **admin devices only** (split DNS via wgup).
-Nodes resolve through LAN DNS and cannot see `talos.wg` — so use
-names for `-e` (client-side resolution), IPs for `-n` (resolved by
-apid on the node).
-
-**Connecting an admin device** (must be declared in `WG_ADMIN_PEERS`):
-
-```bash
-wgup                 # enroll (browser wallet signs a device-bound nonce), then wg-quick up
-wgup -down           # disconnect
-wgup -paste          # headless: paste a `cast wallet sign` signature instead
-wgup -name phone -print   # enroll another device, just print the config path
-```
-
-Enrollment (`GET`/`POST /wg/enroll`) never touches the fleet master:
-the wallet signs an ordinary single-use challenge, the server returns
-the derived wg-quick config over TLS. The master signature is only
-ever signed at `/status` (unseal) or used offline with
-`wgping -sig <sig> …` as break-glass.
-
-### Nebula mesh (phase 1 — runs beside wg0)
-
-The hub is also the mesh **lighthouse + relay** (fly UDP :4242,
-`MESH_ENDPOINT`). CA and every identity derive from the same wallet
-master as wg0 — membership is "holds a cert signed by the derived CA",
-no registry. Overlay `10.42.0.0/16`, hub `10.42.0.1`, zone
-`<name>.mesh.internal` served on the overlay by the hub.
-
-Nodes run the `siderolabs/nebula` system extension (see the schematic
-note in `talos/hardware/minipc.yaml`). Their config *and* cert are
-injected at serve time as an `ExtensionServiceConfig` document — same
-trust chain as wg0's key injection, nothing at rest:
-
-```bash
-# after changing the installer image: upgrade (EPHEMERAL and user
-# volumes survive since Talos 1.5 — a fresh install would not)
-talosctl -e cp1.talos.wg -n 10.99.0.54 upgrade \
-  --image factory.talos.dev/installer/6a9acceefb4231ee98d04df0a3172479299cf51a36cda05f7ff817ab6d0d4735:v1.12.6
-# then re-fetch the config so the node gets its mesh identity
-nix run .#apply
-talosctl -n 10.99.0.54 get extensionserviceconfigs
-talosctl -n 10.99.0.54 service ext-nebula   # Talos prefixes extension services
-```
-
-Until the config lands, `ext-nebula` deliberately does not start (the
-extension declares `depends: configuration: true`) and the boot sequence
-warns `service "ext-nebula" to be "up"`. That is the upgrade-without-
-apply half-state, not a failure — apid is already up, so apply through
-it.
-
-Node firewall on the overlay: ICMP from anyone, everything from the hub
-(cert name `hub` — apid, auto-bootstrap) and from the `admins` group,
-plus Jellyfin's NodePort from the `media` group. Machines cannot reach
-each other's control surfaces over the mesh.
-
-**Device groups.** Three; the group is signed into the certificate, and
-the *approver* (never the requesting device) decides which group each
-enrollment gets — rubber-stamp resistance (ADR-0012):
-
-| Group | How it's assigned | Gets |
-|---|---|---|
-| `machines` | `talos/machines/` (compose time) | injected at machine config compose |
-| `admins` | approver picks `admins` at /status; admins requires re-typing the device name | unrestricted node access |
-| `media` | approver picks `media` at /status (default for the device-flow path) | Jellyfin's NodePort, nothing else |
-
-A shared-space appliance (TV) belongs in `media`: anyone in the room
-can operate it. Regrouping a device means re-enrolling it, but the
-name (not the group) drives the derived address, so an *unchanged*
-name keeps the device at the same overlay address.
-
-**Connecting a device** (`nebup`, ADR-0012):
-
-```bash
-nebup                          # enroll if needed, then run nebula (Ctrl-C disconnects)
-nebup -print                   # enroll, print the config path, run nothing
-nebup -reenroll                # keep the .key, re-sign, refresh the .yml (renewal)
-nebup -rekey                   # brand-new keypair; the approver sees a new fingerprint
-nebup -group admins            # request admin group; approver still ratifies
-nebup -paste                   # headless: paste a `cast wallet sign` signature
-```
-
-Enrollment (`POST /mesh/enroll/challenge` → `POST /mesh/enroll`) never
-touches the fleet master: nebup generates an X25519 keypair locally
-(the private key never leaves this disk), submits the pubkey, the
-wallet signs the v1 message `(name, group, sha256(pubkey), nonce)`,
-and the hub returns a config with `pki.key` empty for nebup to splice
-in. Two-file cache: `<name>.key` (device-born, survives `-reenroll`)
-and `<name>.yml` (disposable hub artifact). Device certs last 90 days;
-re-running `nebup -reenroll` with the same key re-signs at the same
-address.
-
-Devices that can't sign locally (headless appliance, TV) use the
-RFC 8628 flow: the device tool submits its pubkey to
-`POST /mesh/enroll/device`, displays a QR pointing at
-`/status?user_code=...`, and the approver signs on /status where the
-approval form shows the pubkey fingerprint and lets the operator edit
-the final name/group before signing.
+Authoritative detail: `docs/technical/deployed-state.md` (Mesh section),
+`docs/mesh-v3-iroh.md` (plan + phase log), ADR-0017 (policy recipe),
+ADR-0024 (name witnessing).
 
 ### Recovery USB
 

@@ -4,9 +4,10 @@
 # /etc/hosts entries to kube-dns — siderolabs/talos #9822/#13141), so
 # the issuer hostname is pinned via hostAliases. Like oauth2-proxy
 # (k8s/apps/oauth2-proxy/deployment.yaml, 2026-07-31), it points at the
-# siwe-oidc **Service** ClusterIP, not a node's mesh address: nebula
-# carries 10.42.0.0/16 sources only, so a pod (10.244.x.x) on any node
-# other than the pinned one cannot dial a mesh IP. The ClusterIP is
+# siwe-oidc **Service** ClusterIP, not a member's mesh address: mesh
+# addresses are per-device fake IPs owned by that member's tun (v3,
+# 198.18/15; nebula's 10.42/16 before), never routable from a pod
+# (10.244.x.x) on another node. The ClusterIP is
 # pinned in the siwe-oidc Service manifest so this literal cannot go
 # stale. OIDC issuer-URL equality still holds — siwe-oidc advertises
 # http://auth.gw.mesh.internal however the discovery document is

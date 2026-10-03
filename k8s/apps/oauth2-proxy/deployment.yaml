@@ -17,9 +17,9 @@
 #
 # It points at the siwe-oidc **Service**, not at cp1's mesh address as
 # it did until 2026-07-31. That pin only ever worked while this pod
-# happened to run on cp1: nebula carries 10.42.0.0/16 source addresses,
-# and a pod's source is 10.244.x.x, so from any other node the dial to
-# 10.42.218.125:80 just times out. cp1's reboot during the Longhorn work
+# happened to run on cp1: the mesh (then nebula, 10.42/16; now v3 fake
+# IPs in 198.18/15 owned by each member's own tun) is not routable from
+# a pod (10.244.x.x) on another node, so the dial just timed out. cp1's reboot during the Longhorn work
 # rescheduled this pod to w1 and every SSO-protected service started
 # returning 500 (nginx: "auth request unexpected status: 502").
 #
