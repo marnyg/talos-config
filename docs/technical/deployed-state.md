@@ -68,11 +68,18 @@ history and, where the numbers still matter, in ADR-0006 and
     LUKS2) + `u-longhorn` **912GB** (xfs, unencrypted — ADR-0004
     posture, same open thread `8e46f3a5`) at `/var/mnt/longhorn`.
     Install disk is `diskSelector: type: nvme` — `sda` is a 2.1GB USB
-    "Flash Disk", the same trap w1 has. **Four SATA bays are empty**;
-    each becomes its own `UserVolumeConfig` by disk serial, applied
-    live (no reinstall). Longhorn's
-    `node.longhorn.io/create-default-disk=true` is declared in
-    `nodeLabels` — cp1's and w1's were applied by hand and still are.
+    "Flash Disk", the same trap w1 has. **Two of four SATA bays filled**
+    _(2026-10-04, `lug3`)_: `u-longhorn-1` (`sdd`, wwid
+    `naa.5000039eb8db62c2`) and `u-longhorn-2` (`sde`,
+    `naa.5000039eb8db61d8`), TOSHIBA MN10ADA4 4 TB each, xfs,
+    unencrypted, at `/var/mnt/longhorn-{1,2}` — selected by **WWID**
+    (these report no serial), applied live, no reboot. The remaining
+    two bays follow the same recipe in `patch.yaml`. Longhorn's label
+    is `create-default-disk=config` + a `default-disks-config`
+    annotation (NVMe tag `nvme`, bays `bulk`) — what a reinstall
+    reproduces; the live Node CR got `bulk-1`/`bulk-2` by hand because
+    Longhorn reads the annotation only for a node without disks. cp1's
+    and w1's labels were applied by hand and still are.
     **Both 2.5GbE ports matter**: `:a8` and `:a9` are consecutive, the
     device flow reports `${mac}` from the first (`:a8`) regardless of
     where the cable is, so the cable must stay in `:a8` — see
@@ -262,7 +269,7 @@ plaintext META.
 > most: wipe META before a *machine* (not just a disk) leaves the
 > owner's hands, because the slot-1 passphrase travels with it.
 
-## Storage — _verified 2026-07-31; state 2026-09-21_
+## Storage — _verified 2026-07-31; state 2026-10-04_
 
 Longhorn 1.12.0 via ArgoCD (`k8s/apps/longhorn/application.yaml`).
 ADR-0011.
@@ -273,11 +280,20 @@ ADR-0011.
   - `w1` — `default-disk-1030500000000` at `/var/mnt/longhorn`, 751GB.
   - `talos-wu6-eib` (cp1) — `default-disk-1030400000000`, 322GB (the
     former `u-media` partition, handed over 2026-07-31).
-  - Total raw 1073GB, `storageReserved: 0` on both.
+  - `nas1` — `default-disk-1030500000000` at `/var/mnt/longhorn`, 911GB,
+    tag `nvme`; **`bulk-1`/`bulk-2`** at `/var/mnt/longhorn-{1,2}`,
+    3998GB each, tag `bulk` _(2026-10-04)_.
+  - Raw: ~1984GB NVMe tier + 7996GB bulk tier; `storageReserved: 0`.
 - StorageClasses: `longhorn` (default; RWO, 2 replicas, `Delete`) for
-  app state — **users: `gateway-state` (64Mi)** and nothing else, every
-  media app still keeps config on `emptyDir`; `longhorn-bulk` (RWX, 1
-  replica, `Retain`) for `media/{tv,movies,downloads}` (200/200/50Gi).
+  app state — **users: `gateway-state` (64Mi)**, `sap-*-state`,
+  win2k25's volumes; every media app still keeps config on `emptyDir`.
+  **Not yet fenced to `nvme`** (`jx78`): a selector-less PVC may land
+  on a bulk disk. `longhorn-bulk` (RWX, `Retain`) for
+  `media/{tv,movies,downloads}` (200/200/50Gi) is since 2026-10-04 a
+  **mirror inside nas1**: 2 replicas, `diskSelector: bulk`, soft node /
+  hard disk anti-affinity — one replica per bay, none on w1 (cnb5's
+  placement half; the class was deleted+recreated, the Volume CRs
+  patched, the w1 replicas evicted; ~9GB actual, no pod restart).
 - **With w1 off** _(2026-09-30)_: Longhorn node `w1` not ready; the
   three media volumes `faulted` (single replica, on w1 — back when w1
   is); `gateway-state` attached healthy (gateway on nas1), win2k25's

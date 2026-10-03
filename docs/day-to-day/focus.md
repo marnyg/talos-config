@@ -13,9 +13,11 @@ the goal: parents' TV (`4te`, ADR-0013's gate), stale `enrollmsg` v2
 binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 
 **Next candidates** (owner to pick):
-- **nas1's disks** — two 4 TB bays filled 2026-10-03, visible as
-  `sdd`/`sde`, undeclared (`lug3`): `UserVolumeConfig` per disk, then
-  `longhorn-bulk` placement (`cnb5`'s open half).
+- **Storage tiers** — nas1's two 4 TB bays are Longhorn disks tagged
+  `bulk` and the media library mirrors across them (2026-10-04,
+  `lug3`/`cnb5`). Left: fence the default class to `nvme` (`jx78`),
+  faulted volumes on `/status` (`cnb5`), the other two bays when
+  filled (recipe in nas1's `patch.yaml`).
 - **HA sweep `9l67` closed 2026-10-01** (a dead node no longer
   freezes GitOps or pins RWO volumes; `/status` watches ArgoCD;
   ingress-nginx + oauth2-proxy are 2× anti-affine, siwe-oidc fails
