@@ -19,37 +19,18 @@ them:
   mesh-v2 recipe held a second time. Every phase left the system
   working; nothing was rolled back. The soak exit was event coverage
   (one re-seal, one reboot, one remote-media session), not a calendar.
-- **Tried: factory schematic for the node agent.** Ruled out at P0.3 —
-  the Image Factory carries official extensions only. Landed on an
-  imager-built installer we publish and digest-pin (ADR-0023). Cost:
-  a public ghcr image we build is now the install image.
-- **Considered: an iroh sidecar process with bespoke IPC.** Never
-  built — the in-house uniffi bindgen produced a working Go package
-  inside the P0.4 time-box, so the sidecar proof was skipped
-  (ADR-0021).
-- **Tried: TCP bridges (`irohup -bridge`) as the desktop
-  presentation.** Proved the plane in Phase 1, did not scale to names;
-  the fake-IP utun (ADR-0025) replaced it in Phase 2.0 and the same
-  `fakeip`/`meshtun` code became the Android internals. SOCKS/PAC was
-  never built.
-- **Tried: receiver-side policy tables (nebula's model) on the new
-  plane.** Ruled out at spike `359.2` — a second authority mechanism
-  with its own sync and unseal-reconciliation; landed on caller-
-  carried grants compiled from the git recipe (ADR-0017, amendment
-  2026-09-18 for the four compiler pins).
-- **Tried: the ephemeral policy overlay on the identity plane.** Ruled
-  out 2026-09-20 (`ri3b`) — no live consumer once the app moved; the
-  overlay half of ADR-0014 was deleted rather than ported.
 - **Tried: the cluster endpoint on the mesh (mesh-v2's step).**
   Reversed at P2.5 — k8s is IP-native and leaves the mesh onto
   declared static LAN addresses; invariant 4's accepted wart closed
   instead of being ported. Cost: an SA-issuer rotation that bounced 14
   control-loop pods (`etzl`), and a router DHCP pool we deliberately
   do not edit (`ebis`).
-- **Tried: relaying through n0's infrastructure / QAD on our relay.**
-  Ruled out (invariants 3/5; ADR-0022) — remote is relay-by-default,
-  as ADR-0006 already accepted for nebula; no remote-direct data point
-  exists and none is sought (`0pq`).
+- Ruled-out alternatives that an ADR now records are pruned from
+  here (2026-10-04): the factory schematic (ADR-0023), the iroh
+  sidecar (ADR-0021), TCP bridges (ADR-0025; SOCKS/PAC was considered
+  and never built), receiver-side policy tables (ADR-0017), the
+  ephemeral policy overlay (ADR-0014's 2026-09-20 revision, `ri3b`),
+  and n0's relays / QAD (ADR-0022).
 - **Not proven on the new plane:** 4K playback / throughput through
   the relay (only P0.2 spike figures), and the parents' TV in the
   field (`4te`). The nebula-era measurements live in ADR-0006.
@@ -70,29 +51,11 @@ them:
   listed Wi-Fi, cellular and tun addresses itself on Android 13. The
   plumbing stays as belt-and-braces; the empty `peer-direct` on the
   node was "nothing validated", not "nothing advertised".
-- 2026-09-16 — Considered enabling QAD on the scratch relay to get a
-  WAN-direct data point from outside. Ruled out for the spike: needs
-  the relay to own a TLS cert (DNS-01 as a fly secret), and remote-
-  direct is out of scope (ADR-0006/0022). Stays under `0pq`.
-- 2026-09-16 — Considered powering w1 on (cluster Jellyfin's media
-  volumes have their only replica there) vs. a stand-in. Landed on: the
-  owner's existing Jellyfin on the NixOS box with a synthetic 95 Mbps
-  CBR file — synthetic content otherwise compresses to nothing, hence
-  `nal-hrd=cbr`. Step 7 (the same run through cp1) was then **dropped
-  by owner ruling at the gate**: it re-proves P0.3's forwarding only,
-  and cluster Jellyfin has no media while w1 is down.
-- 2026-09-16 — Gate ruling on cp1's undeclared install image (`5cz`):
-  considered upgrading back to the factory `6a9acc…` for a clean
-  baseline. Ruled out: the Image Factory carries official extensions
-  only (P0.3), so Phase 1.3 would immediately rebuild the imager chain
-  — a round trip. Landed on: declare the imager image in
-  `minipc.yaml`, digest-pinned; the supply-chain cost (a public ghcr
-  image we build is now cp1's install image) is why the digest, not
-  the tag, is the pin.
-
 <!-- 2026-09-16: §P0.1 (relay) and §P0.3 (Talos extension) pruned —
-     resolved by ADR-0022 and ADR-0023. Rulings live there and in
-     mesh-v3-iroh.md §P0.1/§P0.3; recover from git history if needed. -->
+     resolved by ADR-0022 and ADR-0023. 2026-10-04: §P0.2's QAD-on-the-
+     scratch-relay (ADR-0022, `0pq`), w1-stand-in (spike-only, stale) and
+     cp1-install-image (ADR-0023) entries pruned. Recover from git
+     history if needed. -->
 
 ## Unattended Windows guest on KubeVirt (2026-08-11→14)
 
@@ -112,15 +75,6 @@ them:
 - 2026-08-11 — Block-mode system disk ruled out: CDI's importer runs
   non-root and cannot open the raw device on a Block-mode Longhorn
   volume. Filesystem mode; revisit only alongside the virtio switch.
-
-## Pod resolution of mesh names (2026-07-31)
-
-- Resolved by ADR-0010 (`hostAliases` pin the issuer name to the
-  siwe-oidc Service ClusterIP). Kept as a pointer only: the 70-min SSO
-  outage that motivated it was a pod dialing a *mesh* address from a
-  10.244.x source — nebula routes 10.42.0.0/16, so it only worked
-  while the pod ran on cp1. Rule: pods talk to Services; the mesh is
-  for hosts and browsers.
 
 ## Mesh v3 P2.2 — hub re-learning members after its own restart (2026-09-20)
 
@@ -193,6 +147,8 @@ them:
   `config-server/mobile` over the same `nodeagent` + `meshtun` the
   desktop daemon runs, so there is one zone rule and one pool; the
   spike package is superseded and can be deleted.
+## In-cluster gateway statefulness (2026-10-01)
+
 - 2026-10-01 — Considered an ephemeral-key in-cluster gateway (no
   PVC, fresh key + headless re-enrollment on every reschedule) to end
   the RWO-volume node pin (`9l67` slice 3). Ruled out (decision

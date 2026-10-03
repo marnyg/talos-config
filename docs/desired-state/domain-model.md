@@ -922,6 +922,20 @@ provisioning or recovery path may depend on it.
   that are not wallet-rooted, on the app side of the seam.
   Data-plane state is excepted from invariant 2 (Longhorn bookkeeping
   shares its payload's fate).
+- **Storage tier / data class**: workload storage is split twice.
+  The **data class** says what the bytes are worth. **App state** is
+  small and irreplaceable, so it lives on the default `longhorn`
+  class (RWO, 2 replicas across nodes). The **library** is large and
+  re-downloadable, so it lives on `longhorn-bulk` (RWX). The
+  **storage tier** says which disks hold the bytes, as a Longhorn disk
+  tag declared in each machine's `default-disks-config`. **`nvme`**
+  is every node's NVMe user volume. **`bulk`** is nas1's SATA bays,
+  one `UserVolumeConfig` per disk. A class selects a tier. The library
+  mirrors across two `bulk` disks on one node, with its NFS server
+  pinned beside them (ADR-0029, Proposed). App state is meant to stay
+  on `nvme`, but the default class is not fenced to it yet (`jx78`).
+  The node is the library's availability unit, and the disk is its
+  durability unit.
 
 ## Relation to the sovereign-actor sketch
 
