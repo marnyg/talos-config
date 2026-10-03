@@ -4,10 +4,25 @@
 # The default `longhorn` class (RWO, 2 replicas) stays as-is for
 # sonarr/radarr/jellyfin state — small, irreplaceable, worth 2x disk.
 # This class is for the opposite kind of data: large, re-downloadable,
-# and explicitly declared disposable by ADR-0011. Replicating it would
-# cost 2x capacity to protect data whose loss the owner already
-# accepted, and with ~1073GB raw across two nodes that multiplier is the
-# difference between fitting and not.
+# and explicitly declared disposable by ADR-0011.
+#
+# Placement (2026-10-04, cnb5/lug3): the library lives on nas1's SATA
+# tier — the two 4 TB bays, Longhorn disks tagged `bulk` — as a MIRROR
+# INSIDE THE NODE: two replicas, which the soft node anti-affinity lets
+# share nas1 and the hard disk anti-affinity forces onto different
+# bays. Longhorn's form of raid-1 across the two disks: one Toshiba
+# dying costs nothing; nas1 dying takes the library offline until it
+# returns (data intact), which is the posture the library already had
+# on w1 — minus the redundancy. Before this, one replica sat on w1's
+# NVMe, and w1 off 2026-09-21 faulted all three volumes for 12 days
+# unnoticed. Capacity: 4 TB usable of 8 raw; at one replica the 2026-09
+# fleet had ~1073 GB raw in total, which is why it was 1 then.
+#
+# StorageClass parameters are immutable: changing this file means
+# deleting the class so ArgoCD recreates it (bound PVs are unaffected;
+# they reference it by name). Existing volumes do not follow a class
+# change either — their Volume CRs were patched to match (replicas,
+# diskSelector, affinities) and the w1 replica evicted.
 #
 # Why RWX matters here (and not for state): six pods share three media
 # directories — media-tv is sonarr+jellyfin, media-downloads is
@@ -36,11 +51,16 @@ volumeBindingMode: Immediate
 # tolerating accidents.
 reclaimPolicy: Retain
 parameters:
-  numberOfReplicas: "1"
+  numberOfReplicas: "2"
+  diskSelector: "bulk"
+  # Both replicas may be on one node (nas1 is the only one with `bulk`
+  # disks), never on one disk.
+  replicaSoftAntiAffinity: "true"
+  replicaDiskSoftAntiAffinity: "false"
   staleReplicaTimeout: "30"
   fsType: "ext4"
-  # Disabled rather than best-effort: with a single replica, tying its
-  # placement to wherever the share-manager currently runs would make a
-  # share-manager reschedule trigger a full replica rebuild of the whole
-  # library. The NFS hop is cheaper than that.
+  # Disabled rather than best-effort: the replicas are pinned to nas1's
+  # bulk tier by the selector; tying placement to wherever the
+  # share-manager currently runs would be either a no-op or a request
+  # Longhorn cannot satisfy. The NFS hop is the accepted cost.
   dataLocality: "disabled"
