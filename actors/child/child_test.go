@@ -76,6 +76,11 @@ func (d *driver) Start(_ context.Context, spec provisioner.StartSpec) (provision
 	return provisioner.Handle("ctr-" + spec.Lease), nil
 }
 
+// Extend records the provisioner-side call. It runs inside the
+// provisioner's #extend handler, so a test that sees it in extends()
+// is ahead of the spawner: the spawner's born table (r.sp.Child) only
+// moves once the #extend reply is back. Read r.sp.* through waitFor
+// after an extends() signal, never by a bare assert.
 func (d *driver) Extend(_ context.Context, _ provisioner.Handle, until int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
