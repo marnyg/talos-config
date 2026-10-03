@@ -1,6 +1,6 @@
 # ADR-0028: The break-glass passphrase binds to the install, not the config selector
 
-- Status: Proposed
+- Status: Accepted (2026-10-04)
 - Date: 2026-10-03
 - Amends: ADR-0004 (slot 1 stays; what it derives from changes)
 
@@ -93,8 +93,8 @@ operator's terminal rather than at a node's boot.
 - `apply` needs `APPLY_REBOOT=1` for any reboot-requiring change —
   a re-serve is expected to be reboot-free.
 - Follow-ups: `spvd` (prove slot-0 unlock at boot under v3; then one
-  reboot per node and delete the three `installMAC` fields);
-  invariant 7 may be amended to carry the rule explicitly.
+  reboot per node and delete the three `installMAC` fields).
+  Invariant 7 carries the rule explicitly since `10ebcbc`.
 
 ### Confirmation
 
