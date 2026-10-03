@@ -63,6 +63,21 @@ spec:
                 configMapKeyRef:
                   name: jackett-config
                   key: indexers
+            # iptorrents is cookie-auth; optional so a missing/unsealed secret
+            # degrades to "WARN: iptorrents skipped" instead of blocking the
+            # pod (and so the public indexers).
+            - name: IPTORRENTS_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: iptorrents
+                  key: cookie
+                  optional: true
+            - name: IPTORRENTS_USER_AGENT
+              valueFrom:
+                secretKeyRef:
+                  name: iptorrents
+                  key: userAgent
+                  optional: true
           volumeMounts:
             - name: config
               mountPath: /config

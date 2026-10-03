@@ -7,10 +7,12 @@ data:
   # Jackett indexer ids to enable (space-separated). Single source of truth:
   # the jackett configurator enables these, and sonarr's configurator adds
   # one Torznab entry per id (Sonarr v4 refuses Jackett's /all aggregate).
-  # Public trackers only (no credentials). 1337x and eztv sit behind
-  # Cloudflare challenges and need a FlareSolverr sidecar; knaben is a
-  # meta-search over many trackers, so it covers a lot on its own.
-  indexers: "thepiratebay knaben"
+  # 1337x and eztv sit behind Cloudflare challenges and need a FlareSolverr
+  # sidecar; knaben is a meta-search over many trackers, so it covers a lot
+  # on its own; nyaasi (nyaa.si) covers anime. iptorrents is a private tracker: its login has a captcha, so
+  # Jackett takes a browser session cookie + the User-Agent it was issued
+  # to, from the `iptorrents` sealed secret (see sealed-secret.yaml).
+  indexers: "thepiratebay knaben nyaasi iptorrents"
   ServerConfig.json: |
     {
       "Port": 9117,
@@ -34,16 +36,35 @@ data:
     curl -sf -c /tmp/jar -o /dev/null -X POST -d "password=" "$JACKETT_URL/UI/Dashboard"
 
     # Enabling an indexer = POSTing its config back; GET gives the defaults,
-    # which is all a public tracker needs. The file check keeps this
-    # idempotent across sidecar restarts within one pod lifetime.
+    # which is all a public tracker needs. Jackett skips config ids missing
+    # from the POSTed array, so a credentialed indexer can POST just its
+    # secret fields. The file check keeps this idempotent across sidecar
+    # restarts within one pod lifetime.
     for id in $JACKETT_INDEXERS; do
       if [ -f "/config/Jackett/Indexers/$id.json" ]; then
         echo "$id already configured"
         continue
       fi
+      case "$id" in
+        iptorrents)
+          if [ -z "$IPTORRENTS_COOKIE" ] || [ -z "$IPTORRENTS_USER_AGENT" ]; then
+            echo "WARN: $id skipped, iptorrents secret not present"
+            continue
+          fi
+          # ids come from Jackett's ConfigurationDataCookieUA field names.
+          # No JSON escaping: cookie and UA strings carry no quotes/backslashes.
+          printf '[{"id":"cookie","value":"%s"},{"id":"user-agent","value":"%s"}]' \
+            "$IPTORRENTS_COOKIE" "$IPTORRENTS_USER_AGENT" > /tmp/cfg.json
+          ;;
+        *)
+          curl -sf -b /tmp/jar "$JACKETT_URL/api/v2.0/indexers/$id/config" > /tmp/cfg.json \
+            || { echo "WARN: $id failed (GET config)"; continue; }
+          ;;
+      esac
       echo "Enabling $id..."
-      if curl -sf -b /tmp/jar "$JACKETT_URL/api/v2.0/indexers/$id/config" > /tmp/cfg.json \
-        && curl -sf -b /tmp/jar -X POST -H "Content-Type: application/json" \
+      # Jackett tests the login on POST (for iptorrents: the cookie against
+      # the live site), so a stale cookie shows up here as a WARN.
+      if curl -sf -b /tmp/jar -X POST -H "Content-Type: application/json" \
              --data-binary @/tmp/cfg.json "$JACKETT_URL/api/v2.0/indexers/$id/config"; then
         echo "$id enabled"
       else
