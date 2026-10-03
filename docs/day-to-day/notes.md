@@ -905,3 +905,14 @@
   when the peer ends its side or the connection dies — `Close` resets
   our send side to provoke that. Do not add a "Stop on Close" to
   unblock it; that is the deadlock `vzbf` found. Thread `vh6e`.
+- 2026-10-03 — **Media app state is on PVCs now; a media pod restart
+  is a ~30 s outage, not a wipe.** sonarr/radarr/jellyfin/transmission
+  run `strategy: Recreate` on RWO `<app>-config` volumes, so
+  `kubectl rollout restart` takes the app down until the new pod
+  attaches (longer if it lands on another node). jackett and nzbget
+  are still `emptyDir` by design — their `/config` is templated on
+  every start.
+- 2026-10-03 — **The docker host's sonarr/radarr DBs are now older
+  than the cluster's.** They were imported into the new PVCs that
+  evening (`vu9n`); any further change happens in the cluster. Do not
+  re-import. Jellyfin was *not* imported (owner's call).

@@ -156,6 +156,32 @@ mounts there. It fails loudly (`mkdir /var/mnt/media: read-only file
 system`) — an outage, not silent data divergence. Observed live when
 cp1's reboot rescheduled the media stack onto w1.
 
+### Adoption note (2026-10-03): app state landed two months late
+
+The 07-31 adoption moved the **library** and declared the default
+`longhorn` class for **app state** — but no app ever claimed it.
+sonarr, radarr, jellyfin and transmission kept `/config` on an
+`emptyDir`, so every image bump or reschedule wiped the series/movie
+lists, Jellyfin's users and watch state, and Transmission's in-flight
+torrents; nothing noticed because each configurator rebuilt a plausible
+empty instance on start. Confirmation (c) below was therefore never
+true until `63c8745` gave each a `<app>-config` PVC on the default
+class (`fsGroup: 1000` so the fresh ext4 volume is writable by the
+pods' uid). jackett and nzbget stay on `emptyDir` on purpose: their
+`/config` is templated from ConfigMaps and secrets on every start, and
+nzbget's queue lives on `/downloads`.
+
+One mechanism the ADR did not name: a single-replica Deployment on an
+RWO volume needs `strategy: Recreate`. The first deliberate restart
+under RollingUpdate scheduled the replacement on another node while
+the old pod still held the volume — `Multi-Attach error`, `Init:0/1`
+forever (`4a923d4`). gateway and sap-* already did this; the media
+apps now match.
+
+Confirmation (a) and (c) tested deliberately the same day: sonarr
+restarted from w1 onto talos-wu6-eib with its 29 series / 246 files
+intact (the DB had been seeded from the old docker host).
+
 ### Confirmation
 
 The decision is right if, after adoption: (a) a media pod can be deleted

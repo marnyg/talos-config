@@ -189,3 +189,15 @@ them:
   idle send side so the peer ends the stream; destroy by whichever of
   `Close`/last-call is later (`c4a6414`). Real cancellation is an
   iroh-ffi patch (`vh6e`).
+
+## Sonarr/Radarr through Jackett (2026-10-03)
+
+- Tried Jackett's `/api/v2.0/indexers/all/results/torznab/` as one
+  Torznab entry. Ruled out: Sonarr v4 and Radarr reject it by name
+  ("please add indexers individually"). Landed on one entry per
+  Jackett indexer id, the list shared via `jackett-config`.
+- Probed 11 public trackers from the cluster. 1337x and eztv: Cloudflare
+  challenge, needs FlareSolverr. yts, bitsearch: redirect to a new
+  domain. nyaasi, therarbg: error/403. limetorrents, torrentproject2,
+  torrentdownloads: 0 TV results. Landed on thepiratebay (apibay) and
+  knaben (meta-search). Re-probe before adding others; they rot.
