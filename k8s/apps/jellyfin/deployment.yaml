@@ -42,11 +42,12 @@ spec:
       hostAliases:
         - ip: 10.107.226.217
           hostnames: [auth.gw.mesh.internal]
-      # PSS restricted, same shape as sonarr: everything runs as 1000 (the
-      # linuxserver image's non-root mode; PUID/PGID dropped), s6-overlay
-      # gets a 1000-owned /run via the scratch subdir. fsGroup makes the
-      # ext4 /config volume 1000-writable; the library mounts are read-only.
-      # No /dev/dri here, so transcoding is software either way.
+      # PSS restricted: runs as 1000 like sonarr/radarr. The upstream image
+      # (not linuxserver's: its Jellyfin build has no non-root branch and
+      # always s6-setuidgid's, which cannot work once we are already 1000)
+      # has no s6 and takes every directory from the environment. fsGroup
+      # makes the ext4 /config volume 1000-writable; the library mounts are
+      # read-only. No /dev/dri here, so transcoding is software either way.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -54,33 +55,31 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        - name: scratch
-          # Helper pin: one tag across k8s/apps (rg 'image: busybox').
-          image: busybox:1.38
-          command: ["sh", "-c", "mkdir -p /scratch/run"]
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-          volumeMounts:
-            - name: scratch
-              mountPath: /scratch
       containers:
         - name: jellyfin
-          image: lscr.io/linuxserver/jellyfin:12.1ubu2604-ls51
+          image: docker.io/jellyfin/jellyfin:12.1.20260915-010956
           ports:
             - containerPort: 8096
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          env:
+            # linuxserver's layout, kept so the PVC written under that
+            # image (2026-10-03) reads as-is: /config is the config dir,
+            # data/cache/log beneath it (upstream's default is /config as
+            # data dir with config under it and cache on /cache).
+            - name: JELLYFIN_CONFIG_DIR
+              value: /config
+            - name: JELLYFIN_DATA_DIR
+              value: /config/data
+            - name: JELLYFIN_CACHE_DIR
+              value: /config/cache
+            - name: JELLYFIN_LOG_DIR
+              value: /config/log
           volumeMounts:
             - name: config
               mountPath: /config
-            - name: scratch
-              mountPath: /run
-              subPath: run
             - name: tv
               mountPath: /data/tv
               readOnly: true
@@ -118,8 +117,6 @@ spec:
         - name: config
           persistentVolumeClaim:
             claimName: jellyfin-config
-        - name: scratch
-          emptyDir: {}
         - name: scripts
           configMap:
             name: jellyfin-configurator
