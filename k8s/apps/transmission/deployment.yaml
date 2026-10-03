@@ -1,3 +1,19 @@
+# Session state (resume/ and torrents/: what is downloading or seeding)
+# on the default longhorn class per ADR-0011; settings.json is still
+# templated from the ConfigMap on every start. Was an emptyDir until
+# 2026-10-03, so every restart orphaned the in-flight torrents.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: transmission-config
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,6 +29,8 @@ spec:
       labels:
         app: transmission
     spec:
+      securityContext:
+        fsGroup: 1000
       initContainers:
         - name: config
           # Helper pin: one tag across k8s/apps (rg 'image: busybox').
@@ -59,7 +77,8 @@ spec:
             periodSeconds: 10
       volumes:
         - name: config
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: transmission-config
         - name: config-template
           configMap:
             name: transmission-config

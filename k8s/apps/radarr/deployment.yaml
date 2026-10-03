@@ -1,3 +1,17 @@
+# App state (radarr.db) on the default longhorn class, RWO 2 replicas,
+# per ADR-0011. Was an emptyDir until 2026-10-03 (see sonarr).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: radarr-config
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,11 +30,13 @@ spec:
       # PSS restricted, same shape as nzbget: everything runs as 1000 (the
       # linuxserver image's non-root mode; PUID/PGID dropped), s6-overlay
       # gets a 1000-owned /run via the scratch subdir. The /movies and
-      # /downloads PVC roots must already be 1000-owned (they are).
+      # /downloads PVC roots must already be 1000-owned (they are);
+      # fsGroup makes the fresh ext4 /config volume writable by 1000.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       initContainers:
@@ -32,6 +48,8 @@ spec:
             - |
               set -e
               mkdir -p /scratch/run
+              # Seed only on a fresh volume: Radarr owns config.xml after that.
+              [ -f /config/config.xml ] && exit 0
               cat > /config/config.xml << 'XMLEOF'
               <Config>
                 <Port>7878</Port>
@@ -96,7 +114,8 @@ spec:
               mountPath: /scripts
       volumes:
         - name: config
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: radarr-config
         - name: scratch
           emptyDir: {}
         - name: scripts

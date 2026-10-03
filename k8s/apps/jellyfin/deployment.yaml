@@ -1,3 +1,18 @@
+# App state (users, watch progress, library metadata; also Jellyfin's
+# cache and transcode scratch, hence the size) on the default longhorn
+# class, RWO 2 replicas, per ADR-0011. Was an emptyDir until 2026-10-03.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-config
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 20Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,6 +38,10 @@ spec:
       hostAliases:
         - ip: 10.107.226.217
           hostnames: [auth.gw.mesh.internal]
+      # The image starts as root and drops to PUID; fsGroup just makes
+      # the fresh ext4 /config volume 1000-writable from the first mount.
+      securityContext:
+        fsGroup: 1000
       containers:
         - name: jellyfin
           image: lscr.io/linuxserver/jellyfin:12.1ubu2604-ls51
@@ -71,7 +90,8 @@ spec:
               mountPath: /scripts
       volumes:
         - name: config
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: jellyfin-config
         - name: scripts
           configMap:
             name: jellyfin-configurator
