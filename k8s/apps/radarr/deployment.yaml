@@ -69,6 +69,16 @@ spec:
                 secretKeyRef:
                   name: nzbgeek
                   key: apiKey
+            - name: NZBGET_USER
+              valueFrom:
+                secretKeyRef:
+                  name: nzbget-control
+                  key: username
+            - name: NZBGET_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: nzbget-control
+                  key: password
           volumeMounts:
             - name: config
               mountPath: /config

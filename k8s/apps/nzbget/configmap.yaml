@@ -4,6 +4,9 @@ metadata:
   name: nzbget-config
   namespace: media
 data:
+  # Minimal config; everything not listed falls back to the defaults in
+  # ConfigTemplate. PLACEHOLDER_* are filled from secrets by the init
+  # container (deployment.yaml).
   nzbget.conf: |
     MainDir=/downloads
     DestDir=${MainDir}/completed
@@ -13,27 +16,42 @@ data:
     NzbDir=${MainDir}/nzb
     ScriptDir=${MainDir}/scripts
     LogFile=${MainDir}/nzbget.log
+    WriteLog=rotate
+    RotateLog=3
     WebDir=${AppDir}/webui
     ConfigTemplate=${AppDir}/webui/nzbget.conf.template
     CertStore=${AppDir}/cacert.pem
+    CertCheck=yes
 
     Server1.Active=yes
     Server1.Name=Newshosting
     Server1.Host=news.newshosting.com
-    Server1.Port=119
+    Server1.Port=563
     Server1.Username=PLACEHOLDER_USER
     Server1.Password=PLACEHOLDER_PASS
     Server1.JoinGroup=no
-    Server1.Encryption=no
+    Server1.Encryption=yes
     Server1.Connections=10
     Server1.Level=0
     Server1.Group=0
 
+    # The mesh gateway already authenticates the caller; this login only
+    # exists because nzbget >= 24 refuses to start without one. Sonarr and
+    # radarr read the same secret (nzbget-control).
     ControlIP=0.0.0.0
     ControlPort=6789
-    ControlUsername=
-    ControlPassword=
+    ControlUsername=PLACEHOLDER_CONTROL_USER
+    ControlPassword=PLACEHOLDER_CONTROL_PASS
     AuthorizedIP=
+
+    # MB of RAM for article assembly (the pod has no memory limit; the
+    # nodes have 32 GB). WriteBuffer is KB per file.
+    ArticleCache=200
+    WriteBuffer=1024
+
+    Unpack=yes
+    UnrarCmd=unrar
+    SevenZipCmd=7z
 
     Category1.Name=Series
     Category1.DestDir=
