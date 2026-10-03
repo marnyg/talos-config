@@ -37,10 +37,12 @@
 // runs the same member as a daemon behind a utun: names under
 // mesh.internal that the name map knows resolve to fake IPs, and a TCP
 // flow to <fake IP>:<facet port> is one stream to that member. Started
-// as root by launchd, it creates the utun, assigns 198.18.0.1, routes
-// the /15 in, then drops to -user (_talosmesh) before anything touches
-// the network; DNS is /etc/resolver/mesh.internal → 198.18.0.2, which
-// nix-darwin declares statically. See tun.go.
+// as root by launchd (darwin) or systemd (linux), it creates the tun,
+// assigns 198.18.0.1, routes the /15 in, then drops to -user before
+// anything touches the network. DNS: darwin reads the static
+// /etc/resolver/mesh.internal → 198.18.0.2 that nix-darwin declares;
+// linux gets the zone declared per-link in systemd-resolved by the
+// setup itself. See tun.go and fakeip/{utun_darwin,tun_linux}.go.
 //
 // State (~/.config/talos-mesh/<name>.iroh/, or -state DIR): the same
 // layout as a node's /var/lib/p0agent (nodeagent.State): key,
@@ -203,7 +205,7 @@ func main() {
 			defer wg.Done()
 			if err := serveTun(ctx, tunUp, a, pool, logger); err != nil && ctx.Err() == nil {
 				// The utun or its route is gone and we cannot re-add:
-				// exit non-zero so launchd restarts us as root.
+				// exit non-zero so launchd/systemd restarts us as root.
 				logger.Printf("fatal: %v", err)
 				exit = 1
 				stop()

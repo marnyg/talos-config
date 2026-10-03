@@ -1,4 +1,4 @@
-//go:build iroh && darwin
+//go:build iroh && (darwin || (linux && !android))
 
 package main
 
@@ -21,8 +21,10 @@ import (
 )
 
 // The desktop presentation (359.9.6, decision fgr): one process,
-// launched as root, that does its privileged work in privilegedSetup
-// and nothing else as root. The fiction is <fake IP>:<port> with the
+// launched as root (launchd on darwin, systemd on linux), that does
+// its privileged work in privilegedSetup and nothing else as root.
+// The OS halves live in fakeip (utun_darwin.go / tun_linux.go); what
+// is here is the same on both. The fiction is <fake IP>:<port> with the
 // facet's natural port (policy.FacetPort), so talosconfig/kubeconfig
 // endpoints read as cp1.mesh.internal:50000 / :6443, nothing renumbered.
 
@@ -45,11 +47,11 @@ type tunSetup struct {
 // startup rather than silently in production.
 func privilegedSetup(stateDir, runAs string) (*tunSetup, error) {
 	if os.Geteuid() != 0 {
-		return nil, errors.New("-tun needs root at start (launchd, or sudo); it drops to -user after the utun is up")
+		return nil, errors.New("-tun needs root at start (launchd/systemd, or sudo); it drops to -user after the tun is up")
 	}
 	u, err := user.Lookup(runAs)
 	if err != nil {
-		return nil, fmt.Errorf("-user %q: %w (nix-darwin users.users + users.knownUsers)", runAs, err)
+		return nil, fmt.Errorf("-user %q: %w (declare the service user: nix-darwin users.users + users.knownUsers, or NixOS users.users.<name>.isSystemUser)", runAs, err)
 	}
 	uid, _ := strconv.Atoi(u.Uid)
 	gid, _ := strconv.Atoi(u.Gid)
@@ -78,7 +80,10 @@ func privilegedSetup(stateDir, runAs string) (*tunSetup, error) {
 	}
 
 	// Setuid on darwin is process-wide (XNU keeps credentials on the
-	// proc, unlike linux); verified empirically 2026-09-19, see fgr.
+	// proc); verified empirically 2026-09-19, see fgr. On linux
+	// credentials are per thread, and Go's syscall.Setuid applies the
+	// call to every thread (AllThreadsSyscall, Go 1.16+), so the same
+	// three calls drop the whole process there too.
 	if err := syscall.Setgroups([]int{gid}); err != nil {
 		return nil, fmt.Errorf("setgroups: %w", err)
 	}
@@ -95,6 +100,7 @@ func privilegedSetup(stateDir, runAs string) (*tunSetup, error) {
 		return nil, errors.New("could regain root after the drop; refusing to start")
 	}
 	log.Printf("tun %s up: %s/32, %s routed; running as %s (uid %d)", ifname, fakeip.TunIP, fakeip.FakeRange, runAs, uid)
+	dnsNote(ifname)
 	return &tunSetup{dev: dev, ifname: ifname}, nil
 }
 

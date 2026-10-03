@@ -1,4 +1,4 @@
-//go:build iroh && !darwin
+//go:build iroh && !darwin && !(linux && !android)
 
 package main
 
@@ -11,14 +11,12 @@ import (
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 )
 
-// The desktop presentation is macOS first (359.9.6). Linux gets it when
-// a linux desktop needs it — fakeip itself is portable; what is missing
-// is the privileged setup (ip tuntap / ip addr / ip route) and a
-// systemd unit instead of launchd.
+// The desktop presentation exists on macOS (359.9.6) and linux
+// (fakeip/tun_linux.go); other hosts get it when one needs it.
 type tunSetup struct{}
 
 func privilegedSetup(string, string) (*tunSetup, error) {
-	return nil, errors.New("-tun: desktop presentation is not implemented on this OS yet (macOS first)")
+	return nil, errors.New("-tun: desktop presentation is not implemented on this OS (darwin and linux only)")
 }
 
 func serveTun(context.Context, *tunSetup, *nodeagent.Agent, *meshtun.Pool, *log.Logger) error {

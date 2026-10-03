@@ -487,6 +487,38 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	// sealed hub (503) and is retried flat at MinRebeat, not backed off,
 	// so the unseal is one MinRebeat from the node's beat — and the hub's
 	// name map, empty since the restart, has the node again.
+	//
+	// A second desk, the sleeper, beats the old hub once and is closed
+	// before the redeploy — the laptop whose lid shut. It sees no
+	// connection loss; its only evidence is the dial after it wakes.
+	sleeperState := nodeagent.State{Dir: t.TempDir()}
+	sleeperPriv, _, err := sleeperState.Key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sleeperKit, err := m.issuer.Mint(cert.NewEdSigner(sleeperPriv).ActorID(), "sleeper", []string{"admins"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sleeperState.SaveKit(sleeperKit); err != nil {
+		t.Fatal(err)
+	}
+	sleeperOpts := nodeagent.Options{
+		Config: nodeagent.Config{Hub: cfg.Hub, Relay: public}, State: sleeperState,
+		BindAddr: "127.0.0.1:0", Log: log.New(testWriter{t}, "sleeper: ", 0), BeatEvery: time.Hour,
+		DialTimeout: 3 * time.Second, MinRebeat: time.Millisecond,
+	}
+	sleeper, err := nodeagent.Start(sleeperOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sleeper.Beat(ctx); err != nil {
+		t.Fatalf("sleeper beat: %v", err)
+	}
+	if err := sleeper.Close(); err != nil {
+		t.Fatal(err)
+	}
+
 	oldHub := m.issuer.ID()
 	nodeBeats, nodeAttempts := a.Beats(), a.BeatAttempts()
 	hcancel()
@@ -532,32 +564,60 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 		t.Fatalf("the redeployed hub does not know the node: %+v", e)
 	}
 
-	// The desk's record still names the dead key; its next dial to "hub"
-	// must not wait for the 6 h beat: the unreachable dial re-beats
-	// (well-known → new key, renew at it) and the retry lands on the
-	// new hub.
-
-	if e, _ := dev.Resolve(nodeagent.HubName); len(e) != 1 || cert.ActorID(e[0].Member.Aud) != oldHub {
-		t.Fatalf("desk should still hold the dead hubkey before dialing: %+v", e)
-	}
-	beats := dev.Beats()
-	dialStart := time.Now()
+	// The live desk had the same evidence as the node — its pooled
+	// connection died with the old process — and re-beat on its own
+	// (z2go). Where that beat landed is timing: flat through the sealed
+	// window and renewed already, or in the unseal→online gap and
+	// backed off, in which case its next dial re-beats instead. The
+	// rate limiter settles which; what holds either way is that its
+	// first flow to the hub lands on the new one. (The sleeper below
+	// pins the dial path on its own.)
 	conn, err = dev.Dial(ctx, nodeagent.HubName, "hub-http")
 	if err != nil {
 		t.Fatalf("desk → hub-http after redeploy: %v", err)
 	}
-	t.Logf("desk → hub after redeploy took %s", time.Since(dialStart))
+	if conn.Peer() != m2.issuer.ID() {
+		t.Fatalf("desk dialed %s, want the new hub %s", conn.Peer(), m2.issuer.ID())
+	}
+	_ = conn.Close()
+	if k := dev.Kit(); k.Member.Iss != m2.issuer.ID() {
+		t.Fatalf("desk not renewed at the new hubkey: issuer %s", k.Member.Iss)
+	}
+
+	// The sleeper wakes: its record still names the dead key and no
+	// connection loss ever reached it. Its first dial to "hub" must not
+	// wait for the 6 h beat: the unreachable dial re-beats (well-known →
+	// new key, renew at it) and the retry lands on the new hub. Started
+	// from its state dir, loop not running — only the dial can beat.
+	sleeper, err = nodeagent.Start(sleeperOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sleeper.Close() })
+	if e, _ := sleeper.Resolve(nodeagent.HubName); len(e) != 1 || cert.ActorID(e[0].Member.Aud) != oldHub {
+		t.Fatalf("sleeper should wake holding the dead hubkey: %+v", e)
+	}
+	if k := sleeper.Kit(); k.Member.Iss != oldHub {
+		t.Fatalf("sleeper should wake with a cert from the dead hubkey: issuer %s", k.Member.Iss)
+	}
+	beats := sleeper.Beats()
+	dialStart := time.Now()
+	conn, err = sleeper.Dial(ctx, nodeagent.HubName, "hub-http")
+	if err != nil {
+		t.Fatalf("sleeper → hub-http after redeploy: %v", err)
+	}
+	t.Logf("sleeper → hub after redeploy took %s", time.Since(dialStart))
 	if conn.Peer() != m2.issuer.ID() {
 		t.Fatalf("dialed %s, want the new hub %s", conn.Peer(), m2.issuer.ID())
 	}
 	_ = conn.Close()
-	if dev.Beats() != beats+1 {
-		t.Fatalf("beats: %d, want one rebeat on top of %d", dev.Beats(), beats)
+	if sleeper.Beats() != beats+1 {
+		t.Fatalf("beats: %d, want one rebeat on top of %d", sleeper.Beats(), beats)
 	}
-	if e, _ := dev.Resolve(nodeagent.HubName); len(e) != 1 || cert.ActorID(e[0].Member.Aud) != m2.issuer.ID() {
+	if e, _ := sleeper.Resolve(nodeagent.HubName); len(e) != 1 || cert.ActorID(e[0].Member.Aud) != m2.issuer.ID() {
 		t.Fatalf("hub record after the rebeat: %+v", e)
 	}
-	if k := dev.Kit(); k.Member.Iss != m2.issuer.ID() {
+	if k := sleeper.Kit(); k.Member.Iss != m2.issuer.ID() {
 		t.Fatalf("member cert not renewed at the new hubkey: issuer %s", k.Member.Iss)
 	}
 
