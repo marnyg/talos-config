@@ -15,8 +15,9 @@ spec:
     spec:
       # PSS restricted: every container runs as 1000 (the linuxserver image
       # supports non-root operation; PUID/PGID are then ignored). The
-      # downloads PVC root must already be 1000-owned — it is, and the
-      # sonarr/radarr init containers chown it on a fresh volume.
+      # media PVC roots (downloads, tv, movies) must already be 1000-owned
+      # — they are; a fresh volume needs a one-off chown since no pod
+      # runs as root any more.
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -34,23 +35,13 @@ spec:
               # emptyDir is root-owned, a subdir we create is not.
               mkdir -p /scratch/run
               mkdir -p /downloads/completed/Series /downloads/completed/Movies /downloads/completed/radarr /downloads/completed/sonarr /downloads/completed/tv-sonarr /downloads/incomplete /downloads/intermediate /downloads/tmp /downloads/queue /downloads/nzb /downloads/scripts
-              sed "s/PLACEHOLDER_USER/$NNTP_USER/g; s/PLACEHOLDER_PASS/$NNTP_PASS/g; s/PLACEHOLDER_CONTROL_USER/$CONTROL_USER/g; s/PLACEHOLDER_CONTROL_PASS/$CONTROL_PASS/g" \
+              sed "s/PLACEHOLDER_USER/$NNTP_USER/g; s/PLACEHOLDER_PASS/$NNTP_PASS/g" \
                 /template/nzbget.conf > /config/nzbget.conf
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
           env:
-            - name: CONTROL_USER
-              valueFrom:
-                secretKeyRef:
-                  name: nzbget-control
-                  key: username
-            - name: CONTROL_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: nzbget-control
-                  key: password
             - name: NNTP_USER
               valueFrom:
                 secretKeyRef:

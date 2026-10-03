@@ -13,13 +13,24 @@ spec:
       labels:
         app: sonarr
     spec:
+      # PSS restricted, same shape as nzbget: everything runs as 1000 (the
+      # linuxserver image's non-root mode; PUID/PGID dropped), s6-overlay
+      # gets a 1000-owned /run via the scratch subdir. The /tv and
+      # /downloads PVC roots must already be 1000-owned (they are).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: config
           image: busybox:1.37
           command: ["sh", "-c"]
           args:
             - |
-              chown 1000:1000 /tv /downloads
+              set -e
+              mkdir -p /scratch/run
               cat > /config/config.xml << 'XMLEOF'
               <Config>
                 <Port>8989</Port>
@@ -28,26 +39,30 @@ spec:
                 <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
               </Config>
               XMLEOF
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: config
               mountPath: /config
-            - name: tv
-              mountPath: /tv
-            - name: downloads
-              mountPath: /downloads
+            - name: scratch
+              mountPath: /scratch
       containers:
         - name: sonarr
           image: ghcr.io/linuxserver/sonarr:4.0.17
           ports:
             - containerPort: 8989
-          env:
-            - name: PUID
-              value: "1000"
-            - name: PGID
-              value: "1000"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: scratch
+              mountPath: /run
+              subPath: run
             - name: tv
               mountPath: /tv
             - name: downloads
@@ -59,26 +74,19 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 10
         - name: configurator
-          image: alpine:3.21
-          command: ["/bin/sh", "-c"]
-          args:
-            - apk add --no-cache curl > /dev/null 2>&1 && sh /scripts/configure.sh
+          # ships curl + sh, so no root apk install at start
+          image: curlimages/curl:8.12.1
+          command: ["/bin/sh", "/scripts/configure.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: NZBGEEK_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: nzbgeek
                   key: apiKey
-            - name: NZBGET_USER
-              valueFrom:
-                secretKeyRef:
-                  name: nzbget-control
-                  key: username
-            - name: NZBGET_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: nzbget-control
-                  key: password
           volumeMounts:
             - name: config
               mountPath: /config
@@ -86,6 +94,8 @@ spec:
               mountPath: /scripts
       volumes:
         - name: config
+          emptyDir: {}
+        - name: scratch
           emptyDir: {}
         - name: scripts
           configMap:

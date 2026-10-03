@@ -27,7 +27,7 @@ data:
 
     # Wait for dependency services
     echo "Waiting for NZBget..."
-    until curl -sf -u "$NZBGET_USER:$NZBGET_PASS" "http://nzbget:6789" > /dev/null 2>&1; do sleep 5; done
+    until curl -sf "http://nzbget:6789" > /dev/null 2>&1; do sleep 5; done
 
     echo "Waiting for Transmission..."
     until curl -sf "http://transmission:9091/transmission/web/" > /dev/null 2>&1; do sleep 5; done
@@ -57,8 +57,8 @@ data:
         "fields": [
           {"name": "host", "value": "nzbget"},
           {"name": "port", "value": 6789},
-          {"name": "username", "value": "'"$NZBGET_USER"'"},
-          {"name": "password", "value": "'"$NZBGET_PASS"'"},
+          {"name": "username", "value": ""},
+          {"name": "password", "value": ""},
           {"name": "tvCategory", "value": "Series"},
           {"name": "useSsl", "value": false}
         ]

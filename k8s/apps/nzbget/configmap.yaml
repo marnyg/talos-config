@@ -35,13 +35,16 @@ data:
     Server1.Level=0
     Server1.Group=0
 
-    # The mesh gateway already authenticates the caller; this login only
-    # exists because nzbget >= 24 refuses to start without one. Sonarr and
-    # radarr read the same secret (nzbget-control).
+    # SSO like sonarr/radarr: the ingress gate (oauth2-proxy, see
+    # media/ingress.yaml) is the login, nzbget's own is off
+    # (empty ControlPassword = "disable authorization request"). nzbget
+    # still refuses to start with an empty ControlUsername, hence the
+    # dummy; the settings page's "Password is set to empty" warning is
+    # the deliberate posture, not an oversight.
     ControlIP=0.0.0.0
     ControlPort=6789
-    ControlUsername=PLACEHOLDER_CONTROL_USER
-    ControlPassword=PLACEHOLDER_CONTROL_PASS
+    ControlUsername=nzbget
+    ControlPassword=
     AuthorizedIP=
 
     # MB of RAM for article assembly (the pod has no memory limit; the
