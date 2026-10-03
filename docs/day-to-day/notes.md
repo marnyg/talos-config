@@ -926,3 +926,8 @@
   not linuxserver's**, pinned by dated tag; its four `JELLYFIN_*_DIR`
   envs keep lsio's `/config` layout. Bumps: `skopeo list-tags` for the
   `12.x.YYYYMMDD-HHMMSS` tag. The lsio build cannot run non-root.
+- 2026-10-04 — **The `/status` `storage` row is silent when healthy.**
+  It logs `storage: …` only when the warn line *changes*, so a fresh
+  hub's first good poll leaves nothing in `fly logs`; the page is the
+  check. `degraded` during a Longhorn rebuild (disk swap, node return)
+  is expected and clears on its own; `FAULTED` is not.

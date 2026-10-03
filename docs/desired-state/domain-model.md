@@ -932,10 +932,9 @@ provisioning or recovery path may depend on it.
   is every node's NVMe user volume. **`bulk`** is nas1's SATA bays,
   one `UserVolumeConfig` per disk. A class selects a tier. The library
   mirrors across two `bulk` disks on one node, with its NFS server
-  pinned beside them (ADR-0029, Proposed). App state is meant to stay
-  on `nvme`, but the default class is not fenced to it yet (`jx78`).
-  The node is the library's availability unit, and the disk is its
-  durability unit.
+  pinned beside them (ADR-0029). App state stays on `nvme`: the
+  default class is fenced to that tier (`jx78`). The node is the
+  library's availability unit, and the disk is its durability unit.
 
 ## Relation to the sovereign-actor sketch
 

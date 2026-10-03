@@ -18,10 +18,11 @@ binaries (`5q33`), relay access gating (`5gz`), `bh74`.
   nas1, and it was imported from the old docker host (2026-10-03,
   ADR-0029 Proposed). App state (sonarr/radarr/jellyfin/transmission)
   reached the default class the same day (`vu9n`) and sonarr/radarr
-  took the docker host's DBs with it. Left: fence the default class
-  to `nvme` (`jx78`), show faulted volumes on `/status` (`cnb5`),
-  retire the old docker host. Then the owner's app list (seerr,
-  syncthing, sillytavern).
+  took the docker host's DBs with it. ADR-0029 Accepted 2026-10-04;
+  the default class is fenced to `nvme` (`jx78`) and `/status` shows
+  faulted/degraded volumes (`cnb5`, both closed). Left: retire the
+  old docker host. Then the owner's app list (seerr, syncthing,
+  sillytavern).
 - **Gateway**: the WebSocket-after-Close panic (`vzbf`) is fixed and
   rolled 2026-10-03; what remains is the iroh-ffi read-cancellation
   thread (`vh6e`, P3), not a goal.
