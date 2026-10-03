@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -295,8 +296,15 @@ func (e *Endpoint) DialConn(ctx context.Context, id cert.ActorID, hints []string
 
 // Raw is one forward stream: a byte pipe with independent half-closes,
 // the shape a TCP splice wants (net.TCPConn has the same CloseWrite).
-// Reads block on the FFI side; Close from another goroutine unblocks
-// them.
+//
+// Like net.Conn, any Read/Write once Close has run returns
+// net.ErrClosed — a splice whose other half closed the conn keeps
+// reading until it sees that (httputil's WebSocket copier does;
+// talos-config-vzbf). Unlike net.Conn, Close cannot interrupt a Read
+// blocked on the FFI side: iroh-ffi serialises read and stop on one
+// lock, and the Go bindgen exposes no future cancellation. Close does
+// reset the send side, so the peer learns we are gone and ends its
+// side, which is what returns the blocked Read (with net.ErrClosed).
 type Raw struct {
 	bi   *iroh.BiStream
 	send *iroh.SendStream
@@ -305,11 +313,55 @@ type Raw struct {
 	mu       sync.Mutex
 	finished bool // send side FINed: Close must not reset it (the FIN may be in flight)
 	eof      bool // recv side saw FIN
+	closed   bool // Close ran: no FFI call may start
+	reading  int  // FFI calls in flight on recv
+	writing  int  // FFI calls in flight on send
 	once     sync.Once
 }
 
 func newRaw(bi *iroh.BiStream) *Raw {
 	return &Raw{bi: bi, send: bi.Send(), recv: bi.Recv()}
+}
+
+// enter admits one FFI call on one direction. The binding's handles
+// panic on a call after Destroy (uniffi "object has already been
+// destroyed"), so the handles live until Close has run AND the last
+// admitted call has left; whichever is later destroys.
+func (r *Raw) enter(write bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return net.ErrClosed
+	}
+	if write {
+		r.writing++
+	} else {
+		r.reading++
+	}
+	return nil
+}
+
+func (r *Raw) leave(write bool) (closed bool) {
+	r.mu.Lock()
+	if write {
+		r.writing--
+	} else {
+		r.reading--
+	}
+	closed, last := r.closed, r.closed && r.reading == 0 && r.writing == 0
+	r.mu.Unlock()
+	if last {
+		r.destroy()
+	}
+	return closed
+}
+
+// destroy drops the Go handles; the Rust side's drop aborts whatever
+// direction is still open.
+func (r *Raw) destroy() {
+	r.send.Destroy()
+	r.recv.Destroy()
+	r.bi.Destroy()
 }
 
 // Read returns the next chunk, at most len(p) bytes; io.EOF on the
@@ -318,7 +370,13 @@ func (r *Raw) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	if err := r.enter(false); err != nil {
+		return 0, err
+	}
 	chunk, err := r.recv.Read(uint32(len(p)))
+	if r.leave(false) {
+		return 0, net.ErrClosed
+	}
 	if err != nil {
 		return 0, fmt.Errorf("irohtransport: read: %w", err)
 	}
@@ -333,7 +391,14 @@ func (r *Raw) Read(p []byte) (int, error) {
 
 // Write sends all of p.
 func (r *Raw) Write(p []byte) (int, error) {
-	if err := r.send.WriteAll(p); err != nil {
+	if err := r.enter(true); err != nil {
+		return 0, err
+	}
+	err := r.send.WriteAll(p)
+	if r.leave(true) {
+		return 0, net.ErrClosed
+	}
+	if err != nil {
 		return 0, fmt.Errorf("irohtransport: write: %w", err)
 	}
 	return len(p), nil
@@ -343,6 +408,9 @@ func (r *Raw) Write(p []byte) (int, error) {
 func (r *Raw) CloseWrite() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return net.ErrClosed
+	}
 	if r.finished {
 		return nil
 	}
@@ -352,21 +420,27 @@ func (r *Raw) CloseWrite() error {
 
 // Close releases the stream. Directions not ended in order (CloseWrite
 // / a read that reached io.EOF) are aborted: the peer sees a reset.
+// Close never blocks on an in-flight call: a direction with one is
+// not aborted here (Stop/Reset would queue behind it on the FFI lock)
+// but by the handle's drop once that call leaves. The abort runs under
+// mu so no in-flight call can observe closed — and destroy — before
+// it.
 func (r *Raw) Close() error {
 	r.once.Do(func() {
 		r.mu.Lock()
-		finished, eof := r.finished, r.eof
-		r.finished = true
-		r.mu.Unlock()
-		if !eof {
+		r.closed = true
+		if !r.eof && r.reading == 0 {
 			_ = r.recv.Stop(0)
 		}
-		if !finished {
+		if !r.finished && r.writing == 0 {
 			_ = r.send.Reset(0)
 		}
-		r.send.Destroy()
-		r.recv.Destroy()
-		r.bi.Destroy()
+		r.finished = true
+		idle := r.reading == 0 && r.writing == 0
+		r.mu.Unlock()
+		if idle {
+			r.destroy()
+		}
 	})
 	return nil
 }

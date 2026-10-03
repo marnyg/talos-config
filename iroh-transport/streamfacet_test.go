@@ -126,6 +126,51 @@ func TestStreamFacet(t *testing.T) {
 		t.Fatal("connection died after forwards")
 	}
 
+	// vzbf: Close while a Read is blocked on the FFI side returns at
+	// once, resets the send side so the peer ends its own (the echo's
+	// splice sees the reset and FINs), and the blocked Read then returns
+	// net.ErrClosed — as does every Read/Write/CloseWrite after Close,
+	// instead of panicking on the destroyed handle (httputil's WebSocket
+	// copier keeps reading after the other half closed the conn).
+	{
+		raw, err := conn.Open(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := raw.Write([]byte("hold")); err != nil { // the echo answers, then waits
+			t.Fatal(err)
+		}
+		buf := make([]byte, 16)
+		if n, err := raw.Read(buf); err != nil || string(buf[:n]) != "hold" {
+			t.Fatalf("echo: %q %v", buf[:n], err)
+		}
+		readErr := make(chan error, 1)
+		go func() { _, err := raw.Read(buf); readErr <- err }()
+		time.Sleep(100 * time.Millisecond) // let it block in the FFI
+		_ = raw.Close()
+		select {
+		case err := <-readErr:
+			if !errors.Is(err, net.ErrClosed) {
+				t.Fatalf("blocked Read after Close: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("blocked Read did not return after Close (peer never saw the reset?)")
+		}
+		if _, err := raw.Read(buf); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Read after Close: %v", err)
+		}
+		if _, err := raw.Write([]byte("x")); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Write after Close: %v", err)
+		}
+		if err := raw.CloseWrite(); !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("CloseWrite after Close: %v", err)
+		}
+		_ = raw.Close() // idempotent
+	}
+	if !conn.Alive() {
+		t.Fatal("connection died after the aborted forward")
+	}
+
 	// The actor ALPN is unaffected: a Dial still yields an actor stream
 	// on Accept.
 	go func() {
