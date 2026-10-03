@@ -67,7 +67,7 @@ spec:
           serviceAccountName: win2k25-reinstaller
           containers:
             - name: reinstall
-              image: curlimages/curl:8.14.1
+              image: curlimages/curl:8.22.0
               command:
                 - /bin/sh
                 - -ec

@@ -15,7 +15,7 @@ spec:
     spec:
       initContainers:
         - name: config
-          image: busybox:1.37
+          image: busybox:1.38
           command: ["sh", "-c"]
           args:
             - |
@@ -30,7 +30,7 @@ spec:
               mountPath: /downloads
       containers:
         - name: transmission
-          image: ghcr.io/linuxserver/transmission:4.1.1
+          image: ghcr.io/linuxserver/transmission:4.1.3
           ports:
             - containerPort: 9091
               name: rpc

@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: config
-          image: busybox:1.37
+          image: busybox:1.38
           command: ["sh", "-c"]
           args:
             - |
@@ -63,7 +63,7 @@ spec:
               mountPath: /scratch
       containers:
         - name: nzbget
-          image: ghcr.io/linuxserver/nzbget:26.0.20260320
+          image: ghcr.io/linuxserver/nzbget:26.3.20261002
           ports:
             - containerPort: 6789
           securityContext:

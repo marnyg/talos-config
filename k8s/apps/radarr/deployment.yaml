@@ -25,7 +25,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: config
-          image: busybox:1.37
+          image: busybox:1.38
           command: ["sh", "-c"]
           args:
             - |
@@ -50,7 +50,7 @@ spec:
               mountPath: /scratch
       containers:
         - name: radarr
-          image: lscr.io/linuxserver/radarr:6.0.4
+          image: lscr.io/linuxserver/radarr:6.4.4
           ports:
             - containerPort: 7878
           securityContext:
@@ -75,7 +75,7 @@ spec:
             periodSeconds: 10
         - name: configurator
           # ships curl + sh, so no root apk install at start
-          image: curlimages/curl:8.12.1
+          image: curlimages/curl:8.22.0
           command: ["/bin/sh", "/scripts/configure.sh"]
           securityContext:
             allowPrivilegeEscalation: false
