@@ -128,6 +128,16 @@ decision (see Confirmation).
 - The hub now has an idle, code-level path to the Kubernetes API. That
   is the easiest place to grow "the hub also fixes things", and it
   should not grow there by accident.
+- _2026-10-04 (`cnb5`)_: the same poll gained a second `GET`, Longhorn's
+  Volume list, rendered as a `storage` row (`config-server/storage.go`).
+  It flags volumes whose `robustness` is `faulted` or `degraded` or
+  that cannot schedule a replica, by PVC name. Why: the media library's
+  three volumes sat `faulted` for 12 days while their pods stayed
+  `Running` on hung NFS mounts and ArgoCD read `Healthy`. Same
+  posture: one dial, one client cert, read-only, safe-to-lose
+  snapshot. The cons line "it watches one Application" is now "one
+  Application and one CRD list"; a third read should still be a
+  conscious addition here, not a habit.
 
 ### Confirmation
 

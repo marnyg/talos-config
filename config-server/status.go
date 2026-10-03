@@ -389,6 +389,7 @@ var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("
  <tr><th>auto-bootstrap</th><td>disabled</td></tr>
  {{end}}
  {{if .GitOps}}<tr><th>gitops</th><td{{if .GitOpsWarn}} class="warn"{{end}}>{{.GitOps}}</td></tr>{{end}}
+ {{if .Storage}}<tr><th>storage</th><td{{if .StorageWarn}} class="warn"{{end}}>{{.Storage}}</td></tr>{{end}}
 </table>
 {{range .UndeclaredKMS}}
 <div class="msg warn">machine sealed disk keys under UNDECLARED uuid <code>{{.}}</code> —
@@ -656,6 +657,8 @@ type statusData struct {
 	Boot          *bootSnapshot
 	GitOps        string // ArgoCD root app line (gitops.go), "" when not watching
 	GitOpsWarn    bool
+	Storage       string // Longhorn volume line (storage.go), "" until the first read
+	StorageWarn   bool
 	Pending       []verifyEntry
 	UndeclaredKMS []string
 	Rows          []statusRow
@@ -752,6 +755,9 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 	}
 	if s.gitops != nil {
 		data.GitOps, data.GitOpsWarn = s.gitops.status().line(now)
+		if st := s.gitops.storageStatus(); st.Total > 0 || st.Err != "" {
+			data.Storage, data.StorageWarn = st.line()
+		}
 	}
 	for _, da := range s.store.Pending() {
 		if da.Kind == deviceflow.KindMeshEnroll {

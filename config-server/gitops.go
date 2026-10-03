@@ -4,6 +4,8 @@ package main
 // one that recurses k8s/apps) over the control plane's kube-api facet
 // and shows its age on /status. Nothing here acts; it is an eye
 // (ADR-0027: why this and not an in-cluster alerter or a scoped token).
+// The same poll also reads Longhorn's Volume list for the `storage`
+// row (storage.go, cnb5): one dial, one client cert, two GETs.
 //
 // Why (talos-config-9l67, 2026-09-29): argocd-application-controller-0
 // sat Terminating on a dead node from 09-21 to 09-29 and nothing
@@ -156,8 +158,9 @@ type gitopsWatcher struct {
 	caMu    sync.Mutex
 	caCache map[string]*x509.PEMEncodedCertificateAndKey // cluster CA by machine dir
 
-	snapMu sync.Mutex
-	snap   gitopsSnapshot
+	snapMu  sync.Mutex
+	snap    gitopsSnapshot
+	storage storageSnapshot
 }
 
 func newGitopsWatcher(root string, boot *bootstrapper) *gitopsWatcher {
@@ -180,6 +183,36 @@ func (g *gitopsWatcher) setSnap(f func(*gitopsSnapshot)) {
 	g.snapMu.Lock()
 	defer g.snapMu.Unlock()
 	f(&g.snap)
+}
+
+func (g *gitopsWatcher) storageStatus() storageSnapshot {
+	g.snapMu.Lock()
+	defer g.snapMu.Unlock()
+	return g.storage
+}
+
+// setStorage records a Longhorn read or its failure. A failure keeps
+// the last good counts (as fail does for gitops) so the row shows
+// what was last known beside why it is stale.
+func (g *gitopsWatcher) setStorage(snap storageSnapshot, err error) {
+	g.snapMu.Lock()
+	defer g.snapMu.Unlock()
+	if err != nil {
+		if g.storage.Err != err.Error() {
+			log.Printf("storage: %v", err)
+		}
+		g.storage.Err = err.Error()
+		return
+	}
+	if g.storage.Err != "" {
+		log.Printf("storage: longhorn volumes readable again")
+	}
+	// Log on change only, and only what the row would flag.
+	prev, _ := g.storage.line()
+	if line, warn := snap.line(); warn && line != prev {
+		log.Printf("storage: %s", line)
+	}
+	g.storage = snap
 }
 
 func (g *gitopsWatcher) run(ctx context.Context) {
@@ -228,11 +261,29 @@ func (g *gitopsWatcher) step(ctx context.Context) {
 		return
 	}
 	defer fc.Close() //nolint:errcheck
-	app, err := g.fetchOver(ctx, m, fc)
+	kc, err := g.kubeClient(m, fc)
 	if err != nil {
 		g.fail(err)
+		g.setStorage(storageSnapshot{}, err)
 		return
 	}
+	defer kc.CloseIdleConnections()
+	app, err := g.fetchApp(ctx, kc)
+	if err != nil {
+		g.fail(err)
+	} else {
+		g.recordApp(app)
+	}
+	vols, err := g.fetchVolumes(ctx, kc)
+	if err != nil {
+		g.setStorage(storageSnapshot{}, err)
+	} else {
+		g.setStorage(vols.summarize(), nil)
+	}
+}
+
+// recordApp replaces the gitops snapshot with one good read.
+func (g *gitopsWatcher) recordApp(app *argoApp) {
 	g.setSnap(func(s *gitopsSnapshot) {
 		prevErr := s.Err
 		*s = gitopsSnapshot{
@@ -263,12 +314,76 @@ func (g *gitopsWatcher) fail(err error) {
 	})
 }
 
-// fetchOver GETs the Application over one facet connection: every HTTP
-// connection is one stream on fc, TLS-verified against the cluster CA
-// with gitopsServerName, authenticated by a one-hour system:masters
-// client cert signed by that CA. Split from step so a test can drive
-// it over an in-memory facet.
+// kubeClient is an API-server client over one facet connection: every
+// HTTP connection is one stream on fc, TLS-verified against the
+// cluster CA with gitopsServerName, authenticated by a one-hour
+// system:masters client cert signed by that CA. Caller closes idle
+// connections when done with the poll.
+type kubeClient struct {
+	*http.Client
+	tr *http.Transport
+}
+
+func (k *kubeClient) CloseIdleConnections() { k.tr.CloseIdleConnections() }
+
+// get GETs one API path into out; a non-200 is an error, not a value.
+func (k *kubeClient) get(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+gitopsServerName+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := k.Do(req)
+	if err != nil {
+		return fmt.Errorf("GET %s: %w", path, err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return fmt.Errorf("GET %s: reading: %w", path, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: %s", path, resp.Status)
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("GET %s: parsing: %w", path, err)
+	}
+	return nil
+}
+
+// fetchOver is kubeClient + fetchApp in one call, kept so a test can
+// drive the whole path over an in-memory facet.
 func (g *gitopsWatcher) fetchOver(ctx context.Context, m machines.Machine, fc facetClient) (*argoApp, error) {
+	kc, err := g.kubeClient(m, fc)
+	if err != nil {
+		return nil, err
+	}
+	defer kc.CloseIdleConnections()
+	return g.fetchApp(ctx, kc)
+}
+
+// fetchApp GETs the root Application; a body without reconciledAt is
+// an error so the row never shows a fake "reconciled now".
+func (g *gitopsWatcher) fetchApp(ctx context.Context, kc *kubeClient) (*argoApp, error) {
+	var app argoApp
+	if err := kc.get(ctx, gitopsAppPath, &app); err != nil {
+		return nil, err
+	}
+	if app.Status.ReconciledAt.IsZero() {
+		return nil, fmt.Errorf("GET %s: no status.reconciledAt (never reconciled?)", gitopsAppPath)
+	}
+	return &app, nil
+}
+
+// fetchVolumes GETs Longhorn's Volume list (storage.go).
+func (g *gitopsWatcher) fetchVolumes(ctx context.Context, kc *kubeClient) (*longhornVolumeList, error) {
+	var vols longhornVolumeList
+	if err := kc.get(ctx, longhornVolumesPath, &vols); err != nil {
+		return nil, err
+	}
+	return &vols, nil
+}
+
+func (g *gitopsWatcher) kubeClient(m machines.Machine, fc facetClient) (*kubeClient, error) {
 	ca, err := g.clusterCA(m)
 	if err != nil {
 		return nil, err
@@ -307,31 +422,7 @@ func (g *gitopsWatcher) fetchOver(ctx context.Context, m machines.Machine, fc fa
 		},
 		DisableKeepAlives: true,
 	}
-	defer tr.CloseIdleConnections()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+gitopsServerName+gitopsAppPath, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := (&http.Client{Transport: tr}).Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", gitopsAppPath, err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return nil, fmt.Errorf("GET %s: reading: %w", gitopsAppPath, err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: %s", gitopsAppPath, resp.Status)
-	}
-	var app argoApp
-	if err := json.Unmarshal(body, &app); err != nil {
-		return nil, fmt.Errorf("GET %s: parsing: %w", gitopsAppPath, err)
-	}
-	if app.Status.ReconciledAt.IsZero() {
-		return nil, fmt.Errorf("GET %s: no status.reconciledAt (never reconciled?)", gitopsAppPath)
-	}
-	return &app, nil
+	return &kubeClient{Client: &http.Client{Transport: tr}, tr: tr}, nil
 }
 
 // clusterCA extracts the Kubernetes CA (cert + key) from the machine's

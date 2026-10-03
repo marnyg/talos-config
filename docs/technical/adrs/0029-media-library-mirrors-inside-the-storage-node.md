@@ -1,6 +1,6 @@
 # ADR-0029: The media library mirrors inside the storage node
 
-- Status: Proposed
+- Status: Accepted (2026-10-04)
 - Date: 2026-10-04
 - Amends: ADR-0011 (the `longhorn-bulk` class: replica count and placement)
 
@@ -91,8 +91,8 @@ Measured during the import: ~30 MB/s with the share-managers on w1,
   `rwx-volume-fast-failover` off, that also restarts the workload pods
   that mount the volume.
 - The default `longhorn` class has no `diskSelector`, so an app-state
-  PVC can now land on spinning disk. Follow-up `jx78` fences it to
-  `nvme`.
+  PVC can now land on spinning disk. Follow-up `jx78` fenced it to
+  `nvme` (`4f596bb`).
 - Bays 3 and 4 join the same tier using the recipe in nas1's
   `patch.yaml`, with no class change.
 
