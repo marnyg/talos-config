@@ -83,27 +83,39 @@ data:
       }' "$RADARR_URL/api/v3/downloadclient" || echo "WARN: Transmission client failed"
     fi
 
-    # Add Jackett indexer (Torznab)
+    # Add Jackett indexers (Torznab), one entry per Jackett indexer: Radarr
+    # refuses Jackett's /all aggregate. The id list comes from jackett-config
+    # (JACKETT_INDEXERS) so Jackett and Radarr agree on one set. Radarr
+    # validates a POST with a live movie search, which needs categories and
+    # a Jackett that has finished enabling the indexer — so retry a while.
     existing=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/indexer")
-    if ! echo "$existing" | grep -q "Jackett"; then
-      echo "Adding Jackett indexer..."
-      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
-        "enableRss": false,
+    for id in $JACKETT_INDEXERS; do
+      name="Jackett ($id)"
+      if echo "$existing" | grep -q "\"$name\""; then continue; fi
+      echo "Adding $name indexer..."
+      n=0
+      until curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enableRss": true,
         "enableAutomaticSearch": true,
         "enableInteractiveSearch": true,
         "protocol": "torrent",
         "priority": 25,
-        "name": "Jackett",
+        "name": "'"$name"'",
         "implementation": "Torznab",
         "configContract": "TorznabSettings",
         "fields": [
-          {"name": "baseUrl", "value": "http://jackett:9117/api/v2.0/indexers/all/results/torznab/"},
+          {"name": "baseUrl", "value": "http://jackett:9117/api/v2.0/indexers/'"$id"'/results/torznab/"},
           {"name": "apiPath", "value": "/api"},
           {"name": "apiKey", "value": "'"$JACKETT_API_KEY"'"},
+          {"name": "categories", "value": [2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060]},
           {"name": "minimumSeeders", "value": 1}
         ]
-      }' "$RADARR_URL/api/v3/indexer" || echo "WARN: Jackett indexer failed"
-    fi
+      }' "$RADARR_URL/api/v3/indexer"; do
+        n=$((n + 1))
+        if [ "$n" -ge 18 ]; then echo "WARN: $name indexer failed"; break; fi
+        sleep 10
+      done
+    done
 
     # Add NZBgeek indexer (Newznab/usenet)
     if [ -n "$NZBGEEK_API_KEY" ] && ! echo "$existing" | grep -q "NZBgeek"; then
