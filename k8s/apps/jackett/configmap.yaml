@@ -9,10 +9,11 @@ data:
   # one Torznab entry per id (Sonarr v4 refuses Jackett's /all aggregate).
   # 1337x and eztv sit behind Cloudflare challenges and need a FlareSolverr
   # sidecar; knaben is a meta-search over many trackers, so it covers a lot
-  # on its own; nyaasi (nyaa.si) covers anime. iptorrents is a private tracker: its login has a captcha, so
+  # on its own. nyaasi was tried and dropped (never returned results).
+  # iptorrents is a private tracker: its login has a captcha, so
   # Jackett takes a browser session cookie + the User-Agent it was issued
   # to, from the `iptorrents` sealed secret (see sealed-secret.yaml).
-  indexers: "thepiratebay knaben nyaasi iptorrents"
+  indexers: "thepiratebay knaben iptorrents"
   ServerConfig.json: |
     {
       "Port": 9117,
