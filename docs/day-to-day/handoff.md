@@ -29,6 +29,21 @@ mirror inside nas1; ADR-0028 accepted.**
   all healthy, ~9 GB actual, no media pod restarted.
 - **ADR-0028 → Accepted** (`48c96fd`); invariant 7 and the domain model
   already carried it from `10ebcbc`.
+- **Media library moved onto the cluster**: 466 GB tv+movies from the
+  old docker host via `scripts/media-import.yaml` (rsync daemon,
+  LAN NodePort locked to this box, deleted after); PVCs grown to
+  900/400/200Gi online. Sonarr's 29 series re-added through its API
+  from an export (`~/disks/1TB-old/server/sonarr-series-2026-10-04.json`),
+  246/246 files matched; Jellyfin rescanned. Downloads and every other
+  app config deliberately not migrated (owner: expendable). Old docker
+  containers stopped, not removed.
+- **share-managers pinned to nas1** (`6119ccb`): the scheduler had put
+  all three NFS servers on w1 → ~30 MB/s; pinned → ~105 MB/s.
+  Recreating the class raced ArgoCD's self-heal once (old params put
+  back, then 'parameters forbidden'): delete it *after* the new commit
+  is the target revision.
+- **Gateway crash-loop** `vzbf` (P1, found today): a proxied WebSocket
+  panics in `iroh-transport` `Raw.Read` after Close.
 - Spike `r4fw` filed: the hub bakes `talos/` into its image, so every
   `patch.yaml` edit costs build + deploy + wallet re-unseal; resolve
   from git at runtime (ArgoCD-style) instead?
@@ -41,12 +56,14 @@ mirror inside nas1; ADR-0028 accepted.**
 - `installMAC` is transitional; its exit is `spvd`.
 - Agent fixes `7fb6473`/`10ebcbc` reach the fleet only via `9af0`.
 - The Mac still runs the pre-`38882a9` daemon; fine (same wire).
-- Owner's `todo` (untracked, repo root): migrate media onto the new
-  disks (done by the mirror), torrent/seerr/syncthing/sillytavern,
-  Windows PC as a compute node.
+- Owner's `todo` (untracked, repo root): raid + media migration done;
+  left: torrent/seerr/syncthing/sillytavern, Windows PC as a compute
+  node. The old box's docker media stack can be removed once the owner
+  is happy with the cluster's.
 
 ## Suggested next steps
 
+- `vzbf`: the gateway panic (every `*.gw.mesh.internal` flaps meanwhile).
 - `jx78` (NVMe fence) before the next app-state PVC is created.
 - `cnb5`: `/status` faulted-volume row, then close.
 - `spvd` before any further `systemDiskEncryption` change.

@@ -294,7 +294,15 @@ ADR-0011.
   **mirror inside nas1**: 2 replicas, `diskSelector: bulk`, soft node /
   hard disk anti-affinity — one replica per bay, none on w1 (cnb5's
   placement half; the class was deleted+recreated, the Volume CRs
-  patched, the w1 replicas evicted; ~9GB actual, no pod restart).
+  patched, the w1 replicas evicted). Its **share-managers (NFS
+  servers) are pinned to nas1** (`shareManagerNodeSelector`) — the
+  scheduler had put all three on w1, so data crossed w1's USB dongle
+  twice. Sizes 900/400/200Gi. **Library imported 2026-10-04** from the
+  old docker host (10.0.0.11, `~/disks/1TB-old/server`): 368GB tv
+  (37 shows) + 98GB movies by rsync through a one-off NodePort pod
+  (`scripts/media-import.yaml`, deleted after), ~105MB/s wired; Sonarr's
+  29 monitored series re-added by API (246/246 episode files found).
+  The old docker media containers are **stopped**, not removed.
 - **With w1 off** _(2026-09-30)_: Longhorn node `w1` not ready; the
   three media volumes `faulted` (single replica, on w1 — back when w1
   is); `gateway-state` attached healthy (gateway on nas1), win2k25's
