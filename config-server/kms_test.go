@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"gopkg.in/yaml.v3"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -173,11 +174,26 @@ func TestDiskEncryptionInjection(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("got %d: %s", code, body)
 	}
-	wantPass := masterderive.RecoveryPassphrase(m.current(), "aa:bb:cc:dd:ee:ff")
+	wantPass := masterderive.RecoveryPassphrase(m.current(), declaredUUID)
 	for _, want := range []string{"systemDiskEncryption", "https://kms.example:443", wantPass, "luks2"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("composed config missing %q", want)
 		}
+	}
+	if legacy := masterderive.RecoveryPassphraseMAC(m.current(), "aa:bb:cc:dd:ee:ff"); strings.Contains(body, legacy) {
+		t.Error("composed config carries the v1 (MAC-derived) passphrase without installMAC")
+	}
+
+	// Without a UUID there is no durable handle to derive from: refuse,
+	// rather than serve a passphrase keyed to the request's MAC.
+	if err := os.WriteFile(filepath.Join(m.root, "machines", "aa-bb-cc-dd-ee-ff", "meta.yaml"), []byte("config: base.yaml\npatches: []\ndiskEncryption: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := fetch(); code != http.StatusInternalServerError {
+		t.Fatalf("diskEncryption without uuid: got %d, want 500", code)
+	}
+	if err := os.WriteFile(filepath.Join(m.root, "machines", "aa-bb-cc-dd-ee-ff", "meta.yaml"), []byte(meta), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
 	// Without an advertised KMS endpoint the config must be refused,
@@ -236,4 +252,79 @@ func grpcDialH2C(t *testing.T, url string) (*grpc.ClientConn, error) {
 	t.Helper()
 	return grpc.NewClient(strings.TrimPrefix(url, "http://"),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
+}
+
+// TestDiskEncryptionSurvivesRename pins the property c4vd broke
+// (2026-09): the encryption block served for a machine is a function
+// of its declared identity, not of the directory the request selected.
+// A NIC swap renames machines/<mac>/ — the LUKS header created at
+// install does not follow, and Talos re-keys to a changed config only
+// at boot, behind a slot-0 unlock ADR-0004 does not trust. So: same
+// meta.yaml under a new directory → byte-identical systemDiskEncryption,
+// for a UUID-derived install and for a grandfathered (installMAC) one.
+func TestDiskEncryptionSurvivesRename(t *testing.T) {
+	m, _ := newTestKMS(t)
+	s := &server{root: m.root, store: deviceflow.NewStore(), hub: m, adminAddrs: m.adminAddrs, kmsAdvertise: "https://kms.example:443"}
+
+	encryptionBlock := func(dirMAC string) string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.handleConfig(rec, httptest.NewRequest("GET", "/config?mac="+dirMAC, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: got %d: %s", dirMAC, rec.Code, rec.Body.String())
+		}
+		var doc struct {
+			Machine struct {
+				SystemDiskEncryption yaml.Node `yaml:"systemDiskEncryption"`
+			} `yaml:"machine"`
+		}
+		if err := yaml.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+			t.Fatalf("%s: %v", dirMAC, err)
+		}
+		if doc.Machine.SystemDiskEncryption.IsZero() {
+			t.Fatalf("%s: no systemDiskEncryption block", dirMAC)
+		}
+		block, err := yaml.Marshal(&doc.Machine.SystemDiskEncryption)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(block)
+	}
+	declare := func(dirMAC, meta string) {
+		t.Helper()
+		dir := filepath.Join(m.root, "machines", dirMAC)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "meta.yaml"), []byte(meta), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name, meta string
+		want       string
+	}{
+		{"uuid-derived", "config: base.yaml\npatches: []\nuuid: " + declaredUUID + "\ndiskEncryption: true\n",
+			masterderive.RecoveryPassphrase(m.current(), declaredUUID)},
+		{"grandfathered", "config: base.yaml\npatches: []\nuuid: " + declaredUUID + "\ndiskEncryption: true\ninstallMAC: aa:bb:cc:dd:ee:ff\n",
+			masterderive.RecoveryPassphraseMAC(m.current(), "aa:bb:cc:dd:ee:ff")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			declare("aa-bb-cc-dd-ee-ff", tc.meta)
+			before := encryptionBlock("aa-bb-cc-dd-ee-ff")
+			if !strings.Contains(before, tc.want) {
+				t.Fatalf("passphrase: want %s in\n%s", tc.want, before)
+			}
+			// The NIC swap: same declaration, new directory.
+			declare("11-22-33-44-55-66", tc.meta)
+			after := encryptionBlock("11-22-33-44-55-66")
+			if before != after {
+				t.Fatalf("directory rename rotated the encryption block:\n--- before\n%s\n--- after\n%s", before, after)
+			}
+			if err := os.RemoveAll(filepath.Join(m.root, "machines", "11-22-33-44-55-66")); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }

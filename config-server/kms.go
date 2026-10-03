@@ -170,9 +170,20 @@ func (k *kmsServer) Unseal(_ context.Context, req *kmsapi.Request) (*kmsapi.Resp
 // boot (per-boot auth, revocable server-side), slot 1 is the derived
 // break-glass passphrase (recoverable offline from the master
 // signature via `recover -recovery`; stored nowhere). Applies at
-// install time only — partitions encrypt when they are created.
-func diskEncryptionPatch(master []byte, mac, kmsEndpoint string) string {
-	pass := masterderive.RecoveryPassphrase(master, mac)
+// install time only — partitions encrypt when they are created — so
+// the block must be the same on every later serve of the same machine
+// (Talos re-keys to a changed config only at boot, and only if slot 0
+// opens the volume first): the passphrase derives from the machine's
+// RecoveryHandle, never from the directory the request selected.
+func diskEncryptionPatch(master []byte, m machines.Machine, kmsEndpoint string) (string, error) {
+	handle, legacy, err := m.RecoveryHandle()
+	if err != nil {
+		return "", err
+	}
+	pass := masterderive.RecoveryPassphrase(master, handle)
+	if legacy {
+		pass = masterderive.RecoveryPassphraseMAC(master, handle)
+	}
 	return fmt.Sprintf(`machine:
   systemDiskEncryption:
     state:
@@ -193,7 +204,7 @@ func diskEncryptionPatch(master []byte, mac, kmsEndpoint string) string {
         - slot: 1
           static:
             passphrase: %[2]s
-`, kmsEndpoint, pass)
+`, kmsEndpoint, pass), nil
 }
 
 // sealBlob AES-256-GCM encrypts plaintext: random nonce || ciphertext.

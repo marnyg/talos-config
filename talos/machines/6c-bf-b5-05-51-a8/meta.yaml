@@ -26,6 +26,11 @@ name: nas1
 # an identity for anything else.
 uuid: 03000200-0400-0500-0006-000700080009
 diskEncryption: true
+# Installed before 2026-10-03, when the break-glass passphrase (LUKS
+# slot 1) derived from the directory MAC; the hub keeps deriving from
+# this one so the served block matches the header on disk. Transitional:
+# delete at the next reinstall (new installs derive from uuid).
+installMAC: 6c:bf:b5:05:51:a8
 config: base/worker.yaml
 # No sealed-secrets.yaml: that patch provisions the controller's key
 # pair via an inlineManifest, which is a control-plane concern.

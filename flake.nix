@@ -298,6 +298,29 @@
                     exit 1
                   fi
 
+                  # Dry-run first. Two things a re-serve must never do by
+                  # surprise: touch systemDiskEncryption on an installed
+                  # machine (the LUKS header was keyed at install; Talos
+                  # re-keys only at boot, behind a slot-0 unlock ADR-0004
+                  # does not trust — a changed passphrase here is a disk
+                  # that may not open; cause so far: a directory rename,
+                  # see meta.yaml installMAC), and reboot the node
+                  # (APPLY_REBOOT=1 says you meant it).
+                  dry=$(${pkgs.talosctl}/bin/talosctl \
+                    -e "$cp.mesh.internal" -n "$host" \
+                    --talosconfig talosconfig \
+                    apply-config --dry-run --file <(echo "$composed") 2>&1) || { echo "$dry" >&2; return 1; }
+                  if echo "$dry" | grep -qE '^[-+] .*(passphrase|systemDiskEncryption|provider: luks2)'; then
+                    echo "$dry" >&2
+                    echo "REFUSED: the diff for $mac touches systemDiskEncryption. The composed passphrase is not the one on disk — if this machine was installed under another directory MAC, set installMAC in its meta.yaml (recover -recovery to verify). No override: fix the declaration." >&2
+                    return 1
+                  fi
+                  if echo "$dry" | grep -q 'with a reboot' && [ "''${APPLY_REBOOT:-}" != 1 ]; then
+                    echo "$dry" >&2
+                    echo "REFUSED: applying to $mac needs a reboot. Rerun with APPLY_REBOOT=1 if that is intended." >&2
+                    return 1
+                  fi
+
                   ${pkgs.talosctl}/bin/talosctl \
                     -e "$cp.mesh.internal" -n "$host" \
                     --talosconfig talosconfig \

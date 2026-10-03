@@ -37,8 +37,15 @@ disk unattended.
   mode. w1's directory was the laptop's Dell pass-through MAC (a Dell
   dock inherits it) until 2026-10-01, when it was renamed to the r8152
   dongle's — if the dongle is swapped, rename the directory again
-  (`git mv`; nothing else is keyed by it under v3 — the role owns a
-  name only, KMS is keyed by UUID) and deploy the hub.
+  (`git mv`) and deploy the hub. Under v3 the role owns a name and KMS
+  is keyed by UUID, so the rename moves nothing — **except on a machine
+  installed before 2026-10-03**, whose LUKS slot-1 passphrase derived
+  from the directory MAC: those carry `installMAC:` in `meta.yaml`
+  (the MAC they were installed under) and keep it across renames;
+  `apply` refuses a diff that touches `systemDiskEncryption`
+  (2026-10-03, hub test `TestDiskEncryptionSurvivesRename`). A fresh
+  install derives from `uuid` and needs no `installMAC` — drop the
+  field in the same commit as the wipe.
 - **cp1 only — pin the hostname in the same commit** (`t7b2`). cp1
   runs under Talos' generated `talos-wu6-eib` because a live
   `machine.network.hostname` change registers a *new* Node (and etcd

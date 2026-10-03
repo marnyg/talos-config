@@ -4,7 +4,8 @@
 // of (master, identifier), which is the whole point — recovery works
 // from a laptop and a wallet, nothing else (invariant 3).
 //
-//	recover -sig <hex> -recovery -mac <mac>   # disk recovery passphrase (LUKS slot 1)
+//	recover -sig <hex> -recovery -uuid <uuid> # disk recovery passphrase (LUKS slot 1)
+//	recover -sig <hex> -recovery -mac <mac>   # same, for an install before 2026-10-03 (meta.yaml installMAC)
 //	recover -sig <hex> -age-recipient         # age recipient, for talos/age-recipient.txt
 //	recover -sig <hex> -master-hex            # raw master, for WG_MASTER_KEY (dev)
 //
@@ -28,8 +29,9 @@ func main() {
 	var (
 		sig       = flag.String("sig", "", "unseal signature (hex over the master message)")
 		master    = flag.String("master", "", "master key (hex); alternative to -sig")
-		mac       = flag.String("mac", "", "machine MAC (with -recovery)")
-		recovery  = flag.Bool("recovery", false, "print the machine's disk recovery passphrase (needs -mac)")
+		uuid      = flag.String("uuid", "", "machine SMBIOS UUID (with -recovery; meta.yaml uuid)")
+		mac       = flag.String("mac", "", "machine install MAC (with -recovery, installs before 2026-10-03; meta.yaml installMAC)")
+		recovery  = flag.Bool("recovery", false, "print the machine's disk recovery passphrase (needs -uuid, or -mac for a grandfathered install)")
 		ageRecip  = flag.Bool("age-recipient", false, "print the wallet-derived age recipient; commit it as talos/age-recipient.txt")
 		masterHex = flag.Bool("master-hex", false, "print the raw master key (handle like the signature itself)")
 	)
@@ -52,11 +54,17 @@ func main() {
 
 	switch {
 	case *recovery:
-		if *mac == "" {
-			log.Fatal("-recovery needs -mac")
+		switch {
+		case *uuid != "" && *mac != "":
+			log.Fatal("-recovery takes -uuid or -mac, not both (meta.yaml: installMAC set → -mac, else -uuid)")
+		case *uuid != "":
+			fmt.Println(masterderive.RecoveryPassphrase(m, *uuid))
+		case *mac != "":
+			normMAC := strings.ToLower(strings.ReplaceAll(*mac, "-", ":"))
+			fmt.Println(masterderive.RecoveryPassphraseMAC(m, normMAC))
+		default:
+			log.Fatal("-recovery needs -uuid (or -mac for an install before 2026-10-03)")
 		}
-		normMAC := strings.ToLower(strings.ReplaceAll(*mac, "-", ":"))
-		fmt.Println(masterderive.RecoveryPassphrase(m, normMAC))
 	case *ageRecip:
 		_, recipient := masterderive.AgeIdentity(m)
 		fmt.Println(recipient)

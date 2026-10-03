@@ -78,7 +78,12 @@ func (s *server) serveTimePatches(mac string, m machines.Machine) ([]string, int
 			log.Printf("refusing config for %s: diskEncryption set but no --kms-advertise endpoint", mac)
 			return nil, http.StatusInternalServerError, "internal error"
 		}
-		extra = append(extra, diskEncryptionPatch(master, mac, s.kmsAdvertise))
+		p, err := diskEncryptionPatch(master, m, s.kmsAdvertise)
+		if err != nil {
+			log.Printf("refusing config for %s: %v", mac, err)
+			return nil, http.StatusInternalServerError, "internal error"
+		}
+		extra = append(extra, p)
 	}
 
 	// Identity plane (ADR-0015): the <name>.<zone> certSAN and the

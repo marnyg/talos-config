@@ -29,13 +29,16 @@ func TestDerivationStability(t *testing.T) {
 	got := map[string]string{
 		// KMS: uppercase input UUID must normalize to the same key.
 		"kms seal key": hex.EncodeToString(KMSSealKey(master, "8C0D9A51-6E23-4BA1-A1D7-2D5D4C6B0F00")),
-		"recovery":     RecoveryPassphrase(master, testMAC),
-		"age id":       ageIdentityForTest(master),
-		"age recip":    ageRecipientForTest(master),
+		"recovery mac": RecoveryPassphraseMAC(master, testMAC),
+		// v2: uppercase input UUID must normalize to the same passphrase.
+		"recovery":  RecoveryPassphrase(master, "8C0D9A51-6E23-4BA1-A1D7-2D5D4C6B0F00"),
+		"age id":    ageIdentityForTest(master),
+		"age recip": ageRecipientForTest(master),
 	}
 	want := map[string]string{
 		"kms seal key": "a4925a58234469eedf9b8e8a76381683fd07adecdb1daa36c93be65617189121",
-		"recovery":     "bhgafhpz-i5qbzl5j-csjuuhan-hxvacurb",
+		"recovery mac": "bhgafhpz-i5qbzl5j-csjuuhan-hxvacurb",
+		"recovery":     "xz5puvqg-ud42fgyf-ex43jirx-szptqqea",
 		// Changing these orphans every .age file encrypted to the
 		// wallet-derived recipient.
 		"age id":    "AGE-SECRET-KEY-1SPNS4ULQSAMVET6FS5NYRAJYQ09P75PT35AM062D52UL8YSMM9XQTSXA77",

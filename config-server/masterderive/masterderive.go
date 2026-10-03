@@ -30,7 +30,8 @@ import (
 const (
 	masterSigInfo  = "talos-config/wg/v1/master-from-sig"
 	kmsSealInfoPfx = "talos-config/kms/v1/seal-key/" // + lowercase node UUID
-	recoveryPfx    = "talos-config/kms/v1/recovery/" // + normalized MAC
+	recoveryPfx    = "talos-config/kms/v1/recovery/" // + normalized MAC (installs before 2026-10-03; installMAC)
+	recoveryV2Pfx  = "talos-config/kms/v2/recovery/" // + lowercase node UUID
 	bootTokenInfo  = "talos-config/boot-token/v1/mac-key"
 )
 
@@ -124,11 +125,29 @@ func BootTokenKey(master []byte) []byte {
 }
 
 // RecoveryPassphrase derives the break-glass LUKS passphrase for the
-// machine with the given normalized MAC: 160 bits, base32, grouped for
+// machine with the given SMBIOS UUID: 160 bits, base32, grouped for
 // console typing. Re-derivable offline from the master signature alone
-// (cast wallet sign + `recover -recovery -mac <mac>`) — stored nowhere.
-func RecoveryPassphrase(master []byte, mac string) string {
-	raw := derive(master, recoveryPfx+mac, 20)
+// (cast wallet sign + `recover -recovery -uuid <uuid>`) — stored
+// nowhere. The UUID is the handle because the passphrase lives as long
+// as the LUKS header it is in: a secret may only derive from a handle
+// that outlives it, and the UUID is the chassis's (and already the KMS
+// allowlist, so it is declared before the install config is served).
+// Case-insensitive: the UUID is lowercased, as KMSSealKey does.
+func RecoveryPassphrase(master []byte, uuid string) string {
+	return passphrase(derive(master, recoveryV2Pfx+strings.ToLower(uuid), 20))
+}
+
+// RecoveryPassphraseMAC is the v1 derivation, by the MAC the install
+// config was fetched with. FROZEN for the machines installed under it
+// (meta.yaml installMAC) — their headers hold this passphrase until a
+// re-key — and wrong for anything new: the MAC is the hub's config
+// selector, a NIC's address, and w1's dongle swap (2026-09, c4vd)
+// renamed its directory and so, silently, this passphrase.
+func RecoveryPassphraseMAC(master []byte, mac string) string {
+	return passphrase(derive(master, recoveryPfx+mac, 20))
+}
+
+func passphrase(raw []byte) string {
 	s := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw))
 	parts := make([]string, 0, 4)
 	for i := 0; i < len(s); i += 8 {

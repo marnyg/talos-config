@@ -30,9 +30,33 @@ type Machine struct {
 	// passphrase) into the served config. Takes effect at install
 	// time only — an existing machine needs a wipe to encrypt.
 	DiskEncryption bool `yaml:"diskEncryption"`
+	// InstallMAC grandfathers a machine installed before 2026-10-03,
+	// when the break-glass passphrase (LUKS slot 1) derived from the
+	// MAC the install config was fetched with — the directory name,
+	// which a NIC swap renames (w1, c4vd) while the LUKS header keeps
+	// the old passphrase. Set it to that MAC and the hub keeps serving
+	// the passphrase the disk holds. New installs leave it unset and
+	// derive from the UUID. Transitional: deleted at the machine's
+	// re-key or reinstall. Nothing else reads it.
+	InstallMAC string `yaml:"installMAC"`
 
 	// Dir is the machines/<mac> directory, absolute (set by Load).
 	Dir string `yaml:"-"`
+}
+
+// RecoveryHandle is the identifier the break-glass passphrase derives
+// from, and which derivation: (installMAC, true) for a grandfathered
+// install, (uuid, false) otherwise. The UUID is the only durable handle
+// the hub holds before the install config is served, so a machine
+// without one cannot be served an encryption block — err says so.
+func (m Machine) RecoveryHandle() (handle string, legacyMAC bool, err error) {
+	if m.InstallMAC != "" {
+		return NormalizeMAC(m.InstallMAC), true, nil
+	}
+	if m.UUID == "" {
+		return "", false, errors.New("diskEncryption needs uuid (the break-glass passphrase derives from it; installMAC for an install before 2026-10-03)")
+	}
+	return strings.ToLower(m.UUID), false, nil
 }
 
 // NormalizeMAC lowercases and converts dashes to colons.

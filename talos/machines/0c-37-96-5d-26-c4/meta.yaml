@@ -12,6 +12,15 @@ name: w1
 # otherwise leave an encrypted disk that cannot unlock.
 uuid: 4c4c4544-0032-3410-8053-b3c04f394b33
 diskEncryption: true
+# The MAC it was installed under is the laptop's own NIC, not the dongle
+# this directory is named after (c4vd renamed it 2026-10-01): the rename
+# silently rotated the composed passphrase, which is how installMAC
+# came to exist (hub test TestDiskEncryptionSurvivesRename).
+# Installed before 2026-10-03, when the break-glass passphrase (LUKS
+# slot 1) derived from the directory MAC; the hub keeps deriving from
+# this one so the served block matches the header on disk. Transitional:
+# delete at the next reinstall (new installs derive from uuid).
+installMAC: 98:e7:43:11:97:b8
 config: base/worker.yaml
 # No sealed-secrets.yaml: that patch provisions the controller's key
 # pair via an inlineManifest, which is a control-plane concern.

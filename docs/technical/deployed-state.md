@@ -240,6 +240,23 @@ plaintext META.
   node unattended. Only provisioning and config refetch need an unseal.
 - Going KMS-only would first require break-glass tooling for slot-0
   blobs.
+- **Slot 1 derives from the UUID** _(2026-10-03)_: `RecoveryPassphrase
+  (master, uuid)` for new installs; `recover -recovery -uuid <uuid>`.
+  The three installed machines were keyed under v1 — the directory
+  MAC — and carry `installMAC:` in `meta.yaml` so the hub keeps serving
+  the passphrase their headers hold (`recover -recovery -mac
+  <installMAC>`). The rule it fixes: a secret derives only from a
+  handle that outlives it; the MAC is the config *selector* and a
+  NIC swap renames it (w1, `c4vd`), which rotated the composed
+  passphrase unnoticed. Talos re-keys to a changed config only at
+  boot and only after slot 0 opens the volume, which the first
+  bullet does not trust — so `nix run .#apply` dry-runs first and
+  refuses an encryption diff outright, and a reboot without
+  `APPLY_REBOOT=1`. Exit for the grandfather fields: prove slot-0
+  unlock at boot under v3, then one reboot per node re-keys to the
+  UUID passphrase. nas1's UUID is the OEM placeholder: under v2 a
+  second such box under the same master would share its passphrase —
+  owner-local, accepted as the KMS allowlist caveat already is.
 
 > Recorded in **ADR-0004**, including the consequence that matters
 > most: wipe META before a *machine* (not just a disk) leaves the

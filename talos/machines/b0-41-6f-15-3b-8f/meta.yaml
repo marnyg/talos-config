@@ -15,6 +15,11 @@ name: cp1
 hostname: talos-wu6-eib
 uuid: 37a1f6ed-580e-054c-8392-98bd8090d21a
 diskEncryption: true
+# Installed before 2026-10-03, when the break-glass passphrase (LUKS
+# slot 1) derived from the directory MAC; the hub keeps deriving from
+# this one so the served block matches the header on disk. Transitional:
+# delete at the next reinstall (new installs derive from uuid).
+installMAC: b0:41:6f:15:3b:8f
 config: base/controlplane.yaml
 patches:
   - clusters/homelab/time.yaml
