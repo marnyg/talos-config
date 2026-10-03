@@ -1,6 +1,6 @@
 # One-off library import: an rsync daemon on nas1 writing straight into
 # the media RWX volumes (beside the running apps — RWX), reachable from
-# ONE LAN host on a NodePort for the duration of the copy. Used
+# ONE LAN host (its Wi-Fi and wired addresses) on a NodePort for the duration of the copy. Used
 # 2026-10-04 to move 343G tv + 92G movies off the old docker host
 # (10.0.0.11, ~/disks/1TB-old/server). Deliberately under scripts/, not
 # k8s/apps: ArgoCD must never sync this. Apply, copy, DELETE:
@@ -30,7 +30,7 @@ data:
     max connections = 4
     lock file = /tmp/rsyncd.lock
     pid file = /tmp/rsyncd.pid
-    hosts allow = 10.0.0.11
+    hosts allow = 10.0.0.11 10.0.0.77
     hosts deny = *
     [tv]
       path = /tv
