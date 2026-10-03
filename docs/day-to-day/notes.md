@@ -842,3 +842,38 @@
   30 s `unreachable`/`not-ready` tolerations (gateway, siwe-oidc have
   them). cp1 is the only control plane, so pods pinned there have no
   node-loss story to tell — only nas1/w1 residents matter.
+- 2026-10-03 — **Admin from `mar@nixos` is on the identity plane now**:
+  `talos-mesh.service` (`irohup -tun`, user `talosmesh`, state
+  `/var/lib/talos-mesh/nixos.iroh`, log `journalctl -u talos-mesh`),
+  tun `talosmesh0`, zone `~mesh.internal → 198.18.0.2` declared
+  per-link in systemd-resolved (`resolvectl status talosmesh0`;
+  `resolvectl query cp1.mesh.internal` is the probe — plain `dig`
+  bypasses resolved's routing). Re-enroll: `talos-mesh-enroll
+  -reenroll`. The unit is gated on `kit.json`: after the first enroll,
+  `sudo systemctl start talos-mesh` once. Kubeconfig here still points
+  at the dead nebula IP — pass `--server https://cp1.mesh.internal:6443`
+  or run `nix run .#kubeconfig`.
+- 2026-10-03 — **When the mesh is down, LAN-direct still works from this
+  box** (invariant 4 exercised): `talosctl -e 10.0.0.68 -n 10.0.0.68`
+  with `talos/talosconfig`; apid has request forwarding off, so each
+  node must be dialled at its own LAN IP (nas1 `10.0.0.74`, w1
+  `10.0.0.71`). cp1's console `address-overlap` diagnostic appeared
+  while its link was down and cleared with the replug.
+- 2026-10-03 — **A node that was off longer than its speak-as comes back
+  looping on `effective chain is expired`** (agent fix `7fb6473`, not
+  on the fleet until `9af0`). Workaround that worked on w1: re-serve
+  (fresh 1 h boot token), `kubectl -n kube-system debug node/<n>
+  --image=busybox:1.36 --profile=sysadmin --attach -q -- rm
+  /host/var/lib/p0agent/{kit,bundle,hub}.json` (keep `key`), then
+  `talosctl service ext-p0agent restart` — enrolled in <1 s, same NodeId.
+- 2026-10-03 — **`nix run .#apply` dry-runs first** and refuses (a) any
+  diff touching `systemDiskEncryption` — no override, fix `meta.yaml`
+  (`installMAC`) — and (b) a reboot unless `APPLY_REBOOT=1`. Verify a
+  node's on-disk slot-1 passphrase against the hub's compose without
+  printing either: compare the `passphrase:` prefixes of `talosctl get
+  mc -o yaml` and `curl http://hub.mesh.internal/config?mac=…`.
+- 2026-10-03 — **The hub test suite is timing-sensitive under build
+  load**: `nix build .#config-server-bin` compiles every `cmd/` while
+  packages' tests run; a test that passes under `scripts/test-iroh.sh`
+  can fail in the sandbox (TestNodeAgentEndToEnd did, deterministically,
+  until the sleeper rewrite). Compare both before blaming a change.

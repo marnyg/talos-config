@@ -5,64 +5,61 @@
 
 ## Last session
 
-2026-10-01 — **HA sweep (`9l67`) closed by ruling, no code.**
+2026-10-03 — **w1 back, media library recovered, Linux desktop client,
+break-glass passphrase re-rooted.**
 
-- **Decision `nfmt`**: the in-cluster gateway stays a stateful
-  member — key + Kit on the `gateway-state` RWO PVC, invariant 2's
-  `359.9.3` sentence unchanged. A ~30–60 s `*.gw.mesh.internal`
-  outage on node loss is accepted. The ephemeral-key gateway (slice
-  3) is dropped: what made the stateful gateway painful was `5hek`
-  (3.5 d runway, fixed to 90 d) and Longhorn never releasing the
-  volume (`nodeDownPodDeletionPolicy=delete-both`, slice 1) — both
-  gone.
-- The sweep's last item split out as `jko0` and **closed the same
-  session**: the gateway's real failover was 5–6 min, not 30–60 s —
-  Longhorn `delete-both` only force-deletes *Terminating* pods, so
-  the 300 s default toleration ruled. Gateway now has 30 s
-  `unreachable`/`not-ready` tolerations (`9e6c2ad`, live, same key).
-  Everything else control-ish sits on cp1, the sole control plane,
-  so there is no node-loss story for it (notes 2026-10-01).
-- Broken windows swept: dead kubevirt pods deleted; the cp1-stacked
-  multi-replica pods (coredns, longhorn csi-\*, longhorn-ui) now spread
-  across cp1/nas1 — a rolling restart alone does **not** spread
-  `preferred` anti-affinity (new pods avoid the *old* ones and land
-  together on the other node); delete one pod afterwards. KubeVirt's
-  operator reverts restarts of its Deployments; left on cp1.
-  `controller-patch.yaml` comment brought up to date (`3341a8d`).
-- **Small ops** (`cbd992e`, hub deployed on it + unsealed): `c4vd`
-  done — w1's directory is now `talos/machines/0c-37-96-5d-26-c4` (the
-  dongle's MAC); hub verified composing for it, old MAC 404. `etzl`
-  done — SA-issuer recreate runbook in `guides/gotchas.md`. `t7b2`
-  **deferred** to cp1's next reinstall: it cannot go live (`apply`
-  pushes to the running node; Longhorn single-replica volumes are bound
-  to `talos-wu6-eib`); exact pre-wipe steps in `guides/reinstall.md`.
-
-Slices 1–2 (2026-09-29/30) remain as landed: dead node no longer
-freezes GitOps or pins RWO volumes; ingress-nginx + oauth2-proxy 2×
-anti-affine with `maxUnavailable: 1`; siwe-oidc failover-only.
+- **cp1 had dropped its ethernet link** (no ARP at `10.0.0.68`, API
+  down, a transient `address-overlap` diagnostic on its console). A
+  replug fixed it; no reboot, no unseal. Noted in `notes.md`: this
+  box (`mar@nixos`, LAN `10.0.0.11`) can run `talosctl -e <LAN IP>`
+  with the owner talosconfig when the mesh is down — invariant 4 held.
+- **w1 returned** (`10.0.0.71`, dongle MAC). Untainted; Longhorn came
+  back on it and `media/{tv,movies,downloads}` went faulted → healthy
+  (`cnb5`, ~12 d outage, decision halves still open). Re-served
+  (`apply`: boot token + Longhorn label, **no reboot**) and back on the
+  mesh as `w1.mesh.internal`, same NodeId — after a workaround (below).
+- **`irohup -tun` on Linux** (`38882a9`): `fakeip/tun_linux.go`
+  (fixed tun `talosmesh0`, `ip` for addr/route, zone declared per-link
+  via `resolvectl`), `cmd/irohup/tun.go` shared. NixOS module
+  `modules.nixos.services.talos-mesh` in `~/git/nixos` (desktop host,
+  user `talosmesh`, unit gated on `kit.json`, `talos-mesh-enroll`).
+  Live here: `nix run .#apply`, `talosctl -e cp1.mesh.internal`,
+  `curl http://hub.mesh.internal/config?mac=…` all work from this box.
+- **Break-glass passphrase (LUKS slot 1) derived from the directory
+  MAC** — `c4vd`'s rename rotated w1's composed passphrase unnoticed;
+  the re-serve dry-run showed it with "with a reboot". Fixed
+  (`17b3a37`, hub deployed + unsealed): `RecoveryPassphrase(master,
+  uuid)` v2; `installMAC:` in `meta.yaml` grandfathers cp1/nas1/w1
+  (`RecoveryPassphraseMAC`, frozen); `TestDiskEncryptionSurvivesRename`;
+  `apply` dry-runs first and refuses an encryption diff outright, a
+  reboot without `APPLY_REBOOT=1`. `recover -recovery -uuid|-mac`.
+  Rule and exit in `deployed-state.md` (disk encryption posture) and
+  ADR-0028 (Proposed).
+- **Agent bug** (`7fb6473`, not yet shipped — `9af0`): a kit with a
+  live member cert under an **expired speak-as** passed the local
+  check and looped on `ErrChainExpired` instead of redeeming the fresh
+  boot token. Fixed in `nodeagent` + test ("attic" kit); on w1 worked
+  around with `kubectl debug node/w1 … rm /host/var/lib/p0agent/
+  {kit,bundle,hub}.json` + `talosctl service ext-p0agent restart`.
+- `TestNodeAgentEndToEnd`'s redeploy scenario was racy by construction
+  (live desk + `connLost` kick vs. "still holds the dead key"); now a
+  closed-before-redeploy **sleeper** pins the dial path deterministically.
 
 ## Loose threads
 
-- **w1 still off**, out-of-service taint, kit expired — untaint +
-  `nix run .#apply -- 0c-37-96-5d-26-c4` when it returns (notes
-  2026-09-29; the directory was renamed, its installed boot token names
-  the old MAC, so the re-serve is required, not optional). HA is
-  proven only across cp1 + nas1.
-- **Media library is down and has been since w1 went off (10 d,
-  `cnb5`, P1)**: `media/{tv,movies,downloads}` are 1-replica
-  `longhorn-bulk` volumes whose replica is on w1; the pods run on hung
-  NFS mounts. Data is intact on w1; it recovers when w1 returns. Found
-  while correcting `reinstall.md`. Also corrects `t7b2`'s premise: no
-  bulk volume is bound to cp1.
-- Gateway pod moved cp1 → nas1 on 2026-09-30 morning unexplained —
-  not investigated.
-- `4ze8` (siwe-oidc replication), `5q33` (phone/TV APK, Mac daemon
-  pre-P4.2), `d4p8` (test flake).
+- **nas1's two 4 TB disks are visible** (`sdd`/`sde`, Toshiba MN10ADA4)
+  and undeclared — `lug3` (P1). Then `cnb5`'s replica-placement half.
+- `installMAC` is transitional; its exit is `spvd` (prove slot-0 KMS
+  unlock at boot under v3, then one reboot per node re-keys).
+- Agent fix `7fb6473` reaches the fleet only via a p0agent extension +
+  installer + `talosctl upgrade` (reboot each) — `9af0`.
+- The Mac still runs the pre-`38882a9` daemon; fine (same wire).
+- Proposed, not written: invariant 7 amendment and two domain-model
+  edits (see the docs-update report in the session log / ADR-0028).
 
 ## Suggested next steps
 
-- Fill nas1's four SATA bays (`UserVolumeConfig` per disk) — blocked
-  on the disks arriving.
-- Protocol v0 M5 money (`0bc.5`) or lighthouse discovery.
-- `cnb5`: bring w1 back (the quickest fix), then decide bulk replica
-  placement with the nas1 disks, and a faulted-volume row on `/status`.
+- `lug3`: `UserVolumeConfig` for nas1's disks, `apply` (watch the new
+  guard), then decide `longhorn-bulk` placement.
+- Review/accept ADR-0028; decide on the invariant 7 wording.
+- `spvd` before any further `systemDiskEncryption` change.

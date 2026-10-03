@@ -13,8 +13,9 @@ the goal: parents' TV (`4te`, ADR-0013's gate), stale `enrollmsg` v2
 binaries (`5q33`), relay access gating (`5gz`), `bh74`.
 
 **Next candidates** (owner to pick):
-- **Fill nas1's four SATA bays** — live `UserVolumeConfig` per disk;
-  the reason the node exists, and it makes the HA sweep affordable.
+- **nas1's disks** — two 4 TB bays filled 2026-10-03, visible as
+  `sdd`/`sde`, undeclared (`lug3`): `UserVolumeConfig` per disk, then
+  `longhorn-bulk` placement (`cnb5`'s open half).
 - **HA sweep `9l67` closed 2026-10-01** (a dead node no longer
   freezes GitOps or pins RWO volumes; `/status` watches ArgoCD;
   ingress-nginx + oauth2-proxy are 2× anti-affine, siwe-oidc fails
@@ -27,8 +28,11 @@ binaries (`5q33`), relay access gating (`5gz`), `bh74`.
   talos wire unchanged throughout. State and history live in
   `protocol/docs/day-to-day/`. The talos Provisioner's split
   along ADR-0009 is thread `kckm`, not v0.
-- Small ops: cp1 hostname pin (`t7b2`), w1's provisioning MAC
-  (`c4vd`), SA-issuer runbook (`etzl`).
+- **Disk-secret hygiene**: `installMAC` grandfathers the fleet's slot-1
+  passphrases (ADR-0028, 2026-10-03); the exit is proving slot-0 KMS
+  unlock at boot (`spvd`). Ship the agent's expired-speak-as fix with
+  the next extension build (`9af0`).
+- Small ops: cp1 hostname pin (`t7b2`), SA-issuer runbook done (`etzl`).
 
 **Out of scope:** wallet-native app sign-in (`95la` behind spike
 `i1il`); KMS onto 443 (`os8s`); the daemon's control socket (`fgr`).
