@@ -36,16 +36,26 @@ machine:
             gateway: 10.0.0.1
     nameservers:
       - 10.0.0.1
-  # Longhorn's default disk lives here (k8s/apps/longhorn:
+  # Longhorn's disks are declared here (k8s/apps/longhorn:
   # createDefaultDiskLabeledNodes=true fails closed, so an unlabeled
   # node gets no disk). cp1 and w1 were labeled by hand with kubectl;
-  # this one declares it, so the node comes back labeled after a
+  # this one declares it, so the node comes back with its disks after a
   # reinstall (invariant 2). NodeRestriction lets a worker self-label
-  # under node.longhorn.io/. When the SATA bays are populated this
-  # switches to "config" plus a node.longhorn.io/default-disks-config
-  # annotation listing every /var/mnt/longhorn* path.
+  # and self-annotate under node.longhorn.io/. "config" (was "true"
+  # while the NVMe was the only disk, 2026-09-22..10-04): the annotation
+  # lists every Longhorn disk on this node with its tag — `nvme` for
+  # the fast tier, `bulk` for the SATA bays — so a StorageClass can pin
+  # a tier by diskSelector (longhorn-bulk → bulk; app state → nvme).
+  #
+  # Longhorn reads the annotation ONLY for a node it has no disks for
+  # yet (a fresh Longhorn Node CR). nas1 was registered with the NVMe
+  # under "true", so on 2026-10-04 the two SATA disks and the tags were
+  # added to nodes.longhorn.io/nas1 by hand; this annotation is what a
+  # reinstall reproduces, not what added them.
   nodeLabels:
-    node.longhorn.io/create-default-disk: "true"
+    node.longhorn.io/create-default-disk: "config"
+  nodeAnnotations:
+    node.longhorn.io/default-disks-config: '[{"path":"/var/mnt/longhorn","allowScheduling":true,"tags":["nvme"]},{"path":"/var/mnt/longhorn-1","allowScheduling":true,"tags":["bulk"]},{"path":"/var/mnt/longhorn-2","allowScheduling":true,"tags":["bulk"]}]'
   kubelet:
     # Longhorn's data path, bind-mounted into the kubelet container with
     # `rshared` propagation — same reasoning as w1's patch: Talos
@@ -55,12 +65,26 @@ machine:
     #
     # The source path must exist as the u-longhorn mount or kubelet
     # fails to start — which is why the volume below is sized to
-    # provision on any NVMe >= 128GB. One entry per Longhorn disk: add
-    # a /var/mnt/longhorn-<n> line alongside each SATA UserVolumeConfig.
+    # provision on any NVMe >= 128GB. One entry per Longhorn disk,
+    # alongside each SATA UserVolumeConfig below.
     extraMounts:
       - destination: /var/mnt/longhorn
         type: bind
         source: /var/mnt/longhorn
+        options:
+          - bind
+          - rshared
+          - rw
+      - destination: /var/mnt/longhorn-1
+        type: bind
+        source: /var/mnt/longhorn-1
+        options:
+          - bind
+          - rshared
+          - rw
+      - destination: /var/mnt/longhorn-2
+        type: bind
+        source: /var/mnt/longhorn-2
         options:
           - bind
           - rshared
@@ -92,15 +116,13 @@ provisioning:
 # only the floor below which provisioning refuses (and kubelet then
 # fails on the extraMount above).
 #
-# SATA bays, when populated: each drive becomes its own document —
-#   kind: UserVolumeConfig, name: longhorn-<n>,
-#   provisioning.diskSelector.match: disk.serial == "<serial>"
-#   (serial from `talosctl get disks -o yaml`; transport alone is
-#   ambiguous across four bays), filesystem xfs, grow: true
-# — applied live: a user volume on a NEW disk provisions without a
-# reinstall; only the NVMe's split is fixed at install. Then add the
-# kubelet extraMount and switch the Longhorn label to "config" as the
-# comment above says.
+# SATA bays: each drive is its own document below (longhorn-<n>),
+# selected by WWID — these Toshibas report NO serial to Talos (`SERIAL`
+# is empty in `talosctl get disks`), and transport alone is ambiguous
+# across four bays. Applied live: a user volume on a NEW disk
+# provisions without a reinstall; only the NVMe's split is fixed at
+# install. Each one also needs the kubelet extraMount above and a line
+# in the default-disks-config annotation.
 #
 # UNENCRYPTED, matching cp1's and w1's Longhorn volumes and inheriting
 # the same open decision (thread `8e46f3a5`): ADR-0004 cleared public
@@ -113,6 +135,36 @@ provisioning:
   diskSelector:
     match: system_disk
   minSize: 30GiB
+  grow: true
+filesystem:
+  type: xfs
+---
+# SATA bay 1 (2026-10-04): TOSHIBA MN10ADA4 4 TB, sdd at the time,
+# bus_path …/ata1/host0/target0:0:0 — the first of cnb5's answer: the
+# media library's bulk replicas move off w1's NVMe onto the storage
+# node's spinning tier (tag `bulk`, see the annotation above). Takes
+# the whole disk; minSize is only the floor below which Talos refuses.
+# Unencrypted, as the NVMe volume above (same open thread).
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: longhorn-1
+provisioning:
+  diskSelector:
+    match: disk.wwid == "naa.5000039eb8db62c2"
+  minSize: 1TiB
+  grow: true
+filesystem:
+  type: xfs
+---
+# SATA bay 2 (2026-10-04): TOSHIBA MN10ADA4 4 TB, sde at the time,
+# …/ata2. Same as bay 1.
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: longhorn-2
+provisioning:
+  diskSelector:
+    match: disk.wwid == "naa.5000039eb8db61d8"
+  minSize: 1TiB
   grow: true
 filesystem:
   type: xfs
