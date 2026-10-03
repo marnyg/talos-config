@@ -20,7 +20,8 @@
 #
 # StorageClass parameters are immutable: changing this file means
 # deleting the class so ArgoCD recreates it (bound PVs are unaffected;
-# they reference it by name). Existing volumes do not follow a class
+# they reference it by name; the share-manager controller re-reads the
+# class by name when it creates a pod). Existing volumes do not follow a class
 # change either — their Volume CRs were patched to match (replicas,
 # diskSelector, affinities) and the w1 replica evicted.
 #
@@ -57,6 +58,17 @@ parameters:
   # disks), never on one disk.
   replicaSoftAntiAffinity: "true"
   replicaDiskSoftAntiAffinity: "false"
+  # The NFS server (share-manager pod) sits on the node that holds both
+  # replicas. Left to the kube-scheduler it landed on w1 for all three
+  # volumes (2026-10-04): every byte then crossed w1's USB gigabit
+  # dongle twice — in over NFS, back out to nas1's replicas — capping
+  # the library import at ~35 MB/s and putting Jellyfin's stream on the
+  # same detour. Pinning costs no availability: nas1 away is the
+  # library away regardless. Longhorn reads this when it creates the
+  # pod, so an existing share-manager moves only when its pod is
+  # deleted (which, with rwx-volume-fast-failover off, also restarts
+  # the volume's workload pods so they remount).
+  shareManagerNodeSelector: "kubernetes.io/hostname:nas1"
   staleReplicaTimeout: "30"
   fsType: "ext4"
   # Disabled rather than best-effort: the replicas are pinned to nas1's
