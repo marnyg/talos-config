@@ -83,6 +83,12 @@ const (
 	DefaultDialTimeout = 15 * time.Second
 	minBackoff         = time.Minute
 	maxBackoff         = 30 * time.Minute
+	// graceBeats: flat MinRebeat polls allowed after evidence the hub
+	// is in transition — a "sealed" answer, or a kick (lost connection,
+	// newer speak-as, unknown name) — before a failure starts the
+	// backoff. The hub's unseal→published→online window is seconds,
+	// not an outage.
+	graceBeats = 3
 )
 
 // Options configures Start.
@@ -348,6 +354,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		every = DefaultBeat
 	}
 	backoff = minBackoff
+	grace := 0
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
@@ -360,24 +367,38 @@ func (a *Agent) Run(ctx context.Context) error {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				if errors.Is(err, ErrHubSealed) {
+				switch {
+				case errors.Is(err, ErrHubSealed):
 					// Not an outage: the hub is up and waiting for the
 					// wallet. Poll it flat so the unseal is one MinRebeat
 					// from every member's beat; the backoff is untouched.
 					wait = a.minRebeat()
-				} else {
+					grace = graceBeats
+				case grace > 0:
+					// The hub answered "sealed" a moment ago, or this
+					// beat was kicked, and it fails some other way: the
+					// hub is coming up — unseal, reach-me-at, relay
+					// registration are seconds apart, and a poll that
+					// lands in between must not be charged a minute of
+					// backoff (seen 2026-10-03: '#bundle: no reachable
+					// endpoint … retry in 1m0s' right after the unseal).
+					grace--
+					wait = a.minRebeat()
+				default:
 					wait, backoff = backoff, min(backoff*2, maxBackoff)
 				}
 				a.log.Printf("beat: %v (retry in %s)", err, wait)
 			} else {
-				backoff = minBackoff
+				backoff, grace = minBackoff, 0
 			}
 			timer.Reset(wait)
 		case <-a.kick:
 			// Off-schedule: pull the timer in to the earliest moment the
 			// rate limit allows (now, when the last attempt is MinRebeat
 			// old). Never later than its date; a kick storm collapses
-			// into one beat per MinRebeat.
+			// into one beat per MinRebeat. A kick is evidence of a hub
+			// in transition, so the beat it schedules gets the grace.
+			grace = graceBeats
 			timer.Reset(a.untilRebeat())
 		}
 	}

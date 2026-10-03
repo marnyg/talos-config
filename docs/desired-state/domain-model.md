@@ -102,6 +102,12 @@ classDiagram
   address — stored, not computed, because kubernetes is IP-native and
   stays off the identity plane (ADR-0016). Under v3 no other address
   is a property of a role; presentation IPs are device-local fiction._
+  _2026-10-03 (ADR-0028): a machine role also declares the **UUID** —
+  the chassis — which is both the KMS unseal allowlist and the handle
+  the disk's break-glass passphrase derives from; the selector MAC
+  derives nothing durable. `installMAC` is the transitional record of
+  a pre-v2 install whose header was keyed under the MAC rule; it goes
+  at the node's re-key or reinstall._
 - **Binding** — the `member` cert: a time-boxed lease of a role to a
   key, carrying (name, groups), 90-day validity, signed by the hub's
   hot key and resolved through the wallet's `speak-as`. Membership
@@ -117,10 +123,12 @@ classDiagram
   normal operation; the role is what survives.
 - **Runner** — the platform adapter the key lives in: `p0agent`
   (Talos system extension — Talos allows no agents), the Android app
-  (no root: gomobile + VpnService fd), `irohup` (a launchd daemon on
-  a utun, ADR-0025). All three are the one `nodeagent` runtime over
-  different links (2026-09-20, P2.4); the runner distinction is the
-  link, not the code.
+  (no root: gomobile + VpnService fd), `irohup` (a root-launched
+  daemon dropped to a service user on a tun — launchd/utun on macOS,
+  systemd/`talosmesh0` on Linux since 2026-10-03 — ADR-0025). All
+  three are the one `nodeagent` runtime over different links
+  (2026-09-20, P2.4); the runner distinction is the link, not the
+  code.
 
 Replaceability is the point: re-key and the role stays; reinstall and
 the role stays; swap runner and both stay. A NIC swap changes which

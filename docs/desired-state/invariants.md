@@ -123,8 +123,12 @@ this list is the checkable form.
    Identity keys are minted on the machine, never derived from
    hardware. _(Reworded 2026-08-16, see ADR-0015; was "machine
    identity is hardware-anchored".)_
-7. **Ephemeral facts are never baked into durable identity.** A DHCP
-   lease is not a cluster endpoint.
+7. **Ephemeral facts are never baked into durable identity** — nor
+   into durable secrets: **a secret derives only from a handle that
+   outlives it.** A DHCP lease is not a cluster endpoint; a NIC's MAC
+   is not a disk key _(2026-10-03, ADR-0028: the break-glass passphrase
+   had derived from the config-selector MAC and a directory rename
+   rotated it unnoticed)_.
 8. **Secrets plaintext exists only in memory** (tmpfs on fly; never in
    images, registries, or git).
 
