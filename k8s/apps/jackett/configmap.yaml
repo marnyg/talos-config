@@ -17,7 +17,7 @@ data:
     {
       "Port": 9117,
       "AllowExternal": true,
-      "APIKey": "d47e09ac8e5d4c7f85b13a2f6e9c3d1a",
+      "APIKey": "PLACEHOLDER_API_KEY",
       "AdminPassword": "",
       "BasePathOverride": "",
       "BlackholeDir": "",

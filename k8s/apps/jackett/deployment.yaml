@@ -13,6 +13,15 @@ spec:
       labels:
         app: jackett
     spec:
+      # PSS restricted, same shape as sonarr: everything runs as 1000 (the
+      # linuxserver image's non-root mode; PUID/PGID dropped), s6-overlay
+      # gets a 1000-owned /run via the scratch subdir.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         - name: config
           # Helper pin: one tag across k8s/apps (rg 'image: busybox').
@@ -20,28 +29,45 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
-              mkdir -p /config/Jackett
-              cp /template/ServerConfig.json /config/Jackett/ServerConfig.json
+              set -e
+              mkdir -p /scratch/run /config/Jackett
+              sed "s/PLACEHOLDER_API_KEY/$JACKETT_API_KEY/" \
+                /template/ServerConfig.json > /config/Jackett/ServerConfig.json
+          env:
+            - name: JACKETT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jackett
+                  key: apiKey
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: config
               mountPath: /config
             - name: config-template
               mountPath: /template
+            - name: scratch
+              mountPath: /scratch
       containers:
         - name: jackett
           image: ghcr.io/linuxserver/jackett:0.24.2780
           ports:
             - containerPort: 9117
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           env:
-            - name: PUID
-              value: "1000"
-            - name: PGID
-              value: "1000"
             - name: AUTO_UPDATE
               value: "false"
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: scratch
+              mountPath: /run
+              subPath: run
           readinessProbe:
             tcpSocket:
               port: 9117
@@ -86,6 +112,8 @@ spec:
               mountPath: /template
       volumes:
         - name: config
+          emptyDir: {}
+        - name: scratch
           emptyDir: {}
         - name: config-template
           configMap:

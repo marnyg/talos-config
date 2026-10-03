@@ -9,7 +9,8 @@ data:
     set -e
 
     SONARR_URL="http://localhost:8989"
-    JACKETT_API_KEY="d47e09ac8e5d4c7f85b13a2f6e9c3d1a"
+    # JACKETT_API_KEY, JACKETT_INDEXERS, NZBGEEK_API_KEY come from the env
+    # (jackett sealed secret, jackett-config, nzbgeek sealed secret).
 
     echo "Waiting for Sonarr to start..."
     until curl -sf "$SONARR_URL/ping" > /dev/null 2>&1; do
@@ -83,18 +84,19 @@ data:
       }' "$SONARR_URL/api/v3/downloadclient" || echo "WARN: Transmission client failed"
     fi
 
-    # Add Jackett indexers (Torznab), one entry per Jackett indexer: Sonarr v4
+    # Jackett indexers (Torznab), one entry per Jackett indexer: Sonarr
     # refuses Jackett's /all aggregate. The id list comes from jackett-config
-    # (JACKETT_INDEXERS) so Jackett and Sonarr agree on one set. Sonarr
-    # validates a POST with a live tvsearch, which needs categories and a
-    # Jackett that has finished enabling the indexer — so retry for a while.
+    # (JACKETT_INDEXERS) so Jackett and Sonarr agree on one set. The
+    # configurator owns these entries: an existing one is PUT back (so a
+    # rotated key in the jackett secret propagates into the persisted DB), a
+    # missing one is POSTed. Sonarr validates both with a live tvsearch,
+    # which needs categories and a Jackett that has finished enabling the
+    # indexer — so retry a while. The id is the last top-level key of each
+    # object in Sonarr's pretty-printed list; nested names sit deeper.
     existing=$(curl -sf -H "$AUTH" "$SONARR_URL/api/v3/indexer")
     for id in $JACKETT_INDEXERS; do
       name="Jackett ($id)"
-      if echo "$existing" | grep -q "\"$name\""; then continue; fi
-      echo "Adding $name indexer..."
-      n=0
-      until curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+      body='{
         "enableRss": true,
         "enableAutomaticSearch": true,
         "enableInteractiveSearch": true,
@@ -111,7 +113,19 @@ data:
           {"name": "animeCategories", "value": [5070]},
           {"name": "minimumSeeders", "value": 1}
         ]
-      }' "$SONARR_URL/api/v3/indexer"; do
+      }'
+      eid=$(printf '%s\n' "$existing" | awk -v n="$name" \
+        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+      if [ -n "$eid" ]; then
+        echo "Refreshing $name indexer (id $eid)..."
+        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+          -d "${body%\}}, \"id\": $eid}" "$SONARR_URL/api/v3/indexer/$eid" || echo "WARN: $name refresh failed"
+        continue
+      fi
+      echo "Adding $name indexer..."
+      n=0
+      until curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
+        -d "$body" "$SONARR_URL/api/v3/indexer"; do
         n=$((n + 1))
         if [ "$n" -ge 18 ]; then echo "WARN: $name indexer failed"; break; fi
         sleep 10

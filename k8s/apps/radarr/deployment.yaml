@@ -116,6 +116,11 @@ spec:
                 configMapKeyRef:
                   name: jackett-config
                   key: indexers
+            - name: JACKETT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jackett
+                  key: apiKey
           volumeMounts:
             - name: config
               mountPath: /config
