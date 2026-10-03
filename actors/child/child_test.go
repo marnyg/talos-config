@@ -221,9 +221,13 @@ func TestRunLifecycle(t *testing.T) {
 	if got, want := r.drv.extends()[0], t0+10+r.sp.KitTTL; got != want {
 		t.Fatalf("extend until %d, want %d", got, want)
 	}
-	if _, until, ok := r.sp.Child(b.ID); !ok || until != t0+10+r.sp.KitTTL {
-		t.Fatalf("born table until %d ok=%v", until, ok)
-	}
+	// The born table moves only once the #extend reply is back at the
+	// spawner (a failed #extend never touches it), which is after the
+	// provisioner's driver recorded the call above: wait, don't assert.
+	waitFor(t, "born table", func() bool {
+		_, until, ok := r.sp.Child(b.ID)
+		return ok && until == t0+10+r.sp.KitTTL
+	})
 
 	// Past every re-issued exp: the next beat finds no live edge.
 	r.clock.Add(24 * 3600)
