@@ -26,6 +26,24 @@ data:
     echo "Radarr API key: $API_KEY"
     AUTH="X-Api-Key: $API_KEY"
 
+    # Allowed Hosts (DNS-rebinding guard, else a health warning): the
+    # names Radarr is reached by — the configurator (localhost), in-cluster
+    # peers (the Service), the mesh (nginx passes the Host untouched). Not
+    # the pod IP: the readiness probe sends Host: localhost for that. Host
+    # settings only apply after a restart, so restart only on change.
+    allowed="localhost,radarr,radarr.media,radarr.media.svc,radarr.media.svc.cluster.local,radarr.gw.mesh.internal"
+    host=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/config/host")
+    if ! printf '%s' "$host" | grep -q "\"allowedHosts\": *\"$allowed\""; then
+      echo "Setting allowed hosts..."
+      printf '%s' "$host" | sed "s/\"allowedHosts\": *\"[^\"]*\"/\"allowedHosts\": \"$allowed\"/" > /tmp/host.json
+      curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+        --data-binary @/tmp/host.json "$RADARR_URL/api/v3/config/host/1" \
+        && curl -sf -o /dev/null -X POST -H "$AUTH" "$RADARR_URL/api/v3/system/restart" \
+        || echo "WARN: allowed hosts failed"
+      sleep 15
+      until curl -sf "$RADARR_URL/ping" > /dev/null 2>&1; do sleep 5; done
+    fi
+
     # Wait for dependency services
     echo "Waiting for NZBget..."
     until curl -sf "http://nzbget:6789" > /dev/null 2>&1; do sleep 5; done

@@ -94,6 +94,11 @@ spec:
             httpGet:
               path: /ping
               port: 7878
+              # kubelet's default Host is the pod IP, which Allowed Hosts
+              # (configure.sh) rejects with 400.
+              httpHeaders:
+                - name: Host
+                  value: localhost
             initialDelaySeconds: 15
             periodSeconds: 10
         - name: configurator
