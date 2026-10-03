@@ -21,6 +21,10 @@ metadata:
   namespace: media
 spec:
   replicas: 1
+  # RWO /config: the replacement pod cannot attach while the old one
+  # holds the volume on another node (Multi-Attach), so no rolling update.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: transmission
