@@ -9,8 +9,13 @@
 #   scripts/ghcr-push.sh .#packages.x86_64-linux.actors-image marnyg/sap-actors
 #
 #   HUB_BUILDER=mar@nixos   build + push on that box (else: this host)
-#   GHCR_TOKEN / GHCR_USER  else the pair docker keeps for ghcr.io
-#                           (docker-credential-osxkeychain)
+#   GHCR_TOKEN / GHCR_USER  else the pair docker keeps for ghcr.io:
+#                           its credsStore helper (osxkeychain on a
+#                           mac), else the auths entry in
+#                           ~/.docker/config.json (a linux box)
+#
+# Credentials are resolved BEFORE the build: a missing helper used to
+# surface as exit 127 after the multi-minute static build (2026-10-03).
 #
 # Tag and push derivation come from ONE evaluation and the build is of
 # that exact .drv: evaluated separately, an edit made in between named
@@ -27,18 +32,33 @@ if [ -n "${HUB_BUILDER:-}" ]; then
     store=(--store "ssh-ng://$HUB_BUILDER" --eval-store auto)
 fi
 
+docker_cfg=${DOCKER_CONFIG:-$HOME/.docker}/config.json
+if [ -n "${GHCR_TOKEN:-}" ]; then
+    user=${GHCR_USER:-marnyg}
+else
+    helper=""
+    [ -r "$docker_cfg" ] && helper=$(sed -n 's/.*"credsStore": *"\([^"]*\)".*/\1/p' "$docker_cfg" | head -1)
+    if [ -n "$helper" ] && command -v "docker-credential-$helper" >/dev/null; then
+        creds=$(printf 'https://ghcr.io' | "docker-credential-$helper" get)
+        user=$(printf '%s' "$creds" | sed -n 's/.*"Username":"\([^"]*\)".*/\1/p')
+        GHCR_TOKEN=$(printf '%s' "$creds" | sed -n 's/.*"Secret":"\([^"]*\)".*/\1/p')
+    elif [ -r "$docker_cfg" ]; then
+        # auths."ghcr.io".auth is base64(user:token), as `docker login` stores it without a helper
+        pair=$(python3 -c 'import base64,json,sys;a=json.load(open(sys.argv[1])).get("auths",{}).get("ghcr.io",{}).get("auth","");print(base64.b64decode(a).decode() if a else "")' "$docker_cfg")
+        user=${pair%%:*}
+        GHCR_TOKEN=${pair#*:}
+    fi
+    if [ -z "${GHCR_TOKEN:-}" ] || [ -z "${user:-}" ]; then
+        echo "no ghcr.io credentials: set GHCR_TOKEN (+GHCR_USER) or \`docker login ghcr.io\`" >&2
+        exit 2
+    fi
+fi
+
 eval "$(nix eval --raw "$attr" --apply 'i: "tag=${i.imageTag}; drv=${i.copyToRegistry.drvPath}"')"
 image="ghcr.io/$repo:$tag"
 echo "building $image${HUB_BUILDER:+ on $HUB_BUILDER}"
 push=$(nix build "${store[@]}" --no-link --print-out-paths "$drv^out")
 
-if [ -z "${GHCR_TOKEN:-}" ]; then
-    creds=$(printf 'https://ghcr.io' | docker-credential-osxkeychain get)
-    user=$(printf '%s' "$creds" | sed -n 's/.*"Username":"\([^"]*\)".*/\1/p')
-    GHCR_TOKEN=$(printf '%s' "$creds" | sed -n 's/.*"Secret":"\([^"]*\)".*/\1/p')
-else
-    user=${GHCR_USER:-marnyg}
-fi
 auth=$(printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$(printf '%s:%s' "$user" "$GHCR_TOKEN" | base64 | tr -d '\n')")
 echo "pushing $image"
 if [ -n "${HUB_BUILDER:-}" ]; then

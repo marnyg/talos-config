@@ -72,9 +72,14 @@ func (l *Listener) Close() error {
 func (l *Listener) Addr() net.Addr { return Addr(l.facet) }
 
 // Conn adapts one admitted stream to net.Conn for http.Server.
-// Deadlines are accepted and ignored: the server's ReadHeaderTimeout
-// sets one per request, and a QUIC stream has no socket to arm; the
-// facet connection's lifetime bounds the stream's instead.
+// Deadlines are accepted and ignored, so the server's ReadHeaderTimeout
+// (which is set through them) does NOT bite here: a QUIC stream has no
+// socket to arm, and arming a timer that Closes the stream would not
+// free the goroutine either — irohtransport.Raw.Close cannot interrupt
+// a Read blocked in the FFI (iroh-ffi serialises read/stop on one
+// lock). What bounds a stalled stream is the facet connection's
+// lifetime (gateway.DefaultConnMaxAge) or the peer going away
+// (talos-config-vh6e).
 type Conn struct {
 	io.ReadWriteCloser
 	identity cert.Identity
