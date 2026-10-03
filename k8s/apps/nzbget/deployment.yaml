@@ -30,6 +30,9 @@ spec:
           args:
             - |
               set -e
+              # s6-overlay (non-root) insists /run is owned by its uid; an
+              # emptyDir is root-owned, a subdir we create is not.
+              mkdir -p /scratch/run
               mkdir -p /downloads/completed/Series /downloads/completed/Movies /downloads/completed/radarr /downloads/completed/sonarr /downloads/completed/tv-sonarr /downloads/incomplete /downloads/intermediate /downloads/tmp /downloads/queue /downloads/nzb /downloads/scripts
               sed "s/PLACEHOLDER_USER/$NNTP_USER/g; s/PLACEHOLDER_PASS/$NNTP_PASS/g; s/PLACEHOLDER_CONTROL_USER/$CONTROL_USER/g; s/PLACEHOLDER_CONTROL_PASS/$CONTROL_PASS/g" \
                 /template/nzbget.conf > /config/nzbget.conf
@@ -65,6 +68,8 @@ spec:
               mountPath: /template
             - name: downloads
               mountPath: /downloads
+            - name: scratch
+              mountPath: /scratch
       containers:
         - name: nzbget
           image: ghcr.io/linuxserver/nzbget:26.0.20260320
@@ -79,6 +84,9 @@ spec:
               mountPath: /config
             - name: downloads
               mountPath: /downloads
+            - name: scratch
+              mountPath: /run
+              subPath: run
           readinessProbe:
             tcpSocket:
               port: 6789
@@ -86,6 +94,8 @@ spec:
             periodSeconds: 10
       volumes:
         - name: config
+          emptyDir: {}
+        - name: scratch
           emptyDir: {}
         - name: config-template
           configMap:
