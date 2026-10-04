@@ -24,8 +24,12 @@
 #                                  the source of allowed-signers; the
 #                                  served tree is the signed git tip
 #                                  (fly/entrypoint.sh, GIT_REMOTE).
-#   /bin/sh, cp, mkdir             busybox, for the entrypoint
+#   /bin/sh, cp, mkdir, ln         busybox, for the entrypoint
 #   /tmp                           relay child config (relay.go)
+#   /etc/ssl/certs                 cacert: the git fetch (ADR-0030) is
+#                                  HTTPS to github.com; without a bundle
+#                                  the first deploy sat on the baked tree
+#                                  with "x509: unknown authority"
 { pkgs, lib, self, nix2container, configServer, irohRelay }:
 let
   talos = lib.fileset.toSource {
@@ -43,6 +47,8 @@ let
     ln -s ${irohRelay}/bin/iroh-relay $out/usr/local/bin/iroh-relay
     install -m 0755 ${./entrypoint.sh} $out/usr/local/bin/entrypoint.sh
     ln -s ${talos} $out/app/talos
+    mkdir -p $out/etc/ssl/certs
+    ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/certs/ca-certificates.crt
   '';
 in
 nix2container.buildImage {
