@@ -70,11 +70,14 @@ history and, where the numbers still matter, in ADR-0006 and
     posture, same open thread `8e46f3a5`) at `/var/mnt/longhorn`.
     Install disk is `diskSelector: type: nvme` — `sda` is a 2.1GB USB
     "Flash Disk", the same trap w1 has. **Two of four SATA bays filled**
-    _(2026-10-04, `lug3`)_: `u-longhorn-1` (`sdd`, wwid
-    `naa.5000039eb8db62c2`) and `u-longhorn-2` (`sde`,
-    `naa.5000039eb8db61d8`), TOSHIBA MN10ADA4 4 TB each, xfs,
+    _(2026-10-04, `lug3`)_: `u-longhorn-1` (wwid
+    `naa.5000039eb8db62c2`) and `u-longhorn-2`
+    (`naa.5000039eb8db61d8`), TOSHIBA MN10ADA4 4 TB each, xfs,
     unencrypted, at `/var/mnt/longhorn-{1,2}` — selected by **WWID**
-    (these report no serial), applied live, no reboot. The remaining
+    (these report no serial; the `sdX` letters move between boots —
+    `sdd`/`sde` when added, `sda`/`sdb` after the 13:55Z reboot, the
+    rest of `sd*` being Longhorn's iSCSI volumes), applied live, no
+    reboot. The remaining
     two bays follow the same recipe in `patch.yaml`. Longhorn's label
     is `create-default-disk=config` + a `default-disks-config`
     annotation (NVMe tag `nvme`, bays `bulk`) — what a reinstall
@@ -179,7 +182,8 @@ history and, where the numbers still matter, in ADR-0006 and
   re-issue at 90 d on their first renewal) + `invoke` grants compiled
   from `talos/mesh-policy-v3.yaml` (7 d, renewed on the daily beat) +
   its own self-issued `reach-me-at` (1 h). Gateway re-enrolled
-  2026-09-30 (same NodeId `ed:45fc82fc…`, image `ff7c478`). Groups in
+  2026-09-30 (same NodeId `ed:45fc82fc…`; image `3f47eff` since
+  2026-10-04, `458ad40`). Groups in
   use: `admins`, `machines`, `media`. Enrolled: cp1, w1 (machines,
   auto at boot via single-use token), gateway (headless device flow),
   `marius-mac` (admins), `phone` (media; Sony XQ-BQ52, 2026-09-20).
@@ -204,10 +208,10 @@ history and, where the numbers still matter, in ADR-0006 and
   rows; gateway
   `ingress-http` for admins and media, `jellyfin` for media; hub
   `hub-http`. No receiver holds a table; the blocklist is the git list.
-- **Stale binaries** (`5q33`, P3): phone/TV APK and the Mac daemon
-  predate `600d2d4`; harmless while every member holds a kit, fails
-  only at a *new* enrollment (the gateway's did, 2026-09-30, until
-  rebuilt).
+- **Client binaries** (`5q33`, P3): phone and TV APK and the gateway
+  image are all `3f47eff` (2026-10-04); only the Mac daemon predates
+  `600d2d4` — harmless while it holds a kit, fails only at a *new*
+  enrollment (the gateway's did, 2026-09-30, until rebuilt).
 
 ## Hub on fly — _verified 2026-10-04_
 

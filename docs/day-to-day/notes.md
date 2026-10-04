@@ -1015,3 +1015,20 @@
   the TV/phone retry the beat every minute until the owner signs at
   `/status` (TV renewed its member cert against the new hubkey within
   60 s today).
+- 2026-10-04 — **Reading a Longhorn rebuild on nas1**: a same-node
+  replica rebuild (bay → bay) is a *local* sparse sync
+  (`SyncLocalFile` in the instance-manager log) and the engine's
+  `rebuildStatus` stays at `progress: 0, appliedRebuildingMBps: 0` for
+  its whole duration — watch the target file's `stat -c %b` inside the
+  instance-manager pod instead. A **snapshot purge** (`purgeStatus` on
+  the engine; `snapshots.longhorn.io … markRemoved: true`) reads and
+  writes the same spindle and starves any rebuild sourcing from it.
+  `talosctl cgroups --preset io` attributes the IO per pod; the SATA
+  letters are **not stable across reboots** (bays were `sdd`/`sde`,
+  after the 13:55Z reboot `sda`/`sdb`; `sdc…sdk` are Longhorn's iSCSI
+  volumes) — map with `talosctl mounts | grep longhorn` first. A
+  reboot mid-rebuild throws the partial replica away (101 GB today).
+- 2026-10-04 — **Phone Connect from the box**: after `adb install -r`
+  the phone's app does not bring the tunnel up on launch (the Shield
+  does); `adb shell input tap 178 438` on the Connect button of the
+  not-connected screen (1080×2520) did, no VPN consent re-prompt.

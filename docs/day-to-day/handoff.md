@@ -5,50 +5,48 @@
 
 ## Last session
 
-2026-10-04 (third session): TV updated, two hygiene items closed, hub
-redeployed.
+2026-10-04 (fourth session): Longhorn checked, every client but the
+Mac daemon rebuilt.
 
-- **TV on the current APK** (`750f575`) over network adb from this box
-  — membership kept, `beat ok`, no `198.18.0.1` advertised (`bh74`
-  visible on the TV). Phone and TV now both carry `rnfk`/`bh74`/`5q33`.
-- **`4zpf` closed** (`f0c0433`): `android/build.sh` is the one-shot
-  cross-lib → AAR → APK build with `--publish` and repeatable
-  `--install <serial>`; it leaves `app-debug.apk.sha` beside the APK
-  and `publish.sh` puts *that* commit in the release notes (not the
-  publisher's HEAD). Build stage not exercised end-to-end yet — the
-  next real APK build is the test.
-- **`359.9.4.3` closed** (`b410783`, `925dc9d`): the netstack RSTs a
-  TCP SYN at `198.18.0.2` (resolver) or `198.18.0.1` (tun) before any
-  flow exists — Android's DoT `:853` probe is refused at once, no log
-  line, no `FlowErrors`. `fakeip.Stack.Stats` (`TCPRefused`,
-  `UDPDropped`) is exported through `meshtun.Tun.Stack` and shows on
-  the app's Debug JSON as `tcpRefused`/`udpDropped`. Gate green.
-- **Hub redeployed** `925dc9d` (was `3896837`), unsealed by the owner;
-  TV renewed against the new hubkey `ed:60669a3c…` within a minute.
-  Carries `7a3b21e` (nudgeGap floor) and the fakeip changes (no effect
-  on the hub itself — it has no tun).
+- **Longhorn**: 15/17 volumes healthy; `media/movies` and `media/tv`
+  `degraded` *by progress*, not failure — their second replica is
+  being built onto `longhorn-2` (the bulk-2 bay). The gate is a
+  420 GB **snapshot purge** on `tv`'s healthy replica (14 % at 16:00Z,
+  ~55 MB/s read+write on `sda`, 89 % busy), which starves the `movies`
+  local sync (~0.5 MB/s, reported as 0 %). nas1 had rebooted at
+  13:55Z mid-rebuild and lost 101 GB of copied replica. Noted on
+  `k8sd`. **Do not reboot nas1 until both are `healthy`.**
+- **APK `3f47eff`** built with `android/build.sh --publish` — first
+  end-to-end run of the build stage (the `4zpf` open question) — and
+  installed on the phone (`QV7802S09E`, USB) and the TV (`10.0.0.2`).
+  Both kept membership and `beat ok` against hubkey `ed:60669a3c…`;
+  the phone's `:853 not a name we minted` lines are gone (`359.9.4.3`
+  visible in the field).
+- **Gateway image `3f47eff`** pushed and pinned (`458ad40`); ArgoCD
+  rolled it (needed a `refresh=hard` nudge to pick the commit up
+  inside its poll interval), new pod on cp1 `beat ok`, admitting
+  `ingress-http`. `5q33` now has only the Mac `talos-mesh` daemon
+  left.
 
 ## Loose threads
 
-- **Longhorn bulk tier on nas1**: still check
-  `kubectl get volumes.longhorn.io -n longhorn-system` shows every
-  attached volume `healthy` before any nas1 reboot (`k8sd`).
-- **Clients still to rebuild** for the RST/stats change: phone + TV
-  APK (`android/build.sh --publish --install …`), Mac `talos-mesh`
-  daemon, gateway image. Cosmetic — ride the next natural release.
-- Undecided broken windows from this session (fix / file / ignore):
-  `publish.sh` fallback note shape (sha + prose), `build-aar.sh`
-  header still names the by-hand path, `notes.md` TV-adb entry vs the
-  README's replace-while-running quirk, `scripts/test-iroh.sh` runs
-  `go test` without `-timeout` (a hung test holds the gate 10 min).
+- **Longhorn bulk tier**: re-check
+  `kubectl get volumes.longhorn.io -n longhorn-system` later today;
+  expect `tv` purge → `tv` rebuild (~690 GB) → `movies` rebuild to
+  take several hours in total. `k8sd` has the design question.
+- **Mac daemon** (`5q33`): `darwin-rebuild switch` on the laptop,
+  which also still lacks the signing `git config`.
+- Undecided broken windows carried over: `publish.sh` fallback note
+  shape, `build-aar.sh` header still describing the by-hand path,
+  `scripts/test-iroh.sh` runs `go test` without `-timeout`.
 - `jlgz` (v6-only hub answer on cellular) stays open; re-check on the
   next cellular remote-media session.
-- Unchanged: no `fly ssh` key on the nixos box; the darwin laptop
-  lacks the signing `git config`; `dsuj` waits on the Windows data copy.
+- Unchanged: no `fly ssh` key on the nixos box; `dsuj` waits on the
+  Windows data copy.
 
 ## Suggested next steps
 
 - Owner's pick from the board: spikes `dsuj` / `ch74` / `9z4e` /
-  `kanr` / `i1il`, or `k8sd`.
-- Small: decide the four broken windows above; `pymm`/`d4p8` test
-  flakes.
+  `kanr` / `i1il`, or decide `k8sd` (recurring snapshot on the bulk
+  class vs. single replica vs. accept).
+- Small: the three broken windows above; `pymm`/`d4p8` test flakes.
