@@ -16,7 +16,7 @@ machine:
     #                 Longhorn's V1 data engine attaches volumes with.
     # - util-linux-tools  nsenter (required by Longhorn ≥1.5) and fstrim
     #                 (volume trimming). Both per ADR-0011.
-    # - p0agent       (0.1.4) `ext-p0agent`, the Mesh v3 node agent
+    # - p0agent       (0.1.6) `ext-p0agent`, the Mesh v3 node agent
     #                 (config-server/cmd/nodeagent, 359.8.3): NodeId key on
     #                 EPHEMERAL, boot-token enrollment (ADR-0015), renewal
     #                 beat, authorize() on ALPN-gated streams to apid /
@@ -42,6 +42,11 @@ machine:
     #                 hub client (rnfk, 2c2f607) and is the first image
     #                 WITHOUT the nebula extension: Mesh v3 Phase 4, the
     #                 node's only mesh identity is its NodeId.
+    #                 0.1.6 (7a3b21e, 2026-10-05) ships 7fb6473: a kit
+    #                 whose speak-as has expired is not loaded, the node
+    #                 re-enrolls instead of looping on ErrChainExpired
+    #                 (9af0); plus everything since P4.1 (enrollmsg v3,
+    #                 irohtransport.SetLogLevel).
     #
     # Predecessors: factory 011ccc… (nebula only) until 2026-07-31 when
     # Longhorn landed; factory 6a9acc… (nebula + the two above) until
@@ -55,4 +60,4 @@ machine:
     # is why there is no --preserve flag to pass — so etcd and
     # /var/media come back. A fresh *install* is the destructive path.
     disk: /dev/nvme0n1
-    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc32093fa80250a2d40d2b095c3c96e09b2d1daace3830e33df7eb0dedb
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6@sha256:d919330839276a00e21303c3eb7cfa2eb0bea0ab9043b6b6a908e26a1916094f

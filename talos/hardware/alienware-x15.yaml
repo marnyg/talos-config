@@ -41,4 +41,4 @@ machine:
     # Predecessors: factory 6a9acc… until 2026-09-19 (upgraded in place,
     # `talosctl upgrade`; EPHEMERAL survives); p0agent-0.1.4 with the
     # nebula extension until 2026-09-21 (Mesh v3 Phase 4, P4.1).
-    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc32093fa80250a2d40d2b095c3c96e09b2d1daace3830e33df7eb0dedb
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6@sha256:d919330839276a00e21303c3eb7cfa2eb0bea0ab9043b6b6a908e26a1916094f

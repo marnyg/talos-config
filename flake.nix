@@ -301,18 +301,21 @@
                   # Dry-run first. Two things a re-serve must never do by
                   # surprise: touch systemDiskEncryption on an installed
                   # machine (the LUKS header was keyed at install; Talos
-                  # re-keys only at boot, behind a slot-0 unlock ADR-0004
-                  # does not trust — a changed passphrase here is a disk
-                  # that may not open; cause so far: a directory rename,
-                  # see meta.yaml installMAC), and reboot the node
-                  # (APPLY_REBOOT=1 says you meant it).
+                  # re-keys slot 1 only at boot, after slot 0 (KMS) opens
+                  # the volume — so the node boots only if the hub is
+                  # unsealed and reachable during that boot; cause so far:
+                  # a directory rename, see meta.yaml installMAC), and
+                  # reboot the node. APPLY_REKEY=1 says the passphrase
+                  # change is deliberate (ADR-0028's exit: drop installMAC,
+                  # re-key by reboot — check the hub is unsealed first,
+                  # `kmsprobe`); APPLY_REBOOT=1 says you meant the reboot.
                   dry=$(${pkgs.talosctl}/bin/talosctl \
                     -e "$cp.mesh.internal" -n "$host" \
                     --talosconfig talosconfig \
                     apply-config --dry-run --file <(echo "$composed") 2>&1) || { echo "$dry" >&2; return 1; }
-                  if echo "$dry" | grep -qE '^[-+] .*(passphrase|systemDiskEncryption|provider: luks2)'; then
+                  if echo "$dry" | grep -qE '^[-+] .*(passphrase|systemDiskEncryption|provider: luks2)' && [ "''${APPLY_REKEY:-}" != 1 ]; then
                     echo "$dry" >&2
-                    echo "REFUSED: the diff for $mac touches systemDiskEncryption. The composed passphrase is not the one on disk — if this machine was installed under another directory MAC, set installMAC in its meta.yaml (recover -recovery to verify). No override: fix the declaration." >&2
+                    echo "REFUSED: the diff for $mac touches systemDiskEncryption. The composed passphrase is not the one on disk — if this machine was installed under another directory MAC, set installMAC in its meta.yaml (recover -recovery to verify). If the re-key IS intended (dropping installMAC, ADR-0028), make sure the hub is unsealed and rerun with APPLY_REKEY=1 APPLY_REBOOT=1: Talos re-keys slot 1 at the next boot after slot 0 (KMS) opens the volume." >&2
                     return 1
                   fi
                   if echo "$dry" | grep -q 'with a reboot' && [ "''${APPLY_REBOOT:-}" != 1 ]; then
