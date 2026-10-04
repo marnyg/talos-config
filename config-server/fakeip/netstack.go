@@ -46,8 +46,10 @@ const (
 )
 
 var (
-	fakePrefix = netip.MustParsePrefix(FakeRange)
-	poolStart  = netip.MustParseAddr("198.18.1.1")
+	fakePrefix   = netip.MustParsePrefix(FakeRange)
+	poolStart    = netip.MustParseAddr("198.18.1.1")
+	tunAddr      = netip.MustParseAddr(TunIP)
+	resolverAddr = netip.MustParseAddr(ResolverIP)
 )
 
 // IsFake reports whether ip lies in FakeRange — the tun's own address,
@@ -130,6 +132,16 @@ func NewStack(link stack.LinkEndpoint, onTCP FlowHandler, onUDP UDPHandler) (*St
 	tcpFwd := tcp.NewForwarder(s, 0, 1024, func(r *tcp.ForwarderRequest) {
 		id := r.ID()
 		dst := netip.AddrPortFrom(netip.AddrFrom4(id.LocalAddress.As4()), id.LocalPort)
+		// The resolver speaks UDP/53 and the tun's own address speaks
+		// nothing: a SYN there is refused before a flow exists. Android's
+		// Private DNS probes DoT (:853) at every resolver it is handed —
+		// an RST tells it "no DoT here" at once, where accept-then-close
+		// cost a TLS handshake and a logged flow error per probe
+		// (talos-config-359.9.4.3).
+		if a := dst.Addr(); a == resolverAddr || a == tunAddr {
+			r.Complete(true) // RST
+			return
+		}
 		var wq waiter.Queue
 		ep, e := r.CreateEndpoint(&wq)
 		if e != nil {

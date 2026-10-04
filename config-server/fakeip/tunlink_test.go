@@ -135,3 +135,75 @@ func TestTunLinkReportsDeviceLoss(t *testing.T) {
 	}
 	link.Close()
 }
+
+// tcp4 builds a bare IPv4+TCP SYN with correct checksums.
+func tcp4syn(src, dst netip.AddrPort) []byte {
+	pkt := make([]byte, header.IPv4MinimumSize+header.TCPMinimumSize)
+	ip := header.IPv4(pkt)
+	ip.Encode(&header.IPv4Fields{
+		TotalLength: uint16(len(pkt)), TTL: 64, Protocol: uint8(header.TCPProtocolNumber),
+		SrcAddr: tcpip.AddrFrom4(src.Addr().As4()), DstAddr: tcpip.AddrFrom4(dst.Addr().As4()),
+	})
+	ip.SetChecksum(^ip.CalculateChecksum())
+	tc := header.TCP(pkt[header.IPv4MinimumSize:])
+	tc.Encode(&header.TCPFields{
+		SrcPort: src.Port(), DstPort: dst.Port(), SeqNum: 1000, DataOffset: header.TCPMinimumSize,
+		Flags: header.TCPFlagSyn, WindowSize: 65535,
+	})
+	xsum := header.PseudoHeaderChecksum(header.TCPProtocolNumber, ip.SourceAddress(), ip.DestinationAddress(), uint16(header.TCPMinimumSize))
+	tc.SetChecksum(^tc.CalculateChecksum(xsum))
+	return pkt
+}
+
+// A TCP SYN at the resolver (Android's Private DNS probing DoT :853) or
+// the tun's own address is refused with an RST before any flow exists:
+// the handler never sees it, so it costs no flow error and no log line
+// (359.9.4.3). A SYN at a minted fake IP still becomes a flow.
+func TestTCPToResolverIsRefused(t *testing.T) {
+	dev := newMemTun()
+	link, err := NewTunLink(dev, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, _ := NewResolver(ResolverOptions{Directory: DirectoryFunc(func(n string) bool { return n == "cp1" })})
+	flows := make(chan netip.AddrPort, 1)
+	s, err := NewStack(link, func(c Conn, dst netip.AddrPort) { c.Close(); flows <- dst }, r.HandleUDP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { link.Close(); s.Close() }()
+
+	client := netip.MustParseAddrPort("198.18.0.1:40000")
+	for _, target := range []netip.AddrPort{netip.MustParseAddrPort(ResolverIP + ":853"), netip.MustParseAddrPort(TunIP + ":80")} {
+		dev.in <- tcp4syn(client, target)
+		select {
+		case out := <-dev.out:
+			ip := header.IPv4(out)
+			tc := header.TCP(out[ip.HeaderLength():])
+			if ip.SourceAddress() != tcpip.AddrFrom4(target.Addr().As4()) || tc.Flags()&header.TCPFlagRst == 0 {
+				t.Fatalf("%s: expected RST from the target, got flags %v from %v", target, tc.Flags(), ip.SourceAddress())
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: nothing left the tun", target)
+		}
+		select {
+		case d := <-flows:
+			t.Fatalf("%s: SYN reached the flow handler as %s", target, d)
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+
+	// Mint cp1 a fake IP (straight at the resolver, no packet involved),
+	// then a SYN there is accepted and handed over.
+	r.HandleUDP(src, dst, query(t, "cp1.mesh.internal.", dnsmessage.TypeA))
+	dev.in <- tcp4syn(client, netip.AddrPortFrom(poolStart, 8096))
+	select {
+	case out := <-dev.out:
+		tc := header.TCP(out[header.IPv4(out).HeaderLength():])
+		if tc.Flags()&header.TCPFlagSyn == 0 || tc.Flags()&header.TCPFlagAck == 0 {
+			t.Fatalf("fake IP: expected SYN-ACK, got %v", tc.Flags())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("fake IP: nothing left the tun")
+	}
+}
