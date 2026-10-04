@@ -9,3 +9,6 @@
 # ADR-0019). Latency = poll cadence + stream cap; during hub starvation
 # a listed member keeps access for the grant runway (structural
 # trade-off "revocation latency ≥ runway").
+#
+# 2026-10-05: ADR-0030 end-to-end check — this talos/-only commit must
+# show up on the hub's /status "talos/ from git" row without a deploy.
