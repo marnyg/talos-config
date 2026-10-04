@@ -6,9 +6,13 @@
 ## Last session
 
 2026-10-04 (night): **the hub serves `talos/` from the signed git tip**
-(spike `r4fw` → `lehx` `ra8k` `k9h7` `bfgz`; **ADR-0030**). Code is on
-`main` (`9bbd1ec`…), **not yet deployed** — the live hub still serves
-its baked snapshot.
+(spike `r4fw` → `lehx` `ra8k` `k9h7` `bfgz`; **ADR-0030**). **Deployed
+and proven live** 13:01Z: `git: serving main@3896837b302e (signed by
+marnyg@proton.me)` one second after boot. Two field fixes on the way:
+the image had no CA bundle (`x509: unknown authority` — fail-closed held
+the baked tree, as designed; `cacert` added to `fly/image.nix`) and
+`DefaultPaths` resolved against the repo root, not `talos/` (now
+`--git-subdir`, default `talos`, plus a "no served path" refusal).
 
 - **Commit signing is on** (`lehx`): `talos/allowed-signers` holds the
   owner's `id_ed25519` pub; `.githooks/pre-push` refuses an unsigned
@@ -33,12 +37,10 @@ its baked snapshot.
 
 ## Loose threads
 
-- **First deploy of ADR-0030 is the real test**: `HUB_BUILDER=mar@nixos
-  fly/deploy.sh`, unseal, then watch the "talos/ from git" row flip from
-  "baked image tree" to `main@<sha> signed by marnyg@proton.me`. If it
-  stays on baked, the row shows the fetch/verify error. The fly VM
-  needs outbound HTTPS to github.com (it already reaches fly's
-  registry; nothing in `fly.toml` blocks egress).
+- The hub was **re-sealed by the last deploy** (3896837) — sign both
+  proposals at `/status` if not yet done. First `talos/`-only change on
+  `main` after that is the end-to-end proof (served within 3 min, no
+  deploy).
 - The GitHub push webhook (`https://marnyg-talos-config.fly.dev/git/nudge`)
   is optional and unregistered; polling at 3 min suffices.
 - `dsuj` still waits on the data copy off the Windows PC; `ch74`'s
@@ -46,7 +48,7 @@ its baked snapshot.
 
 ## Suggested next steps
 
-- Deploy and verify ADR-0030 live (above); then a one-line `patch.yaml`
-  edit on `main` should be served within 3 min with no deploy.
+- Make a `talos/`-only signed commit and watch the `/status` row move
+  without a deploy.
 - Run the laptop's `git config` lines (AGENTS.md) before pushing from it.
 - `4iob` (retire the docker host) is the next app-side item.

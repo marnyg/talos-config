@@ -9,8 +9,8 @@ v3** (2026-09-21; no nebula anywhere, three-node fleet since 09-22) and
 nas1's bulk tier, app state on the fenced `nvme` default class,
 `/status` watches Longhorn). The board was groomed 2026-10-04; the
 open set is field items, follow-ups, and the owner's next-apps list.
-**In flight:** ADR-0030 (hub serves `talos/` from the signed git tip)
-is on `main`, not yet deployed — the first deploy is the proof.
+ADR-0030 (hub serves `talos/` from the signed git tip) is live since
+2026-10-04; `talos/` edits no longer need a deploy.
 
 **Toward goal:** "Every exposed service authenticates against the
 wallet" and "Provisioning plane stays minimal" (`goals.md`) are what
