@@ -78,7 +78,7 @@ spec:
           tolerationSeconds: 30
       containers:
         - name: gateway
-          image: ghcr.io/marnyg/gateway:a72f4ce@sha256:344113ee21a2029df6222298ddb4960615f302306e362d62aa57b8ad4be9754c
+          image: ghcr.io/marnyg/gateway:3f47eff@sha256:53051e1aaa73f520601bb849db8c16b8a11d0f7228f0c4a1c1ede93610dfe841
           args:
             - -hub=https://marnyg-talos-config.fly.dev
             - -state=/var/lib/gateway
