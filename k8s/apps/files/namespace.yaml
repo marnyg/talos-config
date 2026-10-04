@@ -1,0 +1,15 @@
+# `files`: plain file shares (SMB) over nas1's bulk tier — the first
+# answer to spike ch74's concrete need, scoped to a transfer share for
+# emptying the Windows PC (dsuj) and feeding later Windows VMs.
+#
+# Labeled privileged, not for the samba daemon's sake (root is enough
+# and baseline allows that) but for hostPort 445: the Windows SMB
+# client dials 445 and nothing else, NodePorts start at 30000, and
+# built-in PSS baseline rejects any non-zero hostPort. Same single-admin
+# reasoning as k8s/apps/vms/namespace.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: files
+  labels:
+    pod-security.kubernetes.io/enforce: privileged

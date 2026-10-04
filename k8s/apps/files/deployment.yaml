@@ -1,0 +1,108 @@
+# A general transfer share on the bulk tier (ADR-0029): the data dump
+# from the Windows PC before it becomes a node (dsuj), and afterwards
+# the drive any Windows VM on the cluster maps.
+#
+# Two ways in, one daemon:
+#   - the physical Windows PC on the LAN: \\10.0.0.74\transfer —
+#     hostPort 445 on nas1, where the replicas already live. The
+#     Windows SMB client dials port 445 only (a /TCPPORT option exists
+#     from Win11 24H2, not relied on), hence hostPort rather than a
+#     NodePort, hence the privileged namespace.
+#   - KubeVirt guests (masquerade networking, so they see Services):
+#     \\samba.files.svc.cluster.local\transfer over the ClusterIP.
+#
+# RWO, not RWX: nothing mounts this volume but samba; VMs and the PC
+# reach it over SMB. That keeps the share-manager NFS hop out of the
+# path and pins the pod to nas1 anyway, which hostPort needs.
+#
+# Files land as uid/gid 1000 (`mar`, the same ids the media apps run
+# as), so a pod can read them later without a chown. Strategy Recreate:
+# RWO + hostPort both forbid two pods at once.
+#
+# Done transferring? `replicas: 0` here; the PVC and its data stay
+# (longhorn-bulk is Retain). Grow it by raising the request — up only.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: transfer
+  namespace: files
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-bulk
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: samba
+  namespace: files
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: samba
+  template:
+    metadata:
+      labels:
+        app: samba
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: nas1
+      # ext4 on a Longhorn block device: kubelet chgrps the root to
+      # 1000 on mount, so `mar` can write the top level.
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: samba
+          # smbd-only variant: no avahi, wsdd2 or nmbd — the PC and the
+          # VMs address the server by IP/name, discovery adds nothing.
+          image: ghcr.io/servercontainers/samba:smbd-only-a3.24.2-s4.23.8-r0
+          ports:
+            - name: smb
+              containerPort: 445
+              hostPort: 445
+          envFrom:
+            - secretRef:
+                name: samba-users # ACCOUNT_mar
+          env:
+            - name: UID_mar
+              value: "1000"
+            - name: SAMBA_CONF_WORKGROUP
+              value: WORKGROUP
+            - name: SAMBA_CONF_SERVER_STRING
+              value: nas1 transfer share
+            - name: SAMBA_CONF_LOG_LEVEL
+              value: "1"
+            # The image turns `;` into newlines inside smb.conf.
+            - name: SAMBA_VOLUME_CONFIG_transfer
+              value: "[transfer]; path = /shares/transfer; valid users = mar; guest ok = no; read only = no; browseable = yes; create mask = 0664; directory mask = 0775"
+          volumeMounts:
+            - name: transfer
+              mountPath: /shares/transfer
+          readinessProbe:
+            tcpSocket:
+              port: 445
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: transfer
+          persistentVolumeClaim:
+            claimName: transfer
+---
+# For in-cluster Windows VMs (masquerade → pod network → ClusterIP).
+apiVersion: v1
+kind: Service
+metadata:
+  name: samba
+  namespace: files
+spec:
+  selector:
+    app: samba
+  ports:
+    - name: smb
+      port: 445
+      targetPort: 445
