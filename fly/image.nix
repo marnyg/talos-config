@@ -20,6 +20,10 @@
 #                                  tmpfs at unseal (invariant 8). Untracked
 #                                  plaintext (talosconfig, clusters/*/
 #                                  secrets.yaml) is invisible to a flake.
+#                                  Since ADR-0030 this is the FALLBACK and
+#                                  the source of allowed-signers; the
+#                                  served tree is the signed git tip
+#                                  (fly/entrypoint.sh, GIT_REMOTE).
 #   /bin/sh, cp, mkdir             busybox, for the entrypoint
 #   /tmp                           relay child config (relay.go)
 { pkgs, lib, self, nix2container, configServer, irohRelay }:

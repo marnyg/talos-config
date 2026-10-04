@@ -19,6 +19,17 @@
 
 ## Read first
 
+- 2026-10-04 — **Commits on `main` must be ssh-signed by the owner key**
+  (ADR-0030, `lehx`): the pre-push hook refuses an unsigned tip, and once
+  deployed the hub will not serve one. The nixos box is configured; the
+  darwin laptop is NOT yet (four `git config` lines in AGENTS.md). No
+  GitHub-UI merges. `SKIP_SIGNED=1` exists for emergencies — an unsigned
+  tip on `main` then means the hub stays on the previous tree until a
+  signed commit lands on top.
+- 2026-10-04 — **ADR-0030 is on `main` but the live hub is pre-0030**:
+  until the next `fly/deploy.sh`, `talos/` edits still need a deploy to
+  be served. After it, the "talos/ from git" row on `/status` is the
+  thing to check.
 - 2026-09-22 — **nas1's two 2.5GbE ports are a trap.** `:a8` and `:a9`
   are consecutive; Talos reports `${mac}` — the identity the device
   flow selects `talos/machines/<mac>/` by — from the **first** port,

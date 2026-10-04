@@ -3,6 +3,9 @@
 # push it to fly's registry, `fly deploy --image`. Replaces `fly deploy`
 # + Dockerfile since talos-config-e8d (cgo hub; see fly.toml header).
 #
+# This ships hub CODE. talos/ edits do not need it: the hub serves the
+# signed tip of main (ADR-0030) — push and wait a poll.
+#
 # The image is x86_64-linux only, so from a darwin laptop the build runs
 # in a linux nix store over ssh:
 #

@@ -241,6 +241,14 @@ laptop without a builder is never stuck. A bare `fly deploy` has no
 `[build]` section to work from and fails on purpose. The deploy
 **re-seals the hub** — sign both proposals at `/status` afterwards.
 
+A deploy ships hub **code**. `talos/` (machines, patches, mesh policy,
+blocklist, `.age` secrets) is served from the **signed tip of `main`**
+(ADR-0030): push a commit signed by the owner key and the hub picks it
+up within `GIT_POLL` (3 min; `POST /git/nudge` forces a check) — no
+build, no deploy, no re-unseal. Unsigned tips are refused and the
+last-good tree stays; `/status` shows what is served. The row's form
+switches to a branch for an experiment; a restart reverts to `main`.
+
 Everyday `go test ./...` in `config-server/` stays C-free: the iroh
 binding sits behind the `iroh` build tag (`hubiroh.go` / `hubiroh_stub.go`);
 `nix build .#config-server-bin` runs the tagged suite, including the
