@@ -82,3 +82,28 @@ func TestEndpointIDOfRejectsNonEd(t *testing.T) {
 func upperHex(n int) string {
 	return string(bytes.ToUpper([]byte(hex.EncodeToString(bytes.Repeat([]byte{0xab}, n)))))
 }
+
+// A host with the fake-IP tun up has 198.18.0.1 on an interface and
+// iroh enumerates it like any other (talos-config-bh74); it must not
+// become a reach-me-at tag.
+func TestDialable(t *testing.T) {
+	cases := map[string]bool{
+		"127.0.0.1:4242":           true,
+		"192.168.1.10:4242":        true,
+		"[fe80::1%en0]:4242":       true,
+		"[::ffff:10.0.0.7]:4242":   true,
+		"0.0.0.0:4242":             false,
+		"[::]:4242":                false,
+		"198.18.0.1:47890":         false, // the tun's own address
+		"198.19.255.254:1":         false, // last of the /15
+		"[::ffff:198.18.1.1]:4242": false, // mapped form of a fake IP
+		"198.20.0.1:4242":          true,  // just past the /15
+		"not-an-addr":              false,
+		"198.18.0.1":               false, // no port
+	}
+	for s, want := range cases {
+		if got := dialable(s); got != want {
+			t.Errorf("dialable(%q) = %v, want %v", s, got, want)
+		}
+	}
+}

@@ -5,7 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"strings"
 	"sync"
 
@@ -199,14 +199,33 @@ func (e *Endpoint) Endpoints() []string {
 	return out
 }
 
-// dialable rejects unspecified ("0.0.0.0:p", "[::]:p") sockets.
+// NotDialable lists address ranges that are never a peer-reachable
+// underlay and so are dropped from Endpoints(), whatever iroh
+// enumerated. The default is the RFC 2544 benchmarking range
+// 198.18.0.0/15: it is unroutable by definition, and the fake-IP
+// presentation (config-server/fakeip, Android's meshtun, irohup -tun)
+// assigns a host its tun address in it — a tag like
+// "iroh:udp=198.18.0.1:p" is useless to a peer at best and, for a
+// peer that routes the /15 into its own tun, a dial into itself.
+var NotDialable = []netip.Prefix{netip.MustParsePrefix("198.18.0.0/15")}
+
+// dialable rejects unspecified ("0.0.0.0:p", "[::]:p") sockets and
+// any address inside NotDialable.
 func dialable(s string) bool {
-	host, _, err := net.SplitHostPort(s)
+	ap, err := netip.ParseAddrPort(s)
 	if err != nil {
 		return false
 	}
-	ip := net.ParseIP(host)
-	return ip != nil && !ip.IsUnspecified()
+	ip := ap.Addr().Unmap()
+	if ip.IsUnspecified() {
+		return false
+	}
+	for _, p := range NotDialable {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
 
 // Dial opens a stream to actor id. iroh tags among the hints become the

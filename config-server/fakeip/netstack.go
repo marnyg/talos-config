@@ -50,6 +50,14 @@ var (
 	poolStart  = netip.MustParseAddr("198.18.1.1")
 )
 
+// IsFake reports whether ip lies in FakeRange — the tun's own address,
+// the resolver, or a name's fake IP. Such an address is device-local
+// fiction: never an underlay a peer could be told to reach us at.
+func IsFake(ip net.IP) bool {
+	a, ok := netip.AddrFromSlice(ip)
+	return ok && fakePrefix.Contains(a.Unmap())
+}
+
 // Conn is what the stack hands the flow handler for an accepted TCP
 // flow (*gonet.TCPConn satisfies it). CloseWrite lets a half-close
 // propagate to the other side of the bridge.

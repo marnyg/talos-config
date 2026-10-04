@@ -142,7 +142,9 @@ func Start(stateDir, hub, relay string, tunFd, mtu int, upstreamDNS, localAddrs,
 
 // advertiseLocal adds ip:<bound UDP port> for each IPv4 in localAddrs
 // as an external address of the endpoint, so a LAN peer learns where
-// to punch.
+// to punch. Loopback and the fake range are skipped: the tun's own
+// 198.18.0.1 is on this device's interface list like any other address
+// but reaches nobody (talos-config-bh74).
 func advertiseLocal(a *nodeagent.Agent, localAddrs string, logger *log.Logger) {
 	ep := a.Endpoint().Raw()
 	port := ""
@@ -157,7 +159,7 @@ func advertiseLocal(a *nodeagent.Agent, localAddrs string, logger *log.Logger) {
 	}
 	for _, ip := range strings.Split(localAddrs, ",") {
 		ip = strings.TrimSpace(ip)
-		if p := net.ParseIP(ip); p == nil || p.To4() == nil || p.IsLoopback() {
+		if p := net.ParseIP(ip); p == nil || p.To4() == nil || p.IsLoopback() || fakeip.IsFake(p) {
 			continue
 		}
 		addr := net.JoinHostPort(ip, port)
