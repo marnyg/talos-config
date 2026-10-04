@@ -87,7 +87,14 @@ func newGitSync(root, remote, ref, subdir string, poll time.Duration, decrypt fu
 	}, nil
 }
 
-// run polls until ctx ends; a nudge shortens the wait.
+// nudgeGap floors the time between two nudged syncs: the channel
+// coalesces a burst into one pending kick, but without a floor a steady
+// stream of unauthenticated POST /git/nudge would still cost one
+// ls-remote per sync.
+const nudgeGap = 10 * time.Second
+
+// run polls until ctx ends; a nudge shortens the wait (to no less than
+// nudgeGap after the previous attempt).
 func (g *gitSync) run(ctx context.Context, after func()) {
 	for {
 		g.syncOnce(ctx, after)
@@ -95,6 +102,16 @@ func (g *gitSync) run(ctx context.Context, after func()) {
 		case <-ctx.Done():
 			return
 		case <-g.nudge:
+			g.mu.Lock()
+			wait := time.Until(g.lastTry.Add(nudgeGap))
+			g.mu.Unlock()
+			if wait > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(wait):
+				}
+			}
 		case <-time.After(g.poll):
 		}
 	}
@@ -179,7 +196,8 @@ func (g *gitSync) statusLine(now time.Time) (line string, warn bool) {
 // handleGitNudge: POST /git/nudge, unauthenticated. A GitHub push
 // webhook (or anyone) may ask for a fetch now; the content is what is
 // verified, not the caller, so the worst a stranger can do is make the
-// hub ls-remote early. Rate-limited by the channel: one pending kick.
+// hub ls-remote early. Rate-limited twice: the channel holds one pending
+// kick, and run() spaces nudged syncs at least nudgeGap apart.
 func (s *server) handleGitNudge(w http.ResponseWriter, r *http.Request) {
 	if s.git == nil {
 		http.NotFound(w, r)

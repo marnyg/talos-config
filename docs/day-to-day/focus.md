@@ -10,7 +10,8 @@ nas1's bulk tier, app state on the fenced `nvme` default class,
 `/status` watches Longhorn). The board was groomed 2026-10-04; the
 open set is field items, follow-ups, and the owner's next-apps list.
 ADR-0030 (hub serves `talos/` from the signed git tip) is live since
-2026-10-04; `talos/` edits no longer need a deploy.
+2026-10-04 and proven end-to-end 2026-10-05 (push→served in 6 s with
+a nudge); `talos/` edits no longer need a deploy.
 
 **Toward goal:** "Every exposed service authenticates against the
 wallet" and "Provisioning plane stays minimal" (`goals.md`) are what
@@ -20,8 +21,8 @@ identity), `dsuj` (a fourth node — Windows PC with GPU — through the
 same one-signature path).
 
 **Next candidates** (owner to pick):
-- Apps: `4iob` retire the docker host (seerr `hwtp` and sillytavern
-  `lwi3` are deployed). `dsuj` waits only on the data copy off the Windows PC.
+- Apps: the docker host is retired (`4iob` closed); `dsuj` waits only
+  on the data copy off the Windows PC.
 - Spikes: `dsuj` Windows node + GPU, `ch74` SMB/sync, `9z4e` HTTPS,
   `kanr` agentic workloads. (`r4fw` closed → ADR-0030.)
 - Disk-secret hygiene: `spvd` (slot-0 KMS unlock proof), `9af0` (ship

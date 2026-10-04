@@ -5,50 +5,38 @@
 
 ## Last session
 
-2026-10-04 (night): **the hub serves `talos/` from the signed git tip**
-(spike `r4fw` → `lehx` `ra8k` `k9h7` `bfgz`; **ADR-0030**). **Deployed
-and proven live** 13:01Z: `git: serving main@3896837b302e (signed by
-marnyg@proton.me)` one second after boot. Two field fixes on the way:
-the image had no CA bundle (`x509: unknown authority` — fail-closed held
-the baked tree, as designed; `cacert` added to `fly/image.nix`) and
-`DefaultPaths` resolved against the repo root, not `talos/` (now
-`--git-subdir`, default `talos`, plus a "no served path" refusal).
+2026-10-05: **ADR-0030 proven end-to-end.** A `talos/`-only signed
+commit (`a76a828`, a comment in `mesh-blocklist-v3.txt`) pushed at
+13:10:02Z; `POST /git/nudge` → 202; hub log
+`git: serving main@a76a82862e41 (signed by marnyg@proton.me)` at
+13:10:08Z. Six seconds push→served, image still `3896837`, no restart.
+The unnudged poll path had already shown itself: `0859b5d` was picked
+up at 13:04:09Z, one poll after boot. `/status` row confirmed by the
+owner. Hub was unsealed by the owner before the check.
 
-- **Commit signing is on** (`lehx`): `talos/allowed-signers` holds the
-  owner's `id_ed25519` pub; `.githooks/pre-push` refuses an unsigned
-  tip (`SKIP_SIGNED=1`); per-clone setup in AGENTS.md "Git hooks".
-  Done on the nixos box; **the darwin laptop still needs the four
-  `git config` lines** before it can push.
-- **`config-server/gitsrc/`** (`ra8k`): go-git `ls-remote` + shallow
-  clone, SSHSIG verify of the tip against the signers (pure Go,
-  `hiddeco/sshsig`; `TestVerifyRealHead` proves it reads what
-  `git commit -S` writes), sparse materialize, atomic symlink swap,
-  prune. vendorHash bumped.
-- **Wiring** (`k9h7`): `--git-remote/--git-ref/--git-poll`; `--root` is
-  a symlink (`/dev/shm/hub/talos` → `talos-baked` at boot);
-  `POST /git/nudge`; `/status` row "talos/ from git" with a branch
-  override form (volatile — restart reverts to `main`); new trees are
-  decrypted with the held master before and after the swap;
-  `composeFor` pins one tree per request. `fly.toml` sets
-  `GIT_REMOTE`/`GIT_REF`.
-- Earlier the same day: `files` share stays up by decision; domain
-  model gained the "user files" data class; stale `vzbf`/`lwi3`/`hwtp`
-  references cleaned.
+- `config-server/gitsync.go`: nudged syncs now floor at `nudgeGap`
+  (10 s) after the previous attempt — the channel coalesced a burst
+  into one kick but a steady unauthenticated stream still cost one
+  `ls-remote` per sync. Not yet deployed (hub code change; rides the
+  next deploy — behaviour on the running hub is the old one-kick
+  coalescing, which is fine).
+- `.beads.gate.lock` gitignored (0-byte beads-named lock at the root).
+- `4iob` (retire the old docker host) closed as done by the owner.
 
 ## Loose threads
 
-- The hub was **re-sealed by the last deploy** (3896837) — sign both
-  proposals at `/status` if not yet done. First `talos/`-only change on
-  `main` after that is the end-to-end proof (served within 3 min, no
-  deploy).
-- The GitHub push webhook (`https://marnyg-talos-config.fly.dev/git/nudge`)
-  is optional and unregistered; polling at 3 min suffices.
+- `fly ssh console` is not provisioned on the nixos box (no fly ssh
+  key issued) — observing the served tree directly needs
+  `fly ssh issue` first; the `git: serving` log line is the
+  authoritative post-swap signal anyway.
+- The darwin laptop still needs the four `git config` signing lines
+  (AGENTS.md "Git hooks") before it can push to `main`.
 - `dsuj` still waits on the data copy off the Windows PC; `ch74`'s
   share-vs-sync question untouched.
 
 ## Suggested next steps
 
-- Make a `talos/`-only signed commit and watch the `/status` row move
-  without a deploy.
-- Run the laptop's `git config` lines (AGENTS.md) before pushing from it.
-- `4iob` (retire the docker host) is the next app-side item.
+- Owner's pick from the board: spikes `dsuj` / `ch74` / `9z4e` /
+  `kanr`, or disk-secret hygiene `spvd` / `9af0`.
+- Next hub deploy carries the `nudgeGap` change; nothing urgent forces
+  one.

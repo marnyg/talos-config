@@ -27,8 +27,11 @@
   tip on `main` then means the hub stays on the previous tree until a
   signed commit lands on top.
 - 2026-10-04 — **ADR-0030 is live** (hub 3896837): `talos/` edits are
-  served within 3 min of a signed push; the "talos/ from git" row on
-  `/status` says which tip. A deploy is only for hub code now.
+  served within 3 min of a signed push, or seconds after
+  `curl -X POST https://marnyg-talos-config.fly.dev/git/nudge`
+  (proven 2026-10-05: 6 s). The "talos/ from git" row on `/status`
+  says which tip; `fly logs` shows `git: serving <ref>@<sha>` after
+  each swap. A deploy is only for hub code now.
 - 2026-09-22 — **nas1's two 2.5GbE ports are a trap.** `:a8` and `:a9`
   are consecutive; Talos reports `${mac}` — the identity the device
   flow selects `talos/machines/<mac>/` by — from the **first** port,
