@@ -931,3 +931,9 @@
   hub's first good poll leaves nothing in `fly logs`; the page is the
   check. `degraded` during a Longhorn rebuild (disk swap, node return)
   is expected and clears on its own; `FAULTED` is not.
+- 2026-10-04 — **`files/samba` is a LAN-open SMB server on nas1:445**
+  (password auth, not wallet). Temporary for the Windows PC transfer;
+  set `replicas: 0` in `k8s/apps/files/deployment.yaml` when done.
+  `longhorn-bulk` was recreated this day with corrected
+  anti-affinity values — the first PVC ever provisioned through it is
+  `files/transfer`; media volumes predate the fix and were hand-patched.
