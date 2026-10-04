@@ -76,4 +76,6 @@ storage-class bug found on the way.
 
 - Copy the data off the Windows PC; then `dsuj` (Windows PC as a
   node) and `f17b` (Windows agent) become unblocked.
-- `hwtp` (seerr) remains the smallest open app item.
+- `hwtp` (seerr) is closed; its first-run UI wizard (Jellyfin admin
+  login, sonarr/radarr API keys) is manual and may still be pending.
+  `4iob` (retire the docker host) is the next app-side item.
