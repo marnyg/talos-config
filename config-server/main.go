@@ -453,7 +453,13 @@ func main() {
 
 	byMAC, err := machines.Load(filepath.Join(s.root, "machines"))
 	if err != nil {
-		log.Fatalf("loading machines: %v", err)
+		if s.git == nil {
+			log.Fatalf("loading machines: %v", err)
+		}
+		// Served from git: a bad baked tree is survivable — every
+		// request reloads, /status shows the error, and the next
+		// verified tip replaces the tree.
+		log.Printf("loading machines from the baked tree: %v (serving continues; a verified tip will replace it)", err)
 	}
 
 	if *autoBoot {

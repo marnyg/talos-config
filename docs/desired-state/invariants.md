@@ -55,7 +55,11 @@ this list is the checkable form.
    spike `359.2`)_: the hub compiles declared roles and policy into
    certs; a verifier (node agent, gateway, any receiver) decides from
    the certs presented to it alone — it never reads git, a registry,
-   or a network service to authorize.
+   or a network service to authorize. _(2026-10-04, ADR-0030)_: the
+   compiler reads git **through the owner's commit signature** — the hub
+   serves only a tip ssh-signed by a key in `talos/allowed-signers`; the
+   transport is not trusted (invariant 3), and the served ref override
+   is a safe-to-lose setting (ADR-0019).
    **Actor-owned state** _(2026-09-06, spike `7vv`, ADR-0018)_: the
    mechanism-level reading ("git + fly secrets + pure functions") is
    restated per actor. An actor may hold durable state only if it is

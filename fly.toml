@@ -1,5 +1,5 @@
-# Talos config server on fly.io.
-# Secrets: AGE_KEY (dedicated deploy key; see talos/fly-age-key.age).
+# Talos config server on fly.io. No fly secrets: the repo's .age files
+# decrypt at unseal with the wallet-derived identity (ADR-0018).
 #
 # No [build]: the image is built by nix (fly/image.nix — config-server is
 # cgo against libiroh_ffi since talos-config-e8d, which fly's remote
