@@ -1,0 +1,94 @@
+# Seerr (jellyseerr): request front-end for Jellyfin, filing into
+# sonarr/radarr. App state (settings.json, sqlite db, cache) on the
+# default longhorn class, RWO 2 replicas, per ADR-0011 — same as the
+# other media apps (talos-config-hwtp, vu9n).
+#
+# First run is a one-time UI wizard at http://seerr.gw.mesh.internal:
+# sign in with the Jellyfin admin (jellyfin-admin sealed secret), server
+# http://jellyfin:8096, external URL http://jellyfin.gw.mesh.internal,
+# then add sonarr (http://sonarr:8989, root /tv) and radarr
+# (http://radarr:7878, root /movies) with their API keys from
+# Settings → General in each. Not scripted: those keys are random,
+# live only in each app's config.xml on its own PVC, and are not
+# reachable from here. The answers persist on the volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: seerr-config
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seerr
+  namespace: media
+spec:
+  replicas: 1
+  # RWO /app/config: the replacement pod cannot attach while the old one
+  # holds the volume on another node (Multi-Attach), so no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: seerr
+  template:
+    metadata:
+      labels:
+        app: seerr
+    spec:
+      # PSS restricted, runs as 1000 like sonarr/radarr. The upstream
+      # image sets no USER (root by default) but is a plain node app that
+      # writes only under /app/config; fsGroup makes the fresh ext4 volume
+      # 1000-writable.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seerr
+          image: ghcr.io/fallenbagel/jellyseerr:2.7.3
+          ports:
+            - containerPort: 5055
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: PORT
+              value: "5055"
+            - name: CONFIG_DIRECTORY
+              value: /app/config
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+          readinessProbe:
+            httpGet:
+              path: /api/v1/status
+              port: 5055
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: seerr-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seerr
+  namespace: media
+spec:
+  selector:
+    app: seerr
+  ports:
+    - port: 5055
+      targetPort: 5055

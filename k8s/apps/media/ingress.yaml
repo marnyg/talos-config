@@ -149,3 +149,25 @@ spec:
                 name: jackett
                 port:
                   number: 9117
+---
+# Seerr is ungated like Jellyfin, not like the *arr apps: its users are
+# household members signing in with their Jellyfin account (seerr
+# authenticates against jellyfin server-side), who have no wallet.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: seerr
+  namespace: media
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: seerr.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: seerr
+                port:
+                  number: 5055
