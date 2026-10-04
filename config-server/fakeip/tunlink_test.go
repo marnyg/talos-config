@@ -193,6 +193,20 @@ func TestTCPToResolverIsRefused(t *testing.T) {
 		}
 	}
 
+	if got := s.Stats.TCPRefused.Load(); got != 2 {
+		t.Errorf("TCPRefused = %d, want 2", got)
+	}
+	// A non-DNS datagram is dropped and counted, not handed anywhere.
+	dev.in <- udp4(client, netip.MustParseAddrPort(ResolverIP+":853"), []byte("hello"))
+	select {
+	case out := <-dev.out:
+		t.Fatalf("non-DNS datagram got a %d-byte answer", len(out))
+	case <-time.After(200 * time.Millisecond):
+	}
+	if got := s.Stats.UDPDropped.Load(); got != 1 {
+		t.Errorf("UDPDropped = %d, want 1", got)
+	}
+
 	// Mint cp1 a fake IP (straight at the resolver, no packet involved),
 	// then a SYN there is accepted and handed over.
 	r.HandleUDP(src, dst, query(t, "cp1.mesh.internal.", dnsmessage.TypeA))

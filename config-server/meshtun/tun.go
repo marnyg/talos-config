@@ -53,11 +53,11 @@ type Stats struct {
 type Tun struct {
 	Resolver *fakeip.Resolver
 	Pool     *Pool
+	Stack    *fakeip.Stack // its Stats: what never reached a flow or the resolver
 	Stats    Stats
 
 	ctx    context.Context
 	cancel context.CancelFunc
-	stack  *fakeip.Stack
 	log    *log.Logger
 }
 
@@ -103,7 +103,7 @@ func Start(o Options) (*Tun, error) {
 		cancel()
 		return nil, err
 	}
-	t.stack = s
+	t.Stack = s
 	logger.Printf("tun: resolver on %s:53 for *.%s, upstream %q", fakeip.ResolverIP, fakeip.Zone, o.Upstreams)
 	return t, nil
 }
@@ -146,6 +146,6 @@ func (t *Tun) flow(app fakeip.Conn, dst netip.AddrPort) {
 // stopped (close the link first), the pool's connections dropped.
 func (t *Tun) Close() {
 	t.cancel()
-	t.stack.Close()
+	t.Stack.Close()
 	t.Pool.Close()
 }

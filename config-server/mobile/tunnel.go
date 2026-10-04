@@ -231,6 +231,8 @@ func (t *Tunnel) StatusJSON() string {
 		Flows      int64    `json:"flows"`
 		FlowsOpen  int64    `json:"flowsOpen"`
 		FlowErrors int64    `json:"flowErrors"`
+		TCPRefused int64    `json:"tcpRefused"` // SYN at the resolver/tun address (DoT probes)
+		UDPDropped int64    `json:"udpDropped"` // non-DNS datagram into the tun
 		BytesIn    int64    `json:"bytesIn"`
 		BytesOut   int64    `json:"bytesOut"`
 		DNSMesh    int64    `json:"dnsMesh"`
@@ -254,6 +256,8 @@ func (t *Tunnel) StatusJSON() string {
 	st := &t.tun.Stats
 	v.Flows, v.FlowsOpen, v.FlowErrors = st.Flows.Load(), st.FlowsOpen.Load(), st.FlowErrors.Load()
 	v.BytesIn, v.BytesOut = st.BytesIn.Load(), st.BytesOut.Load()
+	ss := &t.tun.Stack.Stats
+	v.TCPRefused, v.UDPDropped = ss.TCPRefused.Load(), ss.UDPDropped.Load()
 	rs := &t.tun.Resolver.Stats
 	v.DNSMesh, v.DNSForward, v.DNSFailed, v.DNSRefused = rs.Mesh.Load(), rs.Forward.Load(), rs.Failed.Load(), rs.Refused.Load()
 	for _, u := range t.tun.Resolver.Upstreams() {

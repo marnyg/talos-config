@@ -28,6 +28,7 @@ import (
 	"log"
 	"net"
 	"net/netip"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -82,7 +83,16 @@ type UDPHandler func(src, dst netip.AddrPort, payload []byte) (reply []byte)
 // and every UDP datagram the host routes into the tun lands in a
 // callback. No address plan: fake IPs are the Resolver's business.
 type Stack struct {
-	s *stack.Stack
+	s     *stack.Stack
+	Stats StackStats
+}
+
+// StackStats count what the stack turned away before any handler saw
+// it, for a status surface: without them a stray flow into the tun is
+// invisible.
+type StackStats struct {
+	TCPRefused atomic.Int64 // SYN at the resolver or the tun address: RST
+	UDPDropped atomic.Int64 // datagram to a port other than 53: dropped
 }
 
 const nicID tcpip.NICID = 1
@@ -105,6 +115,7 @@ func NewStack(link stack.LinkEndpoint, onTCP FlowHandler, onUDP UDPHandler) (*St
 		return nil, fmt.Errorf("spoofing: %s", e)
 	}
 	s.SetRouteTable([]tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicID}})
+	n := &Stack{s: s}
 
 	// Throughput knobs: the 80 Mbps floor with one flow means the receive
 	// window must cover RTT × rate — 4 MiB is generous for a LAN path and
@@ -139,6 +150,7 @@ func NewStack(link stack.LinkEndpoint, onTCP FlowHandler, onUDP UDPHandler) (*St
 		// cost a TLS handshake and a logged flow error per probe
 		// (talos-config-359.9.4.3).
 		if a := dst.Addr(); a == resolverAddr || a == tunAddr {
+			n.Stats.TCPRefused.Add(1)
 			r.Complete(true) // RST
 			return
 		}
@@ -159,6 +171,7 @@ func NewStack(link stack.LinkEndpoint, onTCP FlowHandler, onUDP UDPHandler) (*St
 		dst := netip.AddrPortFrom(netip.AddrFrom4(id.LocalAddress.As4()), id.LocalPort)
 		src := netip.AddrPortFrom(netip.AddrFrom4(id.RemoteAddress.As4()), id.RemotePort)
 		if dst.Port() != 53 {
+			n.Stats.UDPDropped.Add(1)
 			return // not DNS: drop (only the fake range is routed here)
 		}
 		var wq waiter.Queue
@@ -184,7 +197,7 @@ func NewStack(link stack.LinkEndpoint, onTCP FlowHandler, onUDP UDPHandler) (*St
 	})
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpFwd.HandlePacket)
 
-	return &Stack{s: s}, nil
+	return n, nil
 }
 
 // Close stops the stack and waits for its goroutines.
