@@ -54,7 +54,7 @@ type gitSync struct {
 // tree). The allowed signers are read from the tree root points at NOW
 // — the baked copy — and never again: the trust anchor cannot come
 // from the thing it anchors.
-func newGitSync(root, remote, ref string, poll time.Duration, decrypt func(string) error) (*gitSync, error) {
+func newGitSync(root, remote, ref, subdir string, poll time.Duration, decrypt func(string) error) (*gitSync, error) {
 	fi, err := os.Lstat(root)
 	if err != nil {
 		return nil, err
@@ -75,6 +75,7 @@ func newGitSync(root, remote, ref string, poll time.Duration, decrypt func(strin
 			Signers: signers,
 			Base:    filepath.Dir(root),
 			Link:    filepath.Base(root),
+			Subdir:  subdir,
 			Decrypt: decrypt,
 		},
 		remote:     remote,

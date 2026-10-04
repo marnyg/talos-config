@@ -475,3 +475,32 @@ func run(t *testing.T, dir string, args ...string) string {
 	}
 	return string(out)
 }
+
+func TestSyncSubdir(t *testing.T) {
+	owner, ownerPub := newKey(t)
+	r := newRepo()
+	files := map[string]string{"talos/machines/aa/m.yaml": "x\n", "README.md": "no"}
+	r.commit(t, "main", files, owner)
+	ctx := context.Background()
+
+	// Wrong subdir / paths that match nothing: refused, nothing linked.
+	for _, s := range []*Syncer{
+		{Fetch: r, Signers: signersFor("o", ownerPub), Base: t.TempDir(), Link: "talos", Subdir: "nope"},
+		{Fetch: r, Signers: signersFor("o", ownerPub), Base: t.TempDir(), Link: "talos"}, // root: DefaultPaths absent
+	} {
+		if _, changed, err := s.Sync(ctx, "main"); err == nil || changed {
+			t.Fatalf("subdir %q: changed=%v err=%v", s.Subdir, changed, err)
+		}
+		if _, err := os.Lstat(filepath.Join(s.Base, "talos")); err == nil {
+			t.Fatalf("subdir %q: link created", s.Subdir)
+		}
+	}
+
+	s := &Syncer{Fetch: r, Signers: signersFor("o", ownerPub), Base: t.TempDir(), Link: "talos", Subdir: "talos"}
+	if _, changed, err := s.Sync(ctx, "main"); err != nil || !changed {
+		t.Fatalf("subdir talos: changed=%v err=%v", changed, err)
+	}
+	if got := readFile(t, filepath.Join(s.Base, "talos", "machines/aa/m.yaml")); got != "x\n" {
+		t.Fatalf("served %q", got)
+	}
+}

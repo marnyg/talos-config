@@ -280,6 +280,7 @@ func main() {
 		irohBind    = flag.String("iroh-bind", "0.0.0.0:0", "UDP socket the hub's iroh endpoint binds (relay-only on fly: nothing reaches it directly)")
 		gitRemote   = flag.String("git-remote", "", "git URL to serve talos/ from (the verified tip of --git-ref replaces the tree under --root, which must be a symlink; empty = serve --root as is)")
 		gitRef      = flag.String("git-ref", "main", "branch whose signed tip is served (overridable from /status until restart)")
+		gitSubdir   = flag.String("git-subdir", "talos", "subdirectory of the repo that is the talos/ tree (empty = repo root)")
 		gitPoll     = flag.Duration("git-poll", 3*time.Minute, "how often to ls-remote --git-ref (POST /git/nudge forces a check)")
 	)
 	flag.Parse()
@@ -411,7 +412,7 @@ func main() {
 		if hub != nil {
 			decrypt = hub.decryptTree
 		}
-		gs, err := newGitSync(*root, *gitRemote, *gitRef, *gitPoll, decrypt)
+		gs, err := newGitSync(*root, *gitRemote, *gitRef, *gitSubdir, *gitPoll, decrypt)
 		if err != nil {
 			log.Fatalf("git: %v", err)
 		}

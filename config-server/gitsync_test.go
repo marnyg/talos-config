@@ -59,12 +59,12 @@ func TestGitSyncServesSignedTip(t *testing.T) {
 	}
 
 	// A plain directory as root is refused.
-	if _, err := newGitSync(baked, repo, "main", time.Hour, nil); err == nil {
+	if _, err := newGitSync(baked, repo, "main", "talos", time.Hour, nil); err == nil {
 		t.Fatal("plain dir root accepted")
 	}
 
 	var decrypted []string
-	gs, err := newGitSync(root, repo, "main", time.Hour, func(dir string) error {
+	gs, err := newGitSync(root, repo, "main", "talos", time.Hour, func(dir string) error {
 		decrypted = append(decrypted, dir)
 		return nil
 	})
@@ -77,13 +77,12 @@ func TestGitSyncServesSignedTip(t *testing.T) {
 		t.Fatalf("before sync: %q warn=%v", line, warn)
 	}
 
-	// Only talos/ is served, not the repo root.
-	gs.syncer.Paths = []string{"talos"}
+	// Only talos/ is served (Subdir), not the repo root.
 	gs.syncOnce(ctx, nil)
 	if gs.syncer.Current() == nil || gs.syncer.Current().Hash != v1 {
 		t.Fatalf("not serving v1: %+v", gs.syncer.Current())
 	}
-	if got := read(t, filepath.Join(root, "talos/machines/aa/machine.yaml")); got != "v1\n" {
+	if got := read(t, filepath.Join(root, "machines/aa/machine.yaml")); got != "v1\n" {
 		t.Fatalf("served %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(root, "README.md")); !os.IsNotExist(err) {
@@ -105,7 +104,7 @@ func TestGitSyncServesSignedTip(t *testing.T) {
 	gitc(repo, "add", "-A")
 	gitc(repo, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "unsigned")
 	gs.syncOnce(ctx, nil)
-	if got := read(t, filepath.Join(root, "talos/machines/aa/machine.yaml")); got != "v1\n" {
+	if got := read(t, filepath.Join(root, "machines/aa/machine.yaml")); got != "v1\n" {
 		t.Fatalf("unsigned tip served: %q", got)
 	}
 	line, warn = gs.statusLine(time.Now())
@@ -123,7 +122,7 @@ func TestGitSyncServesSignedTip(t *testing.T) {
 	}
 	fired := false
 	gs.syncOnce(ctx, func() { fired = true })
-	if got := read(t, filepath.Join(root, "talos/machines/aa/machine.yaml")); got != "exp\n" || !fired {
+	if got := read(t, filepath.Join(root, "machines/aa/machine.yaml")); got != "exp\n" || !fired {
 		t.Fatalf("override: %q fired=%v", got, fired)
 	}
 	line, warn = gs.statusLine(time.Now())
@@ -136,7 +135,7 @@ func TestGitSyncServesSignedTip(t *testing.T) {
 		t.Fatal(err)
 	}
 	gs.syncOnce(ctx, nil)
-	if got := read(t, filepath.Join(root, "talos/machines/aa/machine.yaml")); got != "exp\n" {
+	if got := read(t, filepath.Join(root, "machines/aa/machine.yaml")); got != "exp\n" {
 		t.Fatalf("after revert to unsigned main: %q", got)
 	}
 	line, _ = gs.statusLine(time.Now())

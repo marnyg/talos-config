@@ -217,6 +217,7 @@ func (r Remote) Commit(ctx context.Context, ref string) (*object.Commit, error) 
 // and a symlink out of the tree is exactly the kind of surprise a
 // fetched tree must not spring.
 func Materialize(tree *object.Tree, dst string, paths []string) error {
+	n := 0
 	for _, p := range paths {
 		e, err := tree.FindEntry(p)
 		if errors.Is(err, object.ErrEntryNotFound) || errors.Is(err, object.ErrDirectoryNotFound) {
@@ -228,6 +229,10 @@ func Materialize(tree *object.Tree, dst string, paths []string) error {
 		if err := writeEntry(tree, e, filepath.Join(dst, p)); err != nil {
 			return err
 		}
+		n++
+	}
+	if n == 0 {
+		return fmt.Errorf("none of %v exist in the tree (wrong subdir?)", paths)
 	}
 	return nil
 }
@@ -317,7 +322,8 @@ type Syncer struct {
 	Signers []Signer // the baked allowed_signers, parsed
 	Base    string   // directory holding Link and the per-tip trees
 	Link    string   // symlink name under Base, e.g. "talos"
-	Paths   []string // nil = DefaultPaths
+	Subdir  string   // subtree of the repo to serve, e.g. "talos" ("" = the root)
+	Paths   []string // nil = DefaultPaths, relative to Subdir
 
 	// Decrypt, when set, runs on the new tree before the swap (the
 	// .age-at-unseal step, hubseal.go); its failure aborts the swap.
@@ -355,6 +361,11 @@ func (s *Syncer) Sync(ctx context.Context, ref string) (tip *Tip, changed bool, 
 	tree, err := c.Tree()
 	if err != nil {
 		return s.current, false, err
+	}
+	if s.Subdir != "" {
+		if tree, err = tree.Tree(s.Subdir); err != nil {
+			return s.current, false, fmt.Errorf("%s@%s: subdir %s: %w", ref, c.Hash, s.Subdir, err)
+		}
 	}
 	paths := s.Paths
 	if paths == nil {
