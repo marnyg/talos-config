@@ -36,9 +36,6 @@ Mac daemon rebuilt.
   take several hours in total. `k8sd` has the design question.
 - **Mac daemon** (`5q33`): `darwin-rebuild switch` on the laptop,
   which also still lacks the signing `git config`.
-- Undecided broken windows carried over: `publish.sh` fallback note
-  shape, `build-aar.sh` header still describing the by-hand path,
-  `scripts/test-iroh.sh` runs `go test` without `-timeout`.
 - `jlgz` (v6-only hub answer on cellular) stays open; re-check on the
   next cellular remote-media session.
 - Unchanged: no `fly ssh` key on the nixos box; `dsuj` waits on the

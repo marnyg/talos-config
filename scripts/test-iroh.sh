@@ -20,7 +20,9 @@
 #   scripts/test-iroh.sh config-server    one module
 #   scripts/test-iroh.sh config-server -run TestHubBeatOverIroh
 #
-# Anything after the module name is passed through to `go test`.
+# Anything after the module name is passed through to `go test`; the
+# default `-timeout 5m` (a hung tagged test otherwise holds the gate for
+# go's 10 min) can be overridden there — last flag wins.
 #
 # NOTE: this is not a substitute for the pre-push vendorHash check (that
 # is .githooks/pre-push) — different failure, same trees.
@@ -52,7 +54,7 @@ export IROH_RELAY_BIN="$relay"
 rc=0
 for m in $mods; do
     echo "== $m (-tags iroh) ==" >&2
-    (cd "$m" && go test -tags iroh -count=1 "$@" ./...) || rc=1
+    (cd "$m" && go test -tags iroh -count=1 -timeout 5m "$@" ./...) || rc=1
 done
 
 if [ "$rc" != 0 ]; then

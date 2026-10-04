@@ -13,8 +13,10 @@
 #                                    cached in the store after; see
 #                                    android/shell.nix for the whole shell.
 #
-# CI does not run this yet: the cross build is impure (NDK, unfree) and
-# an hour cold. Build on the NixOS box (mar@nixos), commit nothing — the
+# CI does not run this: the cross build is impure (NDK, unfree) and an
+# hour cold. android/build.sh is the driver — it builds the cross lib,
+# exports IROH_FFI_ANDROID_LIB, runs this inside shell.nix, then gradle;
+# run this by hand only to iterate on the AAR alone. Commit nothing: the
 # AAR is an artifact, the APK the release.
 set -euo pipefail
 

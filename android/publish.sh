@@ -9,7 +9,8 @@
 #
 # The release notes name the commit the APK was built from: build.sh
 # leaves it in <apk>.sha. Without that sidecar (a bare gradle run) the
-# publisher's HEAD is the best guess and is flagged as such.
+# publisher's HEAD is the best guess and the notes say so:
+# "<sha> (unverified: publisher HEAD)".
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 apk=${1:-$here/app/build/outputs/apk/debug/app-debug.apk}
@@ -17,7 +18,7 @@ apk=${1:-$here/app/build/outputs/apk/debug/app-debug.apk}
 if [ -f "$apk.sha" ]; then
   sha=$(cat "$apk.sha")
 else
-  sha="$(git -C "$here" rev-parse --short HEAD)? (no $apk.sha; publisher HEAD)"
+  sha="$(git -C "$here" rev-parse --short HEAD) (unverified: publisher HEAD)"
   echo "warning: $apk.sha missing — notes will carry HEAD, not the APK's build sha" >&2
 fi
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
