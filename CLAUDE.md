@@ -181,13 +181,13 @@ git after auto/manual bootstrap.
 ArgoCD watches `k8s/apps/` (recursive, auto-sync with prune + self-heal) from the `main` branch of `github.com/marnyg/talos-config`. All manifests pushed to `main` are automatically deployed.
 
 **Media stack** (namespace: `media`):
-| Service | NodePort | Role |
+| Service | Exposure | Role |
 |---------|----------|------|
-| Jellyfin | 30096 | Media streaming |
-| Sonarr | 30989 | TV management |
-| Radarr | 30878 | Movie management |
-| NZBget | ClusterIP | Usenet downloader |
-| Transmission | ClusterIP (+ 31413 peer) | Torrent client |
+| Jellyfin | ClusterIP → gateway `jellyfin` facet + jellyfin.gw ingress | Media streaming |
+| Sonarr | ClusterIP → sonarr.gw ingress | TV management |
+| Radarr | ClusterIP → radarr.gw ingress | Movie management |
+| NZBget | ClusterIP → nzbget.gw ingress | Usenet downloader |
+| Transmission | ClusterIP → ingress (+ NodePort 31413 peer) | Torrent client |
 | Jackett | ClusterIP | Indexer aggregator |
 
 Storage is hostPath PVs at `/var/media/{tv,movies,downloads}`.

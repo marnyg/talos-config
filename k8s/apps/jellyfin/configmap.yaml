@@ -122,8 +122,7 @@ data:
     # (:80 ingress and the gateway's raw :8096 facet) are registered at
     # siwe-oidc. Clients that
     # cannot run SIWE in a webview — the Android/TV apps — sign in
-    # with Quick Connect or the local form instead (95la/i1il), as do
-    # LAN-direct clients on NodePort 30096.
+    # with Quick Connect or the local form instead (95la/i1il).
     curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" "$JELLYFIN_URL/System/Configuration/branding" -d '{
       "LoginDisclaimer": "<form action=\"/sso/OID/start/wallet\"><button class=\"raised block emby-button button-submit\">Sign in with wallet</button></form>",
       "CustomCss": "a.raised.emby-button { padding: 0.9em 1em; color: inherit !important; } .disclaimerContainer { display: block; }",

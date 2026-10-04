@@ -133,10 +133,14 @@ metadata:
   name: jellyfin
   namespace: media
 spec:
-  type: NodePort
+  # ClusterIP only: the gateway's raw `jellyfin` facet and the
+  # jellyfin.gw ingress are the two doors (ADR-0017). The NodePort 30096
+  # was the nebula-era LAN-direct path for the TV; it was unreachable
+  # from mesh v3 (a node forwards only apid/kube-api) and an
+  # unauthenticated LAN door otherwise — cut 2026-10-04 with the win2k25
+  # RDP NodePort (j5c5).
   selector:
     app: jellyfin
   ports:
     - port: 8096
       targetPort: 8096
-      nodePort: 30096

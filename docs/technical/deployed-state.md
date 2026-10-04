@@ -115,9 +115,10 @@ history and, where the numbers still matter, in ADR-0006 and
   distinct nodes (required anti-affinity, PDB minAvailable 1,
   `maxUnavailable: 1`) _(2026-09-30, `9l67` slice 2)_. Ingress hosts, all `<svc>.gw.mesh.internal`:
   argocd, auth, oauth2, jackett, jellyfin, nzbget, radarr, sonarr,
-  transmission. No `*.cp1` names remain. The only web NodePort left is
-  Jellyfin's 30096 for LAN-direct clients, plus transmission's peer
-  ports.
+  transmission. No `*.cp1` names remain. No web NodePorts remain
+  (Jellyfin's 30096 and win2k25's RDP 30389 cut 2026-10-04 — a v3 node
+  forwards only its own facets, so they were dead doors); only
+  transmission's peer ports are NodePorts.
 - **Every web UI authenticates against the wallet** _(since
   2026-07-31)_: SIWE→OIDC bridge `auth.gw.mesh.internal` (ns `sso`) is
   the only IdP — ArgoCD native OIDC (local `admin` = break-glass), the
