@@ -5,6 +5,25 @@
 
 ## Last session
 
+2026-10-04 (evening): **RDP to win2k25 over mesh v3** (`j5c5`, ADR-0017
+amendment 2026-10-04). The NodePort 30389 had been dead since the
+nebula render went (`irohup`: "port 30389 is not a node facet");
+Jellyfin's 30096 is in the same state. Added the `rdp` gateway facet
+(policy.go + Nickel + glossary), `-rdp` forward on the gateway
+(image `a72f4ce` live), `{facet: rdp, group: admins}`, Service →
+ClusterIP; hub redeployed `5059794` and unsealed; desktop's irohup
+rebuilt. `xfreerdp /v:rdp.gw.mesh.internal` works — pass `/p:` from
+secret `win2k25-admin` (lockout at 10 bad tries) and a fixed
+`/size:`; `/dynamic-resolution` under a tiling WM leaves the lock
+screen half-painted. Guest ops without a guest agent: WinRM 5985 via
+`kubectl -n vms port-forward pod/<virt-launcher>` + pywinrm (NTLM);
+anything touching the user's vault/session (cmdkey, net use) must
+run as a `LogonType Interactive` scheduled task — that is how `Z:`
+→ `\\samba.files.svc.cluster.local\transfer` (as `mar`, persistent)
+was mapped. Filed `f17b` (Windows agent build + provisioning-time
+enrollment, under `dsuj`); noted on `dsuj` that the VM has no GPU
+(bochs, no hostDevices, permittedHostDevices unset).
+
 2026-10-04 (later): **SMB transfer share live on nas1's bulk tier**
 (`e6yj`, first concrete answer to spike `ch74`), plus a latent
 storage-class bug found on the way.
