@@ -116,6 +116,7 @@ type server struct {
 	kms          *kmsServer       // nil unless KMS enabled
 	kmsAdvertise string           // endpoint machines dial for disk unseal
 	relay        *relaySupervisor // nil unless --relay-bin (iroh home relay, ADR-0022)
+	git          *gitSync         // nil unless --git-remote (talos/ served from a signed tip, k9h7)
 	started      time.Time
 
 	fetchMu sync.Mutex
@@ -144,7 +145,8 @@ func (s *server) lastFetch(mac string) (time.Time, bool) {
 // certSANs, disk encryption). On failure it returns a
 // non-200 status with a client-safe message; details go to the log.
 func (s *server) composeFor(mac string) ([]byte, int, string) {
-	byMAC, err := machines.Load(filepath.Join(s.root, "machines"))
+	root := resolveRoot(s.root) // one tree for every read below (gitsync.go)
+	byMAC, err := machines.Load(filepath.Join(root, "machines"))
 	if err != nil {
 		log.Printf("error loading machines: %v", err)
 		return nil, http.StatusInternalServerError, "internal error"
@@ -160,7 +162,7 @@ func (s *server) composeFor(mac string) ([]byte, int, string) {
 		return nil, status, msg
 	}
 
-	body, err := machines.BuildConfig(s.root, m, extra...)
+	body, err := machines.BuildConfig(root, m, extra...)
 	if err != nil {
 		log.Printf("error building config for %s: %v", mac, err)
 		return nil, http.StatusInternalServerError, "internal error"
@@ -251,6 +253,8 @@ func (s *server) mux() *http.ServeMux {
 	mux.HandleFunc("GET /status", s.handleStatus)
 	mux.HandleFunc("POST /status/login", s.handleStatusLogin)
 	mux.HandleFunc("POST /status/logout", s.handleStatusLogout)
+	mux.HandleFunc("POST /status/git-ref", s.handleGitRef)
+	mux.HandleFunc("POST /git/nudge", s.handleGitNudge)
 	if s.relay != nil {
 		// iroh relay protocol on the hub's own listener (ADR-0022): the
 		// WebSocket upgrade plus the two probes, proxied to the child.
@@ -274,6 +278,9 @@ func main() {
 		relayPort   = flag.Int("relay-port", 3340, "loopback port the iroh-relay child binds (only reachable through the hub's proxy)")
 		irohRelay   = flag.String("iroh-relay", "", "public relay URL members dial the hub's iroh endpoint through (e.g. https://host); makes this process a HUB (sealed until an admin wallet signs at /status): the hubkey is bound on iroh, homed on the relay child when --relay-bin is set (needs a -tags iroh build)")
 		irohBind    = flag.String("iroh-bind", "0.0.0.0:0", "UDP socket the hub's iroh endpoint binds (relay-only on fly: nothing reaches it directly)")
+		gitRemote   = flag.String("git-remote", "", "git URL to serve talos/ from (the verified tip of --git-ref replaces the tree under --root, which must be a symlink; empty = serve --root as is)")
+		gitRef      = flag.String("git-ref", "main", "branch whose signed tip is served (overridable from /status until restart)")
+		gitPoll     = flag.Duration("git-poll", 3*time.Minute, "how often to ls-remote --git-ref (POST /git/nudge forces a check)")
 	)
 	flag.Parse()
 
@@ -394,6 +401,32 @@ func main() {
 		// The identity plane has no env escape hatch by design (ADR-0018:
 		// the hubkey is per process, nothing durable seeds it).
 		log.Printf("hub identity %s SEALED: an admin must sign the speak-as proposal at /status", hub.issuer.Fingerprint())
+	}
+
+	if *gitRemote != "" {
+		// talos/ from a signed git tip (k9h7). The hub decrypts each new
+		// tree with its master; a plain config server (no hub) serves
+		// whatever the tree holds.
+		var decrypt func(string) error
+		if hub != nil {
+			decrypt = hub.decryptTree
+		}
+		gs, err := newGitSync(*root, *gitRemote, *gitRef, *gitPoll, decrypt)
+		if err != nil {
+			log.Fatalf("git: %v", err)
+		}
+		s.git = gs
+		after := func() {
+			// The post-swap pass: closes the window where an unseal
+			// decrypted the previous tree between Decrypt and Swap.
+			if hub != nil {
+				if err := hub.decryptTree(*root); err != nil {
+					log.Printf("git: decrypting the served tree: %v", err)
+				}
+			}
+		}
+		go gs.run(context.Background(), after)
+		log.Printf("git: serving %s from %s@%s, polling every %s", *root, *gitRemote, *gitRef, *gitPoll)
 	}
 
 	if *kmsAdv != "" {

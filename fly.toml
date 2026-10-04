@@ -21,6 +21,13 @@ KMS_ADVERTISE = "https://marnyg-talos-config.fly.dev:8443"
 # loopback; members dial this. Setting it is what makes the process a
 # hub (sealed until an admin wallet signs at /status).
 IROH_RELAY_URL = "https://marnyg-talos-config.fly.dev"
+# talos/ is served from the signed tip of main, not the image's
+# snapshot (talos-config-k9h7): a patch.yaml or policy edit is live
+# within GIT_POLL of the push, no deploy and no re-unseal. Only tips
+# ssh-signed by a key in talos/allowed-signers are served; the baked
+# tree is the fallback. A deploy is still what ships hub CODE.
+GIT_REMOTE = "https://github.com/marnyg/talos-config.git"
+GIT_REF = "main"
 # Mesh devices are no longer declared here (ADR-0012): enrollment is
 # wallet-signed, the device generates its keypair locally, and the
 # approver at /status decides the final name and group per enrollment.

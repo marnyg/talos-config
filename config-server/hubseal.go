@@ -343,6 +343,19 @@ func (m *hubManager) unsealWithMaster(master []byte) error {
 	return nil
 }
 
+// decryptTree decrypts dir's .age files with the held master; a no-op
+// while sealed (the unseal then decrypts whatever --root points at).
+// Idempotent: existing plaintext is left alone. Used by the git sync
+// before and after it swaps a new tree in (gitsync.go).
+func (m *hubManager) decryptTree(dir string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.master == nil {
+		return nil
+	}
+	return decryptAgeSecrets(dir, m.master)
+}
+
 // handleUnseal accepts the admin's signatures: `signature` over
 // MasterMessage and/or `speakas_signature` over the Issuer's proposal.
 // Either alone is fine (the page only asks for what is still sealed);

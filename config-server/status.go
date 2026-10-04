@@ -388,6 +388,10 @@ var statusTemplate = template.Must(template.New("status").Parse(statusPageHead("
  {{else}}
  <tr><th>auto-bootstrap</th><td>disabled</td></tr>
  {{end}}
+ {{if .Git}}<tr><th>talos/ from git</th><td{{if .GitWarn}} class="warn"{{end}}>{{.Git}}
+  <form method="post" action="/status/git-ref" style="display:inline;margin-left:1em">
+   <input name="ref" placeholder="branch (empty = default)" size="20"> <button>serve</button>
+  </form></td></tr>{{end}}
  {{if .GitOps}}<tr><th>gitops</th><td{{if .GitOpsWarn}} class="warn"{{end}}>{{.GitOps}}</td></tr>{{end}}
  {{if .Storage}}<tr><th>storage</th><td{{if .StorageWarn}} class="warn"{{end}}>{{.Storage}}</td></tr>{{end}}
 </table>
@@ -655,6 +659,8 @@ type statusData struct {
 	Relay         string      // iroh relay child line ("" = no relay)
 	RelayWarn     bool
 	Boot          *bootSnapshot
+	Git           string // served git tip line (gitsync.go), "" unless --git-remote
+	GitWarn       bool
 	GitOps        string // ArgoCD root app line (clusterwatch.go), "" when not watching
 	GitOpsWarn    bool
 	Storage       string // Longhorn volume line (storage.go), "" until the first read
@@ -752,6 +758,9 @@ func (s *server) renderStatus(w http.ResponseWriter, addr, msg string) {
 	if s.boot != nil {
 		snap := s.boot.status()
 		data.Boot = &snap
+	}
+	if s.git != nil {
+		data.Git, data.GitWarn = s.git.statusLine(now)
 	}
 	if s.cluster != nil {
 		data.GitOps, data.GitOpsWarn = s.cluster.status().line(now)
