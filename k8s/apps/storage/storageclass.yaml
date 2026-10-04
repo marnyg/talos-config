@@ -55,9 +55,13 @@ parameters:
   numberOfReplicas: "2"
   diskSelector: "bulk"
   # Both replicas may be on one node (nas1 is the only one with `bulk`
-  # disks), never on one disk.
-  replicaSoftAntiAffinity: "true"
-  replicaDiskSoftAntiAffinity: "false"
+  # disks), never on one disk. Values are enabled/disabled/ignored, not
+  # booleans: "true"/"false" made every new claim fail with `invalid
+  # ReplicaSoftAntiAffinity setting`, unnoticed until the first PVC
+  # provisioned through this class (files/transfer, 2026-10-05) — the
+  # media volumes had been patched by hand (see above).
+  replicaSoftAntiAffinity: "enabled"
+  replicaDiskSoftAntiAffinity: "disabled"
   # The NFS server (share-manager pod) sits on the node that holds both
   # replicas. Left to the kube-scheduler it landed on w1 for all three
   # volumes (2026-10-04): every byte then crossed w1's USB gigabit
