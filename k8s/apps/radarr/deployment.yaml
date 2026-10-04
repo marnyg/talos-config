@@ -51,7 +51,7 @@ spec:
           args:
             - |
               set -e
-              mkdir -p /scratch/run
+              mkdir -p /scratch/run /scratch/recyclarr
               # Seed only on a fresh volume: Radarr owns config.xml after that.
               [ -f /config/config.xml ] && exit 0
               cat > /config/config.xml << 'XMLEOF'
@@ -131,6 +131,39 @@ spec:
               mountPath: /config
             - name: scripts
               mountPath: /scripts
+        - name: recyclarr
+          # Syncs the TRaSH anime profile (recyclarr.yml in the configurator
+          # ConfigMap) into Radarr, daily. Same shape and reasoning as the
+          # sonarr recyclarr sidecar.
+          image: ghcr.io/recyclarr/recyclarr:8.7.2
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              until [ -f /config/config.xml ] && grep -q '<ApiKey>' /config/config.xml; do sleep 5; done
+              export RADARR_API_KEY=$(sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml)
+              while true; do
+                until recyclarr sync --config /scripts/recyclarr.yml; do
+                  echo "WARN: recyclarr sync failed, retrying in 60s"; sleep 60
+                done
+                sleep 86400
+              done
+          env:
+            - name: RECYCLARR_CONFIG_DIR
+              value: /scratch/recyclarr
+            - name: HOME
+              value: /scratch/recyclarr
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+            - name: scratch
+              mountPath: /scratch
       volumes:
         - name: config
           persistentVolumeClaim:

@@ -4,6 +4,35 @@ metadata:
   name: sonarr-configurator
   namespace: media
 data:
+  # Recyclarr (sidecar in deployment.yaml) syncs TRaSH's "[Anime] Remux-1080p"
+  # quality profile into Sonarr. Existing profiles are untouched; a series
+  # opts in by picking this profile (and series type Anime). What the
+  # profile enforces, all from release-title heuristics — nothing inspects
+  # the actual audio/subtitle tracks:
+  #   - minFormatScore 100: only known fansub/BD groups (the Anime BD/Web
+  #     tiers, 100..1400) clear the bar, which is the practical proxy for
+  #     "Japanese audio, English subs". Untagged releases score 0 → skipped.
+  #   - Anime Raws −10000: JP-only raw groups (no subs) are blocked.
+  #   - Dubs Only −10000: English-dub-only releases are blocked.
+  #   - Anime Dual Audio: JP+EN tracks, still Japanese; +10 as a tiebreak
+  #     only (the guide leaves it unscored; 101+ would prefer dual audio
+  #     over plain subs).
+  # trash_ids: https://github.com/TRaSH-Guides/Guides/tree/master/docs/json/sonarr
+  recyclarr.yml: |
+    sonarr:
+      sonarr:
+        base_url: http://localhost:8989
+        api_key: !env_var SONARR_API_KEY
+        quality_profiles:
+          - trash_id: 20e0fc959f1f1704bed501f23bdae76f  # [Anime] Remux-1080p
+            reset_unmatched_scores:
+              enabled: true
+        custom_formats:
+          - trash_ids:
+              - 418f50b10f1907201b6cfdf881f467b7  # Anime Dual Audio
+            assign_scores_to:
+              - name: "[Anime] Remux-1080p"
+                score: 10
   configure.sh: |
     #!/bin/sh
     set -e

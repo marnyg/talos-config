@@ -4,6 +4,29 @@ metadata:
   name: radarr-configurator
   namespace: media
 data:
+  # Recyclarr (sidecar in deployment.yaml) syncs TRaSH's "[Anime] Remux-1080p"
+  # quality profile into Radarr; a movie opts in by picking it. Same
+  # title-heuristic enforcement as sonarr's (see sonarr/configmap.yaml):
+  # group tiers gate on minFormatScore 100, Anime Raws and Dubs Only sit
+  # at -10000, Anime Dual Audio is a +10 tiebreak. Radarr's profile
+  # additionally carries language: Original, so a release parsed as
+  # English-only is rejected outright.
+  # trash_ids: https://github.com/TRaSH-Guides/Guides/tree/master/docs/json/radarr
+  recyclarr.yml: |
+    radarr:
+      radarr:
+        base_url: http://localhost:7878
+        api_key: !env_var RADARR_API_KEY
+        quality_profiles:
+          - trash_id: 722b624f9af1e492284c4bc842153a38  # [Anime] Remux-1080p
+            reset_unmatched_scores:
+              enabled: true
+        custom_formats:
+          - trash_ids:
+              - 4a3b087eea2ce012fcc1ce319259a3be  # Anime Dual Audio
+            assign_scores_to:
+              - name: "[Anime] Remux-1080p"
+                score: 10
   configure.sh: |
     #!/bin/sh
     set -e

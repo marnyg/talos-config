@@ -52,7 +52,7 @@ spec:
           args:
             - |
               set -e
-              mkdir -p /scratch/run
+              mkdir -p /scratch/run /scratch/recyclarr
               # Seed only on a fresh volume: Sonarr owns config.xml after
               # that (ApiKey, UI settings), so it is not rewritten per start.
               [ -f /config/config.xml ] && exit 0
@@ -133,6 +133,44 @@ spec:
               mountPath: /config
             - name: scripts
               mountPath: /scripts
+        - name: recyclarr
+          # Syncs the TRaSH anime profile (recyclarr.yml in the configurator
+          # ConfigMap) into Sonarr, daily. Same API-key handoff as the
+          # configurator: read from config.xml on the shared /config. The
+          # image runs as 1000 and ships bash; its default entrypoint is a
+          # cron wrapper that expects the key in the env, hence the loop.
+          # First sync races the configurator's allowed-hosts restart, so
+          # retry until one succeeds. Pulls TRaSH + config-templates from
+          # GitHub into the scratch dir on every pod start.
+          image: ghcr.io/recyclarr/recyclarr:8.7.2
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              until [ -f /config/config.xml ] && grep -q '<ApiKey>' /config/config.xml; do sleep 5; done
+              export SONARR_API_KEY=$(sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml)
+              while true; do
+                until recyclarr sync --config /scripts/recyclarr.yml; do
+                  echo "WARN: recyclarr sync failed, retrying in 60s"; sleep 60
+                done
+                sleep 86400
+              done
+          env:
+            - name: RECYCLARR_CONFIG_DIR
+              value: /scratch/recyclarr
+            - name: HOME
+              value: /scratch/recyclarr
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+            - name: scratch
+              mountPath: /scratch
       volumes:
         - name: config
           persistentVolumeClaim:
