@@ -18,8 +18,8 @@ identity), `dsuj` (a fourth node — Windows PC with GPU — through the
 same one-signature path).
 
 **Next candidates** (owner to pick):
-- Apps on the storage tiers: `hwtp` seerr, `lwi3` sillytavern (also
-  unblocks `dsuj`), then `4iob` retire the docker host.
+- Apps on the storage tiers: `hwtp` seerr, then `4iob` retire the
+  docker host. `dsuj` waits only on the data copy off the Windows PC.
 - Spikes: `dsuj` Windows node + GPU, `ch74` SMB/sync, `9z4e` HTTPS,
   `kanr` agentic workloads.
 - Disk-secret hygiene: `spvd` (slot-0 KMS unlock proof), `9af0` (ship
@@ -27,4 +27,4 @@ same one-signature path).
 - Protocol v0 M5 money (`0bc.5`) — state in `protocol/docs/day-to-day/`.
 
 **Out of scope:** KMS onto 443 (`os8s`); the daemon's control socket
-(`fgr`); iroh-ffi read-cancellation (`vh6e`) beyond the `vzbf` soak.
+(`fgr`); iroh-ffi read-cancellation (`vh6e`) — `vzbf` is closed.

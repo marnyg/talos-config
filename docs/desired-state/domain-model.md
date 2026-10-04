@@ -928,8 +928,16 @@ provisioning or recovery path may depend on it.
   The **data class** says what the bytes are worth. **App state** is
   small and irreplaceable, so it lives on the default `longhorn`
   class (RWO, 2 replicas across nodes). The **library** is large and
-  re-downloadable, so it lives on `longhorn-bulk` (RWX). The
-  **storage tier** says which disks hold the bytes, as a Longhorn disk
+  re-downloadable, so it lives on `longhorn-bulk`. **User files** —
+  the transfer dump in `files/transfer`, copied off a machine being
+  retired — are a third class: neither app state nor re-downloadable,
+  yet they sit on `longhorn-bulk` too, because the bulk tier is where
+  the space is. That is a knowing mismatch (`ch74`, `9io`), not a
+  statement of worth: the class's `Retain` policy is what stands
+  between those bytes and an ArgoCD prune. Access mode belongs to the
+  claim, not the class: the library's claims are RWX (share-manager
+  NFS, so six pods on any node share three directories); the
+  transfer claim is RWO. The **storage tier** says which disks hold the bytes, as a Longhorn disk
   tag declared in each machine's `default-disks-config`. **`nvme`**
   is every node's NVMe user volume. **`bulk`** is nas1's SATA bays,
   one `UserVolumeConfig` per disk. A class selects a tier. The library

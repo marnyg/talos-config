@@ -58,27 +58,22 @@ storage-class bug found on the way.
 
 ## Loose threads
 
-- The `files` share is **on until the owner turns it off**: set
-  `replicas: 0` in `k8s/apps/files/deployment.yaml` once the Windows
-  PC is emptied. `e6yj` closed 2026-10-04 (share mapped as `T:` on
-  the PC via `net use`, persistent); the scale-down is a one-line
-  follow-up, not a tracked task.
+- The `files` share **stays running by decision** (2026-10-05): it is
+  mapped as `T:` on the Windows PC (`e6yj`, closed) and the PC is
+  still in use. Password auth on the LAN remains the stated exception
+  to "every exposed service authenticates against the wallet"; the
+  `replicas: 0` one-liner in `k8s/apps/files/deployment.yaml` is the
+  off switch when that changes.
 - `ch74`'s real question (share vs sync-flow for machine↔machine
-  files; what a "user file dump" is worth — it is neither app state
-  nor re-downloadable library, yet sits on the disposable bulk tier)
-  is untouched. Related to `9io` (encrypt user volumes).
-- `vzbf` (gateway WebSocket panic) still `in_progress`; close after a
-  clean day.
-- `dsuj` is blocked by `lwi3` (sillytavern, deployed last session —
-  confirm the Windows copy can be retired) and now, practically, by
-  the data transfer this share exists for.
+  files) is untouched. The data-class wording for the transfer dump
+  is now in `domain-model.md` ("user files", a knowing mismatch with
+  the bulk tier); `9io` (encrypt user volumes) is the related thread.
+- `vzbf` (gateway WebSocket panic) and `lwi3` (sillytavern) are
+  closed; `dsuj` is now blocked only by the data transfer off the
+  Windows PC.
 
 ## Suggested next steps
 
-- Copy the data off the Windows PC; then `lwi3` can close and `dsuj`
-  (Windows PC as a node) becomes unblocked.
+- Copy the data off the Windows PC; then `dsuj` (Windows PC as a
+  node) and `f17b` (Windows agent) become unblocked.
 - `hwtp` (seerr) remains the smallest open app item.
-- Decide the domain-model wording for the transfer share's data class
-  (proposed, not written — see `domain-model.md` "Storage tier / data
-  class": `longhorn-bulk` is described as RWX, but the class is not;
-  the library's claims are).
