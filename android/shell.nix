@@ -1,7 +1,8 @@
 # Build shell for the mesh app on the NixOS builder (mar@nixos): the
 # Android SDK + NDK are unfree and the libiroh_ffi.a cross build is
 # impure, so the app is built here by hand, not in CI (yet). Inherited
-# from the P0.2 spike (iroh-go/android-p0/shell.nix).
+# from the P0.2 spike (iroh-go/android-p0/shell.nix). build.sh runs the
+# whole sequence below (+ publish + install); by hand:
 #
 #   cd android
 #   NIXPKGS_ALLOW_UNFREE=1 nix-shell --impure shell.nix

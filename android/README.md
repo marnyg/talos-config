@@ -51,6 +51,17 @@ which a stock CI runner cannot produce. `shell.nix` here carries the
 SDK + NDK + gradle; the workflow is dispatch-only until the cross build
 is cached for CI.
 
+One shot — build, publish, install on the TV and the phone:
+
+```sh
+android/build.sh --publish --install 10.0.0.2:5555 --install <phone-serial>
+```
+
+`build.sh` leaves `app-debug.apk.sha` (the commit it built from, `-dirty`
+if the tree was) next to the APK and `publish.sh` puts *that* in the
+release notes — the asset says what it is even when published later.
+The steps it runs, for doing one at a time:
+
 ```sh
 cd android
 NIXPKGS_ALLOW_UNFREE=1 nix-shell --impure shell.nix
@@ -65,12 +76,17 @@ gradle --no-daemon assembleDebug
 ./publish.sh
 ```
 
-Install on a Shield: enable Developer Mode + unknown sources, then
-`adb install -r app-debug.apk` — or skip adb entirely: the rolling
+Install on a Shield: enable Developer Mode + unknown sources + network
+debugging, `adb connect 10.0.0.2:5555` (accept the on-screen prompt once
+per builder), then `adb install -r app-debug.apk` — or skip adb entirely: the rolling
 release keeps the latest APK at
 <https://github.com/marnyg/talos-config/releases/download/android-latest/talos-mesh.apk>
 (e.g. the Downloader app). Sideloading through the Files app fails
-silently on some phones after Play Protect; adb works.
+silently on some phones after Play Protect; adb works. Replacing the
+app *while its tunnel is up* over network adb makes the Shield answer
+a blank `failed to install:` and go offline for a few seconds although
+the install landed — check `dumpsys package dev.marnyg.mesh |
+grep lastUpdateTime` before retrying.
 
 ## Signing
 
