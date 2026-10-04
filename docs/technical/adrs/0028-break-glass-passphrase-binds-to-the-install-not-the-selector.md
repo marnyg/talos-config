@@ -95,12 +95,26 @@ operator's terminal rather than at a node's boot.
 - Follow-ups: `spvd` (prove slot-0 unlock at boot under v3; then one
   reboot per node and delete the three `installMAC` fields).
   Invariant 7 carries the rule explicitly since `10ebcbc`.
+- _(2026-10-04)_ **Exit taken.** `spvd` proved slot 0 live at boot
+  (ADR-0004 amendment) and all three `installMAC` fields are gone;
+  every installed header now holds the UUID passphrase. The ceremony
+  turned out to be **two boots per node, hub unsealed throughout**:
+  Talos writes the STATE encryption config to META only after STATE
+  is open, so boot A opens STATE on the old slot 1, updates META and
+  re-keys EPHEMERAL (whose config comes from the machine config), and
+  boot B rejects the old slot 1 on STATE, opens it via KMS ~30 s later
+  and re-keys. `nix run .#apply` needs `APPLY_REKEY=1 APPLY_REBOOT=1`
+  for boot A; boot B can be any reboot (here: the `talosctl upgrade`
+  to p0agent 0.1.6). The grandfather code path (`installMAC`,
+  `RecoveryPassphraseMAC`, `recover -recovery -mac`) stays frozen per
+  the derivation contract but no machine uses it.
 
 ### Confirmation
 
 Right if: no `systemDiskEncryption` diff appears in a dry-run for an
 installed node again; a reinstall after a NIC swap needs only the
-directory rename; `spvd` retires the fields within a few months.
+directory rename; `spvd` retires the fields within a few months
+_(done the next day, 2026-10-04)_.
 Invalidated if: a chassis swap with the same disks turns out to be a
 real operation (the UUID would move away from the header) — then the
 handle should be the install itself (an ID minted at install and

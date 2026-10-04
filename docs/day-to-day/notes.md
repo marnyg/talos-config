@@ -877,15 +877,17 @@
   `10.0.0.71`). cp1's console `address-overlap` diagnostic appeared
   while its link was down and cleared with the replug.
 - 2026-10-03 — **A node that was off longer than its speak-as comes back
-  looping on `effective chain is expired`** (agent fix `7fb6473`, not
-  on the fleet until `9af0`). Workaround that worked on w1: re-serve
+  looping on `effective chain is expired`** (agent fix `7fb6473`; on the
+  whole fleet as p0agent 0.1.6 since 2026-10-04, `9af0` — the workaround
+  below is history). Workaround that worked on w1: re-serve
   (fresh 1 h boot token), `kubectl -n kube-system debug node/<n>
   --image=busybox:1.36 --profile=sysadmin --attach -q -- rm
   /host/var/lib/p0agent/{kit,bundle,hub}.json` (keep `key`), then
   `talosctl service ext-p0agent restart` — enrolled in <1 s, same NodeId.
 - 2026-10-03 — **`nix run .#apply` dry-runs first** and refuses (a) any
-  diff touching `systemDiskEncryption` — no override, fix `meta.yaml`
-  (`installMAC`) — and (b) a reboot unless `APPLY_REBOOT=1`. Verify a
+  diff touching `systemDiskEncryption` unless `APPLY_REKEY=1` (since
+  2026-10-04; it meant "no override, fix `meta.yaml` installMAC" for a
+  day) and (b) a reboot unless `APPLY_REBOOT=1`. Verify a
   node's on-disk slot-1 passphrase against the hub's compose without
   printing either: compare the `passphrase:` prefixes of `talosctl get
   mc -o yaml` and `curl http://hub.mesh.internal/config?mac=…`.
@@ -954,3 +956,33 @@
   `longhorn-bulk` was recreated this day with corrected
   anti-affinity values — the first PVC ever provisioned through it is
   `files/transfer`; media volumes predate the fix and were hand-patched.
+- 2026-10-04 — **Rebooting nas1 rebuilds the whole bulk tier** (`k8sd`):
+  both replicas of every `longhorn-bulk` volume are on nas1, so a reboot
+  fails both and Longhorn copies the live head from the salvaged one —
+  ~600 GB at ~12 MB/s, i.e. hours, and the three bulk rebuilds pin the
+  node at `concurrent-replica-rebuild-per-node-limit` (5) so small
+  nvme-tier rebuilds *onto* nas1 time out (`failed to start rebuild …
+  context deadline exceeded`). Deleting the stuck replica CR made
+  Longhorn reuse the failed one on the other node within a minute. The
+  Talos drain always times out at 5 min on nas1 (bulk PDBs,
+  `block-if-contains-last-replica`) and the upgrade proceeds anyway —
+  that is Talos' `DrainTimeout`, not a hang.
+- 2026-10-04 — **A slot-1 (break-glass) passphrase change is two boots
+  with the hub unsealed**, not one: boot A opens STATE on the old slot
+  1 (META still holds the old block), writes the new block to META and
+  re-keys EPHEMERAL; boot B rejects slot 1 on STATE, opens it via slot
+  0 (KMS) ~30 s later and re-keys. Check `kmsprobe -uuid <node uuid>`
+  says `roundtrip OK` before each boot; do not deploy the hub (it
+  re-seals) between A and B. `talosctl get volumestatus STATE` shows
+  `encryptionSlot: 0` once the KMS opened it.
+- 2026-10-04 — **`talosctl` hangs while cp1 reboots**: the talosconfig
+  endpoint is `cp1.mesh.internal`, so every `-n` goes through the node
+  being rebooted. Use `-e 10.0.0.68` (cp1's LAN address) for anything
+  that must run across a cp1 reboot; `kubectl` likewise times out once
+  on a stale h2 connection to `cp1.mesh.internal:6443` after the node
+  returns, then recovers.
+- 2026-10-04 — **The EPHEMERAL slot-0 call can fail `network is
+  unreachable` seconds after STATE was opened over the network** (nas1
+  13:56:30, 12 s after a KMS open) — the per-handler DNS path, not
+  DHCP. Harmless (slot 1 opens it, slot 0 re-syncs) but it means the
+  "race" is per call, not per boot.

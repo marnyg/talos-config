@@ -105,9 +105,10 @@ classDiagram
   _2026-10-03 (ADR-0028): a machine role also declares the **UUID** —
   the chassis — which is both the KMS unseal allowlist and the handle
   the disk's break-glass passphrase derives from; the selector MAC
-  derives nothing durable. `installMAC` is the transitional record of
-  a pre-v2 install whose header was keyed under the MAC rule; it goes
-  at the node's re-key or reinstall._
+  derives nothing durable. `installMAC` was the transitional record of
+  a pre-v2 install whose header was keyed under the MAC rule; the
+  three such nodes were re-keyed 2026-10-04 (`spvd`) and no role
+  carries it._
 - **Binding** — the `member` cert: a time-boxed lease of a role to a
   key, carrying (name, groups), 90-day validity, signed by the hub's
   hot key and resolved through the wallet's `speak-as`. Membership

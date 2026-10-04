@@ -35,9 +35,10 @@ history and, where the numbers still matter, in ADR-0006 and
 - Three nodes, Talos v1.12.6 (kernel 6.18.18), k8s v1.32.3, containerd
   2.1.6. **One fleet image** declared in all three `talos/hardware/*.yaml`
   and running on every node:
-  `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.5@sha256:3c2c7cc3…`
+  `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6@sha256:d9193308…`
   (imager-built, ADR-0023: stock Talos + `iscsi-tools` v0.2.0 +
-  `util-linux-tools` 2.41.2 + `p0agent` 0.1.5). Extensions on cp1
+  `util-linux-tools` 2.41.2 + `p0agent` 0.1.6 — ships nodeagent
+  `7fb6473`, expired speak-as → re-enroll, `9af0`). Extensions on cp1
   confirmed exactly those three; `ext-p0agent` Running (restarted by
   the 2026-09-21 apply, no reboot), `ext-iscsid` Running. No `nebula0`,
   no `ext-nebula`.
@@ -166,7 +167,9 @@ history and, where the numbers still matter, in ADR-0006 and
 - Provenance of the image line: 2026-09-15 cp1 first booted an
   imager build (`p0agent` 0.0.3, scratch relay); 2026-09-16 it became
   the declared image (ADR-0023); 2026-09-19/20 w1 followed and both
-  moved to 0.1.5 without nebula (P4.1, `359.11.1`).
+  moved to 0.1.5 without nebula (P4.1, `359.11.1`); 2026-10-04 all
+  three upgraded to 0.1.6 (`9af0`), the reboot doubling as the slot-1
+  re-key (`spvd`).
 
 ## Mesh (identity plane) — _verified 2026-09-21_
 
@@ -241,31 +244,33 @@ history and, where the numbers still matter, in ADR-0006 and
 Slot 0 is the network KMS, slot 1 a derived static passphrase stored in
 plaintext META.
 
-- **Slot 0 is dormant at boot in practice**: early-boot DNS loses the
-  race to the KMS dial every time so far. Accepted rather than fixed.
+- **Slot 0 is live at boot** _(2026-10-04, `spvd`; was "dormant")_:
+  the first volume's slot-0 call loses a 2–5 s race to DHCP (`network
+  is unreachable`) and slot 1 opens it; the KMS answers for everything
+  after, and Talos re-syncs whichever slot it could not verify. A
+  volume whose slots all fail is retried every 30 s. Observed on all
+  three nodes; proven by re-keying (below).
 - **Accepted consequence**: encryption protects against disk
   disposal/RMA only, not against an attacker with the running machine.
 - A sealed hub therefore does **not** block reboots — slot 1 boots the
-  node unattended. Only provisioning and config refetch need an unseal.
+  node unattended. Only provisioning, config refetch and a slot-1
+  re-key need an unseal.
 - Going KMS-only would first require break-glass tooling for slot-0
   blobs.
-- **Slot 1 derives from the UUID** _(2026-10-03)_: `RecoveryPassphrase
-  (master, uuid)` for new installs; `recover -recovery -uuid <uuid>`.
-  The three installed machines were keyed under v1 — the directory
-  MAC — and carry `installMAC:` in `meta.yaml` so the hub keeps serving
-  the passphrase their headers hold (`recover -recovery -mac
-  <installMAC>`). The rule it fixes: a secret derives only from a
-  handle that outlives it; the MAC is the config *selector* and a
-  NIC swap renames it (w1, `c4vd`), which rotated the composed
-  passphrase unnoticed. Talos re-keys to a changed config only at
-  boot and only after slot 0 opens the volume, which the first
-  bullet does not trust — so `nix run .#apply` dry-runs first and
-  refuses an encryption diff outright, and a reboot without
-  `APPLY_REBOOT=1`. Exit for the grandfather fields: prove slot-0
-  unlock at boot under v3, then one reboot per node re-keys to the
-  UUID passphrase. nas1's UUID is the OEM placeholder: under v2 a
-  second such box under the same master would share its passphrase —
-  owner-local, accepted as the KMS allowlist caveat already is.
+- **Slot 1 derives from the UUID on every installed machine**
+  _(2026-10-03 rule, 2026-10-04 fleet)_: `RecoveryPassphrase(master,
+  uuid)`; `recover -recovery -uuid <uuid>`. The rule: a secret derives
+  only from a handle that outlives it; the MAC is the config *selector*
+  and a NIC swap renames it (w1, `c4vd`), which rotated the composed
+  passphrase unnoticed. The three pre-rule installs were grandfathered
+  under `installMAC:` for one day and re-keyed 2026-10-04: two boots
+  per node with the hub unsealed (boot A lands the config in META and
+  re-keys EPHEMERAL; boot B re-keys STATE via slot 0). `nix run
+  .#apply` dry-runs first and refuses an encryption diff without
+  `APPLY_REKEY=1`, and a reboot without `APPLY_REBOOT=1`. nas1's UUID
+  is the OEM placeholder: a second such box under the same master
+  would share its passphrase — owner-local, accepted as the KMS
+  allowlist caveat already is.
 
 > Recorded in **ADR-0004**, including the consequence that matters
 > most: wipe META before a *machine* (not just a disk) leaves the

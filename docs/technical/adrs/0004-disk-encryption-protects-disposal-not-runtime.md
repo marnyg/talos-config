@@ -1,6 +1,8 @@
 # ADR-0004: Disk encryption protects disposal, not a running machine
 
-- Status: Proposed _(records a decision taken 2026-07-24; never written up)_
+- Status: Accepted _(records a decision taken 2026-07-24; written up
+  2026-07-29; amended 2026-10-04 — slot 0 is live at boot, see the
+  last Consequences bullet)_
 - Date: 2026-07-29
 
 ## Context and Problem Statement
@@ -116,6 +118,27 @@ against someone who takes the machine.
   The rule that does the work is unchanged: **wipe META before a machine
   leaves the owner's hands.** Recorded in that machine's `meta.yaml`;
   do not read a node UUID as an identity anywhere else.
+- _(Amended 2026-10-04, `spvd`.)_ **Slot 0 is live at boot under Mesh
+  v3; "dormant" was a reading of the first attempt only.** Every boot
+  log on all three nodes shows the same shape: the *first* volume's
+  slot-0 call fails ~3 s after kernel start with `network is
+  unreachable` (DHCP is not up; it was never a DNS race specifically),
+  slot 1 opens it, and the KMS is reachable 2–5 s later — EPHEMERAL
+  routinely opens on slot 0, and Talos's post-open `syncKeys` re-keys
+  whichever slot it could not verify (`updated encryption key`). Talos
+  v1.12 retries a volume whose handlers *all* fail (`Retryable`, 30 s
+  ticker) rather than giving up. Proven 2026-10-04 on nas1 and w1 by
+  changing the slot-1 passphrase (ADR-0028's exit): slot 1 `encryption
+  key rejected` → ~27 s → `opened encrypted device slot 0
+  *keys.KMSKeyHandler` → `updated encryption key slot 1`. What this
+  changes: a slot-1 re-key is a safe, two-boot operation **while the
+  hub is unsealed** (boot A: the new config lands in META after STATE
+  opens on the old passphrase, EPHEMERAL re-keys; boot B: STATE
+  re-keys), and the slot-0 blob is a real second key, not a nominal
+  one. What it does not change: slot 1 stays, because a sealed hub
+  must still not block an unattended reboot (invariant 4) — Option A's
+  cost is unchanged. The `apply` guard refuses an encryption diff
+  unless `APPLY_REKEY=1` says the ceremony is intended.
 
 ### Confirmation
 

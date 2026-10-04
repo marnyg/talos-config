@@ -5,38 +5,50 @@
 
 ## Last session
 
-2026-10-05: **ADR-0030 proven end-to-end.** A `talos/`-only signed
-commit (`a76a828`, a comment in `mesh-blocklist-v3.txt`) pushed at
-13:10:02Z; `POST /git/nudge` → 202; hub log
-`git: serving main@a76a82862e41 (signed by marnyg@proton.me)` at
-13:10:08Z. Six seconds push→served, image still `3896837`, no restart.
-The unnudged poll path had already shown itself: `0859b5d` was picked
-up at 13:04:09Z, one poll after boot. `/status` row confirmed by the
-owner. Hub was unsealed by the owner before the check.
+2026-10-04: **disk-secret hygiene, both items done** (`spvd`, `9af0`).
 
-- `config-server/gitsync.go`: nudged syncs now floor at `nudgeGap`
-  (10 s) after the previous attempt — the channel coalesced a burst
-  into one kick but a steady unauthenticated stream still cost one
-  `ls-remote` per sync. Not yet deployed (hub code change; rides the
-  next deploy — behaviour on the running hub is the old one-kick
-  coalescing, which is fine).
-- `.beads.gate.lock` gitignored (0-byte beads-named lock at the root).
-- `4iob` (retire the old docker host) closed as done by the owner.
+- **Slot 0 (KMS) is live at boot** — ADR-0004's "dormant" was the
+  first attempt only; the boot logs of all three nodes showed EPHEMERAL
+  opening on KMS and Talos re-syncing slots, and the v1.12.6 source
+  confirmed retry-on-all-fail (30 s ticker) + post-open `syncKeys`.
+  Proven by re-keying: on every node STATE went `slot 1 rejected` →
+  ~28 s → `opened … slot 0 *keys.KMSKeyHandler` → `updated encryption
+  key slot 1`. All three `installMAC` fields are gone; every header now
+  holds the UUID passphrase (ADR-0028's exit). ADR-0004 amended
+  (Accepted), ADR-0028 consequences, deployed-state, domain-model,
+  reinstall guide updated.
+- **p0agent 0.1.6 on the fleet**: nodeagent at `7a3b21e` (carries
+  `7fb6473`, expired speak-as → re-enroll). Installer
+  `v1.12.6-p0agent-0.1.6@sha256:d9193308…` pinned in the three
+  hardware files and `talosctl upgrade`d on nas1, w1, cp1 (the upgrade
+  reboot doubled as re-key boot B).
+- `flake.nix` apply: `APPLY_REKEY=1` opt-in for a deliberate
+  `systemDiskEncryption` diff (guard otherwise unchanged).
 
 ## Loose threads
 
-- `fly ssh console` is not provisioned on the nixos box (no fly ssh
-  key issued) — observing the served tree directly needs
-  `fly ssh issue` first; the `git: serving` log line is the
-  authoritative post-swap signal anyway.
-- The darwin laptop still needs the four `git config` signing lines
-  (AGENTS.md "Git hooks") before it can push to `main`.
-- `dsuj` still waits on the data copy off the Windows PC; `ch74`'s
-  share-vs-sync question untouched.
+- **Longhorn is still rebuilding nas1's bulk tier** (three volumes,
+  ~600 GB at ~12 MB/s — hours; `k8sd` filed). Do not reboot nas1 until
+  `kubectl get volumes.longhorn.io -n longhorn-system` shows every
+  attached volume `healthy`. Small nvme-tier rebuilds *onto* nas1 time
+  out while that runs; deleting the stuck replica CR unsticks them.
+- The `kmsprobe` runs left `00000000-dead-beef-…` and the node UUIDs in
+  the hub's session-seal grace set — the probe UUID shows as a
+  warning on `/status` until the next hub restart (documented
+  behaviour).
+- w1 and cp1 took the pending Longhorn label/annotation diff
+  (`create-default-disk: config`, nvme default-disks-config) with boot
+  A; Longhorn only reads those at first registration, so no effect.
+- The hub still runs `3896837`; the `nudgeGap` change (`7a3b21e`) and
+  nothing else waits on a deploy.
+- Unchanged from last time: no `fly ssh` key on the nixos box; the
+  darwin laptop lacks the signing `git config`; `dsuj` waits on the
+  Windows data copy.
 
 ## Suggested next steps
 
 - Owner's pick from the board: spikes `dsuj` / `ch74` / `9z4e` /
-  `kanr`, or disk-secret hygiene `spvd` / `9af0`.
-- Next hub deploy carries the `nudgeGap` change; nothing urgent forces
-  one.
+  `kanr`, or `k8sd` (bulk-tier rebuild cost: recurring snapshot vs
+  one replica vs accept).
+- Field bugs `rnfk` (phone handover) and `bh74` (fake-range addr) are
+  the next hygiene-shaped items.
