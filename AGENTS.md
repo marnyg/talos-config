@@ -30,6 +30,18 @@ refuses a push whose range touches a vendored tree (`protocol/`,
 just delegate to beads' shims in `.beads/hooks/`, so `bd hooks` keep
 working. `SKIP_VENDOR_HASH=1 git push` bypasses the check.
 
+**Commits are ssh-signed** by the owner key (`talos-config-lehx`): the
+hub serves `talos/` from the git tip and accepts only a tip whose
+signature verifies against `talos/allowed-signers`. Once per clone:
+
+    git config gpg.format ssh
+    git config user.signingkey ~/.ssh/id_ed25519.pub
+    git config commit.gpgsign true
+    git config gpg.ssh.allowedSignersFile "$(git rev-parse --show-toplevel)/talos/allowed-signers"
+
+The pre-push hook refuses an unsigned tip (`SKIP_SIGNED=1` bypasses).
+No GitHub-UI merges: those are signed by GitHub's key, not the owner's.
+
 ## Quality gate: the iroh-tagged tests
 
 `go test ./...` under `config-server/` is **C-free and does not gate the

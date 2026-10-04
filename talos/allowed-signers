@@ -1,0 +1,14 @@
+# Owner commit-signing keys (OpenSSH allowed_signers format:
+# "<principal> [options] <keytype> <key>"). The principal is the git
+# user.email; `git verify-commit` and the hub (talos-config-k9h7: the
+# served talos/ tree is a signed git tip, not an image snapshot) check
+# a commit's SSHSIG against these keys. The hub reads its BAKED copy of
+# this file, never the fetched tree's — the trust anchor cannot come
+# from the thing it anchors.
+#
+# Same root key as invariant 3 (~/.ssh/id_ed25519) and the age
+# recipient for talosconfig.age (flake.nix encrypt-secrets). Rotating it
+# is a hub deploy, like changing talos/age-recipient.txt.
+#
+# .githooks/pre-push refuses to push a tip not signed by one of these.
+marnyg@proton.me ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBQT5jLp3sX+tWW3OkxhOoKErVaDMfh/fuP+snI9L7Zz

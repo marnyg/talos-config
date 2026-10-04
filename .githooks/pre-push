@@ -121,6 +121,29 @@ EOF
   fi
 fi
 
+# Signed tip (talos-config-lehx). The hub will serve talos/ from the
+# git tip rather than an image snapshot (k9h7), accepting only a tip
+# whose SSHSIG verifies against talos/allowed-signers — GitHub is not
+# a root of trust (invariant 3). An unsigned tip on main would be a
+# tree the hub refuses, silently, until someone reads /status. The
+# tip's signature attests the whole tree, so only the tip is checked.
+# Setup per clone: gpg.format ssh, user.signingkey ~/.ssh/id_ed25519.pub,
+# commit.gpgsign true (AGENTS.md). SKIP_SIGNED=1 to bypass.
+if [ "${SKIP_SIGNED:-0}" != "1" ]; then
+  while read -r local_ref local_sha _remote_ref _remote_sha; do
+    [ -z "$local_sha" ] && continue
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+    if ! git -C "$repo" -c gpg.ssh.allowedSignersFile="$repo/talos/allowed-signers" \
+        verify-commit "$local_sha" >/dev/null 2>&1; then
+      echo "pre-push: tip of $local_ref (${local_sha%"${local_sha#???????}"}) is not signed by a key in talos/allowed-signers" >&2
+      echo "pre-push: git config gpg.format ssh && git config user.signingkey ~/.ssh/id_ed25519.pub && git config commit.gpgsign true; then git commit --amend --no-edit -S (SKIP_SIGNED=1 to override)" >&2
+      exit 1
+    fi
+  done <<EOF
+$refs
+EOF
+fi
+
 # beads' shim (core.hooksPath used to point at .beads/hooks directly).
 if [ -x "$repo/.beads/hooks/pre-push" ]; then
   exec "$repo/.beads/hooks/pre-push" "$@" <<EOF
