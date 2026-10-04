@@ -22,7 +22,12 @@ run as a `LogonType Interactive` scheduled task — that is how `Z:`
 → `\\samba.files.svc.cluster.local\transfer` (as `mar`, persistent)
 was mapped. Filed `f17b` (Windows agent build + provisioning-time
 enrollment, under `dsuj`); noted on `dsuj` that the VM has no GPU
-(bochs, no hostDevices, permittedHostDevices unset).
+(bochs, no hostDevices, permittedHostDevices unset). Also cut
+Jellyfin's NodePort 30096 (`0a60ec0`) — same dead door; no web
+NodePorts remain. Open threads not filed: `irohup -bridge` accepts
+node facets only (gateway facets unreachable in bridge mode,
+`cmd/irohup/main.go:128`); `docs/mesh-v3-p0.2-android.md` still
+describes Jellyfin over :30096.
 
 2026-10-04 (later): **SMB transfer share live on nas1's bulk tier**
 (`e6yj`, first concrete answer to spike `ch74`), plus a latent
