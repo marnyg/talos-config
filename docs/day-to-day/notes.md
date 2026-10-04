@@ -986,3 +986,15 @@
   13:56:30, 12 s after a KMS open) — the per-handler DNS path, not
   DHCP. Harmless (slot 1 opens it, slot 0 re-syncs) but it means the
   "race" is per call, not per boot.
+- 2026-10-04 — **Driving the phone over adb from the nixos box**: `adb`
+  is not on PATH, only inside `android/shell.nix` (`nix-shell --impure
+  shell.nix --run 'adb …'`). First connect shows `unauthorized` until the
+  phone's USB-debugging prompt is accepted. `adb install -r` upgrades in
+  place (same debug key, no re-enroll) but kills the VpnService, which
+  only autostarts at boot — someone must tap Connect. The Go log is
+  `run-as dev.marnyg.mesh cat cache/mesh.log` (phone clock logs UTC);
+  `adb shell svc wifi disable|enable` is a clean handover test, and
+  `adb exec-out screencap -p` + reading the PNG gets at the Debug view's
+  `StatusJSON`. The hub's `/status` member table (reach-me-at column)
+  needs a wallet sign-in, so the phone's own Debug view is the quicker
+  endpoints check.

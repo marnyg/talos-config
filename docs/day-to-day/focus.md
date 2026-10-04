@@ -30,6 +30,7 @@ same one-signature path).
 - ~~Disk-secret hygiene: `spvd`, `9af0`~~ — done 2026-10-04; the
   bulk-tier rebuild cost it exposed is `k8sd`.
 - Protocol v0 M5 money (`0bc.5`) — state in `protocol/docs/day-to-day/`.
+- ~~Field bugs `rnfk`, `bh74`~~ — closed 2026-10-04, verified on the phone.
 
 **Out of scope:** KMS onto 443 (`os8s`); the daemon's control socket
 (`fgr`); iroh-ffi read-cancellation (`vh6e`) — `vzbf` is closed.
