@@ -36,7 +36,9 @@ storage-class bug found on the way.
 
 - The `files` share is **on until the owner turns it off**: set
   `replicas: 0` in `k8s/apps/files/deployment.yaml` once the Windows
-  PC is emptied. `e6yj` stays `in_progress` until then.
+  PC is emptied. `e6yj` closed 2026-10-04 (share mapped as `T:` on
+  the PC via `net use`, persistent); the scale-down is a one-line
+  follow-up, not a tracked task.
 - `ch74`'s real question (share vs sync-flow for machine↔machine
   files; what a "user file dump" is worth — it is neither app state
   nor re-downloadable library, yet sits on the disposable bulk tier)
