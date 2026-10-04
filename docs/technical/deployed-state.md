@@ -209,15 +209,19 @@ history and, where the numbers still matter, in ADR-0006 and
   only at a *new* enrollment (the gateway's did, 2026-09-30, until
   rebuilt).
 
-## Hub on fly — _verified 2026-09-21_
+## Hub on fly — _verified 2026-10-04_
 
 - App `marnyg-talos-config`, region `arn`, one `shared-cpu-1x`/256 MB
-  machine (`7817426a194968`), **image `registry.fly.io/marnyg-talos-config:0e67661`**
-  (nix-built `fly/image.nix`: static `config-server -tags iroh` +
-  static `iroh-relay` + tracked `talos/` + busybox), deployed
-  2026-09-20 22:20Z via `fly/deploy.sh` — the first nebula-free image.
-  Unsealed 22:20:27Z with both signatures (`speak-as` + `MasterMessage`).
-- **hubkey `a65c301d…`** speaks for `0xf568…9406` (`speak-as` cert,
+  machine (`7817426a194968`), **image
+  `registry.fly.io/marnyg-talos-config:925dc9d`** (nix-built
+  `fly/image.nix`: static `config-server -tags iroh` + static
+  `iroh-relay` + busybox; `talos/` comes from the signed git tip,
+  ADR-0030), deployed 2026-10-04 15:43Z via `fly/deploy.sh` from the
+  nixos box and unsealed by the owner with both signatures (`speak-as`
+  + `MasterMessage`). First nebula-free image was `0e67661`
+  (2026-09-20).
+- **hubkey `ed:60669a3c…`** (ephemeral, new on every unseal; was
+  `a65c301d…`) speaks for `0xf568…9406` (`speak-as` cert,
   groups `admins machines media`, verbs `member invoke`), served at
   `/.well-known/talos-hub/{speak-as,reach-me-at}`. `/sealed` → 200.
   Auto-bootstrap read `etcd-running` off cp1 over the plane 8 s after

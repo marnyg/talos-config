@@ -998,3 +998,20 @@
   `StatusJSON`. The hub's `/status` member table (reach-me-at column)
   needs a wallet sign-in, so the phone's own Debug view is the quicker
   endpoints check.
+- 2026-10-04 — **Driving the TV over network adb from the nixos box**:
+  `adb connect 10.0.0.2:5555` sits `unauthorized` until the Shield's
+  on-screen prompt is accepted once per builder key. Replacing the app
+  *while its tunnel is up* makes the Shield answer a blank `failed to
+  install:` and drop adb offline for a few seconds although the install
+  landed — check `dumpsys package dev.marnyg.mesh | grep
+  lastUpdateTime` before retrying; the cold (first) install reports
+  `Success`. Launching the app afterwards (`monkey -p dev.marnyg.mesh
+  …`) brought the tunnel up without a Connect tap. Mixing the SDK's
+  `adb` (shell.nix) with `nixpkgs#android-tools` restarts the adb
+  server and re-prompts every device — pick one.
+- 2026-10-04 — **Hub deploy from this box is ~3 min**: `fly/deploy.sh`
+  with no `HUB_BUILDER` builds the x86_64 image locally (the tagged
+  test phase runs inside), pushes, deploys; the hub comes up sealed and
+  the TV/phone retry the beat every minute until the owner signs at
+  `/status` (TV renewed its member cert against the new hubkey within
+  60 s today).
