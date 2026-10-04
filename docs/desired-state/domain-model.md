@@ -448,7 +448,9 @@ provisioning or recovery path may depend on it.
   **producer-side** as an accept table `facet → forward target`. Closed
   per receiver kind: node agent `apid`, `kube-api`; gateway
   `ingress-http` (one class for every HTTP UI — per-app authorization
-  stays app-layer), `jellyfin` (raw TCP); hub `hub-http` (stream) plus
+  stays app-layer), `jellyfin` (raw TCP), `rdp` (raw TCP to the
+  win2k25 guest's RDP Service, natural port 3389 — the NodePort path
+  died with nebula, `j5c5`); hub `hub-http` (stream) plus
   the Issuer's actor facets. **The iroh relay is not a facet**: it is
   a keyless transport child whose access hook sees only a NodeId, so
   no grant can be presented to it — relay access is membership-implied

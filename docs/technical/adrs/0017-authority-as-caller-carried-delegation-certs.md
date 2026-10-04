@@ -205,6 +205,20 @@ amendment was built (`git log -S"Policy compiler \`359.8.5\`"`).
   describes the nebula-era implementation and must be redrawn when
   Phase 1 lands. _(Redrawn as recipe→grants 2026-09-21, `22a84de`.)_
 
+### Amendment 2026-10-04 (`j5c5`): `rdp` gateway facet
+
+The gateway's raw-TCP vocabulary grows by one: `rdp` (natural port
+3389), forwarding to the win2k25 guest's `vms/win2k25-rdp` Service.
+The v2-era NodePort (`30389` on every node) presumed nebula's "admins
+reach any node port"; under v3 a node forwards only `apid`/`kube-api`,
+so the port had been unreachable since the nebula render went. Same
+shape as `jellyfin`: `{facet: rdp, group: admins}` in the recipe, a
+`-rdp=<host:port>` forward on the gateway binary, `rdp.gw` (any
+`<svc>.gw`) :3389 at the presentation. Ruled out: making the guest its
+own receiver (needs a Windows build of the agent and a provisioning-
+time enrollment story — spike `f17b`, under `dsuj`); keeping the
+NodePort (nothing on the mesh can reach it).
+
 ### Confirmation
 
 Right if `authorize()` passes its property suite and Quint model with

@@ -20,7 +20,7 @@ func serving(id, name string, facets ...string) issuer.NameEntry {
 func TestZoneRule(t *testing.T) {
 	dir := map[string][]issuer.NameEntry{
 		"cp1":    {serving("ed:cp1", "cp1", "apid", "kube-api")},
-		"gw":     {serving("ed:gw", "gw", "ingress-http", "jellyfin")},
+		"gw":     {serving("ed:gw", "gw", "ingress-http", "jellyfin", "rdp")},
 		"laptop": {entry("ed:laptop", "laptop", 1000, 1000)}, // advertises nothing
 		"old":    {entry("ed:old", "old", 1000, 0)},          // no location at all
 		"hub":    {entry("ed:hub", "hub", 1000, 1000)},
@@ -45,6 +45,8 @@ func TestZoneRule(t *testing.T) {
 		{"gw", 80, "gw", "ingress-http", nil}, // a bare gateway name reads in its own vocabulary too (nginx answers 404 for that Host)
 		{"jackett.gw", 80, "gw", "ingress-http", nil},
 		{"jellyfin.gw", 8096, "gw", "jellyfin", nil},
+		{"rdp.gw", 3389, "gw", "rdp", nil},
+		{"cp1", 3389, "", "", errPlain},             // rdp is a gateway facet, not a node's
 		{"jackett.cp1", 80, "", "", ErrNotThatKind}, // still nebula's
 		{"x.hub", 80, "", "", ErrNotThatKind},
 		{"laptop", 50000, "laptop", "apid", nil}, // advertises nothing ⇒ read as a node (a device that serves nothing)

@@ -68,7 +68,7 @@ var Kinds = []Kind{KindNode, KindGateway, KindHub}
 // a recipe row.
 var facets = map[Kind][]string{
 	KindNode:    {"apid", "kube-api"},
-	KindGateway: {"ingress-http", "jellyfin"},
+	KindGateway: {"ingress-http", "jellyfin", "rdp"},
 	KindHub:     {"hub-http"},
 }
 
@@ -83,6 +83,7 @@ var facetPorts = map[string]uint16{
 	"hub-http":     80,
 	"ingress-http": 80,
 	"jellyfin":     8096,
+	"rdp":          3389,
 }
 
 // FacetPort returns the natural port of facet, or 0 if it has none.

@@ -11,7 +11,7 @@
 #          receiver kind, disjoint across kinds (glossary "Facet";
 #          kind ≡ facet vocabulary):
 #            node     apid | kube-api
-#            gateway  ingress-http | jellyfin
+#            gateway  ingress-http | jellyfin | rdp
 #            hub      hub-http
 #          Never a port: ports live in the receiver's own accept table
 #          (facet → forward). Reachability is not a facet. The iroh
@@ -55,6 +55,10 @@ gateway:
     - {facet: ingress-http, group: media}
     # Raw TCP for the shared-space appliances' Jellyfin apps.
     - {facet: jellyfin, group: media}
+    # Raw TCP to the win2k25 guest's RDP (k8s/apps/vms/win2k25-rdp.yaml):
+    # `xfreerdp /v:rdp.gw.mesh.internal` from an admin device. Owner
+    # devices only; the guest's own login is the second gate.
+    - {facet: rdp, group: admins}
 hub:
   inbound:
     # The hub's overlay HTTP surface (/config): both device groups, as

@@ -350,7 +350,11 @@
   `imagePullPolicy: Always` — CI push changes nothing until
   `kubectl -n sso rollout restart deployment siwe-oidc`.
 - win2k25 reinstall is one API act: `scripts/win2k25-reinstall.sh`;
-  RDP back ~25 min later. Password in secret `win2k25-admin`; rotating
+  RDP back ~25 min later, at `xfreerdp /v:rdp.gw.mesh.internal`
+  (gateway `rdp` facet, admins; the old NodePort 30389 is gone —
+  nothing on mesh v3 could reach it). Fallback: `kubectl -n vms
+  port-forward svc/win2k25-rdp 3389:3389`. Password in secret
+  `win2k25-admin`; rotating
   it requires resealing both that secret and the autounattend secret.
 - jellyfin's admin password: `kubectl -n media get secret
   jellyfin-admin -o jsonpath='{.data.password}' | base64 -d` (the new

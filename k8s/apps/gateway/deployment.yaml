@@ -89,6 +89,7 @@ spec:
             # it sets are the only ones nginx ever sees.
             - -ingress=http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80
             - -jellyfin=jellyfin.media.svc.cluster.local:8096
+            - -rdp=win2k25-rdp.vms.svc.cluster.local:3389
           env:
             - name: P0_LOG
               value: warn

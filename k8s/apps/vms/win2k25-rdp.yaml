@@ -1,10 +1,16 @@
-# RDP into the guest from admin devices: mesh → cp1:30389 → 3389.
+# RDP into the guest from admin devices, via the gateway's `rdp` facet
+# (ADR-0017 amendment 2026-10-04): the gateway pod forwards the facet
+# to this Service, the recipe grants it to `group: admins`, and the
+# presentation reads <anything>.gw.mesh.internal:3389 as (gw, rdp):
 #
-# NodePort, not Ingress: RDP is raw TCP, ingress-nginx routes HTTP by
-# Host header (ADR-0009) — same reason Jellyfin's TV path is NodePort
-# 30096. The node firewall already passes everything from cert group
-# `admins`, so no mesh firewall change is needed; nothing public is
-# exposed (invariant 5: the hub stays the only public surface).
+#   xfreerdp /v:rdp.gw.mesh.internal /u:Administrator /dynamic-resolution
+#
+# ClusterIP, not NodePort: the v2 NodePort (30389 on every node)
+# presumed nebula's "admins reach any node port"; a v3 node forwards
+# only apid/kube-api, so it was unreachable from the mesh. Nothing
+# public is exposed (invariant 5: the hub stays the only public
+# surface). Out-of-band fallback with only the kube-api facet:
+# `kubectl -n vms port-forward svc/win2k25-rdp 3389:3389`.
 #
 # Selector matches the virt-launcher pod's VM label, so the service
 # follows the VM wherever it schedules.
@@ -14,7 +20,6 @@ metadata:
   name: win2k25-rdp
   namespace: vms
 spec:
-  type: NodePort
   selector:
     vm.kubevirt.io/name: win2k25
   ports:
@@ -22,4 +27,3 @@ spec:
       protocol: TCP
       port: 3389
       targetPort: 3389
-      nodePort: 30389
