@@ -1,0 +1,107 @@
+# SillyTavern: LLM chat front-end, migrated off the Windows PC
+# (talos-config-lwi3; that box becomes a node in dsuj). All state —
+# chats, characters, secrets.json, user extensions, config.yaml and the
+# global third-party extensions — lives on one volume on the default
+# longhorn class (ADR-0029). The image is run in its "strict non-root"
+# mode (uid 1000, like the media apps); it cannot chown, so the init
+# step creates the subPath dirs as 1000 before kubelet would create them
+# root-owned.
+#
+# config.yaml is on the volume, not a ConfigMap: the entrypoint's
+# `npm run init` writes missing keys back into it on every upgrade.
+# Deltas from the Windows copy: whitelistMode false + securityOverride
+# true — the request's source IP is ingress-nginx, and the wallet gate
+# on the Ingress (k8s/apps/sillytavern/ingress.yaml) is the auth
+# boundary instead. Everything else migrated as-is.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sillytavern
+  namespace: ai
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sillytavern
+  namespace: ai
+spec:
+  replicas: 1
+  # RWO volume: no rolling update (Multi-Attach on the replacement pod).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sillytavern
+  template:
+    metadata:
+      labels:
+        app: sillytavern
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: mkdirs
+          image: ghcr.io/sillytavern/sillytavern:1.19.0
+          command:
+            - sh
+            - -c
+            - mkdir -p /vol/config /vol/data /vol/third-party
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: state
+              mountPath: /vol
+      containers:
+        - name: sillytavern
+          image: ghcr.io/sillytavern/sillytavern:1.19.0
+          ports:
+            - containerPort: 8000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: state
+              subPath: config
+              mountPath: /home/node/app/config
+            - name: state
+              subPath: data
+              mountPath: /home/node/app/data
+            - name: state
+              subPath: third-party
+              mountPath: /home/node/app/public/scripts/extensions/third-party
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: sillytavern
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sillytavern
+  namespace: ai
+spec:
+  selector:
+    app: sillytavern
+  ports:
+    - port: 8000
+      targetPort: 8000

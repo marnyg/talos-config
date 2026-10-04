@@ -1,0 +1,27 @@
+# Gated behind the wallet like the *arr apps (see k8s/apps/media/
+# ingress.yaml for the mechanism): SillyTavern has no auth of its own
+# here (single user, whitelistMode off), so this annotation pair is what
+# keeps "every exposed service authenticates against the wallet" true.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sillytavern
+  namespace: ai
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.gw.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
+    # Character cards / backgrounds upload past nginx's 1 MiB default.
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: sillytavern.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sillytavern
+                port:
+                  number: 8000

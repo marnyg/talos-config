@@ -1,0 +1,6 @@
+# `ai`: LLM front-ends and, later, agent runtimes (spikes kanr, dsuj).
+# Inherits the cluster-wide PSS restricted default like media.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai
