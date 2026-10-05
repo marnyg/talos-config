@@ -1,6 +1,8 @@
 # ADR-0029: The media library mirrors inside the storage node
 
-- Status: Accepted (2026-10-04)
+- Status: Accepted (2026-10-04); replica count amended by ADR-0031
+  (2026-10-05): the library runs on **one** replica, `files/transfer`
+  keeps two. The bulk-tier placement and the share-manager pin stand.
 - Date: 2026-10-04
 - Amends: ADR-0011 (the `longhorn-bulk` class: replica count and placement)
 

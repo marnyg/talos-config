@@ -951,10 +951,14 @@ provisioning or recovery path may depend on it.
   tag declared in each machine's `default-disks-config`. **`nvme`**
   is every node's NVMe user volume. **`bulk`** is nas1's SATA bays,
   one `UserVolumeConfig` per disk. A class selects a tier. The library
-  mirrors across two `bulk` disks on one node, with its NFS server
-  pinned beside them (ADR-0029). App state stays on `nvme`: the
-  default class is fenced to that tier (`jx78`). The node is the
-  library's availability unit, and the disk is its durability unit.
+  sits at one replica on nas1's `bulk` disks, with its NFS server
+  pinned beside it (ADR-0029 placement, ADR-0031 count: a same-node
+  mirror bought bay redundancy the re-downloadable library does not
+  need, at the price of hours of rebuild per reboot). `files/transfer`
+  is the opt-in exception at two replicas, one per bay, until it has
+  a backup (`bsj`). App state stays on `nvme`: the default class is
+  fenced to that tier (`jx78`). The node is the library's
+  availability unit; its durability unit is the download.
 - **Volume robustness** (Longhorn): `healthy` / `degraded` (fewer
   healthy replicas than spec) / `faulted` (no usable replica) /
   `unknown` (detached). A data-plane property, independent of

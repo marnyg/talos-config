@@ -7,23 +7,29 @@
 # and explicitly declared disposable by ADR-0011.
 #
 # Placement (2026-10-04, cnb5/lug3): the library lives on nas1's SATA
-# tier — the two 4 TB bays, Longhorn disks tagged `bulk` — as a MIRROR
-# INSIDE THE NODE: two replicas, which the soft node anti-affinity lets
-# share nas1 and the hard disk anti-affinity forces onto different
-# bays. Longhorn's form of raid-1 across the two disks: one Toshiba
-# dying costs nothing; nas1 dying takes the library offline until it
-# returns (data intact), which is the posture the library already had
-# on w1 — minus the redundancy. Before this, one replica sat on w1's
-# NVMe, and w1 off 2026-09-21 faulted all three volumes for 12 days
-# unnoticed. Capacity: 4 TB usable of 8 raw; at one replica the 2026-09
-# fleet had ~1073 GB raw in total, which is why it was 1 then.
+# tier — the two 4 TB bays, Longhorn disks tagged `bulk` — at ONE
+# replica (ADR-0031, 2026-10-05). ADR-0029 had mirrored it across the
+# two bays; one day of that showed the price: both replicas on one
+# node means every nas1 reboot fails both and rebuilds ~600 GB at
+# ~12 MB/s for hours (k8sd), for redundancy against a bay failure the
+# library — re-downloadable by ADR-0011 — does not need. nas1 dying
+# takes the library offline until it returns (data intact), as it did
+# on w1. Before this, one replica sat on w1's NVMe, and w1 off
+# 2026-09-21 faulted all three volumes for 12 days unnoticed.
+# Capacity: 8 TB usable across the two bays.
+#
+# The exception is files/transfer: the only copy of the Windows PC's
+# data once that PC is wiped (dsuj), so its Volume CR is hand-patched
+# to numberOfReplicas 2 (one per bay). It is the irreplaceable tenant
+# of a disposable tier, which ADR-0029 said needs a backup (bsj), not
+# replicas — the 2 is a stopgap until bsj.
 #
 # StorageClass parameters are immutable: changing this file means
 # deleting the class so ArgoCD recreates it (bound PVs are unaffected;
 # they reference it by name; the share-manager controller re-reads the
 # class by name when it creates a pod). Existing volumes do not follow a class
-# change either — their Volume CRs were patched to match (replicas,
-# diskSelector, affinities) and the w1 replica evicted.
+# change either — their Volume CRs are patched to match (replicas,
+# diskSelector, affinities); 2026-10-04 that also evicted the w1 replica.
 #
 # Why RWX matters here (and not for state): six pods share three media
 # directories — media-tv is sonarr+jellyfin, media-downloads is
@@ -52,9 +58,10 @@ volumeBindingMode: Immediate
 # tolerating accidents.
 reclaimPolicy: Retain
 parameters:
-  numberOfReplicas: "2"
+  numberOfReplicas: "1"
   diskSelector: "bulk"
-  # Both replicas may be on one node (nas1 is the only one with `bulk`
+  # Relevant only to a volume patched above 1 (files/transfer): both
+  # replicas may be on one node (nas1 is the only one with `bulk`
   # disks), never on one disk. Values are enabled/disabled/ignored, not
   # booleans: "true"/"false" made every new claim fail with `invalid
   # ReplicaSoftAntiAffinity setting`, unnoticed until the first PVC
