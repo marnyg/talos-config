@@ -1,0 +1,13 @@
+# Validation aid only: `kubectl kustomize docs/spikes/agents-kagent`
+# renders the set. The root ArgoCD app applies raw files and ignores
+# this; it can be dropped on promotion.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - argocd-repo-oci.yaml
+  - application-crds.yaml
+  - application.yaml
+  - sealed-secret.yaml
+  - modelconfig.yaml
+  - agent.yaml
+  - ingress.yaml
