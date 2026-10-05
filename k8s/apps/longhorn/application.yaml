@@ -17,6 +17,9 @@
 # notes read first; drifting to whatever the chart repo published today
 # is not a thing to do unattended.
 #
+# The UI (longhorn-frontend, no auth of its own) is exposed over the
+# mesh behind the wallet by ingress.yaml next to this file.
+#
 # Deletion hazard: removing this Application (or renaming the directory)
 # cascades to the CRDs, and the Volume/Replica CRs are the only record of
 # where replica data lives. Invariant 2 classifies that bookkeeping as
@@ -87,22 +90,17 @@ spec:
           nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
         persistence:
           defaultClass: true
-          # Two nodes, so two replicas — one per node. Deliberately set
-          # here rather than via defaultSettings.defaultReplicaCount,
-          # which changed to a per-engine map in 1.10 and only affects
-          # UI-created volumes anyway; PVCs take this.
-          #
-          # Expect volumes to sit Degraded until cp1's partition is
-          # handed over (task 214661d2) — degraded is functional, and it
-          # self-heals when the second disk appears.
-          #
-          # Node three (nas1) landed 2026-09-22 and this DELIBERATELY
-          # stays 2: three replicas would put a copy on every node and
-          # make the smallest disk the fleet's capacity ceiling, for one
-          # more simultaneous-failure of headroom than a homelab needs.
-          # Two replicas across three nodes is also strictly better than
-          # two across two — Longhorn now has somewhere to rebuild when
-          # a node goes (which w1 does; `9l67`).
+          # Two replicas for app state on the default (nvme) class, across
+          # the three nodes: one node loss keeps the data and leaves a
+          # third node to rebuild onto (w1 does go away; `9l67`). Three
+          # would put a copy on every node and make the smallest disk the
+          # fleet's capacity ceiling. Set here rather than via
+          # defaultSettings.defaultReplicaCount, which became a per-engine
+          # map in 1.10 and only affects UI-created volumes; PVCs take
+          # this. The other classes decide their own count
+          # (k8s/apps/storage/storageclass.yaml): longhorn-bulk runs the
+          # media library at one replica (ADR-0031, amending 0029),
+          # longhorn-user keeps two on different nodes.
           defaultClassReplicaCount: 2
           defaultDataLocality: best-effort
           # Fence app state to the NVMe tier (jx78). Since nas1's SATA
