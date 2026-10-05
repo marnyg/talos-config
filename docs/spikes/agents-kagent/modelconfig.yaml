@@ -1,0 +1,20 @@
+# OpenRouter through kagent's OpenAI-compatible provider path: provider
+# OpenAI + openAI.baseUrl is the documented BYO shape (upstream shows it
+# with Cohere; xAI uses the same). `model` is any OpenRouter model id —
+# pick a cheap one for the trial; `openrouter/auto` also works.
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: openrouter
+  namespace: ai
+spec:
+  provider: OpenAI
+  model: openai/gpt-4.1-mini
+  apiKeySecret: openrouter
+  apiKeySecretKey: OPENROUTER_API_KEY
+  openAI:
+    baseUrl: https://openrouter.ai/api/v1
+  # Optional OpenRouter attribution headers; harmless, off for the trial.
+  # defaultHeaders:
+  #   HTTP-Referer: http://kagent.gw.mesh.internal
+  #   X-Title: talos-config

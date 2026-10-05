@@ -1,0 +1,18 @@
+# ArgoCD repository entry for kagent's OCI Helm charts. Public registry,
+# so this is a plain Secret with no credential in it — the type is
+# ArgoCD's convention for repository config, not a sign of secret
+# material. First OCI chart source in this repo (the others are classic
+# Helm index repos); `enableOCI` is what tells ArgoCD to speak OCI.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kagent-helm-oci
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  name: kagent
+  type: helm
+  url: ghcr.io/kagent-dev/kagent/helm
+  enableOCI: "true"
