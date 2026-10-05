@@ -76,7 +76,10 @@ parameters:
   # library away regardless. Longhorn reads this when it creates the
   # pod, so an existing share-manager moves only when its pod is
   # deleted (which, with rwx-volume-fast-failover off, also restarts
-  # the volume's workload pods so they remount).
+  # the volume's workload pods so they remount). The mirror image of
+  # this pin: the library's consumers carry a nodeAffinity AWAY from
+  # nas1 (jellyfin/sonarr/radarr/nzbget/transmission), because a
+  # client on the server's node hangs the node's shutdown (m1au).
   shareManagerNodeSelector: "kubernetes.io/hostname:nas1"
   staleReplicaTimeout: "30"
   fsType: "ext4"

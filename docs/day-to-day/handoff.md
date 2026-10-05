@@ -21,6 +21,19 @@ beads on the Mac re-bootstrapped.
   recreates, copy 3.8 G from the Retained PV (103 s — gigabit
   ceiling), delete old PV + Longhorn volume. Also removed an empty
   orphan PV (`pvc-47a8…`, twin from the 10-04 provisioning race).
+- **nas1 moved rooms** (`talosctl shutdown` → power button after
+  ~3 min, see below → boot). ADR-0031 confirmed: `Ready` in ~2 min,
+  all four volumes `healthy`, **zero rebuilds**; `transfer`'s nas1
+  replica was not even marked failed. Share-manager ClusterIPs
+  unchanged; sonarr/radarr NFS mounts self-recovered ~3 min after
+  the share-managers were back; jellyfin rescheduled to cp1.
+- **Shutdown hang** (`m1au`): Talos's drain evicts the share-managers
+  and their clients together; Jellyfin was *on nas1*, so its hard NFS
+  mount outlived its server and `unmountPodMounts` never returned.
+  Data filesystems were already synced+unmounted, so power-off was
+  safe. Fix committed: the five RWX consumers carry a nodeAffinity
+  away from nas1 (the mirror of the share-manager pin). Verify at
+  the next nas1 shutdown, then close `m1au`.
 - **Beads on the Mac**: `bd` 1.3.0 after a rebuild; the remote was
   migrated v32→v66 by the NixOS box on 10-04, so this clone was
   re-bootstrapped (old DB at `/tmp/beads-embeddeddolt-v32-backup`,
@@ -31,9 +44,8 @@ beads on the Mac re-bootstrapped.
 
 - `transfer` has an off-node replica: watch the first SMB copy from
   the Windows PC for the synchronous-write ceiling (~105 MB/s).
-- ADR-0031 confirmation: on the next nas1 reboot, the three bulk
-  volumes should come back `healthy` with no rebuild; `transfer`
-  `degraded`, not `faulted`.
+- `m1au` verification: next `talosctl -n nas1 shutdown` should
+  complete on its own now that no NFS client runs on nas1.
 - **Mac daemon** (`5q33`): `darwin-rebuild switch` done today? —
   verify `talos-mesh` beats ok; the signing config half is done.
 - `jlgz` (v6-only hub answer on cellular) stays open.

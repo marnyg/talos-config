@@ -33,6 +33,22 @@ spec:
       labels:
         app: transmission
     spec:
+      # Never on nas1, the node pinned to host this library's NFS servers
+      # (storageclass.yaml shareManagerNodeSelector). A nas1 shutdown
+      # drains the share-manager and its clients at once; a client on
+      # the same node is then left with a hard NFS mount to a server
+      # that is gone, its unmount never returns, and Talos hangs in
+      # unmountPodMounts until the power button (2026-10-05, m1au).
+      # Clients on other nodes just stall and reconnect when the
+      # share-manager is back. The NFS hop is paid anyway (ADR-0029).
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values: [nas1]
       securityContext:
         fsGroup: 1000
       initContainers:
