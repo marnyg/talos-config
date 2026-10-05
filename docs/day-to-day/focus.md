@@ -26,11 +26,11 @@ same one-signature path).
 - Apps: the docker host is retired (`4iob` closed); `dsuj` waits only
   on the data copy off the Windows PC.
 - Spikes: `dsuj` Windows node + GPU, `ch74` SMB/sync, `9z4e` HTTPS,
-  `kanr` agentic workloads. (`r4fw` closed → ADR-0030.)
-- ~~Disk-secret hygiene: `spvd`, `9af0`~~ — done 2026-10-04;
-  ~~`k8sd`~~ decided 2026-10-05 (ADR-0031).
+  `kanr` agentic workloads, `i1il` app sign-in from mesh identity.
+- Storage follow-up: `bsj` backup target (the one-replica library and
+  the two-node `transfer` both lean on it). Field verifications `m1au`
+  and `5q33` closed 2026-10-05.
 - Protocol v0 M5 money (`0bc.5`) — state in `protocol/docs/day-to-day/`.
-- ~~Field bugs `rnfk`, `bh74`~~ — closed 2026-10-04, verified on the phone.
 
 **Out of scope:** KMS onto 443 (`os8s`); the daemon's control socket
 (`fgr`); iroh-ffi read-cancellation (`vh6e`) — `vzbf` is closed.

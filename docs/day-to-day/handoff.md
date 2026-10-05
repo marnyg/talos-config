@@ -5,56 +5,51 @@
 
 ## Last session
 
-2026-10-05: Longhorn replica policy decided and applied (ADR-0031);
-beads on the Mac re-bootstrapped.
+2026-10-05 (evening): two verifications closed and the Longhorn UI
+exposed.
 
-- **Longhorn**: both media rebuilds had finished 10-04 evening (`tv`
-  18:56Z, `movies` 19:30Z). Then ADR-0031: the library drops to **one
-  replica** (`longhorn-bulk` class recreated at `numberOfReplicas: 1`;
-  `tv` on bay 1, `movies`+`downloads` on bay 2 — Longhorn does not
-  prune extras itself with auto-balance off, so the second replicas
-  were deleted by hand). nas1 reboots no longer rebuild the tier;
-  `k8sd` closed. Bulk went 1700 G → 1000/700 G scheduled per bay.
-- **`files/transfer`** moved to a new **`longhorn-user`** class: two
-  replicas, hard node anti-affinity, no tier selector → nas1 bay 2 +
-  w1 NVMe. PVC class is immutable, so: commit, delete PVC, ArgoCD
-  recreates, copy 3.8 G from the Retained PV (103 s — gigabit
-  ceiling), delete old PV + Longhorn volume. Also removed an empty
-  orphan PV (`pvc-47a8…`, twin from the 10-04 provisioning race).
-- **nas1 moved rooms** (`talosctl shutdown` → power button after
-  ~3 min, see below → boot). ADR-0031 confirmed: `Ready` in ~2 min,
-  all four volumes `healthy`, **zero rebuilds**; `transfer`'s nas1
-  replica was not even marked failed. Share-manager ClusterIPs
-  unchanged; sonarr/radarr NFS mounts self-recovered ~3 min after
-  the share-managers were back; jellyfin rescheduled to cp1.
-- **Shutdown hang** (`m1au`): Talos's drain evicts the share-managers
-  and their clients together; Jellyfin was *on nas1*, so its hard NFS
-  mount outlived its server and `unmountPodMounts` never returned.
-  Data filesystems were already synced+unmounted, so power-off was
-  safe. Fix committed: the five RWX consumers carry a nodeAffinity
-  away from nas1 (the mirror of the share-manager pin). Verify at
-  the next nas1 shutdown, then close `m1au`.
-- **Beads on the Mac**: `bd` 1.3.0 after a rebuild; the remote was
-  migrated v32→v66 by the NixOS box on 10-04, so this clone was
-  re-bootstrapped (old DB at `/tmp/beads-embeddeddolt-v32-backup`,
-  export at `/tmp/beads-local-pre-pull.jsonl`; nothing was lost).
-  The laptop's signing `git config` is set now (`gpg.format ssh`).
+- **Longhorn UI** at `longhorn.gw.mesh.internal`
+  (`k8s/apps/longhorn/ingress.yaml`): `longhorn-frontend` has no auth
+  of its own and can delete volumes, so it carries the oauth2-proxy
+  `auth-url`/`auth-signin` pair like the *arr apps. Was port-forward
+  only before. `application.yaml`'s replica-count comment caught up
+  with three nodes + ADR-0029/0031 (comments only).
+- **`m1au` closed** — the shutdown hang is fixed. `talosctl -n nas1
+  reboot` 15:54Z: drain 41 s, kernel back in 2.5 min, `Ready` +3 min,
+  share-managers back on nas1, **zero rebuilds** (ADR-0031 holds a
+  second time), `transfer` degraded→healthy without a rebuild,
+  sonarr/radarr/jellyfin NFS mounts serving at +5 min. No power
+  button. The fix is `721caf9` (RWX consumers `nodeAffinity NotIn
+  nas1`).
+- **`5q33` closed** — Mac `talos-mesh` daemon verified after the
+  10-05 `darwin-rebuild switch`: launchd running, built from `7a3b21e`
+  (post-`600d2d4` enrollmsg v3), `beat ok` 5 grants/10 names, member
+  renewed to 2027-01-02. All three clients are now post-v3. The Mac
+  binary predates the 10-04 fakeip RST/stats commits (`3f47eff`,
+  Android-motivated); it rides the next `nix flake update talos-config`
+  in `~/git/nixos`.
 
 ## Loose threads
 
-- `transfer` has an off-node replica: watch the first SMB copy from
-  the Windows PC for the synchronous-write ceiling (~105 MB/s).
-- `m1au` verification: next `talosctl -n nas1 shutdown` should
-  complete on its own now that no NFS client runs on nas1.
-- **Mac daemon** (`5q33`): `darwin-rebuild switch` done today? —
-  verify `talos-mesh` beats ok; the signing config half is done.
-- `jlgz` (v6-only hub answer on cellular) stays open.
-- Unchanged: no `fly ssh` key on the nixos box; `dsuj` waits on the
-  Windows data copy (now onto a cross-node share).
+- "No NFS client on nas1" is enforced only by five per-Deployment
+  affinities, not structurally: `files/samba` runs on nas1 (RWO
+  `transfer`, fine) — if it or any new pod ever mounts a `longhorn-bulk`
+  RWX volume, the `m1au` hang returns. Worth a line in the media
+  ingress/pvcs comments or a kyverno-style guard if a fourth RWX
+  consumer appears.
+- Untracked `auth notes` at the repo root (Oct 1): identities / grants /
+  roles / groups as a DAG with a TODO list. Not in beads; overlaps
+  spike `i1il`. Decide: attach to `i1il`, own spike, move under
+  `docs/`, or delete.
+- `transfer` off-node replica: watch the first SMB copy from the
+  Windows PC for the synchronous-write ceiling (~105 MB/s).
+- `jlgz` (v6-only hub answer on cellular) stays open. No `fly ssh` key
+  on the nixos box; `dsuj` waits on the Windows data copy.
 
 ## Suggested next steps
 
 - Owner's pick from the board: spikes `dsuj` / `ch74` / `9z4e` /
-  `kanr` / `i1il`.
-- Small: `pymm`/`d4p8` test flakes; `bsj` (backup target) is now
-  the only thing standing between `transfer` and a two-node loss.
+  `kanr` / `i1il` (the `auth notes` file feeds `i1il`).
+- `bsj` (Longhorn backup target) is the only thing between `transfer`
+  and a two-node loss, and the prerequisite for a routine cp1 wipe.
+- Small: `pymm` / `d4p8` test flakes.

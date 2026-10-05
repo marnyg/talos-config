@@ -1032,3 +1032,13 @@
   the phone's app does not bring the tunnel up on launch (the Shield
   does); `adb shell input tap 178 438` on the Connect button of the
   not-connected screen (1080×2520) did, no VPN consent re-prompt.
+- 2026-10-05 — **Watching a Talos node go down from here**: `talosctl
+  reboot`/`shutdown` block with `--wait` (default) until the node is
+  back — run them in the background or with `--wait=false` when a tool
+  call must return in <60 s. `talosctl dmesg --follow` dies the moment
+  apid stops (mid `stopAllPods`), and the kernel ring buffer is gone
+  after the reboot, so the `unmountPodMounts` phase timing is **not
+  observable remotely** — judge it by wall clock (request → kernel
+  `Linux version` line; 2.5 min on nas1 is healthy). Longhorn marks a
+  volume `degraded` for ~30 s while a node's replica comes back; that
+  is not a rebuild (check `replicas.longhorn.io … failedAt` is empty).
