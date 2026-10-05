@@ -940,11 +940,13 @@ provisioning or recovery path may depend on it.
   class (RWO, 2 replicas across nodes). The **library** is large and
   re-downloadable, so it lives on `longhorn-bulk`. **User files** —
   the transfer dump in `files/transfer`, copied off a machine being
-  retired — are a third class: neither app state nor re-downloadable,
-  yet they sit on `longhorn-bulk` too, because the bulk tier is where
-  the space is. That is a knowing mismatch (`ch74`, `9io`), not a
-  statement of worth: the class's `Retain` policy is what stands
-  between those bytes and an ArgoCD prune. Access mode belongs to the
+  retired — are a third class, `longhorn-user` (ADR-0031): neither
+  app state nor re-downloadable, small enough to mirror across nodes,
+  so two replicas with hard node anti-affinity and no tier selector.
+  They sat on `longhorn-bulk` for a day as a knowing mismatch; the
+  `Retain` policy both classes share is what stands between those
+  bytes and an ArgoCD prune (`ch74`, `9io` still own the open
+  questions of sharing and encryption). Access mode belongs to the
   claim, not the class: the library's claims are RWX (share-manager
   NFS, so six pods on any node share three directories); the
   transfer claim is RWO. The **storage tier** says which disks hold the bytes, as a Longhorn disk
@@ -954,9 +956,7 @@ provisioning or recovery path may depend on it.
   sits at one replica on nas1's `bulk` disks, with its NFS server
   pinned beside it (ADR-0029 placement, ADR-0031 count: a same-node
   mirror bought bay redundancy the re-downloadable library does not
-  need, at the price of hours of rebuild per reboot). `files/transfer`
-  is the opt-in exception at two replicas, one per bay, until it has
-  a backup (`bsj`). App state stays on `nvme`: the default class is
+  need, at the price of hours of rebuild per reboot). App state stays on `nvme`: the default class is
   fenced to that tier (`jx78`). The node is the library's
   availability unit; its durability unit is the download.
 - **Volume robustness** (Longhorn): `healthy` / `degraded` (fewer

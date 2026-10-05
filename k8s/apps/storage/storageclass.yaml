@@ -18,11 +18,9 @@
 # 2026-09-21 faulted all three volumes for 12 days unnoticed.
 # Capacity: 8 TB usable across the two bays.
 #
-# The exception is files/transfer: the only copy of the Windows PC's
-# data once that PC is wiped (dsuj), so its Volume CR is hand-patched
-# to numberOfReplicas 2 (one per bay). It is the irreplaceable tenant
-# of a disposable tier, which ADR-0029 said needs a backup (bsj), not
-# replicas — the 2 is a stopgap until bsj.
+# files/transfer, the irreplaceable tenant this tier briefly had, moved
+# to `longhorn-user` below (two replicas on different nodes) the same
+# day.
 #
 # StorageClass parameters are immutable: changing this file means
 # deleting the class so ArgoCD recreates it (bound PVs are unaffected;
@@ -60,9 +58,9 @@ reclaimPolicy: Retain
 parameters:
   numberOfReplicas: "1"
   diskSelector: "bulk"
-  # Relevant only to a volume patched above 1 (files/transfer): both
-  # replicas may be on one node (nas1 is the only one with `bulk`
-  # disks), never on one disk. Values are enabled/disabled/ignored, not
+  # Relevant only to a volume patched above 1: both replicas may be on
+  # one node (nas1 is the only one with `bulk` disks), never on one
+  # disk. Values are enabled/disabled/ignored, not
   # booleans: "true"/"false" made every new claim fail with `invalid
   # ReplicaSoftAntiAffinity setting`, unnoticed until the first PVC
   # provisioned through this class (files/transfer, 2026-10-05) — the
@@ -86,4 +84,36 @@ parameters:
   # bulk tier by the selector; tying placement to wherever the
   # share-manager currently runs would be either a no-op or a request
   # Longhorn cannot satisfy. The NFS hop is the accepted cost.
+  dataLocality: "disabled"
+---
+# A third class for user files (ADR-0031): neither app state (small,
+# `longhorn`, two replicas on nvme across nodes) nor the library
+# (large, re-downloadable, `longhorn-bulk`, one replica). The transfer
+# dump in files/transfer is the only copy of the Windows PC's data once
+# that PC is wiped (dsuj) — irreplaceable and small (100 Gi claimed,
+# ~6 GB used on 2026-10-05), so it gets what the library gave up: two
+# replicas, and on DIFFERENT NODES, so nas1 being away (not just a bay
+# dying) leaves the bytes reachable. No diskSelector: 100 Gi fits any
+# tier, and Longhorn picks by free space (w1 616 G, cp1 260 G, nas1
+# nvme 822 G on 2026-10-05). The cost is that every write crosses the
+# LAN to the second replica synchronously, so the SMB copy from the PC
+# tops out at gigabit rather than disk speed — fine for a transfer
+# share. Retain, like longhorn-bulk, for the same reason: ArgoCD prunes.
+# A backup target (bsj) is still the real answer for irreplaceable
+# bytes; this is the stopgap that does not depend on one node.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-user
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+reclaimPolicy: Retain
+parameters:
+  numberOfReplicas: "2"
+  # Hard node anti-affinity: a replica per node, never two on one.
+  replicaSoftAntiAffinity: "disabled"
+  replicaDiskSoftAntiAffinity: "disabled"
+  staleReplicaTimeout: "30"
+  fsType: "ext4"
   dataLocality: "disabled"

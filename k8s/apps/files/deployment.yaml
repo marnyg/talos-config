@@ -1,6 +1,10 @@
-# A general transfer share on the bulk tier (ADR-0029): the data dump
+# A general transfer share on the user-files class (ADR-0031,
+# `longhorn-user`: two replicas on different nodes): the data dump
 # from the Windows PC before it becomes a node (dsuj), and afterwards
-# the drive any Windows VM on the cluster maps.
+# the drive any Windows VM on the cluster maps. It began on
+# longhorn-bulk (2026-10-04) and moved the next day when the library
+# dropped to one replica: this is the one volume here whose bytes are
+# not re-downloadable.
 #
 # Two ways in, one daemon:
 #   - the physical Windows PC on the LAN: \\10.0.0.74\transfer —
@@ -13,14 +17,19 @@
 #
 # RWO, not RWX: nothing mounts this volume but samba; VMs and the PC
 # reach it over SMB. That keeps the share-manager NFS hop out of the
-# path and pins the pod to nas1 anyway, which hostPort needs.
+# path; the nodeSelector pins the pod to nas1, which hostPort needs,
+# and the volume attaches there whichever nodes hold its replicas.
 #
 # Files land as uid/gid 1000 (`mar`, the same ids the media apps run
 # as), so a pod can read them later without a chown. Strategy Recreate:
 # RWO + hostPort both forbid two pods at once.
 #
 # Done transferring? `replicas: 0` here; the PVC and its data stay
-# (longhorn-bulk is Retain). Grow it by raising the request — up only.
+# (longhorn-user is Retain). Grow it by raising the request — up only.
+#
+# storageClassName is immutable on a PVC: to move the claim between
+# classes, commit the new class, then delete the PVC so ArgoCD
+# recreates it (the old PV is Retained; copy from it, then delete it).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -28,7 +37,7 @@ metadata:
   namespace: files
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn-bulk
+  storageClassName: longhorn-user
   resources:
     requests:
       storage: 100Gi

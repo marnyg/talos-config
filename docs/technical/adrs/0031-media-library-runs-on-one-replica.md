@@ -46,28 +46,41 @@ Chosen: **B** for the library (`media/tv`, `media/movies`,
 the three live Volume CRs are patched to match, which drops one
 replica each without a rebuild.
 
-**Exception: `files/transfer` stays at 2**, hand-patched on its
-Volume CR. It is the only copy of the Windows PC's data once that PC
-becomes a node (`dsuj`) — the irreplaceable tenant on a disposable
-tier that ADR-0029's confirmation clause already named. Two replicas
-is the stopgap; the right answer is a backup target (`bsj`).
+**`files/transfer` leaves the tier.** It is the only copy of the
+Windows PC's data once that PC becomes a node (`dsuj`) — the
+irreplaceable tenant on a disposable tier that ADR-0029's confirmation
+clause already named, and the "knowing mismatch" the domain model
+recorded. At 100 Gi claimed (~6 GB used) it is small enough for
+ADR-0029's Option C, which the library was too big for: a third
+class, **`longhorn-user`** — two replicas, hard node anti-affinity, no
+disk selector, `Retain`. One replica on nas1, one on another node's
+NVMe, so nas1 being away leaves the bytes reachable. The cost is
+synchronous writes across the LAN (gigabit ceiling on the SMB copy).
+A backup target (`bsj`) is still the real answer for irreplaceable
+bytes; this is the stopgap that does not depend on one node.
 
 ### Consequences
 
-- The class's anti-affinity parameters only matter for a volume
-  patched above 1 replica; they are kept for `transfer` and for any
-  future opt-in.
+- `longhorn-bulk`'s anti-affinity parameters only matter for a volume
+  patched above 1 replica; kept for any future opt-in.
+- Three classes now say what a volume *is*: `longhorn` app state,
+  `longhorn-bulk` re-downloadable library, `longhorn-user` user files.
+  A PVC's class is immutable: moving `transfer` meant committing the
+  new class, deleting the PVC so ArgoCD recreated it, copying from the
+  Retained PV, then deleting that PV.
 - A nas1 reboot brings the library back as soon as the node is up; no
   `degraded` window, no "do not reboot mid-rebuild" rule. `k8sd`
   closes as decided.
 - ADR-0029's confirmation ("one Toshiba failing leaves the library
-  online") no longer holds for the library; it holds for `transfer`.
+  online") no longer holds for the library; `transfer` survives a bay
+  *and* a node.
 - Class parameters are immutable: the class is deleted once the
   commit is ArgoCD's target revision, and recreated by sync.
 
 ### Confirmation
 
-Right if: a nas1 reboot returns all four bulk volumes to `healthy`
-without a rebuild. Invalidated if the owner stops treating the library
+Right if: a nas1 reboot returns the three bulk volumes to `healthy`
+without a rebuild, and `transfer` stays `degraded`-not-`faulted`
+through it (its off-node replica keeps it attachable). Invalidated if the owner stops treating the library
 as re-downloadable (then `bsj` first, then replicas), or a second bulk
 node arrives (ADR-0029's Option C).
