@@ -5,9 +5,9 @@
 
 **Now:** Both big goals are reached and their epics sit at P2 — **Mesh
 v3** (2026-09-21; no nebula anywhere, three-node fleet since 09-22) and
-**storage tiers** (ADR-0029 Accepted 2026-10-04; library mirrored on
-nas1's bulk tier, app state on the fenced `nvme` default class,
-`/status` watches Longhorn). The board was groomed 2026-10-04; the
+**storage tiers** (ADR-0029/0031; library at one replica on nas1's
+bulk tier, user files on `longhorn-user` across two nodes, app state
+on the fenced `nvme` default class, `/status` watches Longhorn). The board was groomed 2026-10-04; the
 open set is field items, follow-ups, and the owner's next-apps list.
 ADR-0030 (hub serves `talos/` from the signed git tip) is live since
 2026-10-04 and proven end-to-end 2026-10-05 (push→served in 6 s with
@@ -27,8 +27,8 @@ same one-signature path).
   on the data copy off the Windows PC.
 - Spikes: `dsuj` Windows node + GPU, `ch74` SMB/sync, `9z4e` HTTPS,
   `kanr` agentic workloads. (`r4fw` closed → ADR-0030.)
-- ~~Disk-secret hygiene: `spvd`, `9af0`~~ — done 2026-10-04; the
-  bulk-tier rebuild cost it exposed is `k8sd`.
+- ~~Disk-secret hygiene: `spvd`, `9af0`~~ — done 2026-10-04;
+  ~~`k8sd`~~ decided 2026-10-05 (ADR-0031).
 - Protocol v0 M5 money (`0bc.5`) — state in `protocol/docs/day-to-day/`.
 - ~~Field bugs `rnfk`, `bh74`~~ — closed 2026-10-04, verified on the phone.
 

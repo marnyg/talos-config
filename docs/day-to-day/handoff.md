@@ -5,45 +5,44 @@
 
 ## Last session
 
-2026-10-04 (fourth session): Longhorn checked, every client but the
-Mac daemon rebuilt.
+2026-10-05: Longhorn replica policy decided and applied (ADR-0031);
+beads on the Mac re-bootstrapped.
 
-- **Longhorn**: 15/17 volumes healthy; `media/movies` and `media/tv`
-  `degraded` *by progress*, not failure — their second replica is
-  being built onto `longhorn-2` (the bulk-2 bay). The gate is a
-  420 GB **snapshot purge** on `tv`'s healthy replica (14 % at 16:00Z,
-  ~55 MB/s read+write on `sda`, 89 % busy), which starves the `movies`
-  local sync (~0.5 MB/s, reported as 0 %). nas1 had rebooted at
-  13:55Z mid-rebuild and lost 101 GB of copied replica. Noted on
-  `k8sd`. **Do not reboot nas1 until both are `healthy`.**
-- **APK `3f47eff`** built with `android/build.sh --publish` — first
-  end-to-end run of the build stage (the `4zpf` open question) — and
-  installed on the phone (`QV7802S09E`, USB) and the TV (`10.0.0.2`).
-  Both kept membership and `beat ok` against hubkey `ed:60669a3c…`;
-  the phone's `:853 not a name we minted` lines are gone (`359.9.4.3`
-  visible in the field).
-- **Gateway image `3f47eff`** pushed and pinned (`458ad40`); ArgoCD
-  rolled it (needed a `refresh=hard` nudge to pick the commit up
-  inside its poll interval), new pod on cp1 `beat ok`, admitting
-  `ingress-http`. `5q33` now has only the Mac `talos-mesh` daemon
-  left.
+- **Longhorn**: both media rebuilds had finished 10-04 evening (`tv`
+  18:56Z, `movies` 19:30Z). Then ADR-0031: the library drops to **one
+  replica** (`longhorn-bulk` class recreated at `numberOfReplicas: 1`;
+  `tv` on bay 1, `movies`+`downloads` on bay 2 — Longhorn does not
+  prune extras itself with auto-balance off, so the second replicas
+  were deleted by hand). nas1 reboots no longer rebuild the tier;
+  `k8sd` closed. Bulk went 1700 G → 1000/700 G scheduled per bay.
+- **`files/transfer`** moved to a new **`longhorn-user`** class: two
+  replicas, hard node anti-affinity, no tier selector → nas1 bay 2 +
+  w1 NVMe. PVC class is immutable, so: commit, delete PVC, ArgoCD
+  recreates, copy 3.8 G from the Retained PV (103 s — gigabit
+  ceiling), delete old PV + Longhorn volume. Also removed an empty
+  orphan PV (`pvc-47a8…`, twin from the 10-04 provisioning race).
+- **Beads on the Mac**: `bd` 1.3.0 after a rebuild; the remote was
+  migrated v32→v66 by the NixOS box on 10-04, so this clone was
+  re-bootstrapped (old DB at `/tmp/beads-embeddeddolt-v32-backup`,
+  export at `/tmp/beads-local-pre-pull.jsonl`; nothing was lost).
+  The laptop's signing `git config` is set now (`gpg.format ssh`).
 
 ## Loose threads
 
-- **Longhorn bulk tier**: re-check
-  `kubectl get volumes.longhorn.io -n longhorn-system` later today;
-  expect `tv` purge → `tv` rebuild (~690 GB) → `movies` rebuild to
-  take several hours in total. `k8sd` has the design question.
-- **Mac daemon** (`5q33`): `darwin-rebuild switch` on the laptop,
-  which also still lacks the signing `git config`.
-- `jlgz` (v6-only hub answer on cellular) stays open; re-check on the
-  next cellular remote-media session.
+- `transfer` has an off-node replica: watch the first SMB copy from
+  the Windows PC for the synchronous-write ceiling (~105 MB/s).
+- ADR-0031 confirmation: on the next nas1 reboot, the three bulk
+  volumes should come back `healthy` with no rebuild; `transfer`
+  `degraded`, not `faulted`.
+- **Mac daemon** (`5q33`): `darwin-rebuild switch` done today? —
+  verify `talos-mesh` beats ok; the signing config half is done.
+- `jlgz` (v6-only hub answer on cellular) stays open.
 - Unchanged: no `fly ssh` key on the nixos box; `dsuj` waits on the
-  Windows data copy.
+  Windows data copy (now onto a cross-node share).
 
 ## Suggested next steps
 
 - Owner's pick from the board: spikes `dsuj` / `ch74` / `9z4e` /
-  `kanr` / `i1il`, or decide `k8sd` (recurring snapshot on the bulk
-  class vs. single replica vs. accept).
-- Small: the three broken windows above; `pymm`/`d4p8` test flakes.
+  `kanr` / `i1il`.
+- Small: `pymm`/`d4p8` test flakes; `bsj` (backup target) is now
+  the only thing standing between `transfer` and a two-node loss.
