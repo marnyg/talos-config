@@ -1042,3 +1042,19 @@
   `Linux version` line; 2.5 min on nas1 is healthy). Longhorn marks a
   volume `degraded` for ~30 s while a node's replica comes back; that
   is not a rebuild (check `replicas.longhorn.io … failedAt` is empty).
+- 2026-10-06 — **herdr CLI/server protocol mismatch after a profile
+  update**: the nix profile's `herdr` (0.9.1, protocol 22) refuses every
+  control command against the still-running 0.8.2 server (protocol 20)
+  with `protocol_mismatch`; the suggested `herdr server stop` kills every
+  pane, including the orchestrating agent. Workaround that worked: drive
+  the session with the old build still in the store
+  (`/nix/store/2qd228lh58rf32y16sr0d16hlcvcraiv-herdr-0.8.2/bin/herdr`;
+  `ls -d /nix/store/*herdr-0.8*`). Restart herdr at a natural break.
+- 2026-10-06 — **Draft manifests never go under `k8s/apps/`**: the root
+  ArgoCD Application is `path: k8s/apps, recurse, selfHeal`, so a
+  committed draft deploys on push. Spike drafts park in
+  `docs/spikes/<slug>/` and are promoted with `git mv` (see
+  `docs/README.md`).
+- 2026-10-06 — **A stray `~` file at the repo root** was an editor
+  backup of `auth notes` (a `~`-suffix written as a bare name). Deleted
+  with the original; if it reappears, it is the editor, not a tool.

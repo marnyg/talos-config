@@ -3,34 +3,27 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Both big goals are reached and their epics sit at P2 — **Mesh
-v3** (2026-09-21; no nebula anywhere, three-node fleet since 09-22) and
-**storage tiers** (ADR-0029/0031; library at one replica on nas1's
-bulk tier, user files on `longhorn-user` across two nodes, app state
-on the fenced `nvme` default class, `/status` watches Longhorn). The board was groomed 2026-10-04; the
-open set is field items, follow-ups, and the owner's next-apps list.
-ADR-0030 (hub serves `talos/` from the signed git tip) is live since
-2026-10-04 and proven end-to-end 2026-10-05 (push→served in 6 s with
-a nudge); `talos/` edits no longer need a deploy. Disk encryption's
-slot 0 is proven live at boot and the fleet runs p0agent 0.1.6
-(2026-10-04): no secret derives from a MAC any more.
+**Now:** The app-layer seam. Mesh v3 and the storage tiers are done
+(epics at P2, board groomed 2026-10-04); the 2026-10-06 spike round
+(`i1il`, `9z4e`, `kanr` — memos in `docs/spikes/`) ruled the next
+concrete work: **`a0ys`** — the gateway signs a per-request identity
+token, the bridge verifies it for `auth_request` and OIDC, oauth2-proxy
+goes. Prereq `5kh`. ADR-0032 (the seam) and ADR-0033 (HTTPS
+direction) are Proposed.
 
 **Toward goal:** "Every exposed service authenticates against the
-wallet" and "Provisioning plane stays minimal" (`goals.md`) are what
-the new spikes push on: `9z4e` (HTTPS over the mesh from protocol
-identities, not a parallel CA), `i1il`/`95la` (app sign-in from mesh
-identity), `dsuj` (a fourth node — Windows PC with GPU — through the
-same one-signature path).
+wallet" (`goals.md`) — the wallet-rooted member cert, carried as a
+signed token, becomes the login for group-gated apps and the zero-click
+path for OIDC apps; SIWE remains the person gate. HTTPS over the mesh
+stays deferred (device-local termination when an app forces it).
 
 **Next candidates** (owner to pick):
-- Apps: the docker host is retired (`4iob` closed); `dsuj` waits only
-  on the data copy off the Windows PC.
-- Spikes: `dsuj` Windows node + GPU, `ch74` SMB/sync, `9z4e` HTTPS,
-  `kanr` agentic workloads, `i1il` app sign-in from mesh identity.
-- Storage follow-up: `bsj` backup target (the one-replica library and
-  the two-node `transfer` both lean on it). Field verifications `m1au`
-  and `5q33` closed 2026-10-05.
-- Protocol v0 M5 money (`0bc.5`) — state in `protocol/docs/day-to-day/`.
+- `a0ys` after `5kh`; un-defer `95la` (appliance login is a Jellyfin-
+  local question now).
+- kagent 0.10.3 trial from `docs/spikes/agents-kagent/` (spend-limited
+  OpenRouter key; Substrate only on code-exec need + 1.0 GA).
+- `bsj` backup target; `dsuj` waits on the Windows data copy.
 
-**Out of scope:** KMS onto 443 (`os8s`); the daemon's control socket
-(`fgr`); iroh-ffi read-cancellation (`vh6e`) — `vzbf` is closed.
+**Out of scope:** a mesh CA of any shape (ruled out, `9z4e`); Agent
+Substrate / k8s 1.37 upgrade (trigger not met); KMS onto 443 (`os8s`);
+iroh-ffi read-cancellation (`vh6e`).

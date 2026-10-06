@@ -55,5 +55,12 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   tailscale gone); **reached 2026-07-31** — the in-cluster SIWE→OIDC
   bridge serves ArgoCD (native OIDC, dex deleted), the five media UIs
   (oauth2-proxy `auth_request`), and Jellyfin (jellyfin-plugin-sso).
-  Remaining scope deliberately deferred: HTTPS over the mesh via the
-  wallet-derived CA (task 75c8b6b3, `+later`).
+  Remaining scope deliberately deferred: HTTPS over the mesh (spike
+  `9z4e`, 2026-10-06, `docs/spikes/tls-over-mesh.md`) — a wallet-rooted
+  mesh CA is ruled out (ADR-0018: the seed is never a signing key; a
+  `speak-as` root rotates per redeploy); when an app forces it, TLS
+  terminates on the device behind a name-constrained per-device CA.
+  The app-layer seam is moving (spike `i1il`, task `a0ys`): the gateway
+  will mint a signed per-request identity token the bridge verifies,
+  so group-gated apps need no login and OIDC apps log in without the
+  wallet prompt; SIWE stays the person gate.

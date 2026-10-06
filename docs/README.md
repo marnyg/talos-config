@@ -11,6 +11,11 @@ Structured docs for humans and agents. Layout:
   [`deployed-state.md`](technical/deployed-state.md) — where the running
   system stands, facts dated because they decay).
 - **`day-to-day/`** — Active cross-session context. Handoffs, focus, notes, exploration log.
+- **`spikes/`** — Spike memos: one file per `bd` spike (`<slug>.md`, ≤ 250
+  lines, recommendation + proposed ADR body), with draft manifests in a
+  sibling `<slug>/` dir. Drafts park here because the root ArgoCD app
+  syncs `k8s/apps/` recursively with selfHeal — nothing under `docs/`
+  deploys. Promote with `git mv`. Rulings live on the bead's notes.
 
 See `AGENTS.md` for how agents use this tree.
 

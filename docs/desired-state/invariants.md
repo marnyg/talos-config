@@ -168,7 +168,10 @@ above the owner — escalate._
 - **Capability discipline ends at the actor that terminates the
   stream.** Past the gateway everything is ambient authority (a
   header, a Service, an app trusting its caller); the app layer
-  (SIWE→OIDC, ADR-0010) is the seam, and the presentation layer
+  (SIWE→OIDC, ADR-0010) is the seam _(ADR-0032, proposed 2026-10-06:
+  the seam moves one signed hop — the gateway's per-request identity
+  token is caller-carried to the bridge, which verifies it; bare
+  headers are never authority)_, and the presentation layer
   (fake IPs, `*.mesh.internal`, browser TLS, OIDC redirects) is where
   the model meets a web that assumes global names and web PKI.
   Expect it to stay the fragile part.

@@ -55,9 +55,17 @@ Vocabulary that follows from this:
 - **Two enforcement layers, never merged** (Tailscale/NetBird shape):
   the **network layer** authorizes by binding + policy alone — no
   per-session login, device custody *is* network access for the
-  binding's lifetime or until blocklist. The **app layer** keeps user
-  sessions on the SIWE→OIDC bridge (ADR-0010). Mesh v3's gateway
-  header *complements* SIWE; it does not replace it (`359.9.3`).
+  binding's lifetime or until blocklist. The **app layer** has two
+  gates _(2026-10-06, spike `i1il`, ADR-0032; was "the gateway header
+  complements SIWE, it does not replace it", `359.9.3`)_: the **group
+  gate** — nginx `auth_request` to the bridge's `/authz`, deciding
+  from the gateway's signed **identity token** (device + groups) alone,
+  no login — fronts apps with no per-user state; the **person gate** —
+  the SIWE→OIDC bridge (ADR-0010) — fronts apps with per-user state,
+  and honours the same token at `/authorize` so a member device logs
+  in without the wallet prompt. A bare header is never trusted: its
+  unforgeability would rest on reachability, and the pod network is
+  reachable.
 - **Verbs are undefined.** Groups exist (`admins`, `media`,
   `machines`); the "what" axis of authorization has no vocabulary yet.
   Spike `talos-config-359.2` owns defining it.
@@ -885,7 +893,24 @@ provisioning or recovery path may depend on it.
   reach is entirely the grants addressed to it. (`admins`, `media`,
   `machines` — `policy.Groups`, the one copy; devices enroll into the
   first two, machines are the node agents.) _(Redefined 2026-09-03,
-  spike `359.2`.)_
+  spike `359.2`.)_ It is the unit the app layer's group gate can
+  authorize on; a *person* is only ever established by the bridge
+  (`admins ⇒ the owner` is an N=1 inference, bug `5kh`).
+- **Identity token** _(2026-10-06, ADR-0032)_ — the gateway's signed
+  per-request attestation of the admitted stream's identity: device
+  key, name, groups, `aud` = the request's Host, `exp` ≈ 60 s, EdDSA
+  under the gateway's own member key; carried as `X-Mesh-Token`. A
+  caller-carried artifact past the gateway (ADR-0017's shape, one hop
+  further), verified by the bridge against the gateway's public key
+  pinned in git. **Not a cert class and no verb**: it never crosses the
+  mesh and grants nothing — it reports. Replaces the bare `X-Mesh-*`
+  headers as anything an app may rely on.
+- **Data-plane credential** _(2026-10-06, spike `kanr`)_ — a secret
+  that authorizes *spend or access at a vendor* (an OpenRouter API key,
+  an indexer key), as opposed to an identity. Lives as a SealedSecret,
+  is bounded by the vendor's own limits, and sits in no auth path —
+  invariant 1's "no third-party identity accounts" is about identity,
+  not about these.
 - **Mesh zone** — `*.mesh.internal`. _v2 (history): served by the hub
   on the overlay from the derived namespace._ v3: the zone name is
   inherited unchanged (spike `eda`: every certSAN already carries it)

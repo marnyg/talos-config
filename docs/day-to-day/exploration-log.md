@@ -183,3 +183,33 @@ them:
   domain. nyaasi, therarbg: error/403. limetorrents, torrentproject2,
   torrentdownloads: 0 TV results. Landed on thepiratebay (apibay) and
   knaben (meta-search). Re-probe before adding others; they rot.
+
+## Spike round 2026-10-06 — app seam, HTTPS, agents
+
+Three memos (`docs/spikes/`), rulings on the beads. Strategy-level
+dead ends so they are not re-walked:
+
+- 2026-10-06 — Tried **bare trusted identity header as the app login**
+  (`X-Mesh-*`, Tailscale proxy-to-grafana shape; memo option B/D).
+  Ruled out by the owner: its unforgeability is reachability alone, and
+  any pod on the pod network can dial ingress-nginx or the bridge with
+  forged headers — minting an `admins` OIDC token from it would be
+  cluster-admin for ArgoCD. Landed on: the gateway **signs** a
+  short-lived per-request token (`aud`=Host, 60 s) and the bridge
+  verifies it (`a0ys`). Caller-carried, like every other authority here.
+- 2026-10-06 — Considered **a wallet-rooted mesh CA** for HTTPS on
+  `*.gw.mesh.internal` (the deferred `goals.md` line since 07-31).
+  Ruled out both ways: a seed-derived CA key contradicts ADR-0018 ("the
+  seed is never a signing key"); a `speak-as` ephemeral-key CA rotates
+  the trust-store root every hub redeploy. Also: the member's Ed25519
+  key cannot be a browser TLS leaf; nginx/per-app termination loses
+  ADR-0026's header injection. Landed on: nothing until an app forces
+  it, then **device-local termination + name-constrained per-device CA**
+  (the daemon that already fakes DNS/IPs fakes the server too).
+- 2026-10-06 — Considered **google/ax** as the agent runtime. Ruled out:
+  providers `google|anthropic` only (no OpenRouter), its objects are not
+  k8s CRDs (own gRPC plane + Redis, `ko`-built), needs Agent Substrate
+  (k8s ≥ 1.37, gVisor), pre-release. **kagent 1.0 alphas** share the
+  Substrate requirement and have no in-place upgrade from 0.10. Landed
+  on: kagent 0.10.3 trial; Substrate only when an agent needs code
+  execution and 1.0 is GA.

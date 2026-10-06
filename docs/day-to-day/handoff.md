@@ -5,51 +5,59 @@
 
 ## Last session
 
-2026-10-05 (evening): two verifications closed and the Longhorn UI
-exposed.
+2026-10-06: three spikes answered by a swarm (one `claude-fable-5-1`
+worker each, herdr worktrees, memos under the new `docs/spikes/`), then
+ruled with the owner. Rulings are on the beads' notes; memos are the
+analysis.
 
-- **Longhorn UI** at `longhorn.gw.mesh.internal`
-  (`k8s/apps/longhorn/ingress.yaml`): `longhorn-frontend` has no auth
-  of its own and can delete volumes, so it carries the oauth2-proxy
-  `auth-url`/`auth-signin` pair like the *arr apps. Was port-forward
-  only before. `application.yaml`'s replica-count comment caught up
-  with three nodes + ADR-0029/0031 (comments only).
-- **`m1au` closed** — the shutdown hang is fixed. `talosctl -n nas1
-  reboot` 15:54Z: drain 41 s, kernel back in 2.5 min, `Ready` +3 min,
-  share-managers back on nas1, **zero rebuilds** (ADR-0031 holds a
-  second time), `transfer` degraded→healthy without a rebuild,
-  sonarr/radarr/jellyfin NFS mounts serving at +5 min. No power
-  button. The fix is `721caf9` (RWX consumers `nodeAffinity NotIn
-  nas1`).
-- **`5q33` closed** — Mac `talos-mesh` daemon verified after the
-  10-05 `darwin-rebuild switch`: launchd running, built from `7a3b21e`
-  (post-`600d2d4` enrollmsg v3), `beat ok` 5 grants/10 names, member
-  renewed to 2027-01-02. All three clients are now post-v3. The Mac
-  binary predates the 10-04 fakeip RST/stats commits (`3f47eff`,
-  Android-motivated); it rides the next `nix flake update talos-config`
-  in `~/git/nixos`.
+- **`i1il` app sign-in from mesh identity** → `docs/spikes/
+  auth-mesh-identity.md`. The memo's bare-header group gate was
+  **rejected**: it rests on reachability and any pod can forge it.
+  Ruling: the gateway mints a **signed per-request identity token**
+  (`X-Mesh-Token`: device/name/groups, `aud`=Host, `exp` 60 s, member-
+  key EdDSA); the bridge serves `/authz` for nginx `auth_request`
+  (valid → 200; else 401 → SIWE) and `/authorize` honours the same token
+  (zero-click OIDC for ArgoCD/Jellyfin-SSO). oauth2-proxy retires.
+  Device ≠ person stays (`5kh` is a prerequisite); splices carry nothing
+  (`95la` un-deferred, see below). Task **`a0ys`**.
+- **`9z4e` HTTPS over the mesh** → `docs/spikes/tls-over-mesh.md`.
+  Plain HTTP breaks nothing deployed. A wallet-rooted mesh CA is ruled
+  out both ways (ADR-0018). Ruling: **do nothing until an app forces
+  it**, then device-local termination + name-constrained per-device CA
+  in the daemon (option E); `goals.md`'s stale "wallet-derived CA" line
+  reworded.
+- **`kanr` agentic workloads** → `docs/spikes/agents-kagent.md` +
+  drafts in `docs/spikes/agents-kagent/`. google/ax ruled out (no
+  OpenRouter, not CRDs, needs Agent Substrate). Ruling: **kagent 0.10.3
+  trial** (OpenRouter-only, no GPU); Agent Substrate (gVisor sandboxes)
+  is worth the k8s ≥ 1.37 + gvisor-extension upgrade only when an agent
+  needs code execution *and* kagent 1.0 is GA.
+- `auth notes` (and its `~` backup) deleted: content folded into the
+  i1il memo's "Identity model" section.
 
 ## Loose threads
 
-- "No NFS client on nas1" is enforced only by five per-Deployment
-  affinities, not structurally: `files/samba` runs on nas1 (RWO
-  `transfer`, fine) — if it or any new pod ever mounts a `longhorn-bulk`
-  RWX volume, the `m1au` hang returns. Worth a line in the media
-  ingress/pvcs comments or a kyverno-style guard if a fourth RWX
-  consumer appears.
-- Untracked `auth notes` at the repo root (Oct 1): identities / grants /
-  roles / groups as a DAG with a TODO list. Not in beads; overlaps
-  spike `i1il`. Decide: attach to `i1il`, own spike, move under
-  `docs/`, or delete.
-- `transfer` off-node replica: watch the first SMB copy from the
-  Windows PC for the synchronous-write ceiling (~105 MB/s).
-- `jlgz` (v6-only hub answer on cellular) stays open. No `fly ssh` key
-  on the nixos box; `dsuj` waits on the Windows data copy.
+- **`95la` should be un-deferred**: the i1il memo does not deliver the
+  "appliances skip Quick Connect" prize (splices have no headers). Not
+  done this session — owner's call.
+- ADR-0032 (signed-token app seam) and ADR-0033 (device-local TLS, no
+  mesh CA) are drafted as **Proposed**; flip to Accepted when `a0ys`
+  lands / when the HTTPS direction is first exercised.
+- `a0ys` has a prerequisite in `5kh` (groups hardcoded `["admins"]`).
+- Spikes `i1il` / `9z4e` / `kanr` closed 2026-10-06 with rulings on
+  their notes; `95la` un-deferred (appliance login is Jellyfin-local).
+- herdr: the nix profile has herdr 0.9.1 (protocol 22) while the running
+  server is 0.8.2 (protocol 20). This session drove the swarm with the
+  store's `/nix/store/2qd228lh…-herdr-0.8.2/bin/herdr`; a herdr restart
+  fixes it (kills every pane). See `notes.md`.
+- Standing from 10-05: "no NFS client on nas1" is only per-Deployment
+  affinities; `transfer` SMB write ceiling unobserved; `jlgz` open.
 
 ## Suggested next steps
 
-- Owner's pick from the board: spikes `dsuj` / `ch74` / `9z4e` /
-  `kanr` / `i1il` (the `auth notes` file feeds `i1il`).
-- `bsj` (Longhorn backup target) is the only thing between `transfer`
-  and a two-node loss, and the prerequisite for a routine cp1 wipe.
-- Small: `pymm` / `d4p8` test flakes.
+- Start `a0ys` (gateway token + bridge `/authz`) after fixing `5kh`;
+  or rule `95la` (per-device Jellyfin accounts vs Quick Connect).
+- kagent trial: seal a spend-limited OpenRouter key, `git mv
+  docs/spikes/agents-kagent k8s/apps/kagent`, verify at
+  `kagent.gw.mesh.internal` behind the wallet.
+- `bsj` (Longhorn backup target) still the storage follow-up.
