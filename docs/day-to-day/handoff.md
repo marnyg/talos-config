@@ -33,27 +33,30 @@ TV** — ADR-0034 Accepted.
 
 ## Loose threads
 
-- **Owner decisions:** close `95la`; retire the raw `jellyfin` facet
-  (`:8096` splice — policy row `{facet: jellyfin, group: media}`,
-  gateway `-jellyfin=` flag, `policy.facets`, glossary) now that the
-  TV is on the HTTP door (ADR-0034 ruling 5)?
-- The TV's old saved server entry (`…:8096`, sessions `mar`/`admin`)
-  is still in the app's server list; harmless, but the `admin`
-  device token it holds is still valid — revoke under Dashboard →
-  Devices, or delete the entry on the TV.
+- `95la` closed; **the raw `jellyfin` facet is retired** (`c5bb8cb`:
+  policy row, nickel contract, `policy.facets`, gateway flag, the
+  bridge's `:8096` redirect origin, glossary); gateway image rebuilt
+  and pinned `c5bb8cb@165bc1…` (`f5f7106`), live, beat ok, TV streams
+  through it. The Service keeps `:8096` for seerr.
+- Broken windows closed (`f5f7106`): `jellyfinqc` and `siwe-oidc`
+  pinned by `:<sha>@digest` (no more `:latest` + `Always` anywhere);
+  `siwe-oidc-image` rebuilds on `meshtoken/**`; the notes.md cluster-
+  side-QC entry marked superseded.
+- The TV's stale `…:8096` server entry is still in the app's list
+  (inert: its `mar`/`admin` device tokens are revoked, the door is
+  gone) — adb cannot inject the long-press that removes it; a
+  physical remote can. The app is left on the port-80 server as `tv`.
+- Stale Jellyfin devices revoked: old SHIELD (`d559…`), `probe`, `t`,
+  the shell test ids.
 - A re-keyed gateway is now **two** pin lines: `k8s/apps/siwe-oidc`
   and `k8s/apps/jellyfin` (`-gateway=`). Sidecar logs
   `token refused: issuer not pinned` when the pin is stale.
-- `jellyfinqc` image is `:latest` + `Always` like the bridge; the
-  gateway is digest-pinned. Pin once Accepted, or decide that
-  `:latest` is the house rule for the C-free in-cluster binaries.
 - Standing: herdr 0.9.1 vs server 0.8.2 (restart kills panes),
   `jlgz`, `bsj`; two `<!-- stale? -->` flags in `notes.md`
   (Quint entries ~L167/L401) still await the owner.
 
 ## Suggested next steps
 
-- TV test → ADR-0034 Accepted → facet retirement decision (above).
 - `7ymy` now has a landing place for Jellyfin: the sidecar approves as
   the person's user when the cert carries a binding (ADR-0034,
   Consequences). Still protocol-level work first (cert field, approval
