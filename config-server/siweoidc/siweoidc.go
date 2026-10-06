@@ -17,6 +17,18 @@
 // exist (an in-cluster redirect URI cannot keep one anyway), and the
 // authorization code is single-use and bound to client_id +
 // redirect_uri + code_challenge at mint time.
+//
+// Two gates (ADR-0032). The person gate is the wallet login above. The
+// group gate is /authz: nginx's auth_request subrequest presents the
+// gateway-signed per-request identity token (meshtoken) and the
+// required group; the bridge verifies the token against the gateway
+// ids pinned in git and answers 200/401/403 — no cookie, no session,
+// no fallback: a request without a valid token is a pod-network
+// caller, and a member device outside the group has nothing to sign
+// in as. The same token also logs a device in at /authorize without
+// the wallet prompt, for clients that opt in (Client.Token): the
+// identity minted is the device — sub is its actor id, the username
+// its member name — never a person inferred from it.
 package siweoidc
 
 import (
@@ -25,11 +37,15 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/marnyg/talos-config/config-server/meshtoken"
+	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 const (
@@ -46,10 +62,16 @@ const (
 )
 
 // Client is one git-declared OIDC relying party. Public client: no
-// secret, exact-match redirect URIs, PKCE required.
+// secret, exact-match redirect URIs, PKCE required. Token opts the
+// client into device login: a valid identity token on /authorize
+// mints a code for the device without the wallet page. Off for apps
+// whose per-user state should follow the person (Jellyfin: one user
+// per device would split watch state); on where the device is the
+// right principal (ArgoCD: the audit log names the device).
 type Client struct {
 	ID           string
 	RedirectURIs []string
+	Token        bool
 }
 
 // Admin is one git-declared wallet: the username and groups its
@@ -63,13 +85,16 @@ type Admin struct {
 	Groups   []string
 }
 
-// Identity is what a wallet signature resolves to: the claims minted
-// into ID tokens and served from /userinfo. Username and Groups come
-// from the git-declared addr→Admin map; Email is fabricated from the
-// username because several relying parties (oauth2-proxy, Jellyfin)
-// refuse identities without one — it is an identifier, not a mailbox.
+// Identity is what a login resolves to: the claims minted into ID
+// tokens and served from /userinfo. For a wallet login Sub is the
+// lowercase 0x address and Username/Groups come from the git-declared
+// addr→Admin map; for a device login Sub is the device's actor id
+// (`ed:…`) and Username/Groups are its member name and groups, as the
+// gateway attested them. Email is fabricated from the username because
+// several relying parties (Jellyfin) refuse identities without one —
+// it is an identifier, not a mailbox.
 type Identity struct {
-	Addr     string // lowercase 0x — the `sub` claim
+	Sub      string
 	Username string
 	Groups   []string
 }
@@ -80,7 +105,7 @@ func (id Identity) claims() map[string]any {
 		groups = []string{} // `[]`, never `null`: relying parties range over it
 	}
 	return map[string]any{
-		"sub":                id.Addr,
+		"sub":                id.Sub,
 		"preferred_username": id.Username,
 		"name":               id.Username,
 		"email":              id.Username + "@mesh.internal",
@@ -112,20 +137,23 @@ type accessToken struct {
 type Provider struct {
 	issuer  string
 	clients map[string]Client
-	admins  map[string]Admin // lowercase 0x addr -> username + groups
-	signer  *signer           // per-boot RS256 key
+	admins  map[string]Admin    // lowercase 0x addr -> username + groups
+	signer  *signer             // per-boot RS256 key
+	tokens  *meshtoken.Verifier // nil: no gateway pinned, token paths refuse
 
 	mu     sync.Mutex
 	nonces map[string]time.Time
 	codes  map[string]*authCode
-	tokens map[string]*accessToken
+	access map[string]*accessToken
 	now    func() time.Time
 }
 
 // New constructs a provider. issuer is the externally visible base URL
 // (no trailing slash); admins maps allowlisted wallet addresses
-// (lowercase 0x) to their username and groups.
-func New(issuer string, clients []Client, admins map[string]Admin) (*Provider, error) {
+// (lowercase 0x) to their username and groups; gateways are the
+// identity-token issuers to trust (the gateway member ids pinned in
+// git) — none means /authz always refuses and Client.Token is inert.
+func New(issuer string, clients []Client, admins map[string]Admin, gateways []cert.ActorID) (*Provider, error) {
 	if issuer == "" || strings.HasSuffix(issuer, "/") {
 		return nil, fmt.Errorf("issuer must be a base URL without trailing slash, got %q", issuer)
 	}
@@ -154,14 +182,21 @@ func New(issuer string, clients []Client, admins map[string]Admin) (*Provider, e
 	if err != nil {
 		return nil, fmt.Errorf("generating per-boot signing key: %w", err)
 	}
+	var verifier *meshtoken.Verifier
+	if len(gateways) > 0 {
+		if verifier, err = meshtoken.NewVerifier(gateways...); err != nil {
+			return nil, fmt.Errorf("pinning gateways: %w", err)
+		}
+	}
 	return &Provider{
 		issuer:  issuer,
 		clients: byID,
 		admins:  admins,
 		signer:  sig,
+		tokens:  verifier,
 		nonces:  map[string]time.Time{},
 		codes:   map[string]*authCode{},
-		tokens:  map[string]*accessToken{},
+		access:  map[string]*accessToken{},
 		now:     time.Now,
 	}, nil
 }
@@ -216,7 +251,30 @@ func (p *Provider) identityFor(addr string) (Identity, bool) {
 	if !ok {
 		return Identity{}, false
 	}
-	return Identity{Addr: addr, Username: a.Username, Groups: a.Groups}, true
+	return Identity{Sub: addr, Username: a.Username, Groups: a.Groups}, true
+}
+
+// errNoToken: the request carried no token at all (the common case on
+// /authorize from a browser off the mesh path; not worth a log line).
+var errNoToken = errors.New("no token")
+
+// deviceIdentity verifies a gateway-signed identity token presented
+// for host and resolves it to the device's identity. Every refusal (no
+// gateway pinned, absent, malformed, foreign, expired, wrong audience)
+// is an error; the reason is for the log, the caller's answer is the
+// same.
+func (p *Provider) deviceIdentity(token, host string) (Identity, meshtoken.Claims, error) {
+	if p.tokens == nil {
+		return Identity{}, meshtoken.Claims{}, fmt.Errorf("no gateway pinned")
+	}
+	if token == "" {
+		return Identity{}, meshtoken.Claims{}, errNoToken
+	}
+	c, err := p.tokens.Verify(token, host, p.now())
+	if err != nil {
+		return Identity{}, meshtoken.Claims{}, err
+	}
+	return Identity{Sub: string(c.Subject), Username: c.Name, Groups: c.Groups}, c, nil
 }
 
 // authRequest is the validated shape of an /authorize request.
@@ -325,7 +383,7 @@ func (p *Provider) redeemCode(code, clientID, redirectURI, verifier string) (tok
 	}
 
 	at := randomHex(32)
-	p.tokens[at] = &accessToken{identity: ac.identity, expires: now.Add(tokenTTL)}
+	p.access[at] = &accessToken{identity: ac.identity, expires: now.Add(tokenTTL)}
 
 	return tokenResponse{
 		IDToken:     idToken,
@@ -340,7 +398,7 @@ func (p *Provider) userinfoFor(token string) (map[string]any, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.expireLocked()
-	at, ok := p.tokens[token]
+	at, ok := p.access[token]
 	if !ok {
 		return nil, false
 	}
@@ -363,9 +421,9 @@ func (p *Provider) expireLocked() {
 			delete(p.codes, c)
 		}
 	}
-	for t, at := range p.tokens {
+	for t, at := range p.access {
 		if now.After(at.expires) {
-			delete(p.tokens, t)
+			delete(p.access, t)
 		}
 	}
 }

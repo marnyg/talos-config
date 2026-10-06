@@ -1,7 +1,8 @@
 // Command siweoidc runs the SIWE→OIDC bridge (package siweoidc) as a
 // standalone in-cluster service. Everything it knows arrives as flags
-// from the k8s manifest — clients, admins, issuer — so the deployed
-// configuration is exactly what git declares (invariant 2). It shares
+// from the k8s manifest — clients, admins, issuer, the gateway ids
+// whose identity tokens it trusts — so the deployed configuration is
+// exactly what git declares (invariant 2). It shares
 // the hub's Go module for ethsig but deploys separately: SSO must stay
 // up regardless of the hub's seal state, and a hub redeploy must not
 // log the cluster out.
@@ -12,12 +13,26 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/config-server/siweoidc"
+	"github.com/marnyg/talos-config/protocol/cert"
 )
+
+// stringsFlag collects a repeatable string flag.
+type stringsFlag []string
+
+func (s *stringsFlag) String() string { return strings.Join(*s, ",") }
+func (s *stringsFlag) Set(v string) error {
+	if v == "" {
+		return fmt.Errorf("empty value")
+	}
+	*s = append(*s, v)
+	return nil
+}
 
 // clientsFlag collects repeated -client id=uri[,uri...] declarations.
 type clientsFlag []siweoidc.Client
@@ -64,21 +79,37 @@ func (a adminsFlag) Set(v string) error {
 
 func main() {
 	var (
-		clients clientsFlag
-		admins  = adminsFlag{}
-		issuer  = flag.String("issuer", "", "externally visible base URL, no trailing slash (e.g. http://auth.cp1.mesh.internal)")
-		listen  = flag.String("listen", ":8080", "listen address")
+		clients      clientsFlag
+		admins       = adminsFlag{}
+		gateways     stringsFlag
+		tokenClients stringsFlag
+		issuer       = flag.String("issuer", "", "externally visible base URL, no trailing slash (e.g. http://auth.cp1.mesh.internal)")
+		listen       = flag.String("listen", ":8080", "listen address")
 	)
 	flag.Var(&clients, "client", "OIDC client as id=redirect_uri[,redirect_uri...] (repeatable)")
 	flag.Var(&admins, "admin", "allowlisted wallet as 0xaddress=username:group[,group] (repeatable; groups admins|media)")
+	flag.Var(&gateways, "gateway", "gateway member id (ed:<hex>) whose X-Mesh-Token to trust for /authz and device login (repeatable)")
+	flag.Var(&tokenClients, "token-client", "client id that accepts device login by token on /authorize, no wallet page (repeatable)")
 	flag.Parse()
 
-	p, err := siweoidc.New(*issuer, clients, admins)
+	var gwIDs []cert.ActorID
+	for _, g := range gateways {
+		gwIDs = append(gwIDs, cert.ActorID(g))
+	}
+	for _, id := range tokenClients {
+		i := slices.IndexFunc(clients, func(c siweoidc.Client) bool { return c.ID == id })
+		if i < 0 {
+			log.Fatalf("-token-client %q names no -client", id)
+		}
+		clients[i].Token = true
+	}
+
+	p, err := siweoidc.New(*issuer, clients, admins, gwIDs)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("siwe-oidc: issuer %s, %d client(s), %d admin wallet(s), listening on %s",
-		p.Issuer(), len(clients), len(admins), *listen)
+	log.Printf("siwe-oidc: issuer %s, %d client(s) (%d by token), %d admin wallet(s), %d gateway(s) pinned, listening on %s",
+		p.Issuer(), len(clients), len(tokenClients), len(admins), len(gwIDs), *listen)
 	log.Fatal(http.ListenAndServe(*listen, p.Handler()))
 }

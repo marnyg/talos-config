@@ -8,12 +8,15 @@ package siweoidc
 
 import (
 	"encoding/json"
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/marnyg/talos-config/config-server/ethsig"
+	"github.com/marnyg/talos-config/config-server/meshtoken"
 )
 
 // Handler returns the provider's HTTP mux.
@@ -25,6 +28,7 @@ func (p *Provider) Handler() http.Handler {
 	mux.HandleFunc("POST /authorize", p.handleAuthorizePost)
 	mux.HandleFunc("POST /token", p.handleToken)
 	mux.HandleFunc("GET /userinfo", p.handleUserinfo)
+	mux.HandleFunc("GET /authz", p.handleAuthz)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -98,7 +102,80 @@ func (p *Provider) handleAuthorizeGet(w http.ResponseWriter, r *http.Request) {
 		redirectError(w, r, req, errCode)
 		return
 	}
+	// Device login (ADR-0032): a client that opted in, and a valid
+	// gateway token addressed to this host, is a code without the wallet
+	// page. Any refusal falls through to the wallet — the token is a
+	// shortcut, never a lockout.
+	if p.clients[req.clientID].Token {
+		if id, _, err := p.deviceIdentity(r.Header.Get(meshtoken.Header), r.Host); err == nil {
+			log.Printf("authorize: device %s (%s) signed in to %s by token", id.Sub, id.Username, req.clientID)
+			redirectCode(w, r, req, p.mintCode(req, id))
+			return
+		} else if !errors.Is(err, errNoToken) {
+			log.Printf("authorize: token refused for %s: %v; falling back to wallet", req.clientID, err)
+		}
+	}
 	p.renderLogin(w, req, "")
+}
+
+// redirectCode sends the browser back to the registered redirect URI
+// with the authorization code (RFC 6749 §4.1.2).
+func redirectCode(w http.ResponseWriter, r *http.Request, req authRequest, code string) {
+	u, err := url.Parse(req.redirectURI)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	qs := u.Query()
+	qs.Set("code", code)
+	if req.state != "" {
+		qs.Set("state", req.state)
+	}
+	u.RawQuery = qs.Encode()
+	http.Redirect(w, r, u.String(), http.StatusSeeOther)
+}
+
+// The group gate: nginx auth_request to /authz?group=<g>. The
+// subrequest carries the original request's headers (so the gateway's
+// token) with Host rewritten to this Service and the original URL in
+// X-Original-URL — the token's audience is checked against the latter.
+// 200 iff the token verifies and names the group; 403 for a verified
+// device outside the group; 401 for everything else (nginx forwards
+// both to the caller — there is no auth-signin for this class). A
+// missing group is a misconfigured Ingress: 400, which nginx turns
+// into a 500 that is seen, rather than a gate that is open.
+func (p *Provider) handleAuthz(w http.ResponseWriter, r *http.Request) {
+	group := r.URL.Query().Get("group")
+	if group == "" {
+		http.Error(w, "authz: group required", http.StatusBadRequest)
+		return
+	}
+	host := r.Host
+	if orig := r.Header.Get("X-Original-URL"); orig != "" {
+		u, err := url.Parse(orig)
+		if err != nil || u.Host == "" {
+			http.Error(w, "authz: bad X-Original-URL", http.StatusBadRequest)
+			return
+		}
+		host = u.Host
+	}
+	id, c, err := p.deviceIdentity(r.Header.Get(meshtoken.Header), host)
+	if err != nil {
+		log.Printf("authz: %s for %s: %v", host, group, err)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if !c.HasGroup(group) {
+		log.Printf("authz: %s for %s: device %s (%s) has %v", host, group, id.Sub, id.Username, id.Groups)
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	// For an Ingress that asks via auth-response-headers; apps that
+	// read them are reading an attestation the gate already enforced.
+	w.Header().Set("X-Auth-Request-User", id.Sub)
+	w.Header().Set("X-Auth-Request-Preferred-Username", id.Username)
+	w.Header().Set("X-Auth-Request-Groups", strings.Join(id.Groups, ","))
+	w.WriteHeader(http.StatusOK)
 }
 
 func (p *Provider) handleAuthorizePost(w http.ResponseWriter, r *http.Request) {
@@ -148,21 +225,8 @@ func (p *Provider) handleAuthorizePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code := p.mintCode(req, id)
 	log.Printf("authorize: wallet %s (%s) signed in to %s", addr, id.Username, req.clientID)
-
-	u, err := url.Parse(req.redirectURI)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	qs := u.Query()
-	qs.Set("code", code)
-	if req.state != "" {
-		qs.Set("state", req.state)
-	}
-	u.RawQuery = qs.Encode()
-	http.Redirect(w, r, u.String(), http.StatusSeeOther)
+	redirectCode(w, r, req, p.mintCode(req, id))
 }
 
 func (p *Provider) handleToken(w http.ResponseWriter, r *http.Request) {

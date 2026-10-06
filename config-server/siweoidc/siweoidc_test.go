@@ -2,6 +2,8 @@ package siweoidc
 
 import (
 	"crypto"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
@@ -21,6 +23,8 @@ import (
 	secpecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 
 	"github.com/marnyg/talos-config/config-server/ethsig"
+	"github.com/marnyg/talos-config/config-server/meshtoken"
+	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // wellKnownAddr is the Ethereum address of private key 0x…01.
@@ -56,6 +60,7 @@ func testProvider(t *testing.T) *Provider {
 	p, err := New(testIssuer,
 		[]Client{{ID: testClient, RedirectURIs: []string{testRedirect}}},
 		map[string]Admin{wellKnownAddr: {Username: "mar", Groups: []string{"admins"}}},
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -376,6 +381,7 @@ func TestGroupsComeFromTheAdminMap(t *testing.T) {
 			wellKnownAddr: {Username: "mar", Groups: []string{"admins", "media"}},
 			tv:            {Username: "tv", Groups: []string{"media"}},
 		},
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -395,7 +401,7 @@ func TestGroupsComeFromTheAdminMap(t *testing.T) {
 	}
 
 	// A wallet with no groups still mints a `groups` array, not null.
-	if got := (Identity{Addr: tv, Username: "tv"}).claims()["groups"]; fmt.Sprint(got) != "[]" {
+	if got := (Identity{Sub: tv, Username: "tv"}).claims()["groups"]; fmt.Sprint(got) != "[]" {
 		t.Errorf("empty groups = %#v, want []", got)
 	}
 
@@ -403,6 +409,7 @@ func TestGroupsComeFromTheAdminMap(t *testing.T) {
 	if _, err := New(testIssuer,
 		[]Client{{ID: testClient, RedirectURIs: []string{testRedirect}}},
 		map[string]Admin{wellKnownAddr: {Groups: []string{"admins"}}},
+		nil,
 	); err == nil {
 		t.Error("admin without username accepted")
 	}
@@ -548,6 +555,7 @@ func TestCodeBoundToClientAndRedirect(t *testing.T) {
 			{ID: "other", RedirectURIs: []string{"http://other.cp1.mesh.internal/cb"}},
 		},
 		map[string]Admin{wellKnownAddr: {Username: "mar", Groups: []string{"admins"}}},
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -573,5 +581,174 @@ func TestCodeBoundToClientAndRedirect(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("cross-client redemption: %d, want 400", resp.StatusCode)
+	}
+}
+
+// The group gate and device login (ADR-0032). gw is the pinned gateway;
+// rogue is a key nobody pinned (a pod that minted its own token).
+func tokenProvider(t *testing.T) (*Provider, *meshtoken.Signer, *meshtoken.Signer) {
+	t.Helper()
+	_, gwKey, _ := ed25519.GenerateKey(rand.Reader)
+	_, rogueKey, _ := ed25519.GenerateKey(rand.Reader)
+	gw, rogue := meshtoken.NewSigner(gwKey), meshtoken.NewSigner(rogueKey)
+	p, err := New(testIssuer,
+		[]Client{
+			{ID: testClient, RedirectURIs: []string{testRedirect}, Token: true},
+			{ID: "jellyfin", RedirectURIs: []string{"http://jellyfin.gw.mesh.internal/sso/OID/redirect/wallet"}},
+		},
+		map[string]Admin{wellKnownAddr: {Username: "mar", Groups: []string{"admins"}}},
+		[]cert.ActorID{gw.ID()},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p, gw, rogue
+}
+
+var (
+	laptop = cert.Identity{Key: cert.ActorID("ed:" + strings.Repeat("ab", 32)), Name: "marius-mac", Groups: []string{"admins"}}
+	tvDev  = cert.Identity{Key: cert.ActorID("ed:" + strings.Repeat("cd", 32)), Name: "tv", Groups: []string{"media"}}
+)
+
+func authz(t *testing.T, ts *httptest.Server, group, origHost, token string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest("GET", ts.URL+"/authz?group="+group, nil)
+	// What ingress-nginx's auth_request subrequest looks like: Host is
+	// the bridge Service, the app host rides X-Original-URL.
+	req.Host = "siwe-oidc.sso.svc.cluster.local"
+	if origHost != "" {
+		req.Header.Set("X-Original-URL", "http://"+origHost+"/some/path?x=1")
+	}
+	if token != "" {
+		req.Header.Set(meshtoken.Header, token)
+	}
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp
+}
+
+func TestAuthzGroupGate(t *testing.T) {
+	p, gw, rogue := tokenProvider(t)
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+	now := time.Now()
+	mint := func(s *meshtoken.Signer, id cert.Identity, host string, at time.Time) string {
+		tok, err := s.Mint(id, host, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	const sonarr = "sonarr.gw.mesh.internal"
+	cases := []struct {
+		name   string
+		group  string
+		host   string
+		token  string
+		status int
+	}{
+		{"admin device, admins gate", "admins", sonarr, mint(gw, laptop, sonarr, now), 200},
+		{"media device, admins gate", "admins", sonarr, mint(gw, tvDev, sonarr, now), 403},
+		{"media device, media gate", "media", sonarr, mint(gw, tvDev, sonarr, now), 200},
+		{"no token (pod network)", "admins", sonarr, "", 401},
+		{"rogue issuer", "admins", sonarr, mint(rogue, laptop, sonarr, now), 401},
+		{"replayed at another host", "admins", "argocd.gw.mesh.internal", mint(gw, laptop, sonarr, now), 401},
+		{"expired", "admins", sonarr, mint(gw, laptop, sonarr, now.Add(-meshtoken.TTL-meshtoken.Leeway-time.Second)), 401},
+		{"host with port in X-Original-URL", "admins", sonarr + ":80", mint(gw, laptop, sonarr, now), 200},
+		{"no group: misconfigured Ingress", "", sonarr, mint(gw, laptop, sonarr, now), 400},
+	}
+	for _, tc := range cases {
+		resp := authz(t, ts, tc.group, tc.host, tc.token)
+		if resp.StatusCode != tc.status {
+			t.Errorf("%s: %d, want %d", tc.name, resp.StatusCode, tc.status)
+		}
+		if tc.status == 200 && (resp.Header.Get("X-Auth-Request-Preferred-Username") == "" || resp.Header.Get("X-Auth-Request-Groups") == "") {
+			t.Errorf("%s: identity response headers missing: %v", tc.name, resp.Header)
+		}
+	}
+
+	// Without X-Original-URL (a direct call) the request Host is the
+	// audience; the bridge Service name is not what any token names.
+	if resp := authz(t, ts, "admins", "", mint(gw, laptop, sonarr, now)); resp.StatusCode != 401 {
+		t.Errorf("direct call without X-Original-URL: %d, want 401", resp.StatusCode)
+	}
+
+	// No gateway pinned: the gate is closed, not open.
+	p2 := testProvider(t)
+	ts2 := httptest.NewServer(p2.Handler())
+	defer ts2.Close()
+	if resp := authz(t, ts2, "admins", sonarr, mint(gw, laptop, sonarr, now)); resp.StatusCode != 401 {
+		t.Errorf("unpinned provider: %d, want 401", resp.StatusCode)
+	}
+}
+
+// A client that opted in gets a code for the device without the wallet
+// page; the identity is the device, not a person. A client that did
+// not, or a refused token, sees the wallet page as before.
+func TestAuthorizeDeviceLogin(t *testing.T) {
+	p, gw, rogue := tokenProvider(t)
+	ts := httptest.NewServer(p.Handler())
+	defer ts.Close()
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	verifier, challenge := pkce()
+	get := func(clientID, redirect, token string) *http.Response {
+		q := url.Values{
+			"client_id": {clientID}, "redirect_uri": {redirect}, "response_type": {"code"},
+			"state": {"s"}, "nonce": {"n"}, "code_challenge": {challenge}, "code_challenge_method": {"S256"},
+		}
+		req, _ := http.NewRequest("GET", ts.URL+"/authorize?"+q.Encode(), nil)
+		req.Host = "auth.gw.mesh.internal"
+		if token != "" {
+			req.Header.Set(meshtoken.Header, token)
+		}
+		resp, err := noRedirect.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	const auth = "auth.gw.mesh.internal"
+	tok, _ := gw.Mint(laptop, auth, time.Now())
+
+	// Opted-in client + valid token: straight to the redirect with a code.
+	resp := get(testClient, testRedirect, tok)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("device login: %d, want 303", resp.StatusCode)
+	}
+	loc, _ := url.Parse(resp.Header.Get("Location"))
+	code := loc.Query().Get("code")
+	if code == "" || loc.Query().Get("state") != "s" {
+		t.Fatalf("redirect %s", loc)
+	}
+	tr, status := exchange(t, ts, code, verifier)
+	if status != 200 {
+		t.Fatalf("exchange: %d", status)
+	}
+	claims := verifyJWT(t, p.PublicKey(), tr.IDToken)
+	if claims["sub"] != string(laptop.Key) || claims["preferred_username"] != "marius-mac" || claims["nonce"] != "n" {
+		t.Errorf("claims: %v", claims)
+	}
+	if g, _ := claims["groups"].([]any); len(g) != 1 || g[0] != "admins" {
+		t.Errorf("groups: %v", claims["groups"])
+	}
+
+	// Everything else renders the wallet page (200, HTML).
+	for name, resp := range map[string]*http.Response{
+		"client not opted in":  get("jellyfin", "http://jellyfin.gw.mesh.internal/sso/OID/redirect/wallet", tok),
+		"no token":             get(testClient, testRedirect, ""),
+		"rogue issuer":         get(testClient, testRedirect, func() string { s, _ := rogue.Mint(laptop, auth, time.Now()); return s }()),
+		"token for other host": get(testClient, testRedirect, func() string { s, _ := gw.Mint(laptop, "sonarr.gw.mesh.internal", time.Now()); return s }()),
+	} {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 || !strings.Contains(string(body), "login_nonce") {
+			t.Errorf("%s: %d, want the wallet page", name, resp.StatusCode)
+		}
 	}
 }

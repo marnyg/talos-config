@@ -8,7 +8,8 @@
 // stream is one HTTP connection, reverse-proxied to ingress-nginx with
 // the Host header untouched (nginx keeps routing by it; auth_request
 // and the SIWE→OIDC bridge keep gating at the app layer, ADR-0010) and
-// the caller's verified identity injected as headers; `jellyfin` is a
+// the caller's verified identity injected as headers plus a token the
+// gateway signs per request (meshtoken, ADR-0032); `jellyfin` is a
 // raw splice to the Jellyfin Service for the TV apps (P2.4).
 //
 // Authorization is the network layer only: cert.Authorize over the
@@ -16,12 +17,13 @@
 // per connection (nodeagent.Agent.Authorize), and the connection is
 // bounded (ConnMaxAge) so a cert's expiry has a ceiling. No
 // per-session login here; device custody is access for the cert's
-// lifetime or until the blocklist. The headers COMPLEMENT SIWE — an
-// app may map them (oauth2-proxy can), none is required to trust them
-// for a session. Past this process the identity is ambient: the
-// headers are only as good as the path they arrived on (talos-config-1gv:
-// ingress-nginx is a ClusterIP Service this gateway alone dials, so
-// nothing off the pod network can supply them).
+// lifetime or until the blocklist. Past this process the bare headers
+// are ambient — only as good as the path they arrived on, and any pod
+// can dial ingress-nginx with its own — so nothing authorizes on them
+// (ADR-0032). What carries authority one hop further is X-Mesh-Token:
+// the same facts, signed under this gateway's member key, bound to the
+// request Host and to the minute; the bridge verifies it against the
+// gateway id pinned in git.
 package gateway
 
 import (
@@ -37,6 +39,7 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/facethttp"
+	"github.com/marnyg/talos-config/config-server/meshtoken"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
@@ -51,7 +54,7 @@ const (
 )
 
 // Headers lists the identity headers, for the strip on the way in.
-var Headers = []string{HeaderNode, HeaderName, HeaderGroups}
+var Headers = []string{HeaderNode, HeaderName, HeaderGroups, meshtoken.Header}
 
 // DefaultConnMaxAge is the admitted-connection bound (domain model:
 // the gateway bounds stream lifetime so expiry has a ceiling).
@@ -59,11 +62,15 @@ const DefaultConnMaxAge = time.Hour
 
 // Proxy is the ingress-http handler: a reverse proxy to upstream
 // (ingress-nginx's Service) that keeps the inbound Host and sets the
-// identity headers from the connection's admitted identity. A request
-// that did not arrive over a facet — no identity in its context — is
-// refused: this handler is only ever mounted behind one, and a mount
-// elsewhere must fail closed rather than proxy anonymously.
-func Proxy(upstream *url.URL) http.Handler {
+// identity headers from the connection's admitted identity, plus the
+// per-request token signer mints for it (aud = the inbound Host). A
+// request that did not arrive over a facet — no identity in its
+// context — is refused: this handler is only ever mounted behind one,
+// and a mount elsewhere must fail closed rather than proxy anonymously.
+func Proxy(upstream *url.URL, signer *meshtoken.Signer) http.Handler {
+	if signer == nil {
+		panic("gateway.Proxy: nil signer")
+	}
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(upstream)
@@ -80,6 +87,14 @@ func Proxy(upstream *url.URL) http.Handler {
 			r.Out.Header.Set(HeaderNode, string(id.Key))
 			r.Out.Header.Set(HeaderName, id.Name)
 			r.Out.Header.Set(HeaderGroups, strings.Join(id.Groups, ","))
+			tok, err := signer.Mint(id, r.In.Host, time.Now())
+			if err != nil {
+				// Marshal of three strings and a slice; cannot fail in
+				// practice. Leave the token absent: the bridge refuses.
+				log.Printf("gateway: mint token for %s: %v", id.Name, err)
+				return
+			}
+			r.Out.Header.Set(meshtoken.Header, tok)
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Printf("gateway: %s %s%s: %v", r.Method, r.Host, r.URL.Path, err)

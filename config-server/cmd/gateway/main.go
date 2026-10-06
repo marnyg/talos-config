@@ -32,6 +32,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/gateway"
 	"github.com/marnyg/talos-config/config-server/issuer"
+	"github.com/marnyg/talos-config/config-server/meshtoken"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/cert"
@@ -66,7 +67,17 @@ func main() {
 	if err := os.MkdirAll(*stateDir, 0o700); err != nil {
 		logger.Fatalf("state: %v", err)
 	}
-	proxy, stopProxy := gateway.HTTPFacet("ingress-http", gateway.Proxy(upstream), logger)
+	// The member key signs the per-request identity token (ADR-0032);
+	// nodeagent.Start loads the same file for the actor. Minted here on
+	// a first start, before enrollment, same as Start would.
+	state := nodeagent.State{Dir: *stateDir}
+	key, _, err := state.Key()
+	if err != nil {
+		logger.Fatalf("key: %v", err)
+	}
+	signer := meshtoken.NewSigner(key)
+	logger.Printf("identity token issuer %s (pin this in the bridge's -gateway)", signer.ID())
+	proxy, stopProxy := gateway.HTTPFacet("ingress-http", gateway.Proxy(upstream, signer), logger)
 	defer stopProxy()
 	// Raw-TCP facets: each flag is one accept-table row, facet → Service.
 	fwd := map[string]string{}
@@ -82,7 +93,7 @@ func main() {
 
 	cfg := nodeagent.Config{Hub: *hub, Relay: *relay}
 	a, err := nodeagent.Start(nodeagent.Options{
-		Config: cfg, State: nodeagent.State{Dir: *stateDir}, Kind: "gateway",
+		Config: cfg, State: state, Kind: "gateway",
 		Serve:   map[string]nodeagent.StreamHandler{"ingress-http": proxy},
 		Forward: fwd, BindAddr: *bindAddr, Log: logger, BeatEvery: *beat, ConnMaxAge: *maxAge,
 		Enroll: func(ctx context.Context, node cert.ActorID) (issuer.Kit, error) {

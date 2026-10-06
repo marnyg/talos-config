@@ -24,6 +24,7 @@ import (
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/gateway"
 	"github.com/marnyg/talos-config/config-server/issuer"
+	"github.com/marnyg/talos-config/config-server/meshtoken"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/config-server/policy"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
@@ -403,7 +404,7 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	if err := gwState.SaveKit(gwKit); err != nil {
 		t.Fatal(err)
 	}
-	proxyHandler, stopProxy := gateway.HTTPFacet("ingress-http", gateway.Proxy(upstreamURL), nil)
+	proxyHandler, stopProxy := gateway.HTTPFacet("ingress-http", gateway.Proxy(upstreamURL, meshtoken.NewSigner(gwPriv)), nil)
 	t.Cleanup(stopProxy)
 	gw, err := nodeagent.Start(nodeagent.Options{
 		Config: nodeagent.Config{Hub: cfg.Hub, Relay: public}, State: gwState, Kind: policy.KindGateway,

@@ -3,6 +3,7 @@ package gateway
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"io"
 	"net"
 	"net/http"
@@ -10,8 +11,17 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/marnyg/talos-config/config-server/meshtoken"
 	"github.com/marnyg/talos-config/protocol/cert"
+)
+
+// testSigner is a fixed gateway key: the token issuer the tests pin.
+// laptopKey is a well-formed caller id (the token refuses malformed subjects).
+var (
+	testSigner = meshtoken.NewSigner(ed25519.NewKeyFromSeed(make([]byte, 32)))
+	laptopKey  = cert.ActorID("ed:" + strings.Repeat("ab", 32))
 )
 
 // The ingress-http facet end to end without iroh: an admitted stream
@@ -30,16 +40,17 @@ func TestProxyInjectsIdentity(t *testing.T) {
 	defer upstream.Close()
 	u, _ := url.Parse(upstream.URL)
 
-	handler, stop := HTTPFacet("ingress-http", Proxy(u), nil)
+	handler, stop := HTTPFacet("ingress-http", Proxy(u, testSigner), nil)
 	defer stop()
 
-	id := cert.Identity{Key: "ed:laptopkey", Name: "laptop", Groups: []string{"admins", "media"}}
+	id := cert.Identity{Key: laptopKey, Name: "laptop", Groups: []string{"admins", "media"}}
 	client, server := net.Pipe()
-	go handler(context.Background(), server, id, "ed:laptopkey")
+	go handler(context.Background(), server, id, laptopKey)
 
 	req, _ := http.NewRequest("GET", "http://jackett.gw.mesh.internal/api?x=1", nil)
 	req.Header.Set(HeaderNode, "ed:forged")
 	req.Header.Set(HeaderGroups, "admins,root")
+	req.Header.Set(meshtoken.Header, "forged.token.here")
 	req.Header.Set("X-Custom", "kept")
 	if err := req.Write(client); err != nil {
 		t.Fatal(err)
@@ -57,7 +68,7 @@ func TestProxyInjectsIdentity(t *testing.T) {
 	if gotHost != "jackett.gw.mesh.internal" {
 		t.Errorf("Host reached upstream as %q", gotHost)
 	}
-	if got.Get(HeaderNode) != "ed:laptopkey" || got.Get(HeaderName) != "laptop" || got.Get(HeaderGroups) != "admins,media" {
+	if got.Get(HeaderNode) != string(laptopKey) || got.Get(HeaderName) != "laptop" || got.Get(HeaderGroups) != "admins,media" {
 		t.Errorf("identity headers: %v", got)
 	}
 	if got.Get("X-Custom") != "kept" || got.Get("X-Forwarded-Host") != "jackett.gw.mesh.internal" {
@@ -66,6 +77,19 @@ func TestProxyInjectsIdentity(t *testing.T) {
 	if v := got.Get("X-Forwarded-For"); v != "" {
 		t.Errorf("X-Forwarded-For should be absent (the peer is a key, not an address): %q", v)
 	}
+	// The signed token carries the admitted identity, bound to the Host;
+	// the caller's forged one is gone.
+	v, _ := meshtoken.NewVerifier(testSigner.ID())
+	c, err := v.Verify(got.Get(meshtoken.Header), "jackett.gw.mesh.internal", time.Now())
+	if err != nil {
+		t.Fatalf("token: %v (%q)", err, got.Get(meshtoken.Header))
+	}
+	if c.Subject != laptopKey || c.Name != "laptop" || !c.HasGroup("media") || c.HasGroup("root") {
+		t.Errorf("token claims: %+v", c)
+	}
+	if _, err := v.Verify(got.Get(meshtoken.Header), "sonarr.gw.mesh.internal", time.Now()); err == nil {
+		t.Error("token for jackett verified for sonarr")
+	}
 }
 
 // Mounted off a facet — no identity in the context — the proxy refuses
@@ -73,7 +97,7 @@ func TestProxyInjectsIdentity(t *testing.T) {
 func TestProxyRefusesOffFacet(t *testing.T) {
 	u, _ := url.Parse("http://127.0.0.1:1")
 	rec := httptest.NewRecorder()
-	Proxy(u).ServeHTTP(rec, httptest.NewRequest("GET", "http://x/", nil))
+	Proxy(u, testSigner).ServeHTTP(rec, httptest.NewRequest("GET", "http://x/", nil))
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "not over a facet") {
 		t.Errorf("%d %s", rec.Code, rec.Body.String())
 	}
@@ -82,7 +106,7 @@ func TestProxyRefusesOffFacet(t *testing.T) {
 // Upstream down: 502 to the caller, the facet server keeps serving.
 func TestProxyUpstreamDown(t *testing.T) {
 	u, _ := url.Parse("http://127.0.0.1:1")
-	handler, stop := HTTPFacet("ingress-http", Proxy(u), nil)
+	handler, stop := HTTPFacet("ingress-http", Proxy(u, testSigner), nil)
 	defer stop()
 	for i := 0; i < 2; i++ {
 		client, server := net.Pipe()
