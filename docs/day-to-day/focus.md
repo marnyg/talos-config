@@ -3,12 +3,12 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** The app seam reaches the appliances (ADR-0034 Proposed,
+**Now:** The app seam reaches the appliances (ADR-0034 Accepted,
 2026-10-06): a `media` device's Quick Connect is approved from the
-gateway-signed identity token by a sidecar in the Jellyfin pod, so the
-TV signs in as itself with no password and no human. Live, verified
-on the owner-device path; **waiting on the TV** to exercise the
-`media` path, then Accepted and the raw `jellyfin` facet's fate.
+gateway-signed identity token by a sidecar in the Jellyfin pod; the
+TV signed in as itself with no password and no human. What remains
+is the raw `jellyfin` facet's fate (one door or two) and pinning the
+sidecar image.
 
 **Toward goal:** "Every exposed service authenticates against the
 wallet" (`goals.md`) — browsers by token or SIWE (ADR-0032), appliances

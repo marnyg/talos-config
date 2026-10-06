@@ -707,8 +707,17 @@
 - 2026-09-20 — **Jellyfin Quick Connect can be authorized from the
   cluster** instead of a browser: auth as `admin` at
   `/Users/AuthenticateByName` inside the pod, then
-  `POST /QuickConnect/Authorize?code=<6 digits>` with `X-Emby-Token`.
-  Signs the device in as *that* account — currently an admin one.
+  `POST /QuickConnect/Authorize?code=<6 digits>&userId=<id>`. Signs
+  the device in as *that* account. _Superseded 2026-10-06 (ADR-0034):
+  the qc sidecar does exactly this call for `media` devices, as their
+  own user, never admin._
+- 2026-10-06 — **A `ReverseProxy` hook that reads a body must own
+  `Accept-Encoding`**: forward the client's `gzip` and the upstream
+  compresses; `ModifyResponse` then sees bytes (`resp.Uncompressed`
+  false). Delete the header on that request and Go's transport
+  negotiates gzip itself and decodes transparently. Found by the TV
+  (OkHttp sends gzip; `nc` and curl do not, so the laptop test and
+  the unit tests passed).
 - 2026-09-20 — **`android-latest` can lag the real APK.** The AAR
   build left CI at P2.4, so the release asset is only as fresh as the
   last manual `android/publish.sh`; check the asset size (v1 ≈ 94 MB,

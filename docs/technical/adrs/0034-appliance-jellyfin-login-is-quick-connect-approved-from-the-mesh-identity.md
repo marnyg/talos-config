@@ -1,7 +1,10 @@
 # ADR-0034: An appliance logs into Jellyfin by Quick Connect, approved from its mesh identity
 
-- Status: Proposed — built 2026-10-06, Accepted once the TV has
-  signed in through it
+- Status: Accepted — built and confirmed 2026-10-06: the Shield's
+  Jellyfin app, pointed at `jellyfin.gw` (port 80), pressed Quick
+  Connect and was signed in as user `tv` (non-admin) with no further
+  action; playback over the ingress door confirmed. One fix on the
+  way: strip `Accept-Encoding` on the Initiate, or the hook reads gzip
 - Date: 2026-10-06
 - Related: ADR-0032 (the gateway-signed identity token; this is its
   second verifier), ADR-0017 (facets), ADR-0013 (the TV as a mesh
