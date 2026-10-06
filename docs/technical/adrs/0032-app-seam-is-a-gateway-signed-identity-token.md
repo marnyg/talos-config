@@ -112,6 +112,9 @@ pinned key.
    (the audit log names the device) and wrong for Jellyfin (watch
    state would split per device), so a client opts in with
    `-token-client=<id>`; ArgoCD does, Jellyfin keeps the wallet page.
+   The long-term shape that dissolves this exception — the person as a
+   *cert fact* bound at approval, so device login mints the same `sub`
+   as the wallet login — is spike `talos-config-7ymy`.
 
 Implementation: `config-server/meshtoken` (mint/verify, no JWT
 library, one algorithm, closed issuer set), `gateway.Proxy(upstream,

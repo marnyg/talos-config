@@ -32,23 +32,23 @@ ADR-0032 Accepted.
 
 ## Loose threads
 
-- **Live confirmation still owed** (ADR-0032 "Confirmation"): after
-  ArgoCD syncs, open `sonarr.gw` from an admin device (no prompt), from
-  the TV's `media` identity (403), ArgoCD without a wallet prompt, and
-  Jellyfin still with one. `kubectl -n sso logs deploy/siwe-oidc` shows
-  `authz:` lines on refusals and `gateway(s) pinned` at start.
+- Live-confirmed by the owner 2026-10-06 (sonarr/longhorn no prompt,
+  ArgoCD by token, Jellyfin wallet page, pod forgery 401). The
+  `media`-device → 403 case is unit-tested only (no `media` device
+  uses an ingress). `kubectl -n sso logs deploy/siwe-oidc` shows
+  `authz:` lines on refusals.
 - A re-keyed gateway (new volume) is a new `ed:` id and a new
   `-gateway` line — the pod logs `identity token issuer ed:…` at start.
   Until the pin is updated, every gated app 401s (closed, not open).
 - ADR-0033 (device-local TLS) stays Proposed until the HTTPS direction
   is first exercised.
-- The exploration-log bullet "bare trusted identity header" is now
-  resolved by ADR-0032 — delete it next docs pass (owner's call).
+- Spike `7ymy` (person binding on the member cert) is the filed
+  long-term answer to the Jellyfin exception; `a0ys` closed after the
+  owner's live test.
 - Standing: `95la` (appliance Jellyfin login), herdr 0.9.1 vs server
   0.8.2 (restart kills panes), `jlgz`, `bsj`.
 
 ## Suggested next steps
 
-- Do the live confirmation above; then `bd close talos-config-a0ys`.
 - `95la`: per-device Jellyfin accounts vs Quick Connect for the TV.
 - kagent 0.10.3 trial (`docs/spikes/agents-kagent/` → `k8s/apps/kagent`).

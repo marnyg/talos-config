@@ -187,16 +187,9 @@ them:
 ## Spike round 2026-10-06 — app seam, HTTPS, agents
 
 Three memos (`docs/spikes/`), rulings on the beads. Strategy-level
-dead ends so they are not re-walked:
+dead ends so they are not re-walked (the app-seam entry — bare header
+vs signed token — moved into ADR-0032 when it was accepted):
 
-- 2026-10-06 — Tried **bare trusted identity header as the app login**
-  (`X-Mesh-*`, Tailscale proxy-to-grafana shape; memo option B/D).
-  Ruled out by the owner: its unforgeability is reachability alone, and
-  any pod on the pod network can dial ingress-nginx or the bridge with
-  forged headers — minting an `admins` OIDC token from it would be
-  cluster-admin for ArgoCD. Landed on: the gateway **signs** a
-  short-lived per-request token (`aud`=Host, 60 s) and the bridge
-  verifies it (`a0ys`). Caller-carried, like every other authority here.
 - 2026-10-06 — Considered **a wallet-rooted mesh CA** for HTTPS on
   `*.gw.mesh.internal` (the deferred `goals.md` line since 07-31).
   Ruled out both ways: a seed-derived CA key contradicts ADR-0018 ("the
