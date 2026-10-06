@@ -70,7 +70,9 @@ spec:
             # The in-cluster gateway (k8s/apps/gateway): the one key
             # whose X-Mesh-Token /authz and device login accept. Its
             # member key lives on the gateway's volume; a re-keyed
-            # gateway is a new id and a new line here.
+            # gateway is a new id and a new line here — and in the
+            # Jellyfin pod's qc sidecar (k8s/apps/jellyfin), the other
+            # verifier of this token.
             - -gateway=ed:45fc82fcbd3714b82a42805131a957a59cd814e02064ba40abc4f71f6b6613f4
             - -client=argocd=http://argocd.gw.mesh.internal/auth/callback
             # ArgoCD logs a member device in by token, no wallet page:

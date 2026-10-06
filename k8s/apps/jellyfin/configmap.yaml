@@ -123,7 +123,10 @@ data:
     # (:80 ingress and the gateway's raw :8096 facet) are registered at
     # siwe-oidc. Clients that
     # cannot run SIWE in a webview — the Android/TV apps — sign in
-    # with Quick Connect or the local form instead (95la/i1il).
+    # with Quick Connect: a `media` device's is approved as its own
+    # user by the qc sidecar (deployment.yaml, 95la); an owner device's
+    # by hand from a wallet session. The sidecar also keeps Quick
+    # Connect enabled, so it is not declared here.
     curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" "$JELLYFIN_URL/System/Configuration/branding" -d '{
       "LoginDisclaimer": "<form action=\"/sso/OID/start/wallet\"><button class=\"raised block emby-button button-submit\">Sign in with wallet</button></form>",
       "CustomCss": "a.raised.emby-button { padding: 0.9em 1em; color: inherit !important; } .disclaimerContainer { display: block; }",
