@@ -66,6 +66,9 @@ Vocabulary that follows from this:
   so a member device logs in without the wallet prompt — as the
   *device* (`sub` = its actor id), never as a person inferred from it;
   the group gate has no person fallback (401/403, no `auth-signin`).
+  Appliances, whose apps need a Jellyfin token rather than a cookie,
+  get it by Quick Connect approved from the same identity token
+  (ADR-0034) — the device principal again, and never an admin.
   A bare header is never trusted: its
   unforgeability would rest on reachability, and the pod network is
   reachable.
@@ -909,6 +912,11 @@ provisioning or recovery path may depend on it.
   pinned in git (`config-server/meshtoken`). **Not a cert class and no
   verb**: it never crosses the mesh and grants nothing — it reports.
   Replaces the bare `X-Mesh-*` headers as anything an app may rely on.
+  Second verifier _(2026-10-06, ADR-0034)_: the Jellyfin pod's front
+  proxy (`config-server/jellyfinqc`), which turns a `media` device's
+  Quick Connect into a login as the device's own Jellyfin user — the
+  appliance login; the token never opens an administrator, and without
+  a valid one Quick Connect waits for a human as before.
 - **Data-plane credential** _(2026-10-06, spike `kanr`)_ — a secret
   that authorizes *spend or access at a vendor* (an OpenRouter API key,
   an indexer key), as opposed to an identity. Lives as a SealedSecret,

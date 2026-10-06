@@ -5,59 +5,58 @@
 
 ## Last session
 
-2026-10-06 (second session): the app seam built — `5kh` then `a0ys`,
-ADR-0032 Accepted.
+2026-10-06 (third session): `95la` ruled and built — ADR-0034
+Proposed, live, awaiting the TV.
 
-- **`5kh` + `zfy`** (`9d3b1bb`): the bridge mints `groups` from the
-  per-wallet `-admin=0xaddr=user:group[,group]` map (mandatory,
-  validated against `policy.DeviceGroup`), not a literal. The siwe-oidc
-  image had been unbuildable since 09-19 (`../protocol` replace outside
-  the docker context); `Dockerfile.siweoidc` now mirrors the repo
-  layout and the `.dockerignore` allowlist is trimmed. First green
-  `siwe-oidc-image` run since.
-- **`a0ys`** (`31f4f24` code, this commit manifests): new
-  `config-server/meshtoken` (EdDSA JWT, closed issuer set, no JWT lib);
-  `gateway.Proxy` signs `X-Mesh-Token` per request (`aud`=Host, 60 s);
-  the bridge's `/authz?group=<g>` is the group gate for nginx
-  `auth_request` (200/403/401, no cookie, no `auth-signin`), and
-  `/authorize` logs a device in by token for clients opted in with
-  `-token-client` (ArgoCD; Jellyfin stays on the wallet). Seven
-  Ingresses flipped (sonarr radarr nzbget transmission jackett
-  sillytavern longhorn); `k8s/apps/oauth2-proxy/` deleted. Gateway id
-  `ed:45fc82fc…6613f4` pinned in `k8s/apps/siwe-oidc/deployment.yaml`;
-  gateway image `31f4f24` pinned.
-- Two rulings recorded in ADR-0032 ("Rulings at build time"): no person
-  fallback on the group gate; device login is per-client opt-in and
-  mints the *device* (`sub` = `ed:…`), never a mapped person.
+- **`95la`** (`9cadfd2` code, `e5cd23c` manifests): the appliance
+  logs into Jellyfin by Quick Connect, approved automatically from its
+  mesh identity. `config-server/jellyfinqc` is a reverse-proxy sidecar
+  in the Jellyfin pod and the new backend of the `jellyfin.gw` Ingress
+  (`:8097`); it verifies `X-Mesh-Token` like the bridge (same pinned
+  gateway id, now in two manifests) and on `POST /QuickConnect/Initiate`
+  from a `media`-group device ensures a non-admin Jellyfin user named
+  after the device and calls `Authorize?code=…&userId=…` before the
+  response returns. Never onto an admin user; `admins` devices, no
+  token, forged/stale token ⇒ proxied and left to manual approval. It
+  also keeps `QuickConnectAvailable` on (was a hand-made setting).
+- `Dockerfile.siweoidc` → `Dockerfile.cmd` (`ARG CMD`), shared by the
+  bridge and the sidecar; new `jellyfinqc-image` workflow; both images
+  green on first run; ghcr packages public.
+- Live-verified from the laptop over the mesh: full chain
+  gateway → nginx → sidecar, token verified as `marius-mac [admins]`,
+  left to manual approval (the intended outcome for an owner device).
+  **The `media` path is untested until the TV tries it.**
 
 ## Loose threads
 
-- Live-confirmed by the owner 2026-10-06 (sonarr/longhorn no prompt,
-  ArgoCD by token, Jellyfin wallet page, pod forgery 401). The
-  `media`-device → 403 case is unit-tested only (no `media` device
-  uses an ingress). `kubectl -n sso logs deploy/siwe-oidc` shows
-  `authz:` lines on refusals.
-- A re-keyed gateway (new volume) is a new `ed:` id and a new
-  `-gateway` line — the pod logs `identity token issuer ed:…` at start.
-  Until the pin is updated, every gated app 401s (closed, not open).
-- ADR-0033 (device-local TLS) stays Proposed until the HTTPS direction
-  is first exercised.
-- Spike `7ymy` (person binding on the member cert) is the filed
-  long-term answer to the Jellyfin exception; `a0ys` closed after the
-  owner's live test.
-- Standing: `95la` (appliance Jellyfin login), herdr 0.9.1 vs server
-  0.8.2 (restart kills panes), `jlgz`, `bsj`.
+- **TV test pending** (owner): on the TV's Jellyfin app, point it at
+  `http://jellyfin.gw.mesh.internal` (port 80 — the ingress door, not
+  `:8096`), choose Quick Connect; expect the code to flash and the app
+  to sign in as the TV's device name. Then `kubectl -n media logs
+  deploy/jellyfin -c qc` shows `logged in as jellyfin user "<name>"`,
+  and `/Users` has the new hidden user. On success: ADR-0034 →
+  Accepted, close `95la`, and decide whether the raw `jellyfin` facet
+  (`:8096` splice, policy row `{facet: jellyfin, group: media}`) is
+  retired (ADR-0034 ruling 5).
+- The TV's existing session is as `admin` (Quick-Connected from the
+  cluster 09-20). Sign it out so it re-enters as itself; consider
+  revoking `admin`'s stray device sessions (`/Sessions`, or the
+  dashboard's Devices page).
+- A re-keyed gateway is now **two** pin lines: `k8s/apps/siwe-oidc`
+  and `k8s/apps/jellyfin` (`-gateway=`). Sidecar logs
+  `token refused: issuer not pinned` when the pin is stale.
+- `jellyfinqc` image is `:latest` + `Always` like the bridge; the
+  gateway is digest-pinned. Pin once Accepted, or decide that
+  `:latest` is the house rule for the C-free in-cluster binaries.
+- Standing: herdr 0.9.1 vs server 0.8.2 (restart kills panes),
+  `jlgz`, `bsj`; two `<!-- stale? -->` flags in `notes.md`
+  (Quint entries ~L167/L401) still await the owner.
 
 ## Suggested next steps
 
-- **Next session: `95la`** — appliance login for Jellyfin on the TV.
-  Inputs: the splice carries no HTTP (token/headers cannot help); the
-  memo `docs/spikes/auth-mesh-identity.md` §"jellyfin :8096"; spike
-  `7ymy` is the person-side answer for *devices with a browser*, not
-  for this. Candidates: per-device Jellyfin accounts, Quick Connect as
-  the standing answer, or an X-Mesh-identity login path if the splice
-  ever grows an HTTP hop.
+- TV test → ADR-0034 Accepted → facet retirement decision (above).
+- `7ymy` now has a landing place for Jellyfin: the sidecar approves as
+  the person's user when the cert carries a binding (ADR-0034,
+  Consequences). Still protocol-level work first (cert field, approval
+  UI, token claim).
 - kagent 0.10.3 trial (`docs/spikes/agents-kagent/` → `k8s/apps/kagent`).
-- `notes.md` prune pass run 2026-10-06: two `<!-- stale? -->` flags
-  left for the owner (Quint entries at ~L167/L401 — durable lessons,
-  candidates for `technical/`).
