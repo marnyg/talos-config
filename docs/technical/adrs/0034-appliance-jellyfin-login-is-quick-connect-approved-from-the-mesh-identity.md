@@ -98,10 +98,12 @@ Rulings:
    or stale token, the wrong group: the `Initiate` is still proxied
    and Quick Connect waits for a human, Jellyfin's own behaviour. A
    pod forging `X-Mesh-*` toward ingress-nginx gets exactly that.
-5. The raw `jellyfin` facet stays for now; the appliances move to the
-   HTTP door. Retiring the facet (one door, no path that bypasses the
-   identity seam) is a follow-up once the TV has been seen on the new
-   path.
+5. The appliances move to the HTTP door and **the raw `jellyfin`
+   facet is retired** (same day, once the TV was seen on the new
+   path): one door, no path that bypasses the identity seam. Gone from
+   `policy.facets`, the recipe, the gateway's flags and the bridge's
+   `:8096` redirect origin; the Service keeps `:8096` for in-cluster
+   callers (seerr).
 
 ### Consequences
 

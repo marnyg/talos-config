@@ -178,9 +178,11 @@ metadata:
   name: jellyfin
   namespace: media
 spec:
-  # ClusterIP only: the gateway's raw `jellyfin` facet (:8096) and the
-  # jellyfin.gw ingress (via the qc front proxy, :8097) are the two
-  # doors (ADR-0017). The NodePort 30096
+  # ClusterIP only: the jellyfin.gw ingress (via the qc front proxy,
+  # :8097) is the one door from the mesh (ADR-0017, ADR-0034); :8096 is
+  # for in-cluster callers (seerr signs its users in against it). The
+  # gateway's raw `jellyfin` facet was retired 2026-10-06 with the TV on
+  # the ingress. The NodePort 30096
   # was the nebula-era LAN-direct path for the TV; it was unreachable
   # from mesh v3 (a node forwards only apid/kube-api) and an
   # unauthenticated LAN door otherwise — cut 2026-10-04 with the win2k25

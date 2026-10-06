@@ -463,7 +463,8 @@ provisioning or recovery path may depend on it.
   **producer-side** as an accept table `facet → forward target`. Closed
   per receiver kind: node agent `apid`, `kube-api`; gateway
   `ingress-http` (one class for every HTTP UI — per-app authorization
-  stays app-layer), `jellyfin` (raw TCP), `rdp` (raw TCP to the
+  stays app-layer; since ADR-0034 the appliances' door too — the raw
+  `jellyfin` splice was retired 2026-10-06), `rdp` (raw TCP to the
   win2k25 guest's RDP Service, natural port 3389 — the NodePort path
   died with nebula, `j5c5`); hub `hub-http` (stream) plus
   the Issuer's actor facets. **The iroh relay is not a facet**: it is
@@ -491,7 +492,7 @@ provisioning or recovery path may depend on it.
   Ports exist only inside a facet definition (forward) and in the
   device-local map (expose) — never in a grant. A facet has one
   **natural port** (`policy.FacetPort`: `apid` 50000, `kube-api`
-  6443, `hub-http` 80, `ingress-http` 80, `jellyfin` 8096), the port its service listens on at the
+  6443, `hub-http` 80, `ingress-http` 80, `rdp` 3389), the port its service listens on at the
   receiver and the port every presentation shows for it, so
   `cp1.mesh.internal:50000` reads the same on a bridge, a tun, or the
   node itself; a port is read in the vocabulary of the name's kind
@@ -675,7 +676,8 @@ provisioning or recovery path may depend on it.
   `ingress-http` in-process and reverse-proxies to ingress with the
   Host untouched and the `Identity` (member cert only) injected as
   `X-Mesh-Node/Name/Groups`; connections are bounded (1 h) so expiry
-  has a ceiling. `jellyfin` is a raw splice. Not a rendezvous point
+  has a ceiling. `rdp` is a raw splice (`jellyfin` was, until
+  ADR-0034). Not a rendezvous point
   (that is the relay); issues no authority of its own;
   past it the identity is ambient (structural trade-offs).
 - **Role** — abstract identity: a durable name in a network's

@@ -53,7 +53,7 @@ let groups = ["admins", "media", "machines"] in
 # and the enrollment flow, never by a recipe row.
 let facets = {
   node = ["apid", "kube-api"],
-  gateway = ["ingress-http", "jellyfin", "rdp"],
+  gateway = ["ingress-http", "rdp"],
   hub = ["hub-http"],
 }
 in

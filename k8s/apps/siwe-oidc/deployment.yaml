@@ -81,17 +81,13 @@ spec:
             # — its users carry watch state, and one user per device
             # would split the person's.
             - -token-client=argocd
-            # Two origins, on purpose. The plugin derives redirect_uri
-            # from the requesting Host, and a Jellyfin app reaches the
-            # gateway's RAW `jellyfin` facet on :8096 (P2.3's path for
-            # appliance apps — no nginx hop), which is a different origin
-            # from the :80 ingress a browser uses. Without the :8096 row,
-            # "Sign in with wallet" in the app dies at siwe-oidc with
-            # `redirect_uri … is not registered` and the app falls back to
-            # its connect screen (seen on the phone, 2026-09-20).
-            # The nebula-era jellyfin.cp1 origin was cut with the TV on
-            # the v3 APK (vftt).
-            - -client=jellyfin=http://jellyfin.gw.mesh.internal/sso/OID/redirect/wallet,http://jellyfin.gw.mesh.internal:8096/sso/OID/redirect/wallet
+            # One origin: the plugin derives redirect_uri from the
+            # requesting Host, and every client — browser or app — now
+            # reaches Jellyfin through the :80 ingress. The :8096 row
+            # (the gateway's raw `jellyfin` facet) went with the facet,
+            # 2026-10-06, ADR-0034; the nebula-era jellyfin.cp1 origin
+            # went with the TV on the v3 APK (vftt).
+            - -client=jellyfin=http://jellyfin.gw.mesh.internal/sso/OID/redirect/wallet
           ports:
             - containerPort: 8080
           readinessProbe:

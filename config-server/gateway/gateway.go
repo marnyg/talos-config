@@ -9,8 +9,10 @@
 // the Host header untouched (nginx keeps routing by it; auth_request
 // and the SIWE→OIDC bridge keep gating at the app layer, ADR-0010) and
 // the caller's verified identity injected as headers plus a token the
-// gateway signs per request (meshtoken, ADR-0032); `jellyfin` is a
-// raw splice to the Jellyfin Service for the TV apps (P2.4).
+// gateway signs per request (meshtoken, ADR-0032); `rdp` is a raw
+// splice. The `jellyfin` splice (P2.4's door for the TV apps) was
+// retired 2026-10-06, ADR-0034: appliances come through ingress-http
+// too, where the token logs them in.
 //
 // Authorization is the network layer only: cert.Authorize over the
 // caller's bundle, rooted in this gateway's own consent, decides once

@@ -19,11 +19,11 @@
 # state and gets the person gate, native OIDC via jellyfin-plugin-sso
 # (refs 162c630d). Its nebula name jellyfin.cp1 was cut once the TV ran
 # the v3 APK (359.9.4.5, vftt; decision d3z3) — every device now reaches
-# it as jellyfin.gw, either through this ingress or the gateway's raw
-# :8096 facet. The ingress backend is the pod's qc front proxy (:8097,
-# config-server/jellyfinqc), which reads the same X-Mesh-Token to log a
-# `media` device in by Quick Connect as its own user (95la) — so the
-# appliances take this door, not the raw facet.
+# it as jellyfin.gw through this ingress (the gateway's raw :8096 facet
+# was retired 2026-10-06, ADR-0034). The backend is the pod's qc front
+# proxy (:8097, config-server/jellyfinqc), which reads the same
+# X-Mesh-Token to log a `media` device in by Quick Connect as its own
+# user — the appliances' login.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

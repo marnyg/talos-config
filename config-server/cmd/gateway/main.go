@@ -5,7 +5,7 @@
 // (config-server/gateway).
 //
 //	gateway [-hub URL] [-relay URL] [-state DIR] [-name gw] [-group media]
-//	        [-ingress URL] [-jellyfin host:port] [-rdp host:port] [-bind ip:port] [-beat DUR]
+//	        [-ingress URL] [-rdp host:port] [-bind ip:port] [-beat DUR]
 //
 // State (key, kit, bundle, hub record, mark) lives under -state, a
 // volume that outlives the pod: the key is the member's identity and
@@ -46,7 +46,6 @@ func main() {
 		name     = flag.String("name", "gw", "proposed member name (the approver decides; services are <svc>.<name>.mesh.internal)")
 		group    = flag.String("group", "media", "proposed group (the approver decides)")
 		ingress  = flag.String("ingress", "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local", "ingress-http upstream: the ingress controller's Service")
-		jellyfin = flag.String("jellyfin", "", "jellyfin facet target host:port (the Jellyfin Service); empty ⇒ facet not served")
 		rdp      = flag.String("rdp", "", "rdp facet target host:port (the win2k25-rdp Service); empty ⇒ facet not served")
 		bindAddr = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 		beat     = flag.Duration("beat", nodeagent.DefaultBeat, "renewal beat interval")
@@ -81,7 +80,7 @@ func main() {
 	defer stopProxy()
 	// Raw-TCP facets: each flag is one accept-table row, facet → Service.
 	fwd := map[string]string{}
-	for facet, target := range map[string]string{"jellyfin": *jellyfin, "rdp": *rdp} {
+	for facet, target := range map[string]string{"rdp": *rdp} {
 		if target == "" {
 			continue
 		}

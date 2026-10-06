@@ -20,7 +20,7 @@ func serving(id, name string, facets ...string) issuer.NameEntry {
 func TestZoneRule(t *testing.T) {
 	dir := map[string][]issuer.NameEntry{
 		"cp1":    {serving("ed:cp1", "cp1", "apid", "kube-api")},
-		"gw":     {serving("ed:gw", "gw", "ingress-http", "jellyfin", "rdp")},
+		"gw":     {serving("ed:gw", "gw", "ingress-http", "rdp")},
 		"laptop": {entry("ed:laptop", "laptop", 1000, 1000)}, // advertises nothing
 		"old":    {entry("ed:old", "old", 1000, 0)},          // no location at all
 		"hub":    {entry("ed:hub", "hub", 1000, 1000)},
@@ -44,7 +44,7 @@ func TestZoneRule(t *testing.T) {
 		{"hub", 80, "hub", "hub-http", nil},
 		{"gw", 80, "gw", "ingress-http", nil}, // a bare gateway name reads in its own vocabulary too (nginx answers 404 for that Host)
 		{"jackett.gw", 80, "gw", "ingress-http", nil},
-		{"jellyfin.gw", 8096, "gw", "jellyfin", nil},
+		{"jellyfin.gw", 80, "gw", "ingress-http", nil}, // the retired splice's name, now just an ingress host
 		{"rdp.gw", 3389, "gw", "rdp", nil},
 		{"cp1", 3389, "", "", errPlain},             // rdp is a gateway facet, not a node's
 		{"jackett.cp1", 80, "", "", ErrNotThatKind}, // still nebula's
@@ -85,7 +85,7 @@ var errPlain = errors.New("plain")
 // KindOf reads the first recognised advertised facet; a newer entry
 // without a location does not hide an older one's advertisement.
 func TestKindOf(t *testing.T) {
-	entries := []issuer.NameEntry{entry("ed:new", "gw", 1000, 0), serving("ed:old", "gw", "jellyfin")}
+	entries := []issuer.NameEntry{entry("ed:new", "gw", 1000, 0), serving("ed:old", "gw", "rdp")}
 	if k := KindOf("gw", entries); k != "gateway" {
 		t.Errorf("KindOf = %s", k)
 	}
