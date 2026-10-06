@@ -79,8 +79,8 @@ metadata:
     app.kubernetes.io/name: argocd-rbac-cm
     app.kubernetes.io/part-of: argocd
 data:
-  # The bridge's groups claim carries [admins] for wallet addresses in
-  # the hub's admin list; map it to full admin. The built-in local
+  # The bridge's groups claim carries the groups declared per wallet in
+  # its -admin= args (k8s/apps/siwe-oidc); map `admins` to full admin. The built-in local
   # `admin` account stays as break-glass.
   policy.csv: |
     g, admins, role:admin

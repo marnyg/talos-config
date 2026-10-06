@@ -1,22 +1,17 @@
-# Allowlist for Dockerfile.siweoidc (the hub's own image is nix-built,
-# fly/image.nix, since talos-config-e8d): the server source, the talos
-# tree, and the entrypoint.
+# Allowlist for Dockerfile.siweoidc, the only docker build left (the
+# hub image is nix-built, fly/image.nix, since talos-config-e8d; the
+# gateway likewise, k8s/apps/gateway/image.nix): the server module and
+# the sibling modules its go.mod replaces by relative path. Of the iroh
+# modules only go.mod (+ go.sum where one exists) are needed — the module graph must load,
+# nothing from them is compiled into the bridge.
 *
 !config-server
 !protocol
-!talos
-!fly
+!iroh-transport/go.mod
+!iroh-transport/go.sum
+!iroh-go/go.mod
 
-# Never ship plaintext secrets or admin credentials — the entrypoint
-# decrypts the .age files at runtime.
-talos/talosconfig
-talos/talosconfig.age
-talos/fly-age-key.age
-talos/clusters/*/secrets.yaml
-talos/clusters/*/sealed-secrets.yaml
+# Build output and docs that sit in the working tree.
 config-server/config-server
+config-server/result
 protocol/docs
-# Extension build output (P0.3 imager chain) is gitignored but sits in
-# the working tree; 145 MB of it overflowed the fly VM's tmpfs at
-# entrypoint cp time and crash-looped the hub (2026-09-17).
-talos/extensions/**/_out

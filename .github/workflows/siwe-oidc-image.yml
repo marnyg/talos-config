@@ -14,8 +14,11 @@ on:
       - "config-server/siweoidc/**"
       - "config-server/cmd/siweoidc/**"
       - "config-server/ethsig/**"
+      - "config-server/policy/**"
       - "config-server/go.mod"
       - "config-server/go.sum"
+      - "protocol/**"
+      - ".dockerignore"
       - "Dockerfile.siweoidc"
       - ".github/workflows/siwe-oidc-image.yml"
   workflow_dispatch:

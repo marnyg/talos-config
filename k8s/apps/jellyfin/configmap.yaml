@@ -96,8 +96,9 @@ data:
     fi
 
     # Provider "wallet": PKCE public client against the bridge (no
-    # secret — empty oidSecret means public client); groups claim
-    # [admins] grants login and Jellyfin admin. disableHttps because
+    # secret — empty oidSecret means public client); a wallet whose
+    # declared groups (siwe-oidc -admin=) include `admins` gets login
+    # and Jellyfin admin. disableHttps because
     # the issuer is plain HTTP over the mesh (ADR-0009). /sso/OID/Add
     # overwrites the named provider, so re-runs converge.
     curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" "$JELLYFIN_URL/sso/OID/Add/wallet" -d '{

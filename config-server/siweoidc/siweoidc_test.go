@@ -55,7 +55,7 @@ func testProvider(t *testing.T) *Provider {
 	t.Helper()
 	p, err := New(testIssuer,
 		[]Client{{ID: testClient, RedirectURIs: []string{testRedirect}}},
-		map[string]string{wellKnownAddr: "mar"},
+		map[string]Admin{wellKnownAddr: {Username: "mar", Groups: []string{"admins"}}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -366,6 +366,48 @@ func TestUnknownClientAndRedirectNotRedirected(t *testing.T) {
 	}
 }
 
+// Groups are per wallet from the declared map, not a literal shared by
+// every wallet that may sign in (`5kh`).
+func TestGroupsComeFromTheAdminMap(t *testing.T) {
+	const tv = "0x2b5ad5c4795c026514f8317c7a215e218dccd6cf" // key 0x…02
+	p, err := New(testIssuer,
+		[]Client{{ID: testClient, RedirectURIs: []string{testRedirect}}},
+		map[string]Admin{
+			wellKnownAddr: {Username: "mar", Groups: []string{"admins", "media"}},
+			tv:            {Username: "tv", Groups: []string{"media"}},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for addr, want := range map[string][]string{
+		wellKnownAddr: {"admins", "media"},
+		tv:            {"media"},
+	} {
+		id, ok := p.identityFor(addr)
+		if !ok {
+			t.Fatalf("%s not resolved", addr)
+		}
+		got, _ := id.claims()["groups"].([]string)
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s groups = %v, want %v", id.Username, got, want)
+		}
+	}
+
+	// A wallet with no groups still mints a `groups` array, not null.
+	if got := (Identity{Addr: tv, Username: "tv"}).claims()["groups"]; fmt.Sprint(got) != "[]" {
+		t.Errorf("empty groups = %#v, want []", got)
+	}
+
+	// A username is mandatory per admin.
+	if _, err := New(testIssuer,
+		[]Client{{ID: testClient, RedirectURIs: []string{testRedirect}}},
+		map[string]Admin{wellKnownAddr: {Groups: []string{"admins"}}},
+	); err == nil {
+		t.Error("admin without username accepted")
+	}
+}
+
 func TestNonAdminWalletRejected(t *testing.T) {
 	p := testProvider(t)
 	ts := httptest.NewServer(p.Handler())
@@ -505,7 +547,7 @@ func TestCodeBoundToClientAndRedirect(t *testing.T) {
 			{ID: testClient, RedirectURIs: []string{testRedirect}},
 			{ID: "other", RedirectURIs: []string{"http://other.cp1.mesh.internal/cb"}},
 		},
-		map[string]string{wellKnownAddr: "mar"},
+		map[string]Admin{wellKnownAddr: {Username: "mar", Groups: []string{"admins"}}},
 	)
 	if err != nil {
 		t.Fatal(err)

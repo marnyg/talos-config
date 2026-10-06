@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/marnyg/talos-config/config-server/ethsig"
+	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/config-server/siweoidc"
 )
 
@@ -32,21 +33,32 @@ func (c *clientsFlag) Set(v string) error {
 	return nil
 }
 
-// adminsFlag collects repeated -admin 0xaddr=username declarations.
-type adminsFlag map[string]string
+// adminsFlag collects repeated -admin 0xaddr=username:group[,group]
+// declarations. Groups are explicit per wallet and drawn from the
+// closed device-group vocabulary (admins|media): a typo would silently
+// mint a group no relying party maps, so it fails here at pod start
+// instead.
+type adminsFlag map[string]siweoidc.Admin
 
-func (a adminsFlag) String() string { return fmt.Sprintf("%v", map[string]string(a)) }
+func (a adminsFlag) String() string { return fmt.Sprintf("%v", map[string]siweoidc.Admin(a)) }
 
 func (a adminsFlag) Set(v string) error {
-	addr, name, ok := strings.Cut(v, "=")
-	if !ok || name == "" {
-		return fmt.Errorf("want 0xaddress=username, got %q", v)
+	addr, rest, ok := strings.Cut(v, "=")
+	name, groupList, ok2 := strings.Cut(rest, ":")
+	if !ok || !ok2 || name == "" || groupList == "" {
+		return fmt.Errorf("want 0xaddress=username:group[,group], got %q", v)
 	}
 	norm, err := ethsig.NormalizeAddress(addr)
 	if err != nil {
 		return err
 	}
-	a[norm] = name
+	groups := strings.Split(groupList, ",")
+	for _, g := range groups {
+		if !policy.DeviceGroup(g) {
+			return fmt.Errorf("admin %s: group %q is not one of %s/%s", norm, g, policy.GroupAdmins, policy.GroupMedia)
+		}
+	}
+	a[norm] = siweoidc.Admin{Username: name, Groups: groups}
 	return nil
 }
 
@@ -58,7 +70,7 @@ func main() {
 		listen  = flag.String("listen", ":8080", "listen address")
 	)
 	flag.Var(&clients, "client", "OIDC client as id=redirect_uri[,redirect_uri...] (repeatable)")
-	flag.Var(&admins, "admin", "allowlisted wallet as 0xaddress=username (repeatable)")
+	flag.Var(&admins, "admin", "allowlisted wallet as 0xaddress=username:group[,group] (repeatable; groups admins|media)")
 	flag.Parse()
 
 	p, err := siweoidc.New(*issuer, clients, admins)

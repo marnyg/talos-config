@@ -52,24 +52,40 @@ type Client struct {
 	RedirectURIs []string
 }
 
+// Admin is one git-declared wallet: the username and groups its
+// signature resolves to. Groups are declared per wallet, never
+// inferred — "a wallet that may sign in is an admin" was an N=1
+// inference that broke on the second wallet (`5kh`). The names are
+// the closed group vocabulary (policy.Groups); the bridge carries them
+// as a claim and attaches no meaning of its own.
+type Admin struct {
+	Username string
+	Groups   []string
+}
+
 // Identity is what a wallet signature resolves to: the claims minted
-// into ID tokens and served from /userinfo. Username comes from the
-// git-declared addr→name map; Email is fabricated from it because
-// several relying parties (oauth2-proxy, Jellyfin) refuse identities
-// without one — it is an identifier, not a mailbox.
+// into ID tokens and served from /userinfo. Username and Groups come
+// from the git-declared addr→Admin map; Email is fabricated from the
+// username because several relying parties (oauth2-proxy, Jellyfin)
+// refuse identities without one — it is an identifier, not a mailbox.
 type Identity struct {
 	Addr     string // lowercase 0x — the `sub` claim
 	Username string
+	Groups   []string
 }
 
 func (id Identity) claims() map[string]any {
+	groups := id.Groups
+	if groups == nil {
+		groups = []string{} // `[]`, never `null`: relying parties range over it
+	}
 	return map[string]any{
 		"sub":                id.Addr,
 		"preferred_username": id.Username,
 		"name":               id.Username,
 		"email":              id.Username + "@mesh.internal",
 		"email_verified":     true,
-		"groups":             []string{"admins"},
+		"groups":             slices.Clone(groups),
 	}
 }
 
@@ -96,7 +112,7 @@ type accessToken struct {
 type Provider struct {
 	issuer  string
 	clients map[string]Client
-	admins  map[string]string // lowercase 0x addr -> username
+	admins  map[string]Admin // lowercase 0x addr -> username + groups
 	signer  *signer           // per-boot RS256 key
 
 	mu     sync.Mutex
@@ -108,8 +124,8 @@ type Provider struct {
 
 // New constructs a provider. issuer is the externally visible base URL
 // (no trailing slash); admins maps allowlisted wallet addresses
-// (lowercase 0x) to usernames.
-func New(issuer string, clients []Client, admins map[string]string) (*Provider, error) {
+// (lowercase 0x) to their username and groups.
+func New(issuer string, clients []Client, admins map[string]Admin) (*Provider, error) {
 	if issuer == "" || strings.HasSuffix(issuer, "/") {
 		return nil, fmt.Errorf("issuer must be a base URL without trailing slash, got %q", issuer)
 	}
@@ -118,6 +134,11 @@ func New(issuer string, clients []Client, admins map[string]string) (*Provider, 
 	}
 	if len(admins) == 0 {
 		return nil, fmt.Errorf("no admin addresses declared")
+	}
+	for addr, a := range admins {
+		if a.Username == "" {
+			return nil, fmt.Errorf("admin %s needs a username", addr)
+		}
 	}
 	byID := make(map[string]Client, len(clients))
 	for _, c := range clients {
@@ -191,11 +212,11 @@ func (p *Provider) redeemNonce(n string) bool {
 // identityFor resolves a recovered wallet address against the
 // allowlist.
 func (p *Provider) identityFor(addr string) (Identity, bool) {
-	name, ok := p.admins[addr]
+	a, ok := p.admins[addr]
 	if !ok {
 		return Identity{}, false
 	}
-	return Identity{Addr: addr, Username: name}, true
+	return Identity{Addr: addr, Username: a.Username, Groups: a.Groups}, true
 }
 
 // authRequest is the validated shape of an /authorize request.
