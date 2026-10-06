@@ -160,16 +160,15 @@
 - 2026-09-03 — **Read `desired-state/domain-model.md` §"The three
   layers" before any authority/identity discussion.** A design session
   lost an hour to "sovereign" applied to members and an invented
-  "presence" concept; both are defined/retired there. ADR-0017 is
-  *Proposed*: the running system is still nebula's receiver-side
-  firewall, and `mesh-policy.yaml`'s nebula render is what executes
-  until Mesh v3 Phase 1. <!-- stale? -->
+  "presence" concept; both are defined/retired there. _(Trimmed
+  2026-10-06: the "ADR-0017 still Proposed / nebula executes" tail is
+  history — v3 landed 09-21.)_
 - 2026-09-05 — **The Quint models are the sharper spec for
   ADR-0015/0017.** Five doc sentences were refuted and ruled the same
   day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
   `verification/quint/{authorize,runway,approval}.qnt` record the
   trace). When the glossary and a model disagree, check the model's
-  header first — it says which ruling applied.
+  header first — it says which ruling applied. <!-- stale? -->
 - 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed and
   partly built** (2026-09-17: Issuer listens in-process, Enroll →
   `#mint-device`, relay child, `/.well-known`; 2026-09-18: `#bundle`
@@ -403,7 +402,7 @@
   Accept with p≈2⁻¹⁵; all 7 seeded mutants survived until a
   boundary-biased generator (valid scenario + ≤2 injected faults)
   was added. Always mutation-test a new model before trusting `[ok]`.
-  Also: never `powerset()` a 25-element set in a generator.
+  Also: never `powerset()` a 25-element set in a generator. <!-- stale? -->
 - 2026-09-06 — **`iroh-go/` builds are slow cold and need the UA
   backport.** crates.io returns 403 to the generic User-Agent the
   flake's 2026-01 nixpkgs `fetchCargoVendor` sends; `iroh-go/nix/

@@ -50,5 +50,14 @@ ADR-0032 Accepted.
 
 ## Suggested next steps
 
-- `95la`: per-device Jellyfin accounts vs Quick Connect for the TV.
+- **Next session: `95la`** — appliance login for Jellyfin on the TV.
+  Inputs: the splice carries no HTTP (token/headers cannot help); the
+  memo `docs/spikes/auth-mesh-identity.md` §"jellyfin :8096"; spike
+  `7ymy` is the person-side answer for *devices with a browser*, not
+  for this. Candidates: per-device Jellyfin accounts, Quick Connect as
+  the standing answer, or an X-Mesh-identity login path if the splice
+  ever grows an HTTP hop.
 - kagent 0.10.3 trial (`docs/spikes/agents-kagent/` → `k8s/apps/kagent`).
+- `notes.md` prune pass run 2026-10-06: two `<!-- stale? -->` flags
+  left for the owner (Quint entries at ~L167/L401 — durable lessons,
+  candidates for `technical/`).
