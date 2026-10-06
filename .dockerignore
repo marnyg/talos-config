@@ -1,4 +1,4 @@
-# Allowlist for Dockerfile.siweoidc, the only docker build left (the
+# Allowlist for Dockerfile.cmd, the only docker build left (the
 # hub image is nix-built, fly/image.nix, since talos-config-e8d; the
 # gateway likewise, k8s/apps/gateway/image.nix): the server module and
 # the sibling modules its go.mod replaces by relative path. Of the iroh

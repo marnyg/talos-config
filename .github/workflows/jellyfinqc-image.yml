@@ -1,0 +1,44 @@
+# Builds and pushes the Jellyfin front proxy (config-server/cmd/jellyfinqc)
+# to ghcr on every push to main that touches it. Deployed as a sidecar
+# in the Jellyfin pod (k8s/apps/jellyfin), pinned by :<sha>@digest
+# there. ghcr is trusted infrastructure like fly (invariant 3), not a
+# root of trust: the image contains no secrets and the only identity
+# decision it makes is verifying the gateway's token against the ids
+# the manifest pins.
+name: jellyfinqc-image
+on:
+  push:
+    branches: [main]
+    paths:
+      - "config-server/jellyfinqc/**"
+      - "config-server/cmd/jellyfinqc/**"
+      - "config-server/meshtoken/**"
+      - "config-server/go.mod"
+      - "config-server/go.sum"
+      - "protocol/**"
+      - ".dockerignore"
+      - "Dockerfile.cmd"
+      - ".github/workflows/jellyfinqc-image.yml"
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.cmd
+          build-args: CMD=jellyfinqc
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/jellyfinqc:latest
+            ghcr.io/${{ github.repository_owner }}/jellyfinqc:${{ github.sha }}
