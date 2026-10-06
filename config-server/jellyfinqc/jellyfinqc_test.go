@@ -1,6 +1,7 @@
 package jellyfinqc
 
 import (
+	"compress/gzip"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
@@ -77,7 +78,18 @@ func (f *fakeJellyfin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		write(map[string]any{"AccessToken": adminTok})
 	case r.Method == "POST" && r.URL.Path == InitiatePath:
 		f.initiates++
-		write(map[string]any{"Code": fmt.Sprintf("%06d", f.initiates), "Secret": "s3cret", "Authenticated": false})
+		res := map[string]any{"Code": fmt.Sprintf("%06d", f.initiates), "Secret": "s3cret", "Authenticated": false}
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			// Jellyfin (Kestrel) compresses when asked; the live bug of
+			// 2026-10-06 was the proxy reading those bytes as JSON.
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Encoding", "gzip")
+			zw := gzip.NewWriter(w)
+			json.NewEncoder(zw).Encode(res)
+			zw.Close()
+			return
+		}
+		write(res)
 	case r.URL.Path == "/other":
 		w.WriteHeader(418)
 		io.WriteString(w, "teapot")
@@ -196,6 +208,29 @@ func TestMediaDeviceIsLoggedInAsItself(t *testing.T) {
 		t.Fatalf("users = %d, want 4 (no duplicate)", n)
 	}
 	if got := r.jf.authorized; len(got) != 2 || got[1] != "000002:u-tv-parents" {
+		t.Fatalf("authorized = %v", got)
+	}
+}
+
+func TestApprovesWhenTheClientAcceptsGzip(t *testing.T) {
+	r := newRig(t)
+	req, _ := http.NewRequest("POST", r.front.URL+InitiatePath, nil)
+	req.Host = host
+	req.Header.Set("Accept-Encoding", "gzip") // OkHttp's default on the TV app
+	req.Header.Set("Authorization", `MediaBrowser Client="TV", Device="tv", DeviceId="d1", Version="1"`)
+	tok, _ := r.signer.Mint(device("tv", "media"), host, now)
+	req.Header.Set(meshtoken.Header, tok)
+	resp, err := (&http.Client{Transport: &http.Transport{DisableCompression: true}}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	var qc quickConnectResult
+	if resp.StatusCode != 200 || json.Unmarshal(body, &qc) != nil || qc.Code != "000001" {
+		t.Fatalf("client got %d %q; want the plain result", resp.StatusCode, body)
+	}
+	if got := r.jf.authorized; len(got) != 1 || got[0] != "000001:u-tv" {
 		t.Fatalf("authorized = %v", got)
 	}
 }

@@ -85,6 +85,14 @@ func New(upstream *url.URL, verifier *meshtoken.Verifier, jf *Jellyfin, group st
 			pr.SetURL(upstream)
 			pr.Out.Host = pr.In.Host // what Jellyfin saw when nginx dialed it directly
 			pr.Out.Header.Del(meshtoken.Header)
+			if pr.Out.Method == http.MethodPost && pr.Out.URL.Path == InitiatePath {
+				// The response hook reads this body. With the client's
+				// Accept-Encoding (gzip from every app) Jellyfin would
+				// compress it and the hook would see bytes; without one
+				// the transport negotiates gzip itself and decodes it
+				// transparently (resp.Uncompressed).
+				pr.Out.Header.Del("Accept-Encoding")
+			}
 		},
 		ModifyResponse: h.modifyResponse,
 		FlushInterval:  -1, // media streams: never buffer
