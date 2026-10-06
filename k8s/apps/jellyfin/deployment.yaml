@@ -139,8 +139,10 @@ spec:
         # (k8s/apps/siwe-oidc). Admin devices and anything without a
         # token keep Jellyfin's manual approval.
         - name: qc
-          image: ghcr.io/marnyg/jellyfinqc:latest
-          imagePullPolicy: Always
+          # Pinned by digest like the gateway (tag = the building commit,
+          # k8s/apps/gateway/deployment.yaml's convention); the
+          # jellyfinqc-image workflow prints both.
+          image: ghcr.io/marnyg/jellyfinqc:b2fc15c47153432d91d15cbd93673d8f316cb913@sha256:17d4cb2c7dfb9e8093b588b7f662094301dede864371ccddf553a544b51bf4d2
           args:
             - -listen=:8097
             - -upstream=http://127.0.0.1:8096

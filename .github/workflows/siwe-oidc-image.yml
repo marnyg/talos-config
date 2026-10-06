@@ -1,7 +1,7 @@
 # Builds and pushes the SIWE→OIDC bridge image to ghcr on every push
-# to main that touches it. The cluster pulls :latest with
-# imagePullPolicy Always — rolling the deployment picks up the new
-# image; the :<sha> tag exists for pinning/rollback. ghcr here is
+# to main that touches it. The cluster pins :<sha>@digest in
+# k8s/apps/siwe-oidc (since 2026-10-06; was :latest + Always) — a new
+# image is a deliberate pin bump, and a rollback is the previous line. ghcr here is
 # trusted infrastructure like fly (invariant 3), not a root of trust:
 # the image contains no secrets and every identity decision it makes
 # reduces to wallet signature verification against git-declared
@@ -14,6 +14,7 @@ on:
       - "config-server/siweoidc/**"
       - "config-server/cmd/siweoidc/**"
       - "config-server/ethsig/**"
+      - "config-server/meshtoken/**"
       - "config-server/policy/**"
       - "config-server/go.mod"
       - "config-server/go.sum"

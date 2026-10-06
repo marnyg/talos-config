@@ -20,8 +20,8 @@
 # New gated service = one auth-url annotation on its Ingress
 # (k8s/apps/media/ingress.yaml). New gateway = its member id in a
 # -gateway arg (the pod logs "identity token issuer ed:…" at start).
-# Image: built by .github/workflows/siwe-oidc-image.yml; :latest +
-# imagePullPolicy Always, so a rollout restart picks up a new build.
+# Image: built by .github/workflows/siwe-oidc-image.yml, pinned here
+# by :<commit>@digest; a new build is a pin bump.
 #
 # Deliberately ONE replica (HA sweep slice 2, talos-config-9l67): the
 # per-boot state above is per-*pod* — a second replica would hold a
@@ -61,8 +61,10 @@ spec:
           tolerationSeconds: 30
       containers:
         - name: siwe-oidc
-          image: ghcr.io/marnyg/siwe-oidc:latest
-          imagePullPolicy: Always
+          # Pinned by digest like the gateway (was :latest + Always until
+          # 2026-10-06: a rollback had nothing to roll back to); the
+          # siwe-oidc-image workflow tags with the building commit.
+          image: ghcr.io/marnyg/siwe-oidc:c5bb8cbb0e6ebb8748bcf24b40c295efaa311dee@sha256:25a5d703aa73be50cba052a7bc371e41d97d50afb89737f640352fe4813521b3
           args:
             - -issuer=http://auth.gw.mesh.internal
             - -listen=:8080
