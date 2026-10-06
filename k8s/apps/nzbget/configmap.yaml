@@ -35,7 +35,7 @@ data:
     Server1.Level=0
     Server1.Group=0
 
-    # SSO like sonarr/radarr: the ingress gate (oauth2-proxy, see
+    # SSO like sonarr/radarr: the ingress group gate (see
     # media/ingress.yaml) is the login, nzbget's own is off
     # (empty ControlPassword = "disable authorization request"). nzbget
     # still refuses to start with an empty ControlUsername, hence the

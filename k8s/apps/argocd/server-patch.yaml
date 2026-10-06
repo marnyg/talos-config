@@ -2,9 +2,9 @@
 #
 # Pods cannot resolve .mesh.internal (Talos host DNS serves no
 # /etc/hosts entries to kube-dns — siderolabs/talos #9822/#13141), so
-# the issuer hostname is pinned via hostAliases. Like oauth2-proxy
-# (k8s/apps/oauth2-proxy/deployment.yaml, 2026-07-31), it points at the
-# siwe-oidc **Service** ClusterIP, not a member's mesh address: mesh
+# the issuer hostname is pinned via hostAliases. It points at the
+# siwe-oidc **Service** ClusterIP (as oauth2-proxy did from 2026-07-31
+# until it retired, ADR-0032), not a member's mesh address: mesh
 # addresses are per-device fake IPs owned by that member's tun (v3,
 # 198.18/15; nebula's 10.42/16 before), never routable from a pod
 # (10.244.x.x) on another node. The ClusterIP is

@@ -53,8 +53,10 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   self-hosted SIWE SSO, no hosted identity anywhere in the access
   path. Substrate landed 2026-07-31 (ADR-0009: nebula-native ingress,
   tailscale gone); **reached 2026-07-31** — the in-cluster SIWE→OIDC
-  bridge serves ArgoCD (native OIDC, dex deleted), the five media UIs
-  (oauth2-proxy `auth_request`), and Jellyfin (jellyfin-plugin-sso).
+  bridge serves ArgoCD (native OIDC, dex deleted), the gated UIs
+  (`auth_request` → the bridge's `/authz` group gate on the gateway-
+  signed identity token, ADR-0032; oauth2-proxy retired 2026-10-06),
+  and Jellyfin (jellyfin-plugin-sso).
   Remaining scope deliberately deferred: HTTPS over the mesh (spike
   `9z4e`, 2026-10-06, `docs/spikes/tls-over-mesh.md`) — a wallet-rooted
   mesh CA is ruled out (ADR-0018: the seed is never a signing key; a

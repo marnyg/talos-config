@@ -1,6 +1,6 @@
 # ADR-0032: The app seam is a gateway-signed per-request identity token; SIWE stays the person gate
 
-- Status: Proposed
+- Status: Accepted (2026-10-06, built the same day; two rulings below)
 - Date: 2026-10-06
 - Revises: ADR-0010 ("the bridge is the only IdP" → the only *person*
   IdP; the app layer has two gates), ADR-0026 (consequence "apps may
@@ -69,9 +69,10 @@ The gateway mints, per request, a short-lived EdDSA token under its
 own member key — device key, name, groups, `aud` = Host, `exp` ≈ 60 s
 — in `X-Mesh-Token`. The bridge verifies it against the gateway's
 public key pinned in git: `/authz` for nginx `auth_request` (valid and
-group matches → 200 with identity response headers; otherwise 401 →
-`auth-signin` to SIWE as today), and `/authorize` honours the same
-token so OIDC apps issue a code without the wallet prompt.
+group matches → 200 with identity response headers; verified device
+outside the group → 403; anything else → 401), and `/authorize`
+honours the same token so OIDC apps issue a code without the wallet
+prompt.
 
 - Pros: self-authenticating artifact — forging it needs the gateway's
   key; `aud` stops replay across hosts, `exp` bounds the rest; no
@@ -93,6 +94,31 @@ chain (wallet → `speak-as` → member cert → token) so the verifier
 roots in the wallet address alone is an additive upgrade over the
 pinned key.
 
+### Rulings at build time (2026-10-06)
+
+1. **No person fallback on the group gate.** The draft said "401 →
+   `auth-signin` to SIWE as today", but "today" was oauth2-proxy's
+   cookie, which retires; keeping a fallback means the bridge growing
+   its own cookie session — oauth2-proxy rebuilt inside it. Who hits a
+   401/403 at `/authz`? A pod-network caller (a redirect is pointless)
+   or a member device whose cert lacks the group (a wallet signature
+   cannot change the device's group). So: `auth-signin` is dropped for
+   the group-gated class; the answer is 401/403 and nothing else.
+2. **Device login is per-client opt-in, and mints the device.** The
+   token names a device, never a person; `/authorize` honouring it
+   mints `sub` = the device's actor id and the member name as username
+   — mapping device → wallet owner from git would be exactly the N=1
+   inference `5kh` removed. One user per device is right for ArgoCD
+   (the audit log names the device) and wrong for Jellyfin (watch
+   state would split per device), so a client opts in with
+   `-token-client=<id>`; ArgoCD does, Jellyfin keeps the wallet page.
+
+Implementation: `config-server/meshtoken` (mint/verify, no JWT
+library, one algorithm, closed issuer set), `gateway.Proxy(upstream,
+signer)`, `siweoidc` `/authz` + `Client.Token`, bridge flags
+`-gateway=ed:…` / `-token-client`; the gateway id is pinned in
+`k8s/apps/siwe-oidc/deployment.yaml`.
+
 ### Consequences
 
 - oauth2-proxy, its SealedSecret and `hostAliases` go; the required
@@ -100,8 +126,8 @@ pinned key.
   grantable per app.
 - Gated-class revocation drops from a 7-day cookie to the token's
   60 s plus the connection bound (1 h).
-- `5kh` (groups hardcoded `["admins"]`) must land first, or a second
-  admin inherits the N=1 inference.
+- `5kh` (groups hardcoded `["admins"]`) landed first (`9d3b1bb`), so a
+  second admin does not inherit the N=1 inference.
 - Splices are untouched: appliances still need a Jellyfin credential
   (`95la` re-opened; Quick Connect stays).
 - The trade-off text in `invariants.md` is amended: capability
@@ -110,9 +136,10 @@ pinned key.
 ### Confirmation
 
 Admin device opens `sonarr.gw` with no prompt; a `media` device gets
-403; a header-less request gets 401 and the SIWE redirect; a pod on
+403; a header-less request gets 401 (no redirect — ruling 1); a pod on
 the pod network sending `X-Mesh-Groups: admins` and no valid token
-gets 401; a token captured at `sonarr.gw` is refused at `auth.gw`
+gets 401; a member device reaches ArgoCD with no wallet prompt and
+Jellyfin still shows it; a token captured at `sonarr.gw` is refused at `auth.gw`
 (`aud`); `rg -l oauth2-proxy k8s/` is empty; no state file appears on
 the bridge. Invalidated if a group-gated app grows per-user state
 (move it to the person gate) or if per-request signing shows up in

@@ -1,8 +1,8 @@
 # The Longhorn UI over the mesh, gated behind the wallet like the *arr
 # apps (see k8s/apps/media/ingress.yaml for the mechanism). The chart
 # ships `longhorn-frontend` with NO authentication of its own, and the
-# UI can delete volumes and detach disks — so the auth_request pair is
-# not optional here. Until this landed the UI was port-forward only.
+# UI can delete volumes and detach disks — so the group gate is not
+# optional here. Until this landed the UI was port-forward only.
 #
 # Lives next to the chart Application rather than inside its values:
 # the chart's own `ingress.*` values render a generic Ingress without
@@ -15,8 +15,7 @@ metadata:
   name: longhorn-frontend
   namespace: longhorn-system
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://oauth2-proxy.sso.svc.cluster.local/oauth2/auth
-    nginx.ingress.kubernetes.io/auth-signin: http://oauth2.gw.mesh.internal/oauth2/start?rd=$scheme://$host$request_uri
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     # Backup restores / support bundles upload past nginx's 1 MiB default.
     nginx.ingress.kubernetes.io/proxy-body-size: 10000m
 spec:

@@ -165,13 +165,16 @@ above the owner — escalate._
   legitimate contact, i.e. its own starvation, the same clock runway
   bounds. There is no time authority; a time oracle would be authority
   above the receiver. (ADR-0019, `verification/quint/clock.qnt`.)
-- **Capability discipline ends at the actor that terminates the
-  stream.** Past the gateway everything is ambient authority (a
-  header, a Service, an app trusting its caller); the app layer
-  (SIWE→OIDC, ADR-0010) is the seam _(ADR-0032, proposed 2026-10-06:
-  the seam moves one signed hop — the gateway's per-request identity
-  token is caller-carried to the bridge, which verifies it; bare
-  headers are never authority)_, and the presentation layer
+- **Capability discipline ends one signed hop past the actor that
+  terminates the stream.** The gateway terminates the identity stream;
+  what it knows travels one hop further as a caller-carried artifact —
+  the per-request identity token it signs, verified by the bridge
+  against a key pinned in git (ADR-0032, 2026-10-06; was "ends at the
+  actor that terminates the stream"). Past the bridge everything is
+  ambient authority (a header, a Service, an app trusting its caller);
+  bare `X-Mesh-*` headers are never authority. The app layer has two
+  gates — the group gate (`/authz`, token-only, no session) and the
+  person gate (SIWE→OIDC, ADR-0010) — and the presentation layer
   (fake IPs, `*.mesh.internal`, browser TLS, OIDC redirects) is where
   the model meets a web that assumes global names and web PKI.
   Expect it to stay the fragile part.

@@ -52,7 +52,7 @@ spec:
       # pods cannot resolve .mesh.internal (Talos host DNS serves no
       # /etc/hosts entries to kube-dns — siderolabs/talos#9822), so pin
       # the issuer name — at the siwe-oidc **Service** ClusterIP (pinned
-      # in its manifest), same as oauth2-proxy/argocd-server. A node's
+      # in its manifest), same as argocd-server. A node's
       # mesh address is a fake IP owned by that member's own tun (v3,
       # 198.18/15) — not routable from pods (10.244.x.x) at all.
       hostAliases:

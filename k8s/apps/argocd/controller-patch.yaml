@@ -15,8 +15,8 @@
 # (server, repo-server, redis, applicationset, notifications) — all
 # Deployments, which do reschedule (after the 300 s unreachable
 # toleration), so they are left alone. The ingress path got its spread
-# in the sweep's slice 2 (ingress-nginx values, oauth2-proxy
-# deployment.yaml); the gateway got 30 s tolerations in jko0.
+# in the sweep's slice 2 (ingress-nginx values; oauth2-proxy too, until
+# it retired under ADR-0032); the gateway got 30 s tolerations in jko0.
 #
 # Partial StatefulSet on purpose: upstream install.yaml owns the
 # resource; ArgoCD server-side-applies this and owns only the field

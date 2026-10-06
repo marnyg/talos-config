@@ -1,19 +1,25 @@
-# The SIWE→OIDC bridge (config-server/cmd/siweoidc): every OIDC relying
-# party in the cluster authenticates against the wallet through this
-# service. All configuration is right here in the args — clients and
-# admin wallets with their groups are git-declared (invariant 2;
-# groups are per wallet, never inferred from "may sign in" — 5kh);
-# auth codes, tokens, and
-# the JWKS signing key are in-memory and per-boot, so a pod restart
-# logs everyone out and nothing is lost.
+# The SIWE→OIDC bridge (config-server/cmd/siweoidc): the app layer's
+# two gates (ADR-0032). Person gate: every OIDC relying party in the
+# cluster authenticates against the wallet through it. Group gate:
+# /authz answers ingress-nginx's auth_request from the gateway-signed
+# X-Mesh-Token alone (200/401/403, no cookie, no login page). All
+# configuration is right here in the args — clients, admin wallets with
+# their groups (per wallet, never inferred from "may sign in" — 5kh),
+# and the gateway ids whose tokens are trusted are git-declared
+# (invariant 2); auth codes, tokens, and the JWKS signing key are
+# in-memory and per-boot, so a pod restart logs everyone out and
+# nothing is lost.
 #
 # Runs in-cluster rather than on the hub deliberately: SSO must not
 # depend on the hub's seal state, and a fly redeploy must not log the
 # cluster out. Mesh-only by construction — reachable solely through
-# ingress-nginx on the overlay (ADR-0009), plain HTTP until the
-# wallet-derived CA lands (refs 162c630d).
+# ingress-nginx on the overlay (ADR-0009), plain HTTP (browser TLS is a
+# device-local presentation if an app ever forces it, ADR-0033).
 #
 # New relying party = new -client arg here + the client-side config.
+# New gated service = one auth-url annotation on its Ingress
+# (k8s/apps/media/ingress.yaml). New gateway = its member id in a
+# -gateway arg (the pod logs "identity token issuer ed:…" at start).
 # Image: built by .github/workflows/siwe-oidc-image.yml; :latest +
 # imagePullPolicy Always, so a rollout restart picks up a new build.
 #
@@ -21,14 +27,14 @@
 # per-boot state above is per-*pod* — a second replica would hold a
 # different signing key and would not know the first one's auth codes,
 # so a code minted by one and redeemed at the other (the browser and
-# oauth2-proxy take different paths in) fails at random. Replicating it
+# the relying party take different paths in) fails at random. Replicating it
 # means a durable signing key and self-contained codes — a design
 # change, filed as a thread. What HA it has is fast failover: no volume,
 # and the tolerations below evict it from an unreachable node after 30 s
 # instead of the 300 s default, so the ReplicaSet respawns it elsewhere
-# in about a minute. Cost of a failover is one re-login everywhere
-# (ArgoCD verifies against the rotated JWKS; oauth2-proxy sessions ride
-# their own cookie and survive).
+# in about a minute. Cost of a failover is one re-login at the OIDC
+# apps (ArgoCD verifies against the rotated JWKS); the group gate has
+# no session to lose — /authz is a pure function of the request.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -61,8 +67,18 @@ spec:
             - -issuer=http://auth.gw.mesh.internal
             - -listen=:8080
             - -admin=0xf56863bF40A75dC3c632C17fc65AA2EB06a89406=mar:admins
+            # The in-cluster gateway (k8s/apps/gateway): the one key
+            # whose X-Mesh-Token /authz and device login accept. Its
+            # member key lives on the gateway's volume; a re-keyed
+            # gateway is a new id and a new line here.
+            - -gateway=ed:45fc82fcbd3714b82a42805131a957a59cd814e02064ba40abc4f71f6b6613f4
             - -client=argocd=http://argocd.gw.mesh.internal/auth/callback
-            - -client=oauth2-proxy=http://oauth2.gw.mesh.internal/oauth2/callback
+            # ArgoCD logs a member device in by token, no wallet page:
+            # the device is the right principal there (the audit log
+            # names it; `admins` → role:admin). Jellyfin is NOT opted in
+            # — its users carry watch state, and one user per device
+            # would split the person's.
+            - -token-client=argocd
             # Two origins, on purpose. The plugin derives redirect_uri
             # from the requesting Host, and a Jellyfin app reaches the
             # gateway's RAW `jellyfin` facet on :8096 (P2.3's path for
@@ -100,10 +116,10 @@ metadata:
   name: siwe-oidc
   namespace: sso
 spec:
-  # Pinned, not allocated. oauth2-proxy's hostAliases maps
-  # auth.gw.mesh.internal to this address so its server-side OIDC calls
-  # resolve in-cluster from whichever node it lands on; a reallocated
-  # ClusterIP would silently break SSO. Immutable once set, so this must
+  # Pinned, not allocated. argocd-server's and Jellyfin's hostAliases
+  # map auth.gw.mesh.internal to this address so their server-side OIDC
+  # calls resolve in-cluster from whichever node they land on; a
+  # reallocated ClusterIP would silently break SSO. Immutable once set, so this must
   # match the existing allocation (it does) — changing it later needs the
   # Service recreated.
   clusterIP: 10.107.226.217

@@ -62,8 +62,11 @@ Vocabulary that follows from this:
   from the gateway's signed **identity token** (device + groups) alone,
   no login — fronts apps with no per-user state; the **person gate** —
   the SIWE→OIDC bridge (ADR-0010) — fronts apps with per-user state,
-  and honours the same token at `/authorize` so a member device logs
-  in without the wallet prompt. A bare header is never trusted: its
+  and, for clients that opt in, honours the same token at `/authorize`
+  so a member device logs in without the wallet prompt — as the
+  *device* (`sub` = its actor id), never as a person inferred from it;
+  the group gate has no person fallback (401/403, no `auth-signin`).
+  A bare header is never trusted: its
   unforgeability would rest on reachability, and the pod network is
   reachable.
 - **Verbs are undefined.** Groups exist (`admins`, `media`,
@@ -894,17 +897,18 @@ provisioning or recovery path may depend on it.
   `machines` — `policy.Groups`, the one copy; devices enroll into the
   first two, machines are the node agents.) _(Redefined 2026-09-03,
   spike `359.2`.)_ It is the unit the app layer's group gate can
-  authorize on; a *person* is only ever established by the bridge
-  (`admins ⇒ the owner` is an N=1 inference, bug `5kh`).
+  authorize on; a *person* is only ever established by the bridge's
+  wallet login (`admins ⇒ the owner` was an N=1 inference — `5kh`,
+  fixed 2026-10-06: groups are declared per wallet, `-admin=…:groups`).
 - **Identity token** _(2026-10-06, ADR-0032)_ — the gateway's signed
   per-request attestation of the admitted stream's identity: device
   key, name, groups, `aud` = the request's Host, `exp` ≈ 60 s, EdDSA
   under the gateway's own member key; carried as `X-Mesh-Token`. A
   caller-carried artifact past the gateway (ADR-0017's shape, one hop
   further), verified by the bridge against the gateway's public key
-  pinned in git. **Not a cert class and no verb**: it never crosses the
-  mesh and grants nothing — it reports. Replaces the bare `X-Mesh-*`
-  headers as anything an app may rely on.
+  pinned in git (`config-server/meshtoken`). **Not a cert class and no
+  verb**: it never crosses the mesh and grants nothing — it reports.
+  Replaces the bare `X-Mesh-*` headers as anything an app may rely on.
 - **Data-plane credential** _(2026-10-06, spike `kanr`)_ — a secret
   that authorizes *spend or access at a vendor* (an OpenRouter API key,
   an indexer key), as opposed to an identity. Lives as a SealedSecret,

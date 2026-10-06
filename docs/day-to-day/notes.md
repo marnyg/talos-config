@@ -358,10 +358,25 @@
   recreate loop); Jobs are immutable — bump the name on script change.
   `virtctl stop/start` is futile under selfHeal — VM state is a git
   edit of `runStrategy`.
-- siwe-oidc: a bridge restart rotates the JWKS → ArgoCD sessions die,
-  oauth2-proxy sessions survive. The image is `:latest` +
-  `imagePullPolicy: Always` — CI push changes nothing until
-  `kubectl -n sso rollout restart deployment siwe-oidc`.
+- siwe-oidc: a bridge restart rotates the JWKS → ArgoCD sessions die;
+  the group gate (`/authz`, ADR-0032) has no session to lose. The image
+  is `:latest` + `imagePullPolicy: Always` — CI push changes nothing
+  until `kubectl -n sso rollout restart deployment siwe-oidc` (or an
+  args change rolls it).
+- 2026-10-06 — **Gated apps all 401 ⇒ check the gateway pin first.**
+  `/authz` trusts only the `-gateway=ed:…` ids in
+  `k8s/apps/siwe-oidc/deployment.yaml`; a gateway on a fresh volume is
+  a new id (its log: `identity token issuer ed:…`). Also 401 if the
+  gateway image predates `31f4f24` (no token minted) — the gate fails
+  closed, never open. `kubectl -n sso logs deploy/siwe-oidc | grep
+  authz:` names the reason per refusal.
+- 2026-10-06 — Deploy order for bridge+gateway changes: push Go first
+  (CI builds the bridge image in ~40 s; the gateway image is built on
+  the box, `HUB_BUILDER=mar@nixos k8s/apps/gateway/build.sh`, ~5 min,
+  and pinned by digest), manifests second. A manifest that adds a
+  bridge flag before its image exists CrashLoops until the next pull.
+  Build the gateway image from a clean tree or the tag is `-dirty`
+  (same digest; the pin is cosmetic but ugly).
 - win2k25 reinstall is one API act: `scripts/win2k25-reinstall.sh`;
   RDP back ~25 min later, at `xfreerdp /v:rdp.gw.mesh.internal`
   (gateway `rdp` facet, admins; the old NodePort 30389 is gone —
@@ -839,8 +854,8 @@
   `Progressing` forever (no `progressDeadlineSeconds`, so never
   Degraded). Hit on the slice-2 rollout with only cp1 + nas1
   schedulable. Any anti-affine Deployment needs `maxUnavailable: 1`
-  (ingress-nginx via `controller.updateStrategy`, oauth2-proxy via
-  `strategy`). **Unsticking the ArgoCD op it wedged** (both the
+  (ingress-nginx via `controller.updateStrategy`; oauth2-proxy had it
+  via `strategy` until it retired, ADR-0032). **Unsticking the ArgoCD op it wedged** (both the
   parent `apps` and the chart app `ingress-nginx`): `kubectl patch
   app <name> -n argocd --type json -p
   '[{"op":"remove","path":"/operation"}]'` — then the controller
