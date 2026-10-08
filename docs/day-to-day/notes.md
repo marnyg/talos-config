@@ -1081,3 +1081,22 @@
 - 2026-10-06 — **A stray `~` file at the repo root** was an editor
   backup of `auth notes` (a `~`-suffix written as a bare name). Deleted
   with the original; if it reappears, it is the editor, not a tool.
+- 2026-10-08 — **Draining nas1 and cp1 both stall on PDBs, by design.**
+  nas1 holds the only replica of the media volumes (`movies`,
+  `downloads`, `tv`), so Longhorn's `block-if-contains-last-replica`
+  pins its instance-manager PDB at 0; cp1 is the only node KubeVirt's
+  `virt-api`/`virt-controller`/`virt-exportproxy` may run on (required
+  control-plane affinity, `bhui`), so their PDBs do the same. Either
+  wait for Talos's 5-min `DrainTimeout` (it proceeds; media pods go
+  down with the node, which single-replica means anyway) or, for
+  nas1, flip `settings.longhorn.io/node-drain-policy` to `always-allow`
+  for the drain and **put it back** — it is the chart default, not in
+  git. After cp1 returns, expect ~1 min of 2-replica volumes
+  `degraded` (rebuild) and cdi/csi-provisioner CrashLoopBackOff
+  (leader election through the API blip) — both self-heal; evicted
+  pods leave `Error` corpses to delete.
+- 2026-10-08 — **Rebuilding the installer for an extension change
+  needs no nodeagent binary**: `build.sh --installer-only` reuses
+  `ghcr.io/marnyg/p0agent:<manifest version>`; bump `SUFFIX` in
+  `installer.env` so the tag changes. imager runs under amd64
+  emulation on the Mac in ~3 min.

@@ -1,7 +1,20 @@
 # Spike `talos-config-kanr` — agents-as-pods on a GPU-less cluster
 
-_2026-10-06. Memo only; nothing here deploys. Draft manifests for the
-recommended step sit in `agents-kagent/` beside this file._
+_2026-10-06. Memo only; nothing here deploys._
+
+> **Superseded 2026-10-07, decision `talos-config-6d0u`.** The owner's
+> real requirement is sandboxed code execution, which neither candidate
+> delivers on this cluster: kagent 0.10.3's `Agent.spec.deployment` has
+> no `runtimeClassName` (checked `go/api/v1alpha2/agent_types.go`), and
+> its sandbox story (`SandboxAgent`, `spec.sandbox`) is Agent Substrate
+> = the k8s ≥ 1.37 path this memo already deferred. The trial was
+> dropped before deployment; the draft manifests in `agents-kagent/`
+> were removed. The sandbox layer went in first instead — Kata
+> Containers (cloud-hypervisor) as a Talos extension + `RuntimeClass
+> kata`, spike `bog2`, ADR-0035 — and the orchestrator question is
+> reopened from there (`tj7c`: the null option under kata). The
+> comparison below still holds as the record of why kagent/ax were the
+> wrong first move.
 
 ## Question
 

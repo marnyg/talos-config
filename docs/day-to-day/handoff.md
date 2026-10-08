@@ -5,60 +5,49 @@
 
 ## Last session
 
-2026-10-06 (third session): `95la` ruled, built and **confirmed on the
-TV** — ADR-0034 Accepted.
+2026-10-07/08: the kagent trial was reopened before it deployed and
+**replaced by a sandbox layer** — ADR-0035 Accepted, spike `bog2`,
+decision `6d0u`.
 
-- **`95la`** (`9cadfd2` code, `e5cd23c` manifests): the appliance
-  logs into Jellyfin by Quick Connect, approved automatically from its
-  mesh identity. `config-server/jellyfinqc` is a reverse-proxy sidecar
-  in the Jellyfin pod and the new backend of the `jellyfin.gw` Ingress
-  (`:8097`); it verifies `X-Mesh-Token` like the bridge (same pinned
-  gateway id, now in two manifests) and on `POST /QuickConnect/Initiate`
-  from a `media`-group device ensures a non-admin Jellyfin user named
-  after the device and calls `Authorize?code=…&userId=…` before the
-  response returns. Never onto an admin user; `admins` devices, no
-  token, forged/stale token ⇒ proxied and left to manual approval. It
-  also keeps `QuickConnectAvailable` on (was a hand-made setting).
-- `Dockerfile.siweoidc` → `Dockerfile.cmd` (`ARG CMD`), shared by the
-  bridge and the sidecar; new `jellyfinqc-image` workflow; both images
-  green on first run; ghcr packages public.
-- Live-verified both ways: laptop (`admins`) → left to manual, as
-  intended; the Shield (`tv`, `media`), driven over network adb —
-  server switched to `http://jellyfin.gw.mesh.internal` (port 80),
-  Quick Connect pressed, signed in as user `tv` (non-admin, hidden)
-  within one poll, Big Buck Bunny played over `gw/ingress-http`. One
-  fix found by the TV and shipped (`b2fc15c`): the app sends
-  `Accept-Encoding: gzip`, so the hook saw compressed bytes
-  ("unreadable result"); the Initiate now goes upstream without it.
+- Owner's actual requirement was *sandboxed* agent workloads. kagent
+  0.10.3's `Agent` cannot select a `runtimeClassName` and its sandbox
+  story is Agent Substrate (k8s ≥ 1.37), so the trial drafts were
+  removed (`297d0f4`); the memo `docs/spikes/agents-kagent.md` carries
+  a superseded note. gVisor (wrong workload profile), Firecracker (not
+  in Talos's extension, no gain at this lifetime) and KubeVirt-per-
+  agent (too heavy) were weighed in the ADR.
+- **Kata Containers 3.26.0 (cloud-hypervisor)** is in the fleet
+  installer: `installer.env` gained the extension and a `SUFFIX`;
+  `build.sh --installer-only` rebuilds without a nodeagent binary. All
+  three hardware files pin `v1.12.6-p0agent-0.1.6-kata@6e8e77…`; all
+  three nodes were upgraded (w1 → nas1 → cp1) and run it.
+- `k8s/apps/sandbox/runtimeclass.yaml`: `RuntimeClass kata`,
+  `podFixed` 200Mi/250m from measurement (`3a2b178`). A `restricted`-
+  PSS alpine pod ran under it on every node (guest kernel 6.18.5).
+- Bench on w1 (bog2 notes): start ~1 s cached; host RSS ≈ 200 MB idle;
+  compute native; Longhorn PVC fine via virtio-fs; fork+exec 3.6×,
+  small-file metadata 7–10× slower than runc.
+- `4te` (parents' TV) closed as no longer needed.
 
 ## Loose threads
 
-- `95la` closed; **the raw `jellyfin` facet is retired** (`c5bb8cb`:
-  policy row, nickel contract, `policy.facets`, gateway flag, the
-  bridge's `:8096` redirect origin, glossary); gateway image rebuilt
-  and pinned `c5bb8cb@165bc1…` (`f5f7106`), live, beat ok, TV streams
-  through it. The Service keeps `:8096` for seerr.
-- Broken windows closed (`f5f7106`): `jellyfinqc` and `siwe-oidc`
-  pinned by `:<sha>@digest` (no more `:latest` + `Always` anywhere);
-  `siwe-oidc-image` rebuilds on `meshtoken/**`; the notes.md cluster-
-  side-QC entry marked superseded.
-- The TV's stale `…:8096` server entry is still in the app's list
-  (inert: its `mar`/`admin` device tokens are revoked, the door is
-  gone) — adb cannot inject the long-press that removes it; a
-  physical remote can. The app is left on the port-80 server as `tv`.
-- Stale Jellyfin devices revoked: old SHIELD (`d559…`), `probe`, `t`,
-  the shell test ids.
-- A re-keyed gateway is now **two** pin lines: `k8s/apps/siwe-oidc`
-  and `k8s/apps/jellyfin` (`-gateway=`). Sidecar logs
-  `token refused: issuer not pinned` when the pin is stale.
-- Standing: herdr 0.9.1 vs server 0.8.2 (restart kills panes),
-  `jlgz`, `bsj`; two `<!-- stale? -->` flags in `notes.md`
-  (Quint entries ~L167/L401) still await the owner.
+- `bog2` is still open — all scope items done; owner to close.
+- Rolling the fleet: nas1's drain sat on Longhorn's
+  `block-if-contains-last-replica` (single-replica media is nas1's by
+  design) — `node-drain-policy` was flipped to `always-allow` by hand
+  and **restored** to the chart default; cp1's drain sat on KubeVirt's
+  infra PDBs (`bhui`). Both proceed at Talos's 5-min `DrainTimeout`
+  anyway (notes 2026-10-01). 2-replica volumes rebuilt after cp1 came
+  back; cdi/csi-provisioner crashlooped through the API blip and
+  recovered. Pod corpses from the evictions were deleted.
+- `kata-qemu` handler is on the nodes, not declared in git.
+- Standing: herdr 0.9.1 vs 0.8.2, `jlgz`, `bsj`; two `<!-- stale? -->`
+  flags in `notes.md` (Quint entries) still await the owner.
 
 ## Suggested next steps
 
-- `7ymy` now has a landing place for Jellyfin: the sidecar approves as
-  the person's user when the cert carries a binding (ADR-0034,
-  Consequences). Still protocol-level work first (cert field, approval
-  UI, token claim).
-- kagent 0.10.3 trial (`docs/spikes/agents-kagent/` → `k8s/apps/kagent`).
+- `tj7c`: the first agent under kata — one Job-shaped harness image,
+  OpenRouter key sealed into `ai`, wallet-gated entry; also the first
+  agent-as-child candidate.
+- `5h0j` only if that agent's workspace feels the virtio-fs cost.
+- `bsj` backup target; `dsuj` still waits on the Windows data copy.

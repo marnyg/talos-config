@@ -30,18 +30,18 @@ history and, where the numbers still matter, in ADR-0006 and
   gateway and win2k25 run elsewhere. When w1 returns its kit is
   expired (`5hek`): re-serve its config (notes 2026-09-29).
 
-## Cluster — _verified 2026-09-22_
+## Cluster — _verified 2026-10-08_
 
 - Three nodes, Talos v1.12.6 (kernel 6.18.18), k8s v1.32.3, containerd
   2.1.6. **One fleet image** declared in all three `talos/hardware/*.yaml`
-  and running on every node:
-  `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6@sha256:d9193308…`
+  and running on every node (rolled w1 → nas1 → cp1, 2026-10-08):
+  `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata@sha256:6e8e77cb…`
   (imager-built, ADR-0023: stock Talos + `iscsi-tools` v0.2.0 +
-  `util-linux-tools` 2.41.2 + `p0agent` 0.1.6 — ships nodeagent
-  `7fb6473`, expired speak-as → re-enroll, `9af0`). Extensions on cp1
-  confirmed exactly those three; `ext-p0agent` Running (restarted by
-  the 2026-09-21 apply, no reboot), `ext-iscsid` Running. No `nebula0`,
-  no `ext-nebula`.
+  `util-linux-tools` 2.41.2 + `kata-containers` 3.26.0 (ADR-0035) +
+  `p0agent` 0.1.6 — ships nodeagent `7fb6473`). `talosctl get
+  extensions` on each node lists exactly those four; `ext-p0agent`
+  Running on all three. `RuntimeClass kata` (cloud-hypervisor) applied;
+  the `kata-qemu` handler exists on the nodes but is undeclared.
   - **cp1** — control plane, dir `talos/machines/b0-41-6f-15-3b-8f`,
     node name `talos-wu6-eib` (generated; **hostname not pinned**, `t7b2`
     pins it at the next reinstall), **static `10.0.0.68` on `eno1`**
