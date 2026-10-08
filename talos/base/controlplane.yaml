@@ -205,10 +205,6 @@ machine:
   #     - talos.platform=metal
   #     - reboot=k
 
-  # # Allows for supplying additional system extension images to install on top of base Talos image.
-  # extensions:
-  #     - image: ghcr.io/siderolabs/gvisor:20220117.0-v1.0.0 # System extension image.
-
   # Used to configure the machine's container image registry mirrors.
   registries: {}
   # # Specifies mirror configuration for each registry host namespace.

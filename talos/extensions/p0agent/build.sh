@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build chain for the fleet's declared install image (talos/hardware/
-# minipc.yaml + alienware-x15.yaml). Born as the Mesh v3 P0.3 spike;
-# adopted at the Phase 0 gate 2026-09-16 (bead 5cz). Run by hand, each
-# step idempotent; the last line prints the tag@digest to pin in BOTH
-# hardware files. Talos version + official extensions: ../installer.env.
+# Build chain for the fleet's declared install image (all three
+# talos/hardware/*.yaml). Born as the Mesh v3 P0.3 spike; adopted at
+# the Phase 0 gate 2026-09-16 (bead 5cz). Run by hand, each step
+# idempotent; the last line prints the tag@digest to pin in every
+# hardware file. Talos version + official extensions: ../installer.env.
 #
 #   1. static agent  — x86_64-linux musl build of config-server/cmd/nodeagent:
 #                      `nix build .#config-server-static` on a linux builder

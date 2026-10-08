@@ -75,6 +75,9 @@ from our registry, pinned by digest.** Nodes without one (w1,
 - The list of official extensions now lives in two places
   (`build.sh` and the factory schematic w1 uses) until w1 also carries
   the agent (Phase 1/2), after which the schematic comment is history.
+  _2026-10-08: history — all three nodes boot the owned image; the
+  list lives in `talos/extensions/installer.env` alone, and ADR-0035
+  added its second extension through it._
 - A Talos version bump means rebuilding and re-pinning the image, not
   editing a tag.
 

@@ -188,7 +188,9 @@ them:
 
 Three memos (`docs/spikes/`), rulings on the beads. Strategy-level
 dead ends so they are not re-walked (the app-seam entry — bare header
-vs signed token — moved into ADR-0032 when it was accepted):
+vs signed token — moved into ADR-0032 when it was accepted; the
+agent-runtime entries — ax, kagent, gVisor, Firecracker — into
+ADR-0035):
 
 - 2026-10-06 — Considered **a wallet-rooted mesh CA** for HTTPS on
   `*.gw.mesh.internal` (the deferred `goals.md` line since 07-31).
@@ -199,20 +201,3 @@ vs signed token — moved into ADR-0032 when it was accepted):
   ADR-0026's header injection. Landed on: nothing until an app forces
   it, then **device-local termination + name-constrained per-device CA**
   (the daemon that already fakes DNS/IPs fakes the server too).
-- 2026-10-06 — Considered **google/ax** as the agent runtime. Ruled out:
-  providers `google|anthropic` only (no OpenRouter), its objects are not
-  k8s CRDs (own gRPC plane + Redis, `ko`-built), needs Agent Substrate
-  (k8s ≥ 1.37, gVisor), pre-release. **kagent 1.0 alphas** share the
-  Substrate requirement and have no in-place upgrade from 0.10. Landed
-  on: kagent 0.10.3 trial; Substrate only when an agent needs code
-  execution and 1.0 is GA. **Reversed 2026-10-07** (`6d0u`): the
-  requirement *is* sandboxed code execution, and kagent 0.10's `Agent`
-  cannot select a `RuntimeClass` — the sandbox layer went in first
-  (Kata/cloud-hypervisor, ADR-0035); the orchestrator is reopened as
-  the null option (`tj7c`).
-- 2026-10-07 — Considered **gVisor** and **Firecracker** as the sandbox
-  runtime. Ruled out: gVisor's syscall interposition is slowest on the
-  fork/exec- and metadata-heavy profile of a coding agent; Firecracker
-  is not in Talos's kata extension (cloud-hypervisor + QEMU only) and
-  its boot-latency edge buys nothing at minutes-to-hours lifetimes.
-  Landed on Kata + cloud-hypervisor (ADR-0035).

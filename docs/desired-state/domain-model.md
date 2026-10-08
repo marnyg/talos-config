@@ -1005,6 +1005,16 @@ provisioning or recovery path may depend on it.
   a hung NFS mount, and ArgoCD reads `Healthy`. The hub's `/status`
   `storage` row watches robustness for that reason (`cnb5`,
   ADR-0027's dated note).
+- **Sandbox** — a pod that runs under its own guest kernel
+  (`runtimeClassName: kata`, Kata Containers on cloud-hypervisor;
+  ADR-0035, every node since 2026-10-08). The isolation grain for an
+  **agent workload**: code the owner did not write runs behind a
+  hardware boundary, not a syscall filter. A property of the pod's
+  runtime, independent of what orchestrates it; the scheduler charges
+  the guest's fixed cost (`overhead.podFixed`) to the node. An agent
+  that is also a protocol child (`actors/driver/k8s` births a Job; the
+  image carries the child beat) would be a sandbox with a lease — not
+  built (`tj7c`).
 
 ## Relation to the sovereign-actor sketch
 
