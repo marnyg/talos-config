@@ -5,9 +5,11 @@
 # (talos/extensions/installer.env); a node without it fails the pod
 # with "no runtime for kata", which is the right failure.
 #
-# overhead.podFixed is charged to the pod's requests at scheduling: the
-# guest kernel + kata-agent + VMM, per upstream's own figure for this
-# handler. Measured on this fleet in bog2's notes; retune from there.
+# overhead.podFixed is charged to the pod's requests at scheduling.
+# Measured on w1 for an idle pod (bog2, 2026-10-08): cloud-hypervisor
+# 149 MB + shim 43 MB + virtiofsd ×2 ~7 MB ≈ 200 MB host RSS — more than
+# upstream's 130Mi figure. The guest's 2 GiB default_memory is virtual;
+# only touched pages are resident.
 #
 # What a kata pod cannot do, by construction: hostNetwork, hostPID,
 # privileged, host devices. Nothing here needs any of them.
@@ -18,5 +20,5 @@ metadata:
 handler: kata
 overhead:
   podFixed:
-    memory: 130Mi
+    memory: 200Mi
     cpu: 250m
