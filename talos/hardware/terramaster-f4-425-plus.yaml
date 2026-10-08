@@ -25,4 +25,4 @@ machine:
     # identity). hardware/minipc.yaml has the full account; keep tag
     # AND digest in step with minipc.yaml and alienware-x15.yaml — one
     # fleet image, change all three together.
-    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6@sha256:d919330839276a00e21303c3eb7cfa2eb0bea0ab9043b6b6a908e26a1916094f
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata@sha256:6e8e77cb8c2234c2d648923da376606b96137feaf323f92db9be6239fe2341c0

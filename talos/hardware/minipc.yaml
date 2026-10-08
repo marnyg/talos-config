@@ -1,7 +1,8 @@
 machine:
   install:
-    # Imager-built installer (ours, ghcr.io/marnyg) = stock Talos + two
-    # official extensions (Longhorn's) + our own `p0agent` extension.
+    # Imager-built installer (ours, ghcr.io/marnyg) = stock Talos + the
+    # official extensions (Longhorn's two, kata-containers) + our own
+    # `p0agent` extension.
     # Versions: talos/extensions/installer.env (the
     # one place they are spelled out; build.sh reads it). The Image Factory only carries official
     # extensions, so a third-party extension means `imager` + a registry we
@@ -60,4 +61,4 @@ machine:
     # is why there is no --preserve flag to pass — so etcd and
     # /var/media come back. A fresh *install* is the destructive path.
     disk: /dev/nvme0n1
-    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6@sha256:d919330839276a00e21303c3eb7cfa2eb0bea0ab9043b6b6a908e26a1916094f
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata@sha256:6e8e77cb8c2234c2d648923da376606b96137feaf323f92db9be6239fe2341c0
