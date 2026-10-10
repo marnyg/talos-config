@@ -1046,13 +1046,28 @@ provisioning or recovery path may depend on it.
   nothing is public. The UI is an OIDC client of `siwe-oidc` (the
   person gate, ADR-0032: per-user state); a terminal client of the
   same stream is the power-user path, `kubectl exec` the debug door.
-- **Workspace** _(designed 2026-10-11, epic `ivof`; not built)_ — the
+- **Workspace** _(built 2026-10-11, `ivof.2`, interim shape)_ — the
   repo and ref an agent run works on: a clone into the sandbox's
-  emptyDir from **Forgejo** (the in-cluster git host for agent work;
-  `talos-config` itself stays on GitHub, decision `4la8`), written
-  with an org-scoped token the provisioner attaches by image (a
-  data-plane credential). Named in `#task` (`repo`, `ref`), never
-  carried as a secret.
+  emptyDir (`/workspace/<name>`, beside HOME so pi's dot-dirs stay out
+  of the result) from **Forgejo**, written with the bot user `agent`'s
+  token (a data-plane credential: SealedSecret `forgejo-agent` in `ai`,
+  mounted by `envFrom` today, attached by the driver's **outfit** once
+  `e6pu` lands). Named by `agent-run.sh -r owner/name [-b ref]` as
+  `AGENT_REPO`/`AGENT_REF` today, by `#task` (`repo`, `ref`) later —
+  never carried as a secret. The result is the branch `agent/<job>`
+  and a PR whose body is pi's final message; pushed on exit and on the
+  deadline's SIGTERM; never force-pushed. First live run: PR #1 on
+  `agents/scratch` (`agent-scratch-1`).
+- **Forgejo** _(live 2026-10-11, `ivof.1`, ADR-0037)_ — the in-cluster
+  git host for agent work: ns `forgejo`, sqlite3 + minted secrets on
+  one Longhorn PVC, `git.gw.mesh.internal` with **no Ingress gate**
+  (git clients carry no cookie — ADR-0032 ruling 1 — so Forgejo
+  authenticates itself: OIDC against `siwe-oidc` for people, as a
+  **person-gated** `-client` that sends S256 PKCE; tokens for bots).
+  Orgs: `agents` (bot `agent` writes via team `bots`) and `mirrors`
+  (pull-mirrors, read-only). Pods reach it as `forgejo.forgejo.svc`;
+  browsers through ingress-nginx. `talos-config` itself stays on
+  GitHub (decision `4la8`); break-glass local admin is `sysadmin`.
 
 ## Relation to the sovereign-actor sketch
 

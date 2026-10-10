@@ -1126,3 +1126,24 @@
 - 2026-10-11 — **`bd` can stall past 20 s on a plain `note`** (seen
   once; the retry landed in <5 s). Wrap `bd` mutations in `timeout 25`
   and re-check with `bd show` before assuming the write happened.
+- 2026-10-11 — **The default kube context on the Mac is `k3d-grove`, an
+  unrelated local cluster** that also has a Helm Forgejo in ns
+  `forgejo`. The homelab is `KUBECONFIG=$REPO_ROOT/kubeconfig` (context
+  `admin@homelab`; gitignored). Export it before any `kubectl` — a
+  swarm worker's dry-run hit the wrong cluster and read "selector
+  immutable" as a manifest bug.
+- 2026-10-11 — **`git diff` here runs `difft`** (`diff.external`), so
+  any `grep`-counted check must use `git diff --no-ext-diff`.
+- 2026-10-11 — **Image builds need the NixOS box**: `HUB_BUILDER=mar@nixos
+  k8s/apps/sandbox/build.sh` (no x86_64-linux builder on the Mac;
+  `ghcr-push.sh` builds in that store over ssh and pushes from there).
+- 2026-10-11 — **ArgoCD's git poll can lag well past 3 min**; a
+  `argocd.argoproj.io/refresh=normal` annotation on `application/apps`
+  only re-reads git (not a hand-apply) and is the safe nudge.
+- 2026-10-11 — **Anthropic monthly spend limit hit mid-swarm** (429 on
+  the `a-agent-run` worker after its commits, before its report). Check
+  the account before launching a wave; workers die silently otherwise.
+- 2026-10-11 — Forgejo: `admin` is a reserved username; the local
+  break-glass account is `sysadmin` (password in the owner's manager).
+  The `agent` token has `write:repository,write:issue` only — `/api/v1/user`
+  returns 403 with it (needs `read:user`); check against a repo instead.

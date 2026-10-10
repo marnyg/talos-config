@@ -3,11 +3,11 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Build the agent backend designed in ADR-0037 (2026-10-11),
-in order: Forgejo on the cluster (`ivof.1`), the interim
-`agent-run.sh -r/-b` workspace+PR flow (`ivof.2`), then agent-as-child
-(`e6pu`: driver RuntimeClass + per-image secret sets, child beat
-driving `pi --mode rpc`, `#task` → pointer), then the parent actor
+**Now:** Build the agent backend designed in ADR-0037. Done 2026-10-11:
+Forgejo (`ivof.1`), `agent-run.sh -r/-b` with a live PR (`ivof.2`),
+driver RuntimeClass + outfit (`e6pu.1`). Next: `e6pu.2` — the child
+beat driving `pi --mode rpc` over a stream facet (`facethttp` moves to
+`protocol/`, decision `k5hb`), `#task` → pointer; then the parent actor
 itself (SQLite+FTS5 store, list/watch/steer/search UI behind the
 person gate). Epic `ivof`.
 

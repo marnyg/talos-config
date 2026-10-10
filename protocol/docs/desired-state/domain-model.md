@@ -609,6 +609,16 @@ whose deployment-free form differs from the talos wording. Source:
   labels what it starts with `sap/lease=<id>` and `sap/owner=<actor
   id>` — immutable facts only, never `until` — and `List` returns
   them for re-adoption at start.
+- **Outfit** _(built 2026-10-11, `e6pu.1`, root ADR-0037)_ — the
+  data-plane credentials a driver dresses a child in, as `envFrom`
+  secret refs keyed on the **digest-pinned image string exactly as it
+  arrives in `StartSpec.Image`**; a miss attaches nothing. Driver
+  configuration (`k8s.Config.Outfit`, the provisioner's repeatable
+  `-outfit IMAGE=SECRET[,…]`), never a `#spawn` field — a parent that
+  could name a secret would read any secret in the namespace through a
+  child. The k8s driver also carries one `RuntimeClass` per driver
+  (`-runtime-class kata`: the sandbox), not per image. Re-pinning an
+  image means a new `-outfit` line (thread `8qwk`).
 - **Lease** — what a provisioner holds for a spawner: **passive** —
   every lease has a deadline, each renewal beat extends it, and a
   parent that stops renewing (or dies) lets its children lapse: the
