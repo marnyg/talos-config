@@ -40,10 +40,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marnyg/talos-config/config-server/facethttp"
 	"github.com/marnyg/talos-config/config-server/meshtoken"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/talos-config/protocol/facethttp"
 )
 
 // The identity headers: the caller's key, the durable name and the

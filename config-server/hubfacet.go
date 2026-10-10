@@ -33,9 +33,9 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/marnyg/talos-config/config-server/facethttp"
 	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/talos-config/protocol/facethttp"
 )
 
 // facetConn is one inbound stream-facet connection, as
