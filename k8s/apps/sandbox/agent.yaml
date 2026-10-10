@@ -75,7 +75,7 @@ spec:
           containers:
             - name: agent
               # k8s/apps/sandbox/build.sh prints the tag@digest to pin here.
-              image: ghcr.io/marnyg/sandbox-agent:9212525@sha256:9288ffdf92cd11f78c4c15aff5a9068f4538b5ceb1695c44e420f5a3d3cbea22
+              image: ghcr.io/marnyg/sandbox-agent:9da5725@sha256:f2426324dab7bfd0bcd7e66b3ef49ebb6358d287a9b3b8a066c72ca74e97d89a
               env:
                 - name: AGENT_MODEL
                   value: anthropic/claude-sonnet-4.6
