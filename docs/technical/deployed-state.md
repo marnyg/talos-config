@@ -186,7 +186,9 @@ history and, where the numbers still matter, in ADR-0006 and
   2026-10-04, `458ad40`). Groups in
   use: `admins`, `machines`, `media`. Enrolled: cp1, w1 (machines,
   auto at boot via single-use token), gateway (headless device flow),
-  `marius-mac` (admins), `phone` (media; Sony XQ-BQ52, 2026-09-20).
+  `marius-mac` (admins), `phone` (Sony XQ-BQ52, 2026-09-20 as media;
+  re-enrolled as admins 2026-10-10, same NodeId, so every group-gated
+  UI opens on it — and it carries apid/kube-api/rdp grants too).
   Name→NodeId is witnessed from the beat, not compiled (ADR-0024).
 - **Paths.** Remote members relay through the hub (ADR-0006/0022);
   same-LAN members hole-punch direct — phone on home Wi-Fi measured
