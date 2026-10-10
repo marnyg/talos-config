@@ -47,8 +47,11 @@ let
       cd "$HOME"
       model=''${AGENT_MODEL:-anthropic/claude-sonnet-4.6}
 
+      # </dev/null: the pod's stdin is a pipe the runtime never closes,
+      # and pi prepends piped stdin to the prompt — waiting for EOF
+      # forever (first kata run, 2026-10-10).
       if [ -n "''${AGENT_PROMPT:-}" ]; then
-        exec pi -p --no-session --provider openrouter --model "$model" -- "$AGENT_PROMPT"
+        exec pi -p --no-session --provider openrouter --model "$model" -- "$AGENT_PROMPT" </dev/null
       fi
 
       tmux -f /etc/tmux.conf new-session -d -s agent -x 200 -y 50 \
