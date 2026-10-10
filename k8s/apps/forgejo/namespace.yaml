@@ -1,0 +1,8 @@
+# `forgejo`: the in-cluster git host for agent work (ADR-0037, epic
+# talos-config-ivof; ivof.1). Only Forgejo lives here — the agents that
+# push to it run in `ai` (k8s/apps/sandbox) and reach it by Service name.
+# Inherits the cluster-wide PSS restricted default like media and ai.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: forgejo
