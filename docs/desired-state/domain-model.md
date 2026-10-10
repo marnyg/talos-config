@@ -1011,10 +1011,21 @@ provisioning or recovery path may depend on it.
   **agent workload**: code the owner did not write runs behind a
   hardware boundary, not a syscall filter. A property of the pod's
   runtime, independent of what orchestrates it; the scheduler charges
-  the guest's fixed cost (`overhead.podFixed`) to the node. An agent
-  that is also a protocol child (`actors/driver/k8s` births a Job; the
-  image carries the child beat) would be a sandbox with a lease — not
-  built (`tj7c`).
+  the guest's fixed cost (`overhead.podFixed`) to the node.
+- **Agent run** — one agent workload as it exists today (2026-10-10,
+  `tj7c`, ADR-0036): a Job rendered by `scripts/agent-run.sh` from the
+  suspended CronJob `agent` in `ai`, running the harness image
+  (`k8s/apps/sandbox/image.nix`: pi, tmux) under RuntimeClass kata.
+  Two modes — **batch** (a prompt in the environment; the transcript
+  is the log) and **attached** (pi inside a tmux session the owner
+  joins over `kubectl exec`). Its lifetime is the Job's deadline; its
+  workspace is an emptyDir that dies with it; its only budget is the
+  OpenRouter key's spend limit (counted caveats are M5, `0bc.5`). The
+  entry gate is the kubeconfig, which reaches the API over the mesh.
+  No orchestrator owns it (decision `6d0u`). An agent run that is also
+  a protocol **child** (`actors/driver/k8s` births the Job; the image
+  carries the child beat) would be a sandbox with a lease — not built;
+  the follow-up is `e6pu`.
 
 ## Relation to the sovereign-actor sketch
 

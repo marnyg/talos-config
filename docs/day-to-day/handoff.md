@@ -27,11 +27,9 @@
 
 ## Loose threads
 
-- `tj7c` is still `in_progress`: the owner closes it. Scope and lessons
-  are on the bead; the agent-as-child follow-up (driver `RuntimeClass`,
-  `child` beside pi, a `#task` facet) is **not filed yet**.
-- The `agent-tty` Job may still be running (4 h deadline) —
-  `kubectl -n ai delete job agent-tty` if it is.
+- `tj7c` is closed (ADR-0036 Proposed — the owner flips it to
+  Accepted). The agent-as-child follow-up is `e6pu` (driver
+  `RuntimeClass`, `child` beside pi, a `#task` facet).
 - Egress from the sandbox is unbounded (no NetworkPolicy enforcement on
   flannel); the OpenRouter key's own spend limit is the only budget
   bound (`0bc.5`). Both stated in `agent.yaml`, neither filed.
@@ -44,5 +42,5 @@
 - Use it: a real task through `scripts/agent-run.sh` to see whether the
   virtio-fs cost (`5h0j`) or the emptyDir workspace is the first thing
   that hurts.
-- File the agent-as-child follow-up when ready to design it.
+- `e6pu` (agent as child) when ready to design it.
 - `bsj` backup target; `dsuj` still waits on the Windows data copy.
