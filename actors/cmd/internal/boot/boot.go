@@ -35,12 +35,13 @@ func Logging() {
 }
 
 // Actor binds priv on iroh (homed on relay; bindAddr "" = all
-// interfaces, ephemeral port) and returns an actor over it with its
-// outbound seq seeded from the clock — every actors/cmd process
+// interfaces, ephemeral port; streams are the stream-facet ALPNs the
+// endpoint also accepts, irohtransport.Options.StreamALPNs) and
+// returns an actor over it with its outbound seq seeded from the clock — every actors/cmd process
 // outlives none of its counterparties' high-water marks (ADR-0006,
 // actor.SeqBase). The caller closes the endpoint.
-func Actor(priv ed25519.PrivateKey, relay, bindAddr string) (*actor.Actor, *irohtransport.Endpoint, error) {
-	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: bindAddr, Relay: relay})
+func Actor(priv ed25519.PrivateKey, relay, bindAddr string, streams []string) (*actor.Actor, *irohtransport.Endpoint, error) {
+	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: bindAddr, Relay: relay, StreamALPNs: streams})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -59,6 +60,9 @@ type Persisted struct {
 	relay   *string
 	bind    *string
 	printID *bool
+	// BindStreams are the stream-facet ALPNs Up binds beside the actor
+	// ALPN (the parent's agent-events); set before Up.
+	BindStreams []string
 }
 
 // Flags calls Logging and registers -state (default defaultState),
@@ -97,7 +101,7 @@ func (p *Persisted) Up() (*actor.Actor, *irohtransport.Endpoint) {
 		fmt.Println(cert.NewEdSigner(priv).ActorID())
 		os.Exit(0)
 	}
-	a, ep, err := Actor(priv, *p.relay, *p.bind)
+	a, ep, err := Actor(priv, *p.relay, *p.bind, p.BindStreams)
 	if err != nil {
 		log.Fatal(err)
 	}
