@@ -1,0 +1,173 @@
+# Forgejo: the in-cluster git host for agent work (ADR-0037, epic
+# talos-config-ivof; ivof.1). Agents push result branches here, PRs are
+# reviewed here for `agents/*` repos, and `mirrors/*` holds read-only
+# pull-mirrors (talos-config itself stays on GitHub — decision 4la8:
+# ArgoCD and the hub tip read it, and hosting it here would make the
+# cluster its own bootstrap).
+#
+# One volume on the default longhorn class (ADR-0029) holds everything:
+# the repositories (git/repositories), the sqlite3 database (data/
+# gitea.db), LFS, avatars, attachments, sessions, and the generated
+# app.ini (custom/conf/app.ini) with the secrets Forgejo mints on first
+# start (INTERNAL_TOKEN, JWT secrets). SECRET_KEY is the one secret
+# Forgejo does NOT mint when the install page is locked — it silently
+# falls back to a well-known default — so the init container writes a
+# random one to the volume once and the env points at the file. All of
+# it is data plane (invariant 2's exception): payload, not identity.
+# Nothing here is in git; losing the volume loses agent branches and
+# mirrors, not the ability to re-derive the cluster — `bsj` (backup
+# target) blocks the epic for the same reason.
+#
+# sqlite3, not Postgres: one replica (RWO volume, Recreate), a handful
+# of users, and nothing else on the cluster would share the database.
+# A second stateful service for the sake of a bigger database is the
+# wrong trade at N=1.
+#
+# No wallet gate on the Ingress (k8s/apps/forgejo/ingress.yaml says
+# why): Forgejo authenticates itself. Browser login is OIDC against the SIWE
+# bridge — the person's wallet is the identity, like ArgoCD and
+# Jellyfin — with auto-registration so a wallet's first login creates
+# its user; local registration is off. Git clients and the agent's API
+# calls carry Forgejo tokens. The OIDC auth source itself is not
+# declarable in config; bootstrap.md creates it once.
+#
+# The issuer pin below: Forgejo's server side fetches the OIDC discovery
+# document and redeems codes at the issuer name. Pods cannot resolve
+# .mesh.internal (Talos host DNS serves no /etc/hosts entries to
+# kube-dns — siderolabs/talos #9822/#13141), so the name is pinned to
+# the siwe-oidc Service's pinned ClusterIP, exactly as ArgoCD does
+# (k8s/apps/argocd/server-patch.yaml). Issuer-URL equality holds: the
+# browser and the server both see http://auth.gw.mesh.internal.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  replicas: 1
+  # RWO volume: no rolling update (Multi-Attach on the replacement pod).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: forgejo
+  template:
+    metadata:
+      labels:
+        app: forgejo
+    spec:
+      hostAliases:
+        - ip: 10.107.226.217
+          hostnames: [auth.gw.mesh.internal]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Mint SECRET_KEY once (see header). Idempotent: a non-empty file
+        # is left alone, so a restart never rotates it.
+        - name: secret-key
+          image: codeberg.org/forgejo/forgejo:11.0.16-rootless@sha256:f7c2234b9ef3115c00f0b6dc6d2d0923171ab7785995f83ca70fb132b81b79e0
+          command:
+            - sh
+            - -c
+            - test -s /var/lib/gitea/secret_key || head -c 48 /dev/urandom | base64 | tr -d '\n' > /var/lib/gitea/secret_key
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/gitea
+      containers:
+        - name: forgejo
+          # Rootless image (uid 1000, data under /var/lib/gitea, app.ini
+          # under custom/conf on the same volume); pinned by digest,
+          # the 11-rootless tag resolved to 11.0.16 on 2026-10-11.
+          image: codeberg.org/forgejo/forgejo:11.0.16-rootless@sha256:f7c2234b9ef3115c00f0b6dc6d2d0923171ab7785995f83ca70fb132b81b79e0
+          # FORGEJO__<section>__<KEY> is applied to app.ini on every
+          # start (environment-to-ini), so this block is the config.
+          env:
+            - name: FORGEJO__database__DB_TYPE
+              value: sqlite3
+            - name: FORGEJO__database__PATH
+              value: /var/lib/gitea/data/gitea.db
+            - name: FORGEJO__server__DOMAIN
+              value: git.gw.mesh.internal
+            - name: FORGEJO__server__ROOT_URL
+              value: http://git.gw.mesh.internal/
+            - name: FORGEJO__server__HTTP_PORT
+              value: "3000"
+            # No SSH Service: the mesh hostname fronts :80 only, and
+            # every client (browser, agent, mirror) speaks HTTP.
+            - name: FORGEJO__server__DISABLE_SSH
+              value: "true"
+            - name: FORGEJO__security__INSTALL_LOCK
+              value: "true"
+            - name: FORGEJO__security__SECRET_KEY__FILE
+              value: /var/lib/gitea/secret_key
+            # Registration only through the OIDC source (a wallet's
+            # first login); no local sign-up form.
+            - name: FORGEJO__service__DISABLE_REGISTRATION
+              value: "true"
+            - name: FORGEJO__service__ALLOW_ONLY_EXTERNAL_REGISTRATION
+              value: "true"
+            # Forgejo gates itself (no wallet gate on the Ingress): nothing
+            # is readable anonymously, so the mesh alone is not a
+            # read grant — a token or a wallet login is.
+            - name: FORGEJO__service__REQUIRE_SIGNIN_VIEW
+              value: "true"
+            # OpenID 2.0 (the legacy "sign in with an OpenID URL"), not
+            # OIDC; off so the login page shows only the SIWE button
+            # and the admin form.
+            - name: FORGEJO__openid__ENABLE_OPENID_SIGNIN
+              value: "false"
+            - name: FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION
+              value: "true"
+            - name: FORGEJO__oauth2_client__ACCOUNT_LINKING
+              value: auto
+            # `nickname` is Forgejo's name for the preferred_username
+            # claim (goth maps it; the valid values are userid |
+            # nickname | email) — the member name siwe-oidc issues.
+            - name: FORGEJO__oauth2_client__USERNAME
+              value: nickname
+          ports:
+            - containerPort: 3000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/gitea
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: forgejo

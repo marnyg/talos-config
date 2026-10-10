@@ -1,0 +1,15 @@
+# In-cluster name for Forgejo: the Ingress backend, and what the agent
+# runtime in `ai` dials directly (FORGEJO_URL=http://forgejo.forgejo.svc:3000
+# in the sealed forgejo-agent secret) — pods cannot resolve the mesh
+# name, and the agent's pushes should not round-trip ingress-nginx.
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgejo
+  namespace: forgejo
+spec:
+  selector:
+    app: forgejo
+  ports:
+    - port: 3000
+      targetPort: 3000

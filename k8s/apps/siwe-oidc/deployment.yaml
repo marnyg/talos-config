@@ -90,6 +90,10 @@ spec:
             # 2026-10-06, ADR-0034; the nebula-era jellyfin.cp1 origin
             # went with the TV on the v3 APK (vftt).
             - -client=jellyfin=http://jellyfin.gw.mesh.internal/sso/OID/redirect/wallet
+            # Forgejo (k8s/apps/forgejo, ADR-0037): person gate, NOT
+            # -token-client — a review signed off by "laptop" is the
+            # wrong principal; by the person is right (Jellyfin's reason).
+            - -client=forgejo=http://git.gw.mesh.internal/user/oauth2/siwe/callback
           ports:
             - containerPort: 8080
           readinessProbe:

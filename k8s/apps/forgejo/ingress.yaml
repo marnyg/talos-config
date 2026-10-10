@@ -1,0 +1,31 @@
+# Forgejo over the mesh (ADR-0009 pattern): plain HTTP, hostname
+# routing. Deliberately NO wallet gate annotation, unlike the *arr apps
+# and SillyTavern: ADR-0032 ruling 1 — a git client has no wallet cookie,
+# so a gated Ingress answers its push with a 401 and no redirect it
+# could follow. Forgejo authenticates itself instead: git and API
+# calls carry Forgejo tokens, browsers sign in with the wallet through
+# the SIWE OIDC source (deployment.yaml header), and REQUIRE_SIGNIN_VIEW
+# leaves nothing anonymous. "Every exposed service authenticates against
+# the wallet" still holds — one hop later.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: forgejo
+  namespace: forgejo
+  annotations:
+    # Git pushes (agent result branches, mirror syncs) go well past
+    # nginx's 1 MiB default.
+    nginx.ingress.kubernetes.io/proxy-body-size: 512m
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: git.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: forgejo
+                port:
+                  number: 3000
