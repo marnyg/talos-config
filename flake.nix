@@ -23,6 +23,12 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
+    # pi-coding-agent for the sandbox agent image (k8s/apps/sandbox/
+    # image.nix): the repo's nixpkgs predates the package; bumping it
+    # drags every Go/Rust build along, so pi rides its own lock entry:
+    # `nix flake update nixpkgs-pi` bumps pi and nothing else.
+    nixpkgs-pi.url = "github:nixos/nixpkgs/nixos-unstable";
+
     devenv.url = "github:cachix/devenv";
     nix2container.url = "github:nlewo/nix2container";
     nix2container.inputs = { nixpkgs.follows = "nixpkgs"; };
@@ -427,6 +433,15 @@
               self = inputs.self;
               nix2container = inputs'.nix2container.packages.nix2container;
               actors = actors.static;
+            };
+            # nix build .#sandbox-agent-image — the kata-sandboxed agent
+            # harness (k8s/apps/sandbox/image.nix; driver:
+            # k8s/apps/sandbox/build.sh).
+            packages.sandbox-agent-image = import ./k8s/apps/sandbox/image.nix {
+              inherit pkgs lib;
+              self = inputs.self;
+              nix2container = inputs'.nix2container.packages.nix2container;
+              pi = inputs'.nixpkgs-pi.legacyPackages.pi-coding-agent;
             };
           })
         ];
