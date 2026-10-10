@@ -127,13 +127,16 @@ Commit `k8s/apps/sandbox/forgejo-agent.sealed.yaml` (signed). Rotation
 = rerun step 5 with a new `--token-name` and delete the old token
 (`DELETE /api/v1/users/agent/tokens/sandbox` as admin).
 
-Check from inside the cluster:
+Check from inside the cluster (`/api/v1/user` needs `read:user`, which
+this token deliberately lacks — ask for a repo it can write instead;
+the pod must satisfy PSS restricted, hence the overrides):
 
 ```sh
 T=$(kubectl -n ai get secret forgejo-agent -o jsonpath='{.data.FORGEJO_TOKEN}' | base64 -d)
-kubectl -n ai run --rm -i curl --image=curlimages/curl --restart=Never --env="T=$T" -- \
-  sh -c 'curl -fsS -H "Authorization: token $T" http://forgejo.forgejo.svc:3000/api/v1/user'
+kubectl -n ai run --rm -i tokcheck --image=curlimages/curl --restart=Never --env="T=$T" \
+  --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":100,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"tokcheck","image":"curlimages/curl","env":[{"name":"T","value":"'"$T"'"}],"command":["sh","-c","curl -sS -o /dev/null -w \"%{http_code}\\n\" -H \"Authorization: token $T\" http://forgejo.forgejo.svc:3000/api/v1/repos/agents/scratch"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
 ```
 
-Expect `"login":"agent"`. The `ai` namespace has the Secret only once
-the sealed-secrets controller has unsealed the committed file.
+Expect `200` (verified 2026-10-11). The `ai` namespace has the Secret
+only once the sealed-secrets controller has unsealed the committed file
+(ArgoCD polls ~3 min; do not hand-apply — notes.md 2026-10-10).
