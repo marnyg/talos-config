@@ -37,7 +37,10 @@ two slices by swarm** — three workers, three merges, all live.
   provisioner redeploy), `dimt` (`REQUIRE_SIGNIN_VIEW`, `--admin-group`).
 - Broken windows from the reports were fixed the same session (siwe-oidc
   Service comment, provisioner `err` shadow, fake API namespace).
-- The port-forward `svc/forgejo 3300` may still be running on the Mac.
+- Forgejo's Ingress now carries the group gate (`dimt`; the "git clients
+can't pass it" reasoning was wrong — ADR-0037 amended). **One UI click
+left for you:** org `mirrors` → settings → Visibility → Public, so mesh
+members read mirrors without a Forgejo login (the API PATCH is a no-op).
 - Standing: 9 `<!-- stale? -->` flags; `jlgz`, `bsj` (now blocks `ivof`),
   `bhui`.
 
