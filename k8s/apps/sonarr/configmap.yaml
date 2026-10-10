@@ -188,26 +188,41 @@ data:
       done
     done
 
-    # Add NZBgeek indexer (Newznab/usenet)
-    if [ -n "$NZBGEEK_API_KEY" ] && ! echo "$existing" | grep -q "NZBgeek"; then
-      echo "Adding NZBgeek indexer..."
-      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+    # NZBgeek indexer (Newznab/usenet). Same owner semantics as the Jackett
+    # entries above: an existing one is PUT back so the categories and a
+    # rotated key in the secret reach the persisted DB; a missing one is
+    # POSTed.
+    if [ -n "$NZBGEEK_API_KEY" ]; then
+      name="NZBgeek"
+      body='{
         "enableRss": true,
         "enableAutomaticSearch": true,
         "enableInteractiveSearch": true,
         "protocol": "usenet",
         "priority": 10,
-        "name": "NZBgeek",
+        "name": "'"$name"'",
         "implementation": "Newznab",
         "configContract": "NewznabSettings",
         "fields": [
           {"name": "baseUrl", "value": "https://api.nzbgeek.info"},
           {"name": "apiPath", "value": "/api"},
           {"name": "apiKey", "value": "'"$NZBGEEK_API_KEY"'"},
-          {"name": "categories", "value": [5030, 5040]},
-          {"name": "animeCategories", "value": [5070]}
+          {"name": "categories", "value": [5030, 5040, 5070]},
+          {"name": "animeCategories", "value": [5070]},
+          {"name": "animeStandardFormatSearch", "value": true}
         ]
-      }' "$SONARR_URL/api/v3/indexer" || echo "WARN: NZBgeek indexer failed"
+      }'
+      eid=$(printf '%s\n' "$existing" | awk -v n="$name" \
+        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+      if [ -n "$eid" ]; then
+        echo "Refreshing $name indexer (id $eid)..."
+        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+          -d "${body%\}}, \"id\": $eid}" "$SONARR_URL/api/v3/indexer/$eid" || echo "WARN: $name refresh failed"
+      else
+        echo "Adding $name indexer..."
+        curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$body" "$SONARR_URL/api/v3/indexer" || echo "WARN: $name indexer failed"
+      fi
     fi
 
     echo "Sonarr configuration complete!"
