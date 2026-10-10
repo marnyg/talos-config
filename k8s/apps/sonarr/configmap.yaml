@@ -140,6 +140,14 @@ data:
     # which needs categories and a Jackett that has finished enabling the
     # indexer — so retry a while. The id is the last top-level key of each
     # object in Sonarr's pretty-printed list; nested names sit deeper.
+    #
+    # Categories: Sonarr picks `categories` or `animeCategories` by the
+    # series type. 5070 (TV/Anime) sits in both because some trackers
+    # (IPTorrents) file anime only under their Anime category — a show
+    # left as `standard` type got zero IPT results while Jackett's own UI
+    # found them (2026-10-10). animeStandardFormatSearch makes anime-type
+    # searches also ask for SxxExx, which is how those trackers title
+    # releases; absolute-number-only queries miss them.
     existing=$(curl -sf -H "$AUTH" "$SONARR_URL/api/v3/indexer")
     for id in $JACKETT_INDEXERS; do
       name="Jackett ($id)"
@@ -156,8 +164,9 @@ data:
           {"name": "baseUrl", "value": "http://jackett:9117/api/v2.0/indexers/'"$id"'/results/torznab/"},
           {"name": "apiPath", "value": "/api"},
           {"name": "apiKey", "value": "'"$JACKETT_API_KEY"'"},
-          {"name": "categories", "value": [5030, 5040]},
+          {"name": "categories", "value": [5030, 5040, 5070]},
           {"name": "animeCategories", "value": [5070]},
+          {"name": "animeStandardFormatSearch", "value": true},
           {"name": "minimumSeeders", "value": 1}
         ]
       }'
