@@ -120,8 +120,8 @@ metadata:
   name: siwe-oidc
   namespace: sso
 spec:
-  # Pinned, not allocated. argocd-server's and Jellyfin's hostAliases
-  # map auth.gw.mesh.internal to this address so their server-side OIDC
+  # Pinned, not allocated. argocd-server's, Jellyfin's and Forgejo's
+  # hostAliases map auth.gw.mesh.internal to this address so their server-side OIDC
   # calls resolve in-cluster from whichever node they land on; a
   # reallocated ClusterIP would silently break SSO. Immutable once set, so this must
   # match the existing allocation (it does) — changing it later needs the

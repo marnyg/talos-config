@@ -27,7 +27,8 @@ curl -fsS http://git.gw.mesh.internal/api/healthz
 `admin` is a reserved username in Forgejo (`CreateUser: name is
 reserved`); the account is `sysadmin`.
 
-The generated password prints once; put it in the password manager.
+The generated password prints once; seal it as `sysadmin.sealed.yaml` beside
+this file (see that file's header) — the cluster is the vault.
 It is the only local login; everything else signs in with the wallet.
 
 ```sh

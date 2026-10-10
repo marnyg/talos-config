@@ -32,10 +32,15 @@ type apiServer struct {
 	requests []string
 	// startTime, if set, is stamped on every job as the controller does.
 	startTime *time.Time
+	// namespace the fake serves; a driver pointed elsewhere gets 404,
+	// not a silent match (default testNamespace, what newDriver uses).
+	namespace string
 }
 
+const testNamespace = "sap"
+
 func newAPI(t *testing.T) (*apiServer, *httptest.Server) {
-	s := &apiServer{jobs: map[string]map[string]any{}}
+	s := &apiServer{jobs: map[string]map[string]any{}, namespace: testNamespace}
 	srv := httptest.NewServer(http.HandlerFunc(s.serve))
 	t.Cleanup(srv.Close)
 	return s, srv
@@ -49,7 +54,7 @@ func (s *apiServer) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"message":"Unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
-	const base = "/apis/batch/v1/namespaces/sap/jobs"
+	base := "/apis/batch/v1/namespaces/" + s.namespace + "/jobs"
 	if !strings.HasPrefix(r.URL.Path, base) {
 		http.Error(w, `{"message":"not found"}`, http.StatusNotFound)
 		return
@@ -142,7 +147,7 @@ func (s *apiServer) job(t *testing.T, name string) map[string]any {
 // (RuntimeClass, Outfit) before New.
 func newDriver(t *testing.T, srv *httptest.Server, opts ...func(*Config)) *Driver {
 	t.Helper()
-	cfg := Config{Host: srv.URL, Token: "tok", Namespace: "sap", Now: func() int64 { return t0 }}
+	cfg := Config{Host: srv.URL, Token: "tok", Namespace: testNamespace, Now: func() int64 { return t0 }}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -361,7 +366,7 @@ func TestKillAndList(t *testing.T) {
 // with the API's message, never swallowed.
 func TestAuthAndErrors(t *testing.T) {
 	_, srv := newAPI(t)
-	d, err := New(Config{Host: srv.URL, Token: "wrong", Namespace: "sap"})
+	d, err := New(Config{Host: srv.URL, Token: "wrong", Namespace: testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +380,7 @@ func TestAuthAndErrors(t *testing.T) {
 	if _, err := New(Config{Host: srv.URL}); err == nil {
 		t.Fatal("config without a namespace accepted")
 	}
-	if _, err := New(Config{Host: srv.URL, Namespace: "sap", CA: []byte("not pem")}); err == nil {
+	if _, err := New(Config{Host: srv.URL, Namespace: testNamespace, CA: []byte("not pem")}); err == nil {
 		t.Fatal("non-PEM CA accepted")
 	}
 }

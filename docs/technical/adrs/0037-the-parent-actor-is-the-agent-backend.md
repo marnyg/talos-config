@@ -1,8 +1,8 @@
 # ADR-0037: The parent actor is the agent backend — sessions in its own store, pi driven over RPC, results as Forgejo branches
 
-- Status: Proposed (designed 2026-10-11 in a grill-design session;
-  nothing built). Epic `talos-config-ivof`; the build is `e6pu` plus
-  `ivof.1`/`ivof.2`.
+- Status: Accepted (owner, 2026-10-11; designed the same day in a grill-design session;
+  built the same day: `ivof.1`, `ivof.2`, `e6pu.1`). Epic
+  `talos-config-ivof`; remaining build is `e6pu.2` and the parent.
 - Date: 2026-10-11
 - Related: ADR-0035 (the sandbox layer), ADR-0036 (the null option
   this grows out of; its deferred "protocol facet" and "wallet-gated

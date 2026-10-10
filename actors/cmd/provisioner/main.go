@@ -134,8 +134,10 @@ func main() {
 	)
 	switch *drv {
 	case "k8s":
-		cfg, err := k8s.InCluster()
-		if err != nil {
+		// Assign through: `cfg, err :=` would shadow the outer err
+		// that `d, err = k8s.New` below writes to.
+		var cfg k8s.Config
+		if cfg, err = k8s.InCluster(); err != nil {
 			log.Fatal(err)
 		}
 		if *namespace != "" {

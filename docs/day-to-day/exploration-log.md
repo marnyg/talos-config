@@ -184,116 +184,12 @@ them:
   torrentdownloads: 0 TV results. Landed on thepiratebay (apibay) and
   knaben (meta-search). Re-probe before adding others; they rot.
 
-## Agent workspaces — where the git credential lives (2026-10-11, `ivof.3`)
+## Agent workspaces (2026-10-11)
 
-Question: a child agent needs write access to a repo; is that token a
-Kit concern, a `#task` concern, or neither? Ruled **same class as the
-OpenRouter key** (a data-plane credential, glossary): the driver
-provisions it at spawn, child scope = token scope, one lease.
-
-- Ruled out **token in the starter kit**: the kit is `{grants,
-  locations}` (`protocol/spawn/spawn.go:262`) — chains only; a bearer
-  token would be a second authority primitive beside the delegation
-  cert (protocol invariant 1) and would make the parent hold git
-  credentials for every child.
-- Ruled out **token in the `#task` envelope**: the parent becomes a
-  token distributor, the secret sits in a signed body that can leak
-  into a transcript or reply, and a long-lived child accumulates
-  credentials for repos it was not born for.
-- **Deferred, not ruled out: Forgejo deploy keys** — the child mints an
-  SSH keypair at birth (protocol invariant 7), the parent registers the
-  pubkey as a write deploy key and removes it at `Kill`/deadline; no
-  secret travels. Needs a Forgejo-aware parent and parent-side cleanup
-  (deploy keys do not expire). The endgame after `e6pu`.
-- Ruled out **the parent naming the credential in the spawn request**:
-  `#spawn` is `{image, params, until}` and `params` is opaque to the
-  provisioner (it becomes the intro); a parent that can name namespace
-  secrets reads any secret in `ai` through a child. Landed on
-  **provisioner policy keyed on image** (driver `Config`, ops-side):
-  `sandbox-agent` ⇒ `{openrouter, forgejo-agent}`. Accepted cost:
-  scope = the token's scope, so v0 is one token for an `agents` org and
-  "a child cannot be re-pointed" holds per org, not per repo, until
-  deploy keys.
-
-### Result channel and sessions (same session)
-
-- Pinned: a task's result is a **Forgejo branch + PR**; the
-  swarm-worker report is the PR body; the `#task` reply is a pointer
-  `{status, branch, head, pr}` (invariant 12: a reply carrying the only
-  copy of the result is a result that can be lost). Human merges in
-  Forgejo for v0. Ruled out: report inline in the reply; report as a
-  file on the branch (pollutes review); BLOCKED without a push.
-- **Superseded within the session: git as the session store**
-  (`agents/sessions` repo, `pi --session-dir`, push on timer + SIGTERM).
-  Right for durability and resume, wrong once "watch a run live from
-  the phone" and "search every transcript" became goals \u2014 git streams
-  nothing and indexes nothing.
-- Ruled out **a standalone session service**: it is the parent actor's
-  born table with more columns, and the ingest boundary (pi events over
-  a stream) would be built twice \u2014 plain HTTP now, facethttp at
-  `e6pu`. The backend *is* the parent (spawner + store + UI behind the
-  group gate); not the orchestrator `6d0u`/ADR-0036 rejected, which was
-  third-party reconciliation.
-- Ruled out **Postgres for the parent's store**: single writer, single
-  owner, no HA anywhere else (`4ze8`); SQLite+FTS5 on a Longhorn PVC
-  in the parent's manifest. First actor with a durable datastore \u21d2
-  `bsj` (backup target) blocks the epic.
-- Ruled out **a storage provider actor** ("bring your own provider" for
-  state): BYO provider already *is* the compute design (invariant 13,
-  ADR-0009, two drivers, payment deferred to M5 by acting as our own
-  provider); a volume has nothing to hand over the mesh, so storage is
-  a lease dimension, deferred as `264f` under ADR-0005's
-  consumer-driven rule. This iteration uses plain primitives.
-
-### Ingest (same session)
-
-- Pinned: **the child beat runs pi as an RPC subprocess** (`pi --mode
-  rpc --session-dir …`): the `#task` prompt goes down as a `prompt`
-  command, every stdout record goes up to the parent, `steer`/`abort`
-  come down from the parent's UI, deadline/`#kill`/lapse = close stdin
-  (pi's orderly shutdown). Two artifacts: the event stream (live tail,
-  search) and pi's own session JSONL shipped at settle (resume/fork).
-- Ruled out **a pi extension pushing to the beat** (herdr's pattern):
-  observe-only, needs a second invented channel for control, runs
-  inside the sandboxed process. Ruled out **tailing the session file**:
-  racy on an append-in-progress file, no structured events, no
-  control. The TUI-in-tmux entrypoint stays as a debug path only; it
-  cannot share a pi process with the RPC path.
-- Pinned **sharing**: the parent's web UI sits behind the **person
-  gate** (OIDC client of `siwe-oidc`, like ArgoCD) because a session
-  list with owners and shares is per-user state (ADR-0032's own
-  invalidation clause for the group gate). Owner = the wallet that
-  submitted the task; a share list of wallets/groups at two levels,
-  `view` and `steer`; `admins` views all; nothing public; enforced in
-  the parent on every request and stream subscription; steers carry
-  the sender's wallet into the transcript. The power-user terminal is
-  a client of the parent's stream under the same ACL (later);
-  `kubectl exec` stays the debug door. Ruled out: group gate + ACL by
-  bare `X-Mesh-Groups` (ADR-0032 forbids it); device-level sharing
-  (`7ymy` makes it moot anyway); finer rights than view/steer (the
-  orchestrator question again).
-
-### Forgejo (same session)
-
-- Pinned: **person gate** (`-client=forgejo=\u2026` on `siwe-oidc`, OIDC auth
-  source with auto-registration), **not** `-token-client` \u2014 a review by
-  "laptop" is wrong, by the person is right (the Jellyfin reasoning).
-  No `auth-url` on the Ingress: Forgejo gates itself, because git
-  clients carry no cookie (ADR-0032 ruling 1 gives a 401 with no
-  redirect) and the agent path is pod-network (`forgejo.forgejo.svc`).
-  Humans: PAT in the laptop's credential helper; agents: the
-  org-scoped token sealed in `ai`. SSH off for v0 (`gw` is HTTP-only).
-- Own namespace `forgejo`, raw manifests, sqlite3 backend on one
-  Longhorn PVC (single owner; Helm chart only if raw turns ugly), host
-  `git.gw.mesh.internal`. Orgs: `agents` (writable by the agents
-  token), `mirrors` (pull-mirrors of GitHub, read-only). Working on
-  `talos-config`: agent branch on `agents/talos-config` (fork of the
-  mirror) \u2192 owner fetches, merges **signed** on the laptop, pushes to
-  GitHub; the Forgejo PR is review-only (decision `4la8`, signed-tip
-  rule intact).
-- Ruled out: group gate in front of Forgejo (breaks every non-browser
-  git client); Postgres (no second owner, no HA elsewhere); SSH on
-  the mesh for v0 (a second port on `gw`, nothing agents need).
+Ruled-out alternatives for the git credential, the result channel,
+the session store, the ingest path, sharing, and Forgejo's auth posture
+moved into ADR-0037 (Accepted 2026-10-11) when it landed, per this file's
+pruning rule (see the 2026-10-04 note above).
 
 ## Spike round 2026-10-06 — app seam, HTTPS, agents
 

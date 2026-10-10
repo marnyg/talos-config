@@ -1,0 +1,22 @@
+# Forgejo's break-glass local admin (bootstrap.md step 1), kept as a
+# sealed secret no pod mounts: a vault entry, readable only through the
+# wallet-gated kubeconfig —
+#   kubectl -n forgejo get secret forgejo-sysadmin -o jsonpath='{.data.password}' | base64 -d
+# Everything else signs in with the wallet (auth source `siwe`); this is
+# for when siwe-oidc is down. Rotate: change it in Forgejo (or
+# `forgejo admin user change-password`), reseal with kubeseal --cert
+# talos/clusters/homelab/sealed-secrets.crt.
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: forgejo-sysadmin
+  namespace: forgejo
+spec:
+  encryptedData:
+    password: AgCWOamSfxkIVt9QvkIrGPwM6todN8zkGWey+rwr5qktR5ajSeBkUSBip2xec4ONcESSF0aV9sHvrb6GR+VAnmk1ZFfB66n2JxIfAIjIf8hlIeUeDXAmvcTWHwYx/5grJA2af3LYsiTSx2Vf/viDwCr69oci433dT8dILAmUwtiOxWWqo9Z9iTPDqCmCvI54KWRzunJy3FxWw6gKSEEgXQAaMTIxIXG3bDzHrUPpIN3CS4XaJ7hhGUJpG7IdUy+xmF3mC1eGQ1rFGPVjhnadDS2tHfk3hj5n4CIfOWfzYb7zkxgrDDRAqIdzrMB7LnD3XutPqLSEnVs/8gIC8MNps5rsb0xMboysyqRmUDY5qSct20zseTNXmoVDQi4o/X2yYMJyEIf4fZpsZSnuyS+kWOKL6pLk3sb/Ro2pB0yVv268K6XPNrn/aIt2keq1R02IGxPCsUGRp72Z3+GtGRCqPTckPFw5p3HUj/rXIqV7ExsUXl3xL3WhUoG6EkeGfSLTFhD+eLosSDKUxpmYMpmvAGUAtkyV/9vdH1DrBXSEahNynkKKkDstfY3wjAwnN1jycMBe/+n6eIsgR0B7unIc8pR+om3G7U27RGq54v447m+SL0q8poWyTb/d9BYGetdXW3yBBNnnJo9eqiNA+NeFdezA9dmVbMWqp8zOnFLons5S4RvlCFvBm9uA1aJk/oBIESY/YWNrNpbRjl0Rfu0=
+    username: AgAkK5VKfhh8YFHghaRYKofgeKeHhZaUsLumwif2GzEjYCexsYWuqYqhVCmXdY5/etpM+rlmm2+BgHlyx8LSwrWlgCEUYsz8Q8Bq1HmK4ZZT/kxrrWsEL725Ky8hK/Nu+L2Yef06jtLoE+SOitic9AdBhhLX4xKD4B3hdyQWA7ZlWAIqGXU7WPu49dk0aJKYjYzT7w+WqJcwX1tqKRFMzDm8Mq98XnP6q0fFcS5VrM+9ckChizHOufMYfxyTzZ1rO1Nf2AqVOJ6Z5VU4kHxQxEJMaQTP6dWZW1xYSeFha+jtP8ZUSIUVP+srOvpypt0guZLfdBjXegWVmYxAYD+52rX+VZNYk07bOhm2ITuGTlxb+1dIC9rAIL8s1FxHBdsx0m0WD+H9TtF0ryrazPxpXvZcStgFvkoMpRqt4Dk+cUj/8/+IQr/+lnyd7VI1kJMSLZ1tin2kxFeVHPX4bQOVttxnzDk+WyVjVdvbUuKCfEMqEaJzD1v9IuK3LpFQuzXbHcj6YbzQV0+4CGUzd1AZaHqZSo/MC0nZgcDHLn7ia5+g7eSrSnXg0mCdblIDBIXLguNNfBA2SVRWz3jIeZguIPfjYTPY5Tsp1hrbDI16VcDI6MdrADLjK8LoluoYpZb2vDTMZAPva6ij3ojjToUi9sMMUf2DfN/a0JhQurIkzetF3UpPWRS9E4t1ouCisCzT6v4khGU+t06mlQ==
+  template:
+    metadata:
+      name: forgejo-sysadmin
+      namespace: forgejo

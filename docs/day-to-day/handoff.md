@@ -27,17 +27,16 @@ two slices by swarm** — three workers, three merges, all live.
 
 ## Loose threads
 
-- Beads awaiting your close: `ivof.1`, `ivof.2`, `e6pu.1` (all merged
-  and verified). ADR-0036/0037 await Accepted.
+- `ivof.1`, `ivof.2`, `e6pu.1` closed; ADR-0037 Accepted. ADR-0036 still
+  Proposed. The `sysadmin` password is sealed as
+  `k8s/apps/forgejo/sysadmin.sealed.yaml` (the cluster is the vault).
 - `a-agent-run` worker died on the **Anthropic monthly spend limit**
   after committing; its report is missing — the orchestrator reviewed
   the diff instead. Check the account before the next swarm.
 - Threads filed: `8qwk` (outfit keyed on exact digest ⇒ re-pin needs a
   provisioner redeploy), `dimt` (`REQUIRE_SIGNIN_VIEW`, `--admin-group`).
-- Broken windows from reports, not fixed: `siwe-oidc/deployment.yaml:124`
-  Service comment should name Forgejo as a third hostAliases consumer;
-  `provisioner/main.go:103` shadows `err` in the k8s case;
-  `k8s_test.go:36` fake API hardcodes ns `sap`.
+- Broken windows from the reports were fixed the same session (siwe-oidc
+  Service comment, provisioner `err` shadow, fake API namespace).
 - The port-forward `svc/forgejo 3300` may still be running on the Mac.
 - Standing: 9 `<!-- stale? -->` flags; `jlgz`, `bsj` (now blocks `ivof`),
   `bhui`.
