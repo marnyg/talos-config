@@ -31,6 +31,12 @@
 // (ADR-0009's open item, v0 answer). A customer presents it empty.
 // Revocation is expiry or a restart without the flag.
 //
+// Outfit (k8s only, ADR-0037): -runtime-class puts every pod under a
+// RuntimeClass (kata for sandboxed agents, e6pu); -outfit
+// IMAGE=SECRET[,SECRET…] (repeatable) dresses that digest-pinned
+// image in those secrets as envFrom. Policy lives here, by image —
+// #spawn stays {image, params, until}.
+//
 // Beat: provisioner.Sweep (lapses whatever a parent stopped
 // extending; on docker this IS the deadline) and a fresh reach-me-at.
 // Restart: Adopt before Listen re-takes every labelled container the
@@ -41,11 +47,13 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -73,7 +81,25 @@ func main() {
 		locTTL     = flag.Duration("location-ttl", 10*time.Minute, "lifetime of each published reach-me-at; keep well above -beat")
 		adoptGrace = flag.Duration("adopt-grace", provisioner.DefaultAdoptGrace, "deadline given to leases adopted at start")
 		drvTimeout = flag.Duration("driver-timeout", provisioner.DefaultDriverTimeout, "bound on each driver call (docker pulls inside Start)")
+		runtimeCls = flag.String("runtime-class", "", "k8s: runtimeClassName on every pod (e.g. kata); default the cluster's")
 	)
+	// outfit is provisioner policy, keyed on image (ADR-0037): the
+	// data-plane secrets a child image is dressed in. Never on the
+	// wire: a parent that could name a secret in #spawn would read
+	// any secret in the namespace through a child.
+	outfit := map[string][]string{}
+	flag.Func("outfit", "k8s: <image>=<secret>[,<secret>...] envFrom secrets for a digest-pinned image; repeatable, same image appends", func(s string) error {
+		img, secrets, ok := strings.Cut(s, "=")
+		if !ok || img == "" || secrets == "" {
+			return fmt.Errorf("want <image>=<secret>[,<secret>...], got %q", s)
+		}
+		for _, n := range strings.Split(secrets, ",") {
+			if n = strings.TrimSpace(n); n != "" {
+				outfit[img] = append(outfit[img], n)
+			}
+		}
+		return nil
+	})
 	flag.Var(&cust, "customer", "actor id consented to #spawn/#extend/#kill; repeatable")
 	flag.Var(&lhFlag, "lighthouse", "lighthouse actor id to #publish each reach-me-at to (this id must be one of its -member); dialled on -relay")
 	flag.Parse()
@@ -116,11 +142,16 @@ func main() {
 			cfg.Namespace = *namespace
 		}
 		cfg.Now = a.Now
+		cfg.RuntimeClass = *runtimeCls
+		cfg.Outfit = outfit
 		if d, err = k8s.New(cfg); err != nil {
 			log.Fatal(err)
 		}
-		slog.Info("provisioner: k8s", "host", cfg.Host, "namespace", cfg.Namespace)
+		slog.Info("provisioner: k8s", "host", cfg.Host, "namespace", cfg.Namespace, "runtimeClass", cfg.RuntimeClass, "outfits", len(cfg.Outfit))
 	case "docker":
+		if *runtimeCls != "" || len(outfit) > 0 {
+			slog.Warn("provisioner: -runtime-class/-outfit are k8s-only; ignored with -driver docker")
+		}
 		if d, err = docker.New(docker.Config{Host: *dockerHost}); err != nil {
 			log.Fatal(err)
 		}
