@@ -138,9 +138,15 @@ func (s *apiServer) job(t *testing.T, name string) map[string]any {
 	return j
 }
 
-func newDriver(t *testing.T, srv *httptest.Server) *Driver {
+// newDriver builds a Driver against srv; opts adjust the Config
+// (RuntimeClass, Outfit) before New.
+func newDriver(t *testing.T, srv *httptest.Server, opts ...func(*Config)) *Driver {
 	t.Helper()
-	d, err := New(Config{Host: srv.URL, Token: "tok", Namespace: "sap", Now: func() int64 { return t0 }})
+	cfg := Config{Host: srv.URL, Token: "tok", Namespace: "sap", Now: func() int64 { return t0 }}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	d, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +193,14 @@ func TestStartShape(t *testing.T) {
 	if c["securityContext"].(map[string]any)["allowPrivilegeEscalation"] != false {
 		t.Fatalf("container securityContext %v", c["securityContext"])
 	}
+	// Unconfigured: no runtime class, no outfit — both fields omitted,
+	// not empty.
+	if _, ok := pod["runtimeClassName"]; ok {
+		t.Fatalf("runtimeClassName present: %v", pod["runtimeClassName"])
+	}
+	if _, ok := c["envFrom"]; ok {
+		t.Fatalf("envFrom present: %v", c["envFrom"])
+	}
 
 	// Shape rules the driver enforces before the API sees anything.
 	if _, err := d.Start(context.Background(), provisioner.StartSpec{Lease: "0022", Image: "child:latest", Until: t0 + 600}); err == nil {
@@ -205,6 +219,63 @@ func TestStartShape(t *testing.T) {
 	var ae *apiError
 	if !errors.As(err, &ae) || ae.Code != http.StatusConflict {
 		t.Fatalf("duplicate start: %v", err)
+	}
+}
+
+// TestStartOutfit: Config.RuntimeClass lands as the pod's
+// runtimeClassName; Config.Outfit dresses the container in envFrom
+// secretRefs in order, keyed on the exact digest-pinned image — the
+// same name at another digest is a miss, and a miss renders no
+// envFrom at all (ADR-0037: the outfit is driver policy by image).
+func TestStartOutfit(t *testing.T) {
+	other := "ghcr.io/x/child@sha256:" + strings.Repeat("b", 64)
+	api, srv := newAPI(t)
+	d := newDriver(t, srv, func(c *Config) {
+		c.RuntimeClass = "kata"
+		c.Outfit = map[string][]string{image: {"openrouter", "forgejo-agent"}}
+	})
+	start := func(d *Driver, lease, img string) map[string]any {
+		t.Helper()
+		if _, err := d.Start(context.Background(), provisioner.StartSpec{Lease: lease, Owner: "ed:ab", Image: img, Until: t0 + 600}); err != nil {
+			t.Fatal(err)
+		}
+		return api.job(t, "sap-"+lease)["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
+	}
+
+	// Hit: runtime class on the pod, both secrets in order, required.
+	pod := start(d, "0011", image)
+	if pod["runtimeClassName"] != "kata" {
+		t.Fatalf("runtimeClassName %v", pod["runtimeClassName"])
+	}
+	c := pod["containers"].([]any)[0].(map[string]any)
+	ef, _ := c["envFrom"].([]any)
+	if len(ef) != 2 {
+		t.Fatalf("envFrom %v", c["envFrom"])
+	}
+	for i, want := range []string{"openrouter", "forgejo-agent"} {
+		ref := ef[i].(map[string]any)["secretRef"].(map[string]any)
+		if ref["name"] != want || ref["optional"] != false {
+			t.Fatalf("envFrom[%d] %v", i, ef[i])
+		}
+	}
+
+	// Miss: same name, another digest — the outfit is keyed on the
+	// whole pinned string. The runtime class still applies: it is per
+	// driver, not per image.
+	pod = start(d, "0022", other)
+	if pod["runtimeClassName"] != "kata" {
+		t.Fatalf("runtimeClassName %v", pod["runtimeClassName"])
+	}
+	c = pod["containers"].([]any)[0].(map[string]any)
+	if _, ok := c["envFrom"]; ok {
+		t.Fatalf("envFrom on a miss: %v", c["envFrom"])
+	}
+
+	// An outfit entry with no secrets is a miss too, not an empty list.
+	d2 := newDriver(t, srv, func(c *Config) { c.Outfit = map[string][]string{image: {}} })
+	c = start(d2, "0033", image)["containers"].([]any)[0].(map[string]any)
+	if _, ok := c["envFrom"]; ok {
+		t.Fatalf("envFrom on an empty outfit: %v", c["envFrom"])
 	}
 }
 

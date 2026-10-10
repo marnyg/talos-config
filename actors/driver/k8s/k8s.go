@@ -53,6 +53,20 @@ type Config struct {
 	// Now is the clock the deadline is computed against at Start;
 	// nil ⇒ time.Now. Set it to the provisioner actor's clock.
 	Now func() int64
+	// RuntimeClass is the pod's runtimeClassName (a sandboxed agent
+	// child runs under `kata`, e6pu); empty ⇒ omitted, the cluster
+	// default.
+	RuntimeClass string
+	// Outfit is the data-plane credentials a child is dressed in, by
+	// image: the secrets rendered as `envFrom` on the container, in
+	// order. Keyed on the digest-pinned image string exactly as it
+	// arrives in StartSpec.Image; a miss ⇒ no envFrom. This is
+	// provisioner policy, not wire input (ADR-0037): `#spawn` stays
+	// {image, params, until}, because a parent that could name a
+	// secret would read any secret in the namespace through a child.
+	// The driver decides what an image gets; the parent only picks
+	// the image.
+	Outfit map[string][]string
 }
 
 // DefaultTTLAfterFinished keeps a finished Job around long enough to
@@ -212,6 +226,7 @@ type jobSpec struct {
 type podSpec struct {
 	RestartPolicy                string          `json:"restartPolicy,omitempty"`
 	AutomountServiceAccountToken *bool           `json:"automountServiceAccountToken,omitempty"`
+	RuntimeClassName             string          `json:"runtimeClassName,omitempty"`
 	SecurityContext              json.RawMessage `json:"securityContext,omitempty"`
 	Containers                   []container     `json:"containers"`
 }
@@ -220,12 +235,40 @@ type container struct {
 	Name            string          `json:"name"`
 	Image           string          `json:"image"`
 	Env             []envVar        `json:"env,omitempty"`
+	EnvFrom         []envFrom       `json:"envFrom,omitempty"`
 	SecurityContext json.RawMessage `json:"securityContext,omitempty"`
 }
 
 type envVar struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+// envFrom is one outfit secret: every key of the Secret becomes an
+// env var. Not optional — a missing secret is a misconfigured outfit
+// and the pod should fail to start rather than run without its
+// credentials.
+type envFrom struct {
+	SecretRef secretRef `json:"secretRef"`
+}
+
+type secretRef struct {
+	Name     string `json:"name"`
+	Optional bool   `json:"optional"`
+}
+
+// outfit renders cfg.Outfit[image] as envFrom entries, in order; nil
+// on a miss (so the field is omitted).
+func (d *Driver) outfit(image string) []envFrom {
+	names := d.cfg.Outfit[image]
+	if len(names) == 0 {
+		return nil
+	}
+	out := make([]envFrom, 0, len(names))
+	for _, n := range names {
+		out = append(out, envFrom{SecretRef: secretRef{Name: n}})
+	}
+	return out
 }
 
 // PodSecurity `restricted` (the cluster's namespaces enforce it).
@@ -265,11 +308,13 @@ func (d *Driver) Start(ctx context.Context, spec provisioner.StartSpec) (provisi
 	j.Spec.Template.Spec = podSpec{
 		RestartPolicy:                "Never",
 		AutomountServiceAccountToken: ptr(false),
+		RuntimeClassName:             d.cfg.RuntimeClass,
 		SecurityContext:              podSecurity,
 		Containers: []container{{
 			Name:            "actor",
 			Image:           spec.Image,
 			Env:             []envVar{{Name: driver.ParamsEnv, Value: string(spec.Params)}},
+			EnvFrom:         d.outfit(spec.Image),
 			SecurityContext: containerSecurity,
 		}},
 	}
