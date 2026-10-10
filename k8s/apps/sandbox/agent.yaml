@@ -84,6 +84,16 @@ spec:
               envFrom:
                 - secretRef:
                     name: openrouter
+                # forgejo-agent (FORGEJO_URL, FORGEJO_TOKEN: the bot user
+                # `agent`, write:repository + write:issue) is what
+                # `agent-run.sh -r owner/name` clones and pushes with
+                # (ivof.2). Interim: attached here to every run, optional
+                # so a run without the SealedSecret still boots; once e6pu
+                # lands the driver attaches it by image (ADR-0037) and this
+                # entry goes.
+                - secretRef:
+                    name: forgejo-agent
+                    optional: true
               volumeMounts:
                 - name: workspace
                   mountPath: /workspace
