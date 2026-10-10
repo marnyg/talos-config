@@ -12,6 +12,12 @@
 //	            is homed, so the two meet at one relay server
 //	SAP_BEAT    renewal interval (Go duration); default child.DefaultBeat
 //	SAP_LOG     iroh log level: trace|debug|info|warn (off by default)
+//	SAP_PI      the pi binary (default pi); the child serves #task,
+//	            #steer and #abort and streams pi's records up the
+//	            parent's agent-events facet (child.TaskOptions);
+//	            SAP_PI="" (set, empty) ⇒ #ping only
+//	SAP_PI_ARGS extra pi arguments, comma-separated (--provider,x,…)
+//	SAP_WORKDIR pi's working directory; default /workspace
 //
 // The key is minted here, in memory, and never written: a spawned
 // actor's identity exists only on its own compute (invariant 13). It
@@ -19,6 +25,8 @@
 // P#birth (spawn.Born), then beats (actors/child.Run) until the
 // renewal edge to the parent lapses — exit 0, its lease is the
 // provisioner's to sweep — or the platform stops it (SIGTERM: exit 0).
+// Meanwhile it is the parent's agent (talos-config-e6pu.2): #task runs
+// pi and streams its records up the parent's agent-events facet.
 package main
 
 import (
@@ -26,11 +34,13 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"io"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -38,6 +48,7 @@ import (
 	"github.com/marnyg/talos-config/actors/cmd/internal/boot"
 	"github.com/marnyg/talos-config/actors/driver"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
+	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/spawn"
 )
 
@@ -66,19 +77,20 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	a, ep, err := boot.Actor(priv, relay, "")
+	a, ep, err := boot.Actor(priv, relay, "", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer ep.Close()
-	slog.Info("child: up", "id", a.ID(), "parent", in.Parent, "relay", relay, "beat", beat)
+	task := taskOptions(ep)
+	slog.Info("child: up", "id", a.ID(), "parent", in.Parent, "relay", relay, "beat", beat, "pi", task.PiBin, "workdir", task.Dir)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	listen := make(chan error, 1)
 	go func() { listen <- a.Listen(ctx) }()
 
-	err = child.Run(ctx, a, in, child.Options{Beat: beat})
+	err = child.Run(ctx, a, in, child.Options{Beat: beat, Task: task})
 	stop()
 	<-listen
 	switch {
@@ -87,6 +99,55 @@ func main() {
 	default:
 		log.Fatal(err)
 	}
+}
+
+// taskOptions reads SAP_PI, SAP_PI_ARGS and SAP_WORKDIR and binds the
+// Dialer to iroh: one connection to the parent's agent-events facet,
+// admitted on the preamble, kept for the process's lifetime and
+// re-dialled when it is gone; each Dial call is one stream on it.
+func taskOptions(ep *irohtransport.Endpoint) child.TaskOptions {
+	bin, set := os.LookupEnv("SAP_PI")
+	if !set {
+		bin = "pi"
+	}
+	if bin == "" {
+		return child.TaskOptions{}
+	}
+	var args []string
+	if s := os.Getenv("SAP_PI_ARGS"); s != "" {
+		args = strings.Split(s, ",")
+	}
+	dir := os.Getenv("SAP_WORKDIR")
+	if dir == "" {
+		dir = "/workspace"
+	}
+	var mu sync.Mutex
+	var conn *irohtransport.Conn
+	dial := func(ctx context.Context, parent cert.ActorID, hints []string, preamble []byte) (io.ReadWriteCloser, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if conn != nil && conn.Alive() {
+			if raw, err := conn.Open(ctx); err == nil {
+				return raw, nil
+			}
+		}
+		if conn != nil {
+			_ = conn.Close()
+			conn = nil
+		}
+		c, err := ep.DialConn(ctx, parent, hints, child.FacetAgentEvents, preamble)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := c.Open(ctx)
+		if err != nil {
+			_ = c.Close()
+			return nil, err
+		}
+		conn = c
+		return raw, nil
+	}
+	return child.TaskOptions{PiBin: bin, PiArgs: args, Dir: dir, Dial: dial}
 }
 
 // homeOf is the first iroh relay the parent's reach-me-at names, or

@@ -49,6 +49,9 @@ type driver struct {
 	// bornOnly, when set, runs spawn.Born instead of child.Run and hands
 	// the child actor over on it once born: the test then owns Grants.
 	bornOnly chan *actor.Actor
+	// runCtx, when set, is child.Run's context instead of the rig's: a
+	// test that ends the child alone (deadline) cancels it.
+	runCtx context.Context
 }
 
 func (d *driver) Start(_ context.Context, spec provisioner.StartSpec) (provisioner.Handle, error) {
@@ -72,7 +75,11 @@ func (d *driver) Start(_ context.Context, spec provisioner.StartSpec) (provision
 		}()
 		return provisioner.Handle("ctr-" + spec.Lease), nil
 	}
-	go func() { d.ended <- child.Run(d.r.ctx, a, in, d.opts) }()
+	rctx := d.r.ctx
+	if d.runCtx != nil {
+		rctx = d.runCtx
+	}
+	go func() { d.ended <- child.Run(rctx, a, in, d.opts) }()
 	return provisioner.Handle("ctr-" + spec.Lease), nil
 }
 
