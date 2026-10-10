@@ -11,6 +11,13 @@
 // package the identity is ambient (a context value, a header): where
 // capability discipline ends at the actor that terminates the stream
 // (invariants, structural trade-offs).
+//
+// The package is protocol-level — it imports only protocol/cert and
+// stdlib — because a stream facet carrying HTTP is protocol vocabulary,
+// not a deployment detail: today's consumers are the hub's hub-http and
+// the gateway's ingress-http, and the child's event uploader
+// (talos-config-e6pu.2) under actors/ cannot import config-server, so
+// it lives here (decision talos-config-k5hb).
 package facethttp
 
 import (
@@ -98,6 +105,27 @@ func (c *Conn) RemoteAddr() net.Addr             { return Addr(string(c.peer)) }
 func (c *Conn) SetDeadline(time.Time) error      { return nil }
 func (c *Conn) SetReadDeadline(time.Time) error  { return nil }
 func (c *Conn) SetWriteDeadline(time.Time) error { return nil }
+
+// Dialed adapts one stream the CALLER opened on a stream facet to
+// net.Conn for an http.Transport (or a gRPC dialer): the mirror of
+// Conn on the accept side. Deadlines are accepted and ignored for
+// the same reason (see Conn). local names this side (a facet or
+// member name), peer the receiver.
+func Dialed(rwc io.ReadWriteCloser, local string, peer cert.ActorID) net.Conn {
+	return &dialedConn{ReadWriteCloser: rwc, local: local, peer: peer}
+}
+
+type dialedConn struct {
+	io.ReadWriteCloser
+	local string
+	peer  cert.ActorID
+}
+
+func (c *dialedConn) LocalAddr() net.Addr              { return Addr(c.local) }
+func (c *dialedConn) RemoteAddr() net.Addr             { return Addr(string(c.peer)) }
+func (c *dialedConn) SetDeadline(time.Time) error      { return nil }
+func (c *dialedConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *dialedConn) SetWriteDeadline(time.Time) error { return nil }
 
 // Addr is the net.Addr of a stream endpoint: a name, no port.
 type Addr string

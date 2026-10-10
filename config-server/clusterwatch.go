@@ -55,6 +55,7 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/config/configloader"
 
 	"github.com/marnyg/talos-config/config-server/machines"
+	"github.com/marnyg/talos-config/protocol/facethttp"
 )
 
 const (
@@ -419,7 +420,7 @@ func (g *clusterWatcher) kubeClient(m machines.Machine, fc facetClient) (*kubeCl
 			if err != nil {
 				return nil, err
 			}
-			return &facetStreamConn{ReadWriteCloser: raw, peer: fc.Peer()}, nil
+			return facethttp.Dialed(raw, HubMemberName, fc.Peer()), nil
 		},
 		TLSClientConfig: &tls.Config{
 			Certificates: []tls.Certificate{*admin.Certificate},

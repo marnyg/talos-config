@@ -28,10 +28,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"time"
 
-	"github.com/marnyg/talos-config/config-server/facethttp"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/actor"
@@ -154,17 +152,3 @@ func (m *hubManager) dialMember(ctx context.Context, name, facet string, timeout
 	}
 	return nil, err
 }
-
-// facetStreamConn adapts one opened forward stream to net.Conn for a
-// gRPC dialer. Deadlines are accepted and ignored, as on the accept
-// side (streamNetConn): the stream's lifetime is the connection's.
-type facetStreamConn struct {
-	io.ReadWriteCloser
-	peer cert.ActorID
-}
-
-func (c *facetStreamConn) LocalAddr() net.Addr              { return facethttp.Addr(HubMemberName) }
-func (c *facetStreamConn) RemoteAddr() net.Addr             { return facethttp.Addr(string(c.peer)) }
-func (c *facetStreamConn) SetDeadline(time.Time) error      { return nil }
-func (c *facetStreamConn) SetReadDeadline(time.Time) error  { return nil }
-func (c *facetStreamConn) SetWriteDeadline(time.Time) error { return nil }

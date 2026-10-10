@@ -50,6 +50,7 @@ import (
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/machines"
+	"github.com/marnyg/talos-config/protocol/facethttp"
 )
 
 const (
@@ -373,7 +374,7 @@ func (b *bootstrapper) clientOver(ctx context.Context, m machines.Machine, san s
 		if err != nil {
 			return nil, err
 		}
-		return &facetStreamConn{ReadWriteCloser: raw, peer: fc.Peer()}, nil
+		return facethttp.Dialed(raw, HubMemberName, fc.Peer()), nil
 	})
 	return client.New(ctx, client.WithConfig(cfg), client.WithGRPCDialOptions(dialer, grpc.WithResolvers(facetResolver{})))
 }
