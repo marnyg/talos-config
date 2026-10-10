@@ -38,9 +38,9 @@ two slices by swarm** — three workers, three merges, all live.
 - Broken windows from the reports were fixed the same session (siwe-oidc
   Service comment, provisioner `err` shadow, fake API namespace).
 - Forgejo's Ingress now carries the group gate (`dimt`; the "git clients
-can't pass it" reasoning was wrong — ADR-0037 amended). **One UI click
-left for you:** org `mirrors` → settings → Visibility → Public, so mesh
-members read mirrors without a Forgejo login (the API PATCH is a no-op).
+can't pass it" reasoning was wrong — ADR-0037 amended). Org `mirrors` is
+public (owner, via the UI): mesh members read mirrors without a Forgejo
+login; `agents` stays private.
 - Standing: 9 `<!-- stale? -->` flags; `jlgz`, `bsj` (now blocks `ivof`),
   `bhui`.
 
