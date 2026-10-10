@@ -114,7 +114,8 @@ func Proxy(upstream *url.URL, signer *meshtoken.Signer) http.Handler {
 
 // HTTPFacet serves h over admitted streams of facet: the returned
 // StreamHandler goes into nodeagent.Options.Serve, and stop ends the
-// server. One http.Server per facet, fed by facethttp.Listener.
+// server. One http.Server per facet, fed by a protocol/facethttp
+// Listener (decision k5hb: the package is protocol vocabulary).
 func HTTPFacet(facet string, h http.Handler, logger *log.Logger) (handler nodeagent.StreamHandler, stop func()) {
 	srv, ln := facethttp.Server(facet, h)
 	if logger != nil {

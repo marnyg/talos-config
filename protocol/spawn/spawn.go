@@ -400,7 +400,11 @@ func (p *Promise) Wait(ctx context.Context) (Birth, error) {
 // (else the spawner's), and an optional Outfit that adds chains and
 // locations to the kit once the child's id is known — the parent's
 // choice beyond the mandated #renew chain. Outfit runs inside the
-// parent's mailbox loop; it must not Send.
+// parent's mailbox loop; it must not Send. Only the mandated #renew
+// cert is installed in the parent's own Consents by the Spawner: a
+// chain Outfit issues roots nowhere until Outfit also installs it
+// (a.EditConsents, safe from inside the loop) — forgetting that is
+// ErrChainUnrooted at the facet, not at birth (talos-config-q5vj).
 type Spec struct {
 	Image       string
 	Provisioner cert.ActorID

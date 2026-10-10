@@ -230,7 +230,10 @@ loop:
 // included, so an answered round has already sent its #extend): each
 // call that moves the caller's lease deadline counts as one extend, and
 // once n of them happened the handler refuses instead. n <= 0 never
-// refuses. Returned is the flag that says it has gone deaf.
+// refuses. Returned is the flag that says it has gone deaf. Decoration
+// is by AcceptTable replacement, the idiom spawn.New itself uses, so
+// ORDER MATTERS: call after spawn.New (to wrap its decorator, not be
+// wrapped by it) and before Listen.
 func gate(a *actor.Actor, sp *spawn.Spawner, n int, extends *atomic.Int64) *atomic.Bool {
 	deaf := new(atomic.Bool)
 	inner := a.AcceptTable[actor.FacetRenew]

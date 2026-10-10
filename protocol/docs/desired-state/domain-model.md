@@ -274,7 +274,27 @@ protocol scope must never contradict these entries.
   `kube-api`, `ingress-http`, `jellyfin`, `hub-http`, `relay` — is
   that deployment's stream facets. The sketch's `P#report` is an actor
   facet. Pinned 2026-09-03, spike `359.2`; stream vs actor facet ruled
-  2026-09-12, `0bc.2` grill-design.)_
+  2026-09-12, `0bc.2` grill-design.)_ A stream facet is not only the
+  compatibility mode: two actors use one natively when the payload is
+  a long stream, not a message — the agent child's `agent-events`
+  (below, **Chain-on-connect**; built 2026-10-12, root ADR-0037).
+- **Chain-on-connect** _(decision `w74i`, built 2026-10-12, `e6pu.2`)_
+  — how a stream facet between two actors is admitted: the caller's
+  first bytes are a preamble `{chain, speak_as}` (each cert in wire
+  form), and the receiver runs the **same rule an inbound envelope
+  gets** — `VerifyChain(invoke, chain, speakAs, signer = QUIC peer,
+  facet = the ALPN's facet, now)` over its own held consents — then
+  feeds the verified set to its low-water mark and admits or refuses.
+  Identity past the facet is the key alone. The talos layer's
+  `Authorize` (member cert, groups, blocklist — "bundle on connect",
+  root ADR-0017) is a deployment's policy on top of this rule, not the
+  rule: a protocol child has no member cert and needs none. The chain
+  the caller presents is one the receiver issued it — carried in the
+  starter kit's **Outfit** and installed in the receiver's own consents
+  by the issuer (the Spawner installs only the mandated `#renew` cert;
+  `Spec.Outfit` callers add their own), kept rooted by renewal like
+  any other. `protocol/facethttp` turns each admitted stream into one
+  HTTP connection (accept side `Listener`/`Push`, dial side `Dialed`).
 - **Attenuation** — a chain link adds caveats, never removes;
   effective authority is field-wise intersection over `target`,
   `facet` and every recognised caveat; an unknown caveat rejects.
@@ -701,10 +721,23 @@ whose deployment-free form differs from the talos wording. Source:
   2026-09-12, `0bc.2`.)_
 - **Stream facet / actor facet** — see **Facet** above: a stream facet
   is identified by ALPN class at connect and the connection is the
-  invocation (talos forwarding, no envelope); an actor facet rides one
-  fixed ALPN class and is named by `to.facet` in the envelope, checked
-  per Invocation. The chain verifier takes `facet` and is
+  invocation (talos forwarding, or a native actor↔actor stream
+  admitted by **Chain-on-connect**; no envelope); an actor facet rides
+  one fixed ALPN class and is named by `to.facet` in the envelope,
+  checked per Invocation. The chain verifier takes `facet` and is
   derivation-blind.
+- **Uploader** _(built 2026-10-12, `e6pu.2`, root ADR-0037)_ — the
+  agent child's use of chain-on-connect: per `#task`, one admitted
+  `agent-events` connection to the parent carrying one long chunked
+  `POST /events/<task-id>` (every pi record in order, ndjson) and,
+  at settle, `PUT /session/<task-id>` (pi's own session JSONL). The
+  `#task` reply is an **ack** `{started, session}` — handlers run
+  inline in the receiver's mailbox loop, so a reply cannot wait on the
+  run — and the outcome is the stream's last line, `child_settled
+  {status, events, session}`. `#steer` and `#abort` are ordinary actor
+  facets on the child, consented to the parent at Born beside `#ping`.
+  Deadline, lapse or `#abort` ⇒ read the session, close pi's stdin,
+  drain, last line, PUT; `child.Run` waits (bounded) before exiting.
 - **Transport** — the protocol's only contract with the wire
   (`actor.Transport`): bind an **Endpoint** for an identity; `Dial(ctx,
   id, hints)` where `hints` are the transport-tagged strings of a

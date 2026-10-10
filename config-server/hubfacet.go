@@ -20,7 +20,8 @@ package main
 // The iroh side (accepting connections, the Raw stream type) lives in
 // hubiroh.go behind the `iroh` tag; this file only sees the facetConn
 // interface so the decision tests C-free. The HTTP-over-streams
-// plumbing is facethttp, shared with the gateway (P2.3).
+// plumbing is protocol/facethttp (decision k5hb), shared with the
+// gateway (P2.3) and the agent child's uploader (e6pu.2).
 
 import (
 	"context"

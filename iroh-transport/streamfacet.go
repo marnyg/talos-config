@@ -185,6 +185,9 @@ func (c *Conn) Accept(ctx context.Context) (*Raw, error) {
 }
 
 // Open (dial side) opens one forward stream on an admitted connection.
+// It may be called any number of times for the connection's lifetime;
+// each call is a new QUIC bi-stream (the child's uploader opens one
+// per HTTP request on a single admitted connection).
 func (c *Conn) Open(ctx context.Context) (*Raw, error) {
 	bi, err := await(ctx, c.closed, c.conn.OpenBi)
 	if err != nil {

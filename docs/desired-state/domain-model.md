@@ -1029,15 +1029,23 @@ provisioning or recovery path may depend on it.
   entry gate is the kubeconfig, which reaches the API over the mesh.
   No orchestrator owns it (decision `6d0u`). An agent run that is also
   a protocol **child** (`actors/driver/k8s` births the Job; the image
-  carries the child beat) would be a sandbox with a lease — not built;
-  the follow-up is `e6pu`.
-- **Session** _(designed 2026-10-11, epic `ivof`; not built)_ — the
-  record of one agent run as the **parent actor** keeps it: pi's
-  event stream (the child beat runs pi as an RPC subprocess and relays
-  every record up over a stream facet), pi's own session JSONL shipped
-  at settle (what `--session`/`--fork` resume from), and the pointer
-  the `#task` reply carries (`{status, branch, head, pr}` — the result
-  itself is a Forgejo branch + PR, the report as the PR body). Lives
+  carries the child beat) is a sandbox with a lease — the child side
+  is built (`e6pu.2`, 2026-10-12: `actors/child` serves `#task`,
+  `#steer`, `#abort`, drives pi through `actors/pirpc` and streams the
+  run to the parent's `agent-events` facet — protocol glossary
+  **Chain-on-connect**, **Uploader**); the image that carries it and
+  the parent actor are not.
+- **Session** _(designed 2026-10-11, epic `ivof`; child side built
+  2026-10-12, parent not)_ — the record of one agent run as the
+  **parent actor** keeps it: pi's event stream (the child beat runs pi
+  as an RPC subprocess and relays every record up over a stream
+  facet), pi's own session JSONL shipped at settle (what
+  `--session`/`--fork` resume from), and the pointer `{status, branch,
+  head, pr}` — the result itself is a Forgejo branch + PR, the report
+  as the PR body. The `#task` reply is only an ack `{started,
+  session}`; the pointer rides the stream as its last line
+  (`child_settled`, today `{status, events, session}` — the git fields
+  arrive with `e6pu.3`). Lives
   in the parent's own store (SQLite+FTS5 on a Longhorn PVC; the born
   table stays a cache). **Owner** = the wallet that submitted the
   task; a **share list** of wallets/groups at two rights, `view` (live
