@@ -162,7 +162,7 @@
   lost an hour to "sovereign" applied to members and an invented
   "presence" concept; both are defined/retired there. _(Trimmed
   2026-10-06: the "ADR-0017 still Proposed / nebula executes" tail is
-  history — v3 landed 09-21.)_
+  history — v3 landed 09-21.)_ <!-- stale? -->
 - 2026-09-05 — **The Quint models are the sharper spec for
   ADR-0015/0017.** Five doc sentences were refuted and ruled the same
   day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
@@ -396,7 +396,7 @@
   _apalache-out/` is gitignored scratch.
 - 2026-09-05 — `nix develop` needs `--impure` (devenv: "was not able
   to determine the current directory" otherwise). `check.sh verify`
-  takes ~3 min, dominated by `approval.qnt` at depth 12.
+  takes ~3 min, dominated by `approval.qnt` at depth 12. <!-- stale? -->
 - 2026-09-05 — **Quint laws over many nondet dimensions hold
   vacuously.** `authorize.qnt` with ~40 independent `oneOf`s reached
   Accept with p≈2⁻¹⁵; all 7 seeded mutants survived until a
@@ -411,19 +411,19 @@
   upstream fix. Cold on an M-series: iroh-ffi 7–10 min, iroh-relay
   8 min, uniffi-bindgen-go ~45 min; warm `nix build .#iroh-go-smoke`
   44 s. Hand-run `go build` in `iroh-go/` needs
-  `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`.
+  `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`. <!-- stale? -->
 - 2026-09-06 — `nix flake check --impure` is the canonical full check
   and is green since `81u` (18 YAML files yamlfmt'd, 0 semantic
   diffs). `--impure` is required by devenv, see the `flake.nix` header.
   yamlfmt quirk: a flow mapping that is the last sequence item before a
-  comment gets a trailing `,}` — valid YAML, all parsers agree, ugly.
+  comment gets a trailing `,}` — valid YAML, all parsers agree, ugly. <!-- stale? -->
 - 2026-09-06 — **rapid at the default 100 checks is too shallow for
   pair-faults.** In `protocol/cert` the m14 mutant (group rule as set
   overlap) died in only ~6 % of runs at 100 checks; the killing pair is
   ~0.06 % of samples. `TestFaultPairSweep` enumerates the model's fault
   space exhaustively (2424 scenarios, 0.7 s) — add a case there when a
   new law needs a specific pair. `check.sh verify` is now ~5.4 min
-  (`approval` 162 s, `clock` 110 s).
+  (`approval` 162 s, `clock` 110 s). <!-- stale? -->
 - **`pi -p` hangs after completing its answer** when stdin is left
   open. Wrap non-interactive uses: `timeout -k 10 420 pi -p
   --no-session "…" </dev/null`.
@@ -468,7 +468,7 @@
   _2026-09-12 update:_ `herdr worktree create --branch swarm/<name>`
   gives each worker its own workspace + worktree under
   `~/.herdr/worktrees/talos-config/`; briefs and reports live in
-  `/tmp/swarm/<name>.{task,context,md}` (see `MANIFEST.txt`).
+  `/tmp/swarm/<name>.{task,context,md}` (see `MANIFEST.txt`). <!-- stale? -->
 - 2026-09-13 — **`git pull --rebase` destroys merge commits.** The
   repo's default rebase flattened all six `merge swarm/*` commits of
   the M2 swarm (content intact, SHAs in bead notes gone). Either
@@ -1100,3 +1100,26 @@
   `ghcr.io/marnyg/p0agent:<manifest version>`; bump `SUFFIX` in
   `installer.env` so the tag changes. imager runs under amd64
   emulation on the Mac in ~3 min.
+- 2026-10-10 — **A kata pod's stdin is a pipe that never closes**
+  (`/proc/1/fd/0 -> pipe:[…]`, no `stdin: true` needed to get it), so a
+  program that reads stdin to EOF — `pi -p` prepends piped stdin to the
+  prompt — hangs forever with no output. The agent entrypoint redirects
+  `</dev/null`; anything else that runs non-interactively under kata
+  must too. `docker exec` on the nixos box closes stdin, so the smoke
+  there did not catch it.
+- 2026-10-10 — **`kubectl apply` of a git-owned object is undone in
+  seconds**: the root Application's selfHeal reverted a hand-applied
+  CronJob image pin to the revision ArgoCD knew, and the next
+  `agent-run.sh` ran the old image. Wait for the poll (~3 min; watch
+  `kubectl -n argocd get application apps -o
+  jsonpath='{.status.sync.revision}'`) instead of applying.
+- 2026-10-10 — **A new GHCR package is private by default** (anonymous
+  manifest GET → 401; nodes cannot pull). Flip it at
+  github.com/users/marnyg/packages/container/<name>/settings before
+  the first pod needs it — `sandbox-agent` needed this; `sap-actors`
+  and `gateway` were done the same way.
+- 2026-10-10 — **`scripts/agent-run.sh` is how an agent runs**; the
+  suspended CronJob `agent` in `ai` is only the template. A Job that is
+  still `Running` with nothing in its log for more than ~a minute is
+  wedged (see the stdin note), not thinking; `kubectl -n ai exec job/<n>
+  -- sh -c 'cat /proc/net/tcp; ls -la /proc/1/fd/0'` tells which.
