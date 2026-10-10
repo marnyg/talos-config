@@ -12,6 +12,18 @@
 // Transport-free: cmd/child binds iroh and hands the actor in. Tests
 // run it over actor.MemoryNetwork against a real spawn.Spawner.
 //
+// # The agent (task.go)
+//
+// With Options.Task set the child is also an agent (ADR-0037,
+// talos-config-e6pu.2): it serves #task, #steer and #abort to the
+// parent, runs `pi --mode rpc` through actors/pirpc, and ships every
+// record pi writes up the parent's agent-events stream facet as one
+// long HTTP POST, chain-on-connect with the chain the Kit's Outfit
+// granted at (parent, agent-events). The run's outcome is the stream's
+// last line; the session JSONL follows as a PUT. The deadline — ctx
+// end, lapse, #abort — closes pi's stdin and ends the upload cleanly,
+// and Run waits (bounded) for that before returning.
+//
 // # What the beat renews
 //
 // Every held chain whose last link the parent issued to this actor —
@@ -77,10 +89,17 @@ type Options struct {
 	LocationTTL int64
 	// Log receives each beat's outcome. nil ⇒ slog.Default().
 	Log *slog.Logger
+	// Task, when its PiBin is set, makes the child an agent: the task
+	// facets are served (and, with Serves nil, consented) and their
+	// handlers installed by Run.
+	Task TaskOptions
 }
 
 func (o Options) serves() []string {
 	if o.Serves == nil {
+		if o.Task.PiBin != "" {
+			return []string{FacetPing, FacetTask, FacetSteer, FacetAbort}
+		}
 		return []string{FacetPing}
 	}
 	return o.Serves
@@ -124,13 +143,26 @@ func Ping(_ context.Context, inv *actor.Invocation) ([]byte, error) {
 // (ErrLapsed). a.Listen must be running (the parent calls in on the
 // served facets, and #birth's reply is not enough to be reachable);
 // Run itself is the only goroutine that touches a.Grants, as Send and
-// Born require. FacetPing's handler is installed here when served.
+// Born require. FacetPing's handler is installed here when served;
+// so are the task facets' when o.Task.PiBin is set (they run in the
+// mailbox loop and read a copy of the agent-events chain Run hands
+// them after Born and after each renewal).
 func Run(ctx context.Context, a *actor.Actor, in spawn.Intro, o Options) error {
 	log := o.log().With("parent", in.Parent, "me", a.ID())
 	serves := o.serves()
+	var ag *agent
 	for _, f := range serves {
-		if f == FacetPing {
+		switch f {
+		case FacetPing:
 			a.AcceptTable[FacetPing] = Ping
+		case FacetTask, FacetSteer, FacetAbort:
+			if ag == nil {
+				if o.Task.PiBin == "" || o.Task.Dial == nil {
+					return fmt.Errorf("child: serving %s needs Options.Task.PiBin and .Dial", f)
+				}
+				ag = newAgent(ctx, a, in.Parent, o.Task, log)
+				ag.install()
+			}
 		}
 	}
 	if _, err := a.PublishLocation(o.locationTTL()); err != nil {
@@ -141,6 +173,10 @@ func Run(ctx context.Context, a *actor.Actor, in spawn.Intro, o Options) error {
 		return fmt.Errorf("child: born: %w", err)
 	}
 	log.Info("child: born", "grants", len(kit.Grants), "locations", len(kit.Locations), "serves", serves)
+	if ag != nil {
+		ag.setChain(a.Grants[actor.GrantKey{Target: in.Parent, Facet: FacetAgentEvents}], hints(a, in))
+		defer ag.shutdown()
+	}
 
 	t := time.NewTicker(o.beat())
 	defer t.Stop()
@@ -164,7 +200,20 @@ func Run(ctx context.Context, a *actor.Actor, in spawn.Intro, o Options) error {
 			continue
 		}
 		log.Info("child: renewed", "certs", n)
+		if ag != nil {
+			ag.setChain(a.Grants[actor.GrantKey{Target: in.Parent, Facet: FacetAgentEvents}], hints(a, in))
+		}
 	}
+}
+
+// hints are the parent's current endpoints for a stream-facet dial:
+// its cached reach-me-at (kept fresh by every reply's piggyback), the
+// intro's otherwise.
+func hints(a *actor.Actor, in spawn.Intro) []string {
+	if loc := a.GetLocation(in.Parent); loc != nil {
+		return loc.Cav.Endpoints
+	}
+	return in.Location.Cav.Endpoints
 }
 
 // Live reports whether a holds a chain at (parent, #renew) whose last
