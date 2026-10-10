@@ -4,6 +4,14 @@
   built the same day: `ivof.1`, `ivof.2`, `e6pu.1`). Epic
   `talos-config-ivof`; remaining build is `e6pu.2` and the parent.
 - Date: 2026-10-11
+- Amended 2026-10-11 (`dimt`): Forgejo's Ingress **does** carry the
+  group gate. The original "no `auth-url`, git clients cannot pass it"
+  reasoning was wrong — `/authz` decides from the gateway-signed
+  `X-Mesh-Token` that every member-device request carries, CLI or
+  browser, with no cookie. So: mesh membership is the read gate
+  (`REQUIRE_SIGNIN_VIEW=false`), Forgejo's own login (wallet via OIDC,
+  tokens for bots) is the identity for writes; agent pods bypass the
+  Ingress on the pod network either way.
 - Related: ADR-0035 (the sandbox layer), ADR-0036 (the null option
   this grows out of; its deferred "protocol facet" and "wallet-gated
   surface" land here), ADR-0032 (the person gate the UI sits behind),

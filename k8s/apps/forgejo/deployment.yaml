@@ -127,11 +127,11 @@ spec:
               value: "true"
             - name: FORGEJO__service__ALLOW_ONLY_EXTERNAL_REGISTRATION
               value: "true"
-            # Forgejo gates itself (no wallet gate on the Ingress): nothing
-            # is readable anonymously, so the mesh alone is not a
-            # read grant — a token or a wallet login is.
+            # The Ingress carries the group gate (ingress.yaml), so a
+            # mesh member reads without a Forgejo login; identity is
+            # needed to write. Private org repos still need membership.
             - name: FORGEJO__service__REQUIRE_SIGNIN_VIEW
-              value: "true"
+              value: "false"
             # OpenID 2.0 (the legacy "sign in with an OpenID URL"), not
             # OIDC; off so the login page shows only the SIWE button
             # and the admin form.

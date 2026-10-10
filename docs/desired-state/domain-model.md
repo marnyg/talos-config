@@ -1060,9 +1060,10 @@ provisioning or recovery path may depend on it.
   `agents/scratch` (`agent-scratch-1`).
 - **Forgejo** _(live 2026-10-11, `ivof.1`, ADR-0037)_ — the in-cluster
   git host for agent work: ns `forgejo`, sqlite3 + minted secrets on
-  one Longhorn PVC, `git.gw.mesh.internal` with **no Ingress gate**
-  (git clients carry no cookie — ADR-0032 ruling 1 — so Forgejo
-  authenticates itself: OIDC against `siwe-oidc` for people, as a
+  one Longhorn PVC, `git.gw.mesh.internal` behind the **group gate**
+  (the mesh is the read gate: `/authz` on the gateway-signed token,
+  which git CLIs carry too — amended 2026-10-11) with Forgejo's own
+  identity for writes (OIDC against `siwe-oidc` for people, as a
   **person-gated** `-client` that sends S256 PKCE; tokens for bots).
   Orgs: `agents` (bot `agent` writes via team `bots`) and `mirrors`
   (pull-mirrors, read-only). Pods reach it as `forgejo.forgejo.svc`;

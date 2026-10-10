@@ -1,18 +1,23 @@
 # Forgejo over the mesh (ADR-0009 pattern): plain HTTP, hostname
-# routing. Deliberately NO wallet gate annotation, unlike the *arr apps
-# and SillyTavern: ADR-0032 ruling 1 — a git client has no wallet cookie,
-# so a gated Ingress answers its push with a 401 and no redirect it
-# could follow. Forgejo authenticates itself instead: git and API
-# calls carry Forgejo tokens, browsers sign in with the wallet through
-# the SIWE OIDC source (deployment.yaml header), and REQUIRE_SIGNIN_VIEW
-# leaves nothing anonymous. "Every exposed service authenticates against
-# the wallet" still holds — one hop later.
+# routing, behind the group gate like the *arr apps and SillyTavern.
+# The gate is the mesh: /authz decides from the gateway-signed
+# X-Mesh-Token that every member device's request carries — browser or
+# git CLI alike, no cookie involved (ADR-0032; siweoidc/http.go
+# handleAuthz) — so `git clone` from a member laptop passes and a
+# non-member gets 401. (First shipped without the gate on the belief
+# that git clients could not pass it; corrected 2026-10-11, dimt.)
+# Reads need only membership (REQUIRE_SIGNIN_VIEW=false in
+# deployment.yaml); identity for writes, PRs and review is Forgejo's own
+# — the wallet through the SIWE OIDC source for people, tokens for bots.
+# The agent pods never come this way: they reach forgejo.forgejo.svc
+# on the pod network with the sealed token.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: forgejo
   namespace: forgejo
   annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     # Git pushes (agent result branches, mirror syncs) go well past
     # nginx's 1 MiB default.
     nginx.ingress.kubernetes.io/proxy-body-size: 512m
