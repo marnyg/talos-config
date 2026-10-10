@@ -24,11 +24,14 @@ curl -fsS http://git.gw.mesh.internal/api/healthz
 
 ## 1. Break-glass admin (local account, like ArgoCD's)
 
+`admin` is a reserved username in Forgejo (`CreateUser: name is
+reserved`); the account is `sysadmin`.
+
 The generated password prints once; put it in the password manager.
 It is the only local login; everything else signs in with the wallet.
 
 ```sh
-$F admin user create --admin --username admin --email admin@mesh.internal \
+$F admin user create --admin --username sysadmin --email sysadmin@mesh.internal \
   --random-password --must-change-password=false
 ```
 
@@ -79,7 +82,7 @@ source of truth on GitHub); `agents` holds the repos agents write to.
 
 ```sh
 read -rs ADMIN_PW   # paste the step-1 password
-G="curl -fsS -u admin:$ADMIN_PW -H 'Content-Type: application/json' http://git.gw.mesh.internal/api/v1"
+G="curl -fsS -u sysadmin:$ADMIN_PW -H 'Content-Type: application/json' http://git.gw.mesh.internal/api/v1"
 eval $G/orgs -d '{"username":"agents","visibility":"private","repo_admin_change_team_access":false}'
 eval $G/orgs -d '{"username":"mirrors","visibility":"private"}'
 ```

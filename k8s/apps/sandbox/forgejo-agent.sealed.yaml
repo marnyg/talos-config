@@ -1,0 +1,25 @@
+# The Forgejo token the sandboxed agent pushes with (ADR-0037, ivof.1
+# bootstrap step 5): bot user `agent`, team `bots` in org `agents`,
+# scopes write:repository,write:issue. A data-plane credential like the
+# OpenRouter key beside it (kanr memo, invariant 1 check) — the wire
+# carries repo names, never this. FORGEJO_URL is the in-cluster Service:
+# pods cannot resolve the mesh name. Interim: agent.yaml mounts it by
+# envFrom; once e6pu lands the k8s driver's -outfit attaches it instead.
+#
+# Rotate: k8s/apps/forgejo/bootstrap.md step 5 with a new --token-name,
+# then DELETE the old token as sysadmin; reseal with
+# kubeseal --cert talos/clusters/homelab/sealed-secrets.crt.
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: forgejo-agent
+  namespace: ai
+spec:
+  encryptedData:
+    FORGEJO_TOKEN: AgAkJiKyCuR+QXcR4wyGMsR+F5U2ZjOG+fB8gLN9Rw/hLpCgXMztyU/wRz9aDgTdWMV7G/kQQEBYZ4tzhGWBeda16+4XOWARQ7aR1D9+DABsY2GfQf2GnIoXUS5jW0A/ZTlMOHg0DPkj2rKfYTbZS98glsa0iFY2i2EovJKfcp8FDJn9jc7aK4vMNpsIyP2NemRMO5hUmOD4LeafLAZ5Vu1jQFDPxzFV1nnsVDQw7NIypYCCcVjp/pNmb5qH6dueQW1lOduu5kaXz02v+OWT6IK9pcKRYT1lA6kmlWLAui+qluCcu4XwJtM0UXDUcBuw+ND7X5g8LoPQHr6bFeWt40aLE9N+Yc7Q0Xgks+THMtWWBZntQfiEa4LiZakjfsO7exu3B38UDsqmSSBmIceexvuy+ozr/aJAfJILkqH6epV7jvpS8cI3hHLzgqJ4ISX+Iq3mi6mKlTogE83Opeq/qHr7ElYv2wmayUgsLd3obuN/iUGCk9mlwq74ajKVPzZF4WI86B9spjSZ3n1RZcCdTD4ouF3B9ry22ttVhcfzuCUKOWZ2K9tlCTqLKfq/ks2JQQeZ3yeb1PNlK+6yZq/ApcQT3kodZ2C4kMazlnJ2xBAg+gX1s3SUnGJxumtRuVoCqR8ZHJ6JHHXKJ/7XX5LwpfJ8LteEqb3bu2aJBXRKCcStzr4cv/Ay59nsg1xs9+unLsk6sAaxdLP0xOFg5aV5+PXYHY35zNp6OkwIve+xo8DO/bd3AnHPZMf9
+    FORGEJO_URL: AgBP1VlomfT9jccFAxpb+iMCMmi+uJStxbt+rozcxowSrP5EJY47jGKPqRx0ljPPUptzDWf6S6RDwJggnaxxH14MKSh6r6VVoGUPbDa7qE8lIz2obt+4E36x9AY5tBfjcgqslLh7orlCcqcZcChsuRrhRGRm9IugHLH2G6L6j9odG6SzLAKTHZtXMrztrnwrredBaAgqSCWmyqT3eGBZtUQ7+9W9dv8W17/wrRfhjT+xkpM26k52qa3ggPSkIbUAmBlFaj1GiP+7N7z1XzAHTWooQXMG1w0hiQ2xG5hPaoYv0oqt9YvFg/iRHyF9nWbglupb62lS/dZVnyUv7B+peov6S/hNKxYqKiQSWjJndlGkgDvS0rxxLwlimRRAvFqHeQX+qKc0zp86AzLaLDPibxLGAMkCYBX6+KvFaAdiqnZUztK2/a+YTOg8MQw0uFuWJWV3/NfJRwMQb1jre1fKBHZZev3OXSMSxyIJ9P3VgzpS9gptQ+ea1B68Tu6ztnK/0TPu9D2snmdqAQTWhHalSAj0fk4HP+QnFLzQ/jEbg0q26Pe36SWfoXavgWEKTm8XdiwDjZqmyjvHmPcvuCv3ZdrCCHWO+QamvKZUSwaYTEIbnPV8Jm9i+NZQsdPqk7owH7PSvUgYAYl/qqmsJihfiiVEuFy94Bmy7Csxcthe9LPugW4uQgpLt7j/Etq/mLRfHIzL7OWx0ITpdasXOuGYDUv4o8J77UlrWbs4/pEM9T2x
+  template:
+    metadata:
+      name: forgejo-agent
+      namespace: ai
