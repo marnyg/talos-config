@@ -924,7 +924,12 @@ provisioning or recovery path may depend on it.
   an indexer key), as opposed to an identity. Lives as a SealedSecret,
   is bounded by the vendor's own limits, and sits in no auth path —
   invariant 1's "no third-party identity accounts" is about identity,
-  not about these.
+  not about these. _(2026-10-11, epic `ivof`:)_ a **git credential**
+  for an agent's workspace (a scoped Forgejo token) is the same class:
+  it reaches the pod the way the OpenRouter key does — provisioned by
+  the driver at spawn, bound to the child's lifetime — never inside the
+  starter kit (chains and locations only) and never in a `#task`
+  envelope, which carries names (`repo`, `ref`, `prompt`), not secrets.
 - **Mesh zone** — `*.mesh.internal`. _v2 (history): served by the hub
   on the overlay from the derived namespace._ v3: the zone name is
   inherited unchanged (spike `eda`: every certSAN already carries it)
@@ -1026,6 +1031,28 @@ provisioning or recovery path may depend on it.
   a protocol **child** (`actors/driver/k8s` births the Job; the image
   carries the child beat) would be a sandbox with a lease — not built;
   the follow-up is `e6pu`.
+- **Session** _(designed 2026-10-11, epic `ivof`; not built)_ — the
+  record of one agent run as the **parent actor** keeps it: pi's
+  event stream (the child beat runs pi as an RPC subprocess and relays
+  every record up over a stream facet), pi's own session JSONL shipped
+  at settle (what `--session`/`--fork` resume from), and the pointer
+  the `#task` reply carries (`{status, branch, head, pr}` — the result
+  itself is a Forgejo branch + PR, the report as the PR body). Lives
+  in the parent's own store (SQLite+FTS5 on a Longhorn PVC; the born
+  table stays a cache). **Owner** = the wallet that submitted the
+  task; a **share list** of wallets/groups at two rights, `view` (live
+  tail, transcript, search) and `steer` (`steer`/`abort`, follow-ups —
+  the sender's wallet is stamped on the event); `admins` views all,
+  nothing is public. The UI is an OIDC client of `siwe-oidc` (the
+  person gate, ADR-0032: per-user state); a terminal client of the
+  same stream is the power-user path, `kubectl exec` the debug door.
+- **Workspace** _(designed 2026-10-11, epic `ivof`; not built)_ — the
+  repo and ref an agent run works on: a clone into the sandbox's
+  emptyDir from **Forgejo** (the in-cluster git host for agent work;
+  `talos-config` itself stays on GitHub, decision `4la8`), written
+  with an org-scoped token the provisioner attaches by image (a
+  data-plane credential). Named in `#task` (`repo`, `ref`), never
+  carried as a secret.
 
 ## Relation to the sovereign-actor sketch
 

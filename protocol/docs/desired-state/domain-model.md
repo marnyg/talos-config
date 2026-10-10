@@ -584,6 +584,14 @@ whose deployment-free form differs from the talos wording. Source:
   real deadline, else `Sweep` kills — the birth window's shape again.
   A stateful provisioner is ruled out (ADR-0009 amendment, decision
   `uzgl`). _(Binary: `actors/cmd/provisioner`, M4.5.)_
+  _(2026-10-11, root epic `ivof`:)_ this is the general rule, not a
+  provisioner quirk \u2014 **durable state is a data-plane resource**,
+  outside the actor (a volume its manifest declares, a service it
+  reaches with a credential, a git tip it reads), and every in-memory
+  table is a cache rebuilt from it; a corollary of invariant 12, not a
+  primitive the protocol offers. Storage as a *dimension of the lease*
+  (`volumes` beside `image`, never a provider kind) is deferred until a
+  spawned actor needs it (root thread `264f`, ADR-0005).
 - **Customer** — a spawner a provisioner holds a consent for: the
   one who may `#spawn`, and the owner of each lease it spawned (only
   the owner may `#extend`/`#kill` it). v0: one root per customer over

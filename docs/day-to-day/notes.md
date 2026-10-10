@@ -1123,3 +1123,6 @@
   still `Running` with nothing in its log for more than ~a minute is
   wedged (see the stdin note), not thinking; `kubectl -n ai exec job/<n>
   -- sh -c 'cat /proc/net/tcp; ls -la /proc/1/fd/0'` tells which.
+- 2026-10-11 — **`bd` can stall past 20 s on a plain `note`** (seen
+  once; the retry landed in <5 s). Wrap `bd` mutations in `timeout 25`
+  and re-check with `bd show` before assuming the write happened.
