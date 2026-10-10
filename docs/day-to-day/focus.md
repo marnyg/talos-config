@@ -3,13 +3,15 @@
 <!-- Forward-looking. Replace when focus shifts. Keep to ~20 lines.
      The link between current work and a higher-order goal. -->
 
-**Now:** Build the agent backend designed in ADR-0037. Done 2026-10-11:
-Forgejo (`ivof.1`), `agent-run.sh -r/-b` with a live PR (`ivof.2`),
-driver RuntimeClass + outfit (`e6pu.1`). Next: `e6pu.2` — the child
-beat driving `pi --mode rpc` over a stream facet (`facethttp` moves to
-`protocol/`, decision `k5hb`), `#task` → pointer; then the parent actor
-itself (SQLite+FTS5 store, list/watch/steer/search UI behind the
-person gate). Epic `ivof`.
+**Now:** Build the agent backend designed in ADR-0037. Done: Forgejo
+(`ivof.1`), `agent-run.sh -r/-b` (`ivof.2`), driver RuntimeClass +
+outfit (`e6pu.1`), and 2026-10-12 the child as an agent (`e6pu.2`:
+`protocol/facethttp`, `actors/pirpc`, `#task`/`#steer`/`#abort` with
+the `agent-events` uploader, `spawn -prompt` as the stand-in parent).
+Next: ship the child in the `sandbox-agent` image and run the live
+acceptance; then the parent actor itself (SQLite+FTS5 store,
+list/watch/steer/search UI behind the person gate); `e6pu.3` (git
+half in the child). Epic `ivof`.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for

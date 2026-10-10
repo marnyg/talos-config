@@ -10,8 +10,11 @@ instead of a copied `location.json`: `Actor.Bootstrap` is the network
 bundle's raw endpoints (ADR-0007 § Run live), which on iroh is the
 lighthouse's id alone. Accepted on docker and on k8s; the
 `sap-lighthouse` Deployment is live and the in-cluster provisioner
-publishes to it. M1–M4 built plus discovery. **Next is the owner's
-pick:** M5 money (`0bc.5`).
+publishes to it. M1–M4 built plus discovery. **2026-10-12:** the first actor↔actor
+stream facet (`agent-events`, chain-on-connect admitted by
+`VerifyChain`) and `protocol/facethttp` landed for the agent child
+(root ADR-0037) with no protocol change. **Next is the owner's
+pick:** M5 money (`0bc.5`) or the parent actor (N=2 consumer).
 
 **Toward goal:** `desired-state/goals.md` — *Spawning as funded
 enrollment*, *Sovereign identity* (private key born on the child's

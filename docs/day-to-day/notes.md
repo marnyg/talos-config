@@ -1147,3 +1147,12 @@
   break-glass account is `sysadmin` (password in the owner's manager).
   The `agent` token has `write:repository,write:issue` only — `/api/v1/user`
   returns 403 with it (needs `read:user`); check against a repo instead.
+- 2026-10-12 — **A stale Go `vendorHash` passes a plain `nix build
+  .#X.goModules`** (fixed-output cache hit); only `--rebuild` — what
+  `.githooks/pre-push` runs — reports `specified:/got:`. Both
+  `config-server` and `actors` hashes moved this session when
+  `protocol/facethttp` appeared. Check with `--rebuild` after any
+  change under a vendored tree.
+- 2026-10-12 — pi `--no-session` makes `get_state.sessionFile` empty;
+  the child starts pi with `--session-dir <tmp>` so the JSONL exists to
+  ship at settle (verified against pi 1.0.3 by `a-pirpc`).
