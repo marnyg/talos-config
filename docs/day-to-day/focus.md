@@ -11,7 +11,10 @@ the `agent-events` uploader, `spawn -prompt` as the stand-in parent).
 Next: ship the child in the `sandbox-agent` image and run the live
 acceptance; then the parent actor itself (SQLite+FTS5 store,
 list/watch/steer/search UI behind the person gate); `e6pu.3` (git
-half in the child). Epic `ivof`.
+half in the child). Epic `ivof`. **Detour landed 2026-10-13:** root
+rotation (protocol ADR-0010, spike `aja2`) — model + code built, the
+desired-state amendments await the owner's ruling before it is wired
+into the hub.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for

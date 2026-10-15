@@ -1,7 +1,8 @@
 # ADR-0010: Root rotation via a guardian-signed epoch chain; equivocation is capture
 
 - Status: Proposed (2026-10-13, spike `talos-config-aja2`; model
-  `verification/quint/rotation.qnt` in flight)
+  `verification/quint/rotation.qnt` and `protocol/cert/rotation.go`
+  landed the same day — see FINDING under Consequences)
 - Date: 2026-10-13 (spike `talos-config-aja2`, two review rounds)
 - Builds: nothing yet (`protocol/cert` is the next wave). Adds: verb
   `rotate-root` to invariant 4's set (versioned). Amends: sketch
@@ -86,8 +87,9 @@ child alone is the puppet the sketch already rejected.
   `7ry`. Inv 6 untouched: a rotation is a transition, not a presented
   credential.
 - **Equivocation = capture.** Two *verifying* rotations with the same
-  `cav.prev` → the verifier rejects both; the identity is dead there
-  until re-pinned out of band. The evidence is self-certifying (two
+  `(cav.epoch, cav.prev)` and different `policy`, **at a prev the
+  verifier's own chain has reached** → the verifier rejects both; the
+  identity is dead there until re-pinned out of band. The evidence is self-certifying (two
   bodies, k signatures each) and travels on the beat like the
   blocklist; it is **not** safe-to-lose by ADR-0019's test (forgetting
   it yields a stronger grant), so git holds the durable copy.
@@ -107,6 +109,12 @@ child alone is the puppet the sketch already rejected.
 
 - Good: capture is bounded by a policy the identity chose; inv 2 and
   10 verbatim; no new cert shape; the fork is answered once.
+- **FINDING (model-first, `rotation.qnt`, `aja2.1`)**: as first
+  worded ("same `prev`", no rooting) equivocation was a free
+  kill-switch — anyone invents a policy P' with their own keys as
+  guardians and equivocates from it. Death needs a *rooted* pair; the
+  key is `(epoch, prev)` because `H(policy)` recurs. Pins 1, 3, 4 were
+  not refuted. The quoted wording below carries the amendment.
 - Residual — **truncated history**: a verifier that first meets the
   identity after capture and is shown a truncated chain is as exposed
   as any starved verifier; a chain read closes it by choice only.
@@ -137,8 +145,9 @@ identity — today's statement with the threshold moved.
 > guardian-signed rotate-root certs with identical bodies, verified
 > offline; a verifier advances its epoch only on a chain rooted at its
 > own pin, and exp on a rotation bounds assembly, not validity. Two
-> verifying rotations from the same predecessor are equivocation; a
-> verifier rejects both — the identity is dead there until re-pinned
+> verifying rotations from the same predecessor, at a predecessor the
+> verifier's own chain has reached, are equivocation; a verifier
+> rejects both — the identity is dead there until re-pinned
 > out of band, and the proof travels. An identity with no guardians
 > chose irrecoverability. A verifier that first meets an identity
 > after capture and is shown a truncated history is as exposed as any

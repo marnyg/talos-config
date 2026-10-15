@@ -5,50 +5,51 @@
 
 ## Last session
 
-2026-10-12: **`e6pu.2` built by swarm — the child is an agent.** Three
-workers, three `--no-ff` merges (`8c0488b`, `fdde3cc`, `055327a`), all
-gates re-run by the orchestrator.
+2026-10-13: **root rotation designed and built (spike `talos-config-aja2`,
+protocol ADR-0010 Proposed)** — a review session on the repo's ideas
+turned into a design: keep "the wallet is the identity", make the root
+recoverable without touching protocol inv 2/10. Swarm of three
+(`538330a` ADR, `038461e` `rotation.qnt`, `1eaebf6` `cert/rotation.go`),
+all gates re-run (`check.sh run`, verify depth 7, `go test`,
+`scripts/test-iroh.sh` green). Details in
+`protocol/docs/day-to-day/handoff.md`.
 
-- **`facethttp` → `protocol/facethttp`** (`e6pu.2.1`, decision `k5hb`):
-  rename, four hub/gateway consumers repointed, `hubcaller.facetStreamConn`
-  lifted into `facethttp.Dialed` (dial-side `net.Conn`), stdlib test.
-  config-server vendorHash bumped — note the stale-FOD trap in notes.
-- **`actors/pirpc`** (`e6pu.2.2`): Go driver for `pi --mode rpc` —
-  strict-LF JSONL, id-correlated responses, `Events()` raw stream,
-  `Close` = close stdin then SIGKILL after `KillAfter`. Fake-pi tests;
-  `PIRPC_REAL=1` ran against pi 1.0.3.
-- **child `#task`/`#steer`/`#abort` + uploader** (`e6pu.2.3`,
-  `actors/child/task.go`): `#task` acks `{started, session}` at once,
-  runs pi, streams every record as one chunked `POST /events/<id>` to
-  the parent's `agent-events` stream facet, `PUT /session/<id>` at
-  settle, last line `child_settled`. **Chain-on-connect:** preamble
-  `{chain, speak_as}`, parent admits with `cert.VerifyChain` (not
-  `Authorize`). `cmd/spawn -prompt` is the parent for the acceptance
-  run (prints events; seed of the CLI `hp79`); `cmd/child` reads
-  `SAP_PI`, `SAP_PI_ARGS`, `SAP_WORKDIR`.
+- The N=1 consequence to name: the owner has **two roots with distinct
+  jobs** — wallet policy = identity (guardians rotate it for everyone);
+  the ssh/age key (ADR-0030 `allowed-signers`) = **pin authority** for
+  the hub's view of that identity + confidentiality root. Nothing in
+  `talos/` changes until the wallet declares guardians; today's
+  `guardians0 = {root}, k=1` is the declared choice.
+- `4mg` gained a note: EIP-712 typed signing + decoupling the secrets
+  seed from a wallet signature are one decision superseding `ce8`.
 
 ## Loose threads
 
-- `e6pu.2.{1,2,3}` merged, **awaiting owner close**; `e6pu.2` then
-  closes too. Not live yet: the sandbox-agent image needs
-  `/usr/local/bin/child` + an entrypoint that runs the beat beside pi
-  (`k8s/apps/sandbox/image.nix`), then one spawn with
-  `-runtime-class kata -outfit … -prompt` — the ADR-0037 confirmation
-  step.
-- The git half (`{branch, head, pr}` pointer) was ruled out of
-  `e6pu.2`; filed as `e6pu.3`. ADR-0037 "→ pointer" is now "ack +
-  pointer on the stream" (see the ADR question in the session report).
-- Threads from the reports: a `Dial` failure after the `started` ack is
-  invisible to the parent; `Spec.Outfit` doc should say Outfit certs
-  are not auto-installed as consents (`a.EditConsents` is the caller's
-  job); `streamfacet.Conn.Open` doc should say "any number of times".
+- **Desired-state amendments awaiting the owner** (surfaced by
+  docs-update, not applied): protocol inv 4 verb set (+`rotate-root`),
+  the "root capture" structural trade-off → ADR-0010's wording (with
+  the model's "rooted" amendment), inv 2 / inv 6 wording for a cert
+  class that is a transition; root domain-model glossary **Pin
+  authority**; protocol glossary terms.
+- `aja2.1/.2/.3` merged, **awaiting owner close**; `aja2` closes once
+  the amendments are ruled. `e6pu.2.{1,2,3}` still awaiting close from
+  2026-10-12.
+- vendorHash for config-server-bin / iroh-transport / actors-bin is
+  stale after the `protocol/cert` change — bumped in this session's
+  landing commit if nix finished; otherwise the pre-push hook says so.
+- Threads to file (from worker reports): birth receipt that keeps
+  inv 13 (`{lease, image}` only; child binds its key to the lease);
+  `Policy.Hash` vs EIP-712 struct hash; rotate-root certs carrying
+  base caveats; the sketch's "negotiated guardians" cell overloading
+  *guardian*.
 - Standing: 9 `<!-- stale? -->` flags; `jlgz`, `bsj` (blocks `ivof`),
-  `bhui`.
+  `bhui`; the `e6pu` live acceptance (sandbox-agent image + spawn).
 
 ## Suggested next steps
 
-- Rebuild `sandbox-agent` with the child binary and run the live
-  acceptance (`spawn -prompt`), then close `e6pu`.
-- The parent actor proper (store schema, `#task` relay, UI behind the
-  person gate) — no bead yet; `hp79` (CLI) follows it.
-- `e6pu.3`: the git workspace/PR half inside the child.
+- Rule the amendments above; `bd close` the three tasks; ADR-0010 →
+  Accepted when the hub consumes `Pin`.
+- Back to `ivof`: rebuild `sandbox-agent` with the child and run the
+  live acceptance, then the parent actor.
+- `4mg` as one decision (EIP-712 + seed), now that `ce8`'s objection
+  is gone.

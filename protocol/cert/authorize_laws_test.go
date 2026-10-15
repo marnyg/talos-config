@@ -88,7 +88,10 @@ func (f fixture) build(s certSpec) Cert {
 	if f.built == nil {
 		return f.buildUncached(s)
 	}
-	key := fmt.Sprintf("%+v", s)
+	// Caveats.Policy is a pointer: %+v prints its address, so two specs
+	// differing only in policy content would share a key. Print the
+	// policy by value beside the spec.
+	key := fmt.Sprintf("%+v|%+v", s, s.cav.Policy)
 	if c, ok := f.built.Load(key); ok {
 		return c.(Cert)
 	}

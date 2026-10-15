@@ -3,6 +3,17 @@
 <!-- "Weather, not climate" for the protocol scope. Each entry
      `YYYY-MM-DD — <note>`. Deployment weather lives in the root notes. -->
 
+- 2026-10-13 — **`rotation.qnt` verify depth is 7, not 8** (~115 s
+  alone; ~190 s beside another quint run; 8 blew past 5 min). Its
+  `residualDeadStaysDead` needs 3000 samples to surface in random
+  simulation — `expect_violation` in `check.sh` grew an optional 4th
+  `samples` arg for it. `quint` is on PATH here only via the nix
+  profile; CI uses the flake.
+- 2026-10-13 — **Caveat vocabulary v4 is verb-scoped**: `epoch`/
+  `prev`/`policy` are serialised only on `rotate-root` certs
+  (`canonRotCav`), so `canonicalBytes` of every other verb is
+  byte-identical to v3 and no existing signature moves. Putting them
+  on any other verb is `ErrRotationCaveat` at sign, encode and decode.
 - 2026-09-25 — **An actor id does not fit a k8s label value** (`:`
   and 67 chars vs. a 63-char `[A-Za-z0-9._-]` value). Anywhere an id
   must ride on a k8s object, use an annotation; only the 16-hex lease

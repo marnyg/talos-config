@@ -161,19 +161,25 @@ key) is unrecoverable — examined below.
 
 - Hot key compromised → root signs a delegation for a new hot key;
   the stolen one dies at expiry. Recovery is routine.
-- Root compromised → not death but **capture**: root keys never
-  expire, so the thief *is* the identity — able to mint valid
-  delegations indefinitely, indistinguishable to counterparties.
-  This is the worst event in the system and the protocol offers no
-  remedy, deliberately: a remedy would require an authority above
-  the identity, which is the thing being refused. The two real
-  defenses are chosen *before* compromise: (a) keep the root
-  genuinely cold (hardware, offline, used a few times a year);
-  (b) make the root a smart-contract account with multisig/social
-  recovery — outside the protocol, invisible to it. After capture,
-  the only move is out-of-band: tell your counterparties, who stop
-  renewing their edges to you. Relationships, which expire, are
-  recoverable; the naked identity is not.
+- Root compromised → **capture, bounded by the identity's own policy**
+  _(ADR-0010, 2026-10-13; this paragraph said "no remedy, deliberately"
+  until then)_. An identity is an address plus an epoch-0 **policy**
+  `{root, guardians, k}` it commits to — by address derivation, or by
+  a pin each verifier takes at consent. The guardian set is the
+  identity's root; the root key is a hot key with a longer leash. A
+  thief holds the root key, not the guardians, so k guardian-signed
+  `rotate-root` certs move the identity to a new policy, verified
+  offline by every counterparty from its own pin — no chain read, no
+  authority above the identity (the policy is the identity's own).
+  Two rotations from the same reached predecessor are equivocation:
+  the identity is dead at that verifier until re-pinned out of band.
+  What remains: a thief who holds k guardian keys *is* the identity;
+  an identity that declared `{root}, k=1` chose that; and a verifier
+  that first meets the identity after capture and is shown a truncated
+  history is as exposed as any starved one (a chain read closes it, by
+  choice). Pre-compromise discipline still matters — keep guardians
+  genuinely separate; the on-chain account follows the cert chain and
+  never leads it.
 
 **Actor identities** (spawned workers): a single keypair, generated
 on the actor's own compute at birth. No delegation machinery at the
@@ -189,8 +195,8 @@ lists. Everything important is re-signed on the renewal beat, so a
 stolen credential has a bounded lifetime; between expiries,
 revocation is best-effort. This trade is taken knowingly, three
 times over (keys, capabilities, location records) — and it is why
-root capture above is categorically worse: roots are the one thing
-that never expires.
+root capture above was categorically worse until ADR-0010: the root
+key never expires, but the guardian set can replace it.
 
 ## Messaging: capabilities, not open inboxes
 
@@ -494,7 +500,7 @@ independence.
 | Problem | Mechanism | Residual risk, accepted |
 |---|---|---|
 | Key compromise (roots, hot key) | short-lived hot-key delegations | stolen key valid until expiry |
-| Key compromise (roots, cold key) | cold storage; optional contract-account recovery (extra-protocol) | **identity capture** — no in-protocol remedy |
+| Key compromise (roots, cold key) | guardian-signed epoch chain (ADR-0010): k-of-n rotation verified offline from each verifier's pin; equivocation = dead | capture needs k guardians; `{root}, k=1` chose irrecoverability; truncated history at a fresh verifier |
 | Key compromise (actors) | disposable identity; respawn + parent's records | window until parent notices |
 | Inbox spam / DoS | ocap proof chains + postage-caveated default frontdoor | transport-level floods; 24h frontdoor tail |
 | Confused deputy / over-broad authority | attenuation, intersection semantics, `delegable: false` | misuse within granted scope |
@@ -503,7 +509,7 @@ independence.
 | Finding moved actors | signed location records: piggyback + lighthouse actors | lighthouse liveness for first contact; cold clients re-bootstrap |
 | Child authenticity at birth | one-time intro nonce → immediate cert exchange | provider can fully impersonate the child (until TEE) |
 | Which code runs | image by digest; lease handle ≠ id | provider fidelity; epistemic exposure (same TEE path) |
-| Theft from compromised actors | tranche funding + ledger observability; negotiated guardians | outstanding tranche × detection lag |
+| Theft from compromised actors | tranche funding + ledger observability; negotiated spending co-signers | outstanding tranche × detection lag |
 | Stranger micropayments (postage) | pluggable: PoW now, probabilistic payments later | PoW economics are weak (below) |
 
 ## Open problems and known weaknesses

@@ -69,7 +69,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-command -v quint >/dev/null || { echo "quint not on PATH — enter the dev shell (nix develop) first" >&2; exit 127; }
+command -v quint >/dev/null || { echo "quint not on PATH — nix develop, or: nix shell --inputs-from . nixpkgs#quint -c $0 $*" >&2; exit 127; }
 
 mode="${1:-run}"
 
@@ -78,7 +78,7 @@ run_inv() { # file invariant steps [samples]
 }
 
 expect_violation() { # file invariant steps [samples]
-  if quint run --invariant="$2" --max-samples="${4:-500}" --max-steps="$3" "$1.qnt" >/dev/null 2>&1; then
+  if run_inv "$1" "$2" "$3" "${4:-500}" >/dev/null 2>&1; then
     echo "FAIL: $1.$2 was expected to be violated (the doc claim it encodes is now satisfiable — update the FINDING)" >&2
     exit 1
   fi

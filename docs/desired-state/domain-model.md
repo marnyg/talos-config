@@ -816,6 +816,15 @@ provisioning or recovery path may depend on it.
   the last-good tree in place. "Git is compiler input" (invariant 2)
   now means: the compiler reads git *through the owner's signature*; the
   transport (GitHub) is not trusted (invariant 3).
+- **Pin authority** _(2026-10-13, protocol ADR-0010)_ — a key that
+  re-pins one verifier's *view* of an identity, as distinct from a
+  **guardian**, which rotates the identity for everyone. N=1: the ssh
+  signing key of ADR-0030 (`allowed-signers`) is the pin authority for
+  the hub's view of the wallet (and, through `#bundle`, the fleet's);
+  the wallet's policy is the identity. Two owner roots, two jobs:
+  wallet policy = identity; ssh/age key = pin authority + confidentiality
+  root. Until the wallet declares guardians its policy is `{root}, k=1`
+  — today's security, declared.
 - **Kit** — what `Issuer.Mint` hands a new member: its `member` cert
   (90 d), the **beat grant** — one `invoke` grant to the Owner's
   `#renew` + `#bundle` facets (`target: wallet`, `issuer.BeatFacets`;

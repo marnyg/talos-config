@@ -17,7 +17,11 @@
    by the receiver itself**; all authority over an actor originates at
    that actor. A chain that does not begin with a receiver-signed cert
    is unverifiable, not denied. (Honest scope: this covers authority,
-   not every caveat — see invariant 8.)
+   not every caveat — see invariant 8.) _(2026-10-13, ADR-0010)_: a
+   **rotation chain** is rooted at the verifier's **pinned epoch-0
+   policy** — the same self-rooting, over a transition rather than an
+   authority; the verifier advances its epoch only by folding from that
+   pin.
 
 3. **No authority above an identity.** Every actor is the root of
    authority over itself. Where CA-like patterns emerge (a network
@@ -27,7 +31,10 @@
 
 4. **`can` is a closed, versioned verb set; the verb never carries its
    object.** Verbs are drawn from `{member, invoke, speak-as,
-   reach-me-at, relay, publish}`; target and facet live in structured
+   reach-me-at, relay, publish}` plus, since vocabulary v4,
+   `rotate-root` _(2026-10-13, ADR-0010; its caveats `epoch`, `prev`,
+   `policy` are legal on no other verb and never attenuate)_; target
+   and facet live in structured
    caveats (`cav.target`, `cav.facet`) so that chain attenuation is
    field-wise intersection, not string parsing.
 
@@ -40,7 +47,10 @@
 6. **Revocation is expiry.** No revocation lists. Every credential is
    re-signed on a per-relationship renewal beat; a stolen credential is
    valid only until it expires. There is no global clock tick — each
-   edge renews with its own counterparty.
+   edge renews with its own counterparty. A **rotation is a transition,
+   not a credential**: its `exp` bounds assembly (gathering k guardian
+   signatures), never validity — an expired rotation still proves the
+   transition when re-fed _(2026-10-13, ADR-0010)_.
 
 7. **Private keys are born where they live and never travel.** Only
    public keys and signatures cross the wire. A spawned actor generates
@@ -114,10 +124,25 @@ escalate rather than "fix".
 - **Revocation latency ≥ renewal beat.** Since revocation is expiry and
   verifiers are offline, a stolen credential stays valid for its
   remaining lifetime; between expiries revocation is best-effort.
-- **Root capture has no in-protocol remedy.** Root keys never expire,
-  so a thief who takes one *is* the identity. The only defenses are
-  pre-compromise (cold storage; optional extra-protocol contract-account
-  recovery) and out-of-band exit (counterparties stop renewing).
+- **Root capture is bounded by the identity's own policy** _(2026-10-13,
+  ADR-0010; was "has no in-protocol remedy")_. An identity is an address
+  plus an epoch-0 policy `{root, guardians, k}` it commits to (by address
+  derivation, or by pin at consent). The guardian set is the identity's
+  root; the root key is a hot key with a longer leash, and capture
+  threshold is k-of-n. Rotation is k guardian-signed `rotate-root` certs
+  with identical bodies, verified offline; a verifier advances its epoch
+  only on a chain rooted at its own pin, and `exp` on a rotation bounds
+  assembly, not validity. Two verifying rotations from the same
+  predecessor, at a predecessor the verifier's own chain has reached,
+  are equivocation; a verifier rejects both — the identity is dead there
+  until re-pinned out of band, and the proof travels (not safe-to-lose).
+  An identity with no guardians (`{root}, k=1`) chose irrecoverability.
+  A verifier that first meets an identity after capture and is shown a
+  truncated history is as exposed as any starved verifier — it may close
+  that window with a chain read, by choice, never by obligation. The
+  on-chain account follows the cert chain and may lag, never diverge,
+  except that chain ordering resolves an equivocation the protocol
+  declares dead — money only.
 - **Birth trust equals compute trust.** Image signing proves *which*
   code was requested; nothing in v0 proves the provider *ran* it. A
   malicious provider can impersonate a newborn. Bounded by tranches

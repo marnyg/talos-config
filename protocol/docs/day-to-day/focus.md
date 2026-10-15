@@ -13,13 +13,18 @@ lighthouse's id alone. Accepted on docker and on k8s; the
 publishes to it. M1–M4 built plus discovery. **2026-10-12:** the first actor↔actor
 stream facet (`agent-events`, chain-on-connect admitted by
 `VerifyChain`) and `protocol/facethttp` landed for the agent child
-(root ADR-0037) with no protocol change. **Next is the owner's
-pick:** M5 money (`0bc.5`) or the parent actor (N=2 consumer).
+(root ADR-0037) with no protocol change. **2026-10-13:** root rotation
+(ADR-0010 Proposed, `rotation.qnt`, `cert/rotation.go`) — the wallet
+root becomes recoverable by a guardian-signed epoch chain, inv 2/10
+verbatim. **Next is the owner's pick:** rule the desired-state
+amendments and wire `Pin` into the hub, M5 money (`0bc.5`), or the
+parent actor (N=2 consumer).
 
-**Toward goal:** `desired-state/goals.md` — *Spawning as funded
-enrollment*, *Sovereign identity* (private key born on the child's
-compute), *One primitive* (birth, leases, extension and now discovery
-are facets and chains; a bootstrap hint authorizes nothing).
+**Toward goal:** `desired-state/goals.md` — *Sovereign identity with a
+survivable compromise story* (root capture is now bounded by the
+identity's own policy, not "the one unrecoverable event"), *One
+primitive* (rotation is k certs of the same shape), *Spawning as funded
+enrollment*.
 
 **Out of scope:**
 - M5 money: `payment`, tranches, the provisioner market (frontdoor /
@@ -30,3 +35,6 @@ are facets and chains; a bootstrap hint authorizes nothing).
   the Phase-1 lighthouse view.
 - Lighthouse lookup-cap in the intro (`lm2a`); the founder indirection
   (`-founder`) on the lighthouse binary.
+- Address derivation that commits to the epoch-0 policy (CREATE2
+  parameters), EIP-712 typed rotation bodies, the on-chain follower
+  contract — all behind `4mg` / M5.

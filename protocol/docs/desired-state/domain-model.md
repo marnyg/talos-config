@@ -62,6 +62,7 @@ classDiagram
     Cert <|-- Invoke
     Cert <|-- ReachMeAt
     Cert <|-- Offer
+    Cert <|-- RotateRoot
 ```
 
 ## Actors and identity
@@ -75,8 +76,12 @@ classes, different lifecycles:
   Day-to-day operation uses **hot keys** carrying short-lived
   `speak-as` delegations from the root. Hot-key compromise is a routine
   recovery (root re-signs a new hot key; the stolen one dies at expiry);
-  root compromise is **capture** — the one unrecoverable event, offered
-  no in-protocol remedy by design.
+  root compromise is **capture** — bounded, since ADR-0010 (2026-10-13),
+  by the identity's own **policy** `{root, guardians, k}`: the guardian
+  set is the identity's root, the root key a hot key with a longer
+  leash, and a k-of-n guardian-signed **rotation** moves the identity to
+  a new policy without a chain read. `{root}, k=1` is irrecoverability,
+  declared.
 - **Actor identities** (spawned workers): a single keypair generated on
   the actor's own compute at birth, never delegated further at the
   leaf. Compromise or loss → the parent kills the lease and spawns a
@@ -89,9 +94,18 @@ classDiagram
     class HotKey["Hot key (per process/session)"]
     class SpeakAs["speak-as cert (root→hot, short-lived)"]
     class LeafActor["Leaf actor key (born on its own compute)"]
+    class Policy["Policy {root, guardians, k} (epoch n)"]
+    class Guardians["Guardian keys (k-of-n)"]
+    class Rotation["rotate-root certs (k identical bodies)"]
+    class Pin["Verifier pin (epoch-0 policy) → View"]
     ColdRoot --> SpeakAs : signs
     SpeakAs --> HotKey : empowers, bounded by cav + exp
     HotKey --> LeafActor : spawns + funds (intro nonce)
+    Policy --> ColdRoot : names as root (hot key, long leash)
+    Policy --> Guardians : names
+    Guardians --> Rotation : sign (prev = H(policy n))
+    Rotation --> Policy : next (epoch n+1)
+    Pin --> Policy : folds from epoch 0; equivocation ⇒ dead
 ```
 
 ## Messaging: capabilities, not open inboxes
@@ -331,6 +345,43 @@ protocol scope must never contradict these entries.
   Speak-as; pinned 2026-09-06, ADR-0018. This is the protocol's
   cold-root / hot-key split; the talos hub is one long-lived root's
   hot key.)_
+- **Policy** _(ADR-0010, 2026-10-13)_ — `{root, guardians, k}`: the
+  half of an identity that is not its address. The epoch-0 policy is
+  what an identity commits to — by address derivation (a new actor's
+  address is a hash over its epoch-0 policy) or by pin at consent (a
+  legacy EOA); referenced by `H(policy)` (`cert.Policy.Hash`, keccak
+  over JCS). The root key signs day-to-day delegations; only the
+  guardians rotate.
+- **Guardian** — a key in `policy.guardians`; signs `rotate-root`
+  certs as `iss`. The guardian set is the identity's root of rotation
+  authority; the "root key" is a hot key with a longer leash. Capture
+  threshold is k-of-n, not one key. Birth default `{child-root,
+  parent}, k=2`: neither alone rotates the child. Distinct from a
+  money co-signer on an account.
+- **Rotation** — k `rotate-root` certs identical in `(aud, can, cav,
+  iat, exp)`, `aud` = the address, one per distinct guardian `iss ∈
+  policy_n.guardians`, `cav = {epoch: n+1, prev: H(policy_n), policy:
+  policy_{n+1}}` (caveat vocabulary v4, legal on no other verb). A
+  **transition, not a credential**: verified by signature alone; `exp`
+  bounds assembly (`cert.AssembleRotation`), never validity. Never a
+  chain link; never feeds the mark.
+- **Epoch** — position in an identity's rotation chain; carried in
+  `cav.epoch` and part of the chaining key with `prev` (`H(policy)`
+  recurs). A verifier's epoch is derived, never global.
+- **Pin / View** — a verifier's own epoch-0 policy for an identity plus
+  every verified rotation it holds (`cert.Pin`, volatile; unchained
+  rotations are kept). The **View** `{epoch, policy, dead}` is a fold
+  from the pin, one epoch at a time — order-independent, monotone; a
+  delegation is admitted iff the view is alive and its signer is the
+  current policy's root (`Pin.Admits`). Loss of the held rotations
+  revives a dead identity at epoch 0 (`rotation.qnt`
+  `residualDeadStaysDead`) — durability is the consumer's.
+- **Equivocation** — two verifying rotations with the same `(epoch,
+  prev)` and different `policy`, **at a prev the verifier's chain has
+  reached** (`rotation.qnt` FINDING: an unrooted pair from an invented
+  policy kills nothing). = capture: the verifier rejects both, the
+  identity is dead there until re-pinned out of band; the proof is the
+  two bodies, self-certifying, and travels — not safe-to-lose.
 - **Time / low-water mark (`lw`)** — time is a trust input with two
   halves. The *upper* bound (denial) is the verifier's local clock:
   ops, not protocol. The *lower* bound (resurrection of expired certs

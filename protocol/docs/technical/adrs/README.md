@@ -62,7 +62,8 @@ not copied:
   leases and never learns about birth; leases are passive (deadline
   extended on the `#renew` beat via a decorator); children self-lapse
   on "no live edge"; M4 acceptance = fake + k8s + docker drivers.
-  Adds invariant 13. _Proposed 2026-09-21 (M4 grill-design, `0bc.4`); Accepted 2026-09-29 (acceptance run `0bc.4.6`)._
+  Adds invariant 13. _Proposed 2026-09-21 (M4 grill-design, `0bc.4`);
+  Accepted 2026-09-29 (acceptance run `0bc.4.6`)._
 - [0010](0010-root-rotation-via-guardian-signed-epoch-chain.md) — root
   capture is bounded by the identity's own policy: identity =
   (address, epoch-0 policy `{root, guardians, k}`); the guardian set

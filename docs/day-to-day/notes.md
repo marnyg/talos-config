@@ -1156,3 +1156,8 @@
 - 2026-10-12 — pi `--no-session` makes `get_state.sessionFile` empty;
   the child starts pi with `--session-dir <tmp>` so the JSONL exists to
   ship at settle (verified against pi 1.0.3 by `a-pirpc`).
+- 2026-10-13 — **A swarm wave that edits `protocol/cert` strands three
+  vendorHashes** (config-server-bin, iroh-transport, actors-bin): the
+  pre-push hook `--rebuild`s each `goModules` (minutes each). Run the
+  hook's loop in the background right after the merge, not inside
+  `git push`; log at `/tmp/swarm/vendorhash.log` this session.
