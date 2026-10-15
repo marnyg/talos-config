@@ -61,7 +61,7 @@
 # cliff is 720 h out and is covered by its witness tests (nag*Test,
 # rotationConvergesTest) instead; clock's 8-tick horizon is covered at 10;
 # rotation's view is a fold over MAX_EPOCH=3 so 7 steps reach every
-# chain shape incl. recurrence and equivocation-after-advance (~115 s;
+# chain shape incl. recurrence and equivocation-after-advance (115–140 s;
 # 8 steps blew past 5 min). Every invariant
 # has been mutation-tested (seeding the bug it guards against produces
 # a [violation]); authorize additionally needed a boundary-biased

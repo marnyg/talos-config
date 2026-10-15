@@ -81,7 +81,7 @@
 // Check:
 //   quint test rotation.qnt
 //   quint run    --invariant=invAll --max-steps=20 rotation.qnt
-//   quint verify --invariant=invAll --max-steps=7 rotation.qnt   (~115 s)
+//   quint verify --invariant=invAll --max-steps=7 rotation.qnt   (115–140 s)
 //   (ROOTED_EQUIVOCATION_ONLY=false ⇒ invDeadOnlyByRootedEquivocation violated)
 module rotation {
   pure val MAX_EPOCH = 3
