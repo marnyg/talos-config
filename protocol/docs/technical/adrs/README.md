@@ -63,3 +63,13 @@ not copied:
   extended on the `#renew` beat via a decorator); children self-lapse
   on "no live edge"; M4 acceptance = fake + k8s + docker drivers.
   Adds invariant 13. _Proposed 2026-09-21 (M4 grill-design, `0bc.4`); Accepted 2026-09-29 (acceptance run `0bc.4.6`)._
+- [0010](0010-root-rotation-via-guardian-signed-epoch-chain.md) — root
+  capture is bounded by the identity's own policy: identity =
+  (address, epoch-0 policy `{root, guardians, k}`); the guardian set
+  is the root, the root key a hot key with a longer leash; rotation =
+  k identical-body `rotate-root` certs (one per guardian `iss`),
+  verified offline on a chain rooted at the verifier's own pin, `exp`
+  bounding assembly not validity; two rotations from one predecessor
+  = equivocation = capture (reject both, proof travels); the on-chain
+  account follows and never diverges, money only. Adds `rotate-root`
+  to invariant 4. _Proposed 2026-10-13 (spike talos-config-aja2)._
