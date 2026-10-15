@@ -62,7 +62,9 @@
 // Keys are sorted by UTF-16 code units (JCS); iat and exp are Unix
 // seconds (int64); array element order is preserved as the issuer
 // signed it; empty arrays serialize as [] (never null); an absent
-// postage is the empty string. See canonicalBytes.
+// postage is the empty string. See canonicalBytes. A rotate-root cert
+// (rotation.go) adds "epoch","policy","prev" inside cav; no other
+// verb's bytes change.
 //
 // # Chains (protocol ADR-0001)
 //
@@ -94,12 +96,20 @@ const (
 	VerbReachMeAt Verb = "reach-me-at"
 	VerbRelay     Verb = "relay"
 	VerbPublish   Verb = "publish"
+	// VerbRotateRoot is a root-rotation vote (spike aja2, pin 4): iss is
+	// the GUARDIAN that signs, aud the address being rotated, cav =
+	// {epoch, prev, policy}. It is a transition, never a presented
+	// credential: VerifyChain, Attenuate and Authorize reject it
+	// (ErrRotationNotChain); only AssembleRotation / Pin consume it.
+	// See rotation.go.
+	VerbRotateRoot Verb = "rotate-root"
 )
 
 // knownVerbs is the closed set; decoding any other verb rejects.
 var knownVerbs = map[Verb]bool{
 	VerbMember: true, VerbInvoke: true, VerbSpeakAs: true,
 	VerbReachMeAt: true, VerbRelay: true, VerbPublish: true,
+	VerbRotateRoot: true,
 }
 
 // ValidVerb reports whether v is in the closed set.
@@ -135,6 +145,12 @@ func ValidVerb(v Verb) bool { return knownVerbs[v] }
 // the other side, so a chain [consent{self}, grant{*}] has effective
 // target {self}. It is for grants; a consent whose target is {*} roots
 // nothing (VerifyChain rule 1). No other set caveat has a sentinel.
+//
+// Caveat vocabulary v4 (spike aja2, pin 4): Epoch, Prev and Policy are
+// the rotate-root body. They are legal ONLY on a rotate-root cert —
+// DecodeCert rejects them on any other verb (ErrRotationCaveat) and
+// canonicalBytes refuses to sign them there. They are never
+// attenuated: a rotation is not a chain link.
 type Caveats struct {
 	Target    []ActorID // grants: the actors this authority may reach, or the singleton {TargetAny}
 	Facet     []string  // grants: the facet classes it may reach
@@ -148,6 +164,11 @@ type Caveats struct {
 	// PostageConflict is verifier-side and implies Unknown: the taint came
 	// from two links setting disagreeing Postage. Diagnostics only.
 	PostageConflict bool
+
+	// v4, rotate-root only (rotation.go):
+	Epoch  int64   // the epoch this rotation enters (>= 1)
+	Prev   string  // Policy.Hash() of the policy being left
+	Policy *Policy // the policy being entered
 }
 
 // Cert is the primitive: {iss, aud, can, cav, iat, exp, sig}.
@@ -175,6 +196,16 @@ type Cert struct {
 // cert is a pure function of its authority-bearing fields. Unknown and
 // PostageConflict are deliberately absent: they are verifier judgments,
 // not signed data.
+//
+// Canonical-form decision for the v4 rotation caveats: they are
+// serialised ONLY on a rotate-root cert (canonRotCav), never on the
+// other verbs. The alternative — always present, zero-valued — would
+// change the signed bytes of every existing cert class for no gain:
+// a non-rotate-root cert cannot carry them (DecodeCert rejects; this
+// function refuses to sign), so the verb alone fixes the shape and
+// the form stays a pure function of the authority-bearing fields.
+// Nothing in-repo persists certs across versions, but the vector
+// tests in cert_test.go pin the v3 bytes and stay valid.
 type canonCav struct {
 	Delegable bool     `json:"delegable"`
 	Endpoints []string `json:"endpoints"`
@@ -186,13 +217,25 @@ type canonCav struct {
 	Verbs     []string `json:"verbs"`
 }
 
+// canonRotCav is canonCav plus the rotate-root body; JCS sorts the
+// promoted keys with the rest:
+//
+//	{"delegable","endpoints","epoch","facet","groups","name","policy":
+//	 {"guardians","k","root"},"postage","prev","target","verbs"}
+type canonRotCav struct {
+	canonCav
+	Epoch  int64       `json:"epoch"`
+	Policy canonPolicy `json:"policy"`
+	Prev   string      `json:"prev"`
+}
+
 type canonCert struct {
-	Aud string   `json:"aud"`
-	Can string   `json:"can"`
-	Cav canonCav `json:"cav"`
-	Exp int64    `json:"exp"`
-	Iat int64    `json:"iat"`
-	Iss string   `json:"iss"`
+	Aud string `json:"aud"`
+	Can string `json:"can"`
+	Cav any    `json:"cav"` // canonCav, or canonRotCav for rotate-root
+	Exp int64  `json:"exp"`
+	Iat int64  `json:"iat"`
+	Iss string `json:"iss"`
 }
 
 func nonNil(s []string) []string {
@@ -222,19 +265,29 @@ func targetsToStrings(t []ActorID) []string {
 // canonicalBytes returns the RFC 8785 canonical JSON of c without sig —
 // the exact bytes an issuer signs and a verifier checks.
 func canonicalBytes(c Cert) ([]byte, error) {
+	base := canonCav{
+		Delegable: c.Cav.Delegable,
+		Endpoints: nonNil(c.Cav.Endpoints),
+		Facet:     nonNil(c.Cav.Facet),
+		Groups:    nonNil(c.Cav.Groups),
+		Name:      c.Cav.Name,
+		Postage:   c.Cav.Postage,
+		Target:    targetsToStrings(c.Cav.Target),
+		Verbs:     nonNil(c.Cav.Verbs),
+	}
+	var cav any = base
+	if c.Can == VerbRotateRoot {
+		if c.Cav.Policy == nil {
+			return nil, fmt.Errorf("%w: rotate-root without cav.policy", ErrRotationCaveat)
+		}
+		cav = canonRotCav{canonCav: base, Epoch: c.Cav.Epoch, Policy: c.Cav.Policy.canonical(), Prev: c.Cav.Prev}
+	} else if hasRotationCaveats(c.Cav) {
+		return nil, fmt.Errorf("%w: on verb %q", ErrRotationCaveat, c.Can)
+	}
 	cc := canonCert{
 		Aud: c.Aud,
 		Can: string(c.Can),
-		Cav: canonCav{
-			Delegable: c.Cav.Delegable,
-			Endpoints: nonNil(c.Cav.Endpoints),
-			Facet:     nonNil(c.Cav.Facet),
-			Groups:    nonNil(c.Cav.Groups),
-			Name:      c.Cav.Name,
-			Postage:   c.Cav.Postage,
-			Target:    targetsToStrings(c.Cav.Target),
-			Verbs:     nonNil(c.Cav.Verbs),
-		},
+		Cav: cav,
 		Exp: c.Exp,
 		Iat: c.Iat,
 		Iss: string(c.Iss),

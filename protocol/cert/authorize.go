@@ -393,7 +393,9 @@ func (a *authCtx) rootCerts(r ActorID, consents, speakAs, certs []Cert, chained 
 	// for only by stranger wallets, and is dropped).
 	for _, c := range certs {
 		hotKeys := a.rootedHotKeys(speakAs, principals)
-		if !a.verify(c) || !(principals[c.Iss] || hotKeys[c.Iss]) {
+		// A rotate-root cert is a transition, not a chain link: it never
+		// feeds the mark (rotation.go; fail-closed).
+		if c.Can == VerbRotateRoot || !a.verify(c) || !(principals[c.Iss] || hotKeys[c.Iss]) {
 			continue
 		}
 		a.root(c)
@@ -510,6 +512,11 @@ func VerifyChain(r Receiver, verb Verb, chain, speakAs []Cert, signer ActorID, f
 // per receiver-signed consent carrying verb that roots the chain (R may
 // hold consents for N>1 sovereigns). Empty ⇒ err (the furthest failure).
 func (a *authCtx) verifyChain(r Receiver, verb Verb, chain, speakAs []Cert, signer ActorID, facet string, now int64) ([]chainVerdict, error) {
+	// rotate-root never roots or links a chain (rotation.go): reject
+	// before any consent is consulted.
+	if verb == VerbRotateRoot {
+		return nil, ErrRotationNotChain
+	}
 	var out []chainVerdict
 	var best error
 	bestRank := -1
@@ -779,6 +786,9 @@ func (a *authCtx) consentTargets(r Receiver, consents []Cert, now int64) bool {
 // no following link (ErrNotDelegable); a child with another verb than
 // its parent is not a link of the same chain (ErrVerbMismatch).
 func Attenuate(parent, child Cert) (Cert, error) {
+	if parent.Can == VerbRotateRoot || child.Can == VerbRotateRoot {
+		return Cert{}, ErrRotationNotChain
+	}
 	if !parent.Cav.Delegable {
 		return Cert{}, ErrNotDelegable
 	}

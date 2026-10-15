@@ -22,6 +22,19 @@ type wireCav struct {
 	Verbs     []string `json:"verbs"`
 	Endpoints []string `json:"endpoints"`
 	Postage   string   `json:"postage"`
+	// v4 (rotation.go): present only on rotate-root certs; omitempty so
+	// Encode of every other verb is byte-for-byte what it was.
+	Epoch  int64       `json:"epoch,omitempty"`
+	Prev   string      `json:"prev,omitempty"`
+	Policy *wirePolicy `json:"policy,omitempty"`
+}
+
+// wirePolicy is Policy on the wire (and, via canonPolicy, the JCS form
+// Policy.Hash commits to).
+type wirePolicy struct {
+	Root      string   `json:"root"`
+	Guardians []string `json:"guardians"`
+	K         int      `json:"k"`
 }
 
 type wireCert struct {
@@ -78,6 +91,29 @@ func DecodeCert(data []byte) (Cert, error) {
 	if err != nil {
 		return Cert{}, fmt.Errorf("cert: sig not hex: %w", err)
 	}
+	// v4: the rotation caveats are legal only on rotate-root, and there
+	// they are mandatory and well-formed (rotation.go). Any other verb
+	// carrying one is rejected, not dropped (fail-closed, like an
+	// unknown caveat key).
+	var policy *Policy
+	if w.Can == string(VerbRotateRoot) {
+		if w.Cav.Policy == nil {
+			return Cert{}, fmt.Errorf("%w: rotate-root without cav.policy", ErrRotationCaveat)
+		}
+		p := policyFromWire(*w.Cav.Policy)
+		if err := p.Validate(); err != nil {
+			return Cert{}, fmt.Errorf("cert: cav.policy: %w", err)
+		}
+		if w.Cav.Epoch < 1 {
+			return Cert{}, fmt.Errorf("%w: cav.epoch %d < 1", ErrRotationCaveat, w.Cav.Epoch)
+		}
+		if !validPolicyHash(w.Cav.Prev) {
+			return Cert{}, fmt.Errorf("%w: cav.prev is not a policy hash", ErrRotationCaveat)
+		}
+		policy = &p
+	} else if w.Cav.Epoch != 0 || w.Cav.Prev != "" || w.Cav.Policy != nil {
+		return Cert{}, fmt.Errorf("%w: on verb %q", ErrRotationCaveat, w.Can)
+	}
 	return Cert{
 		Iss: iss,
 		Aud: w.Aud,
@@ -91,11 +127,26 @@ func DecodeCert(data []byte) (Cert, error) {
 			Verbs:     w.Cav.Verbs,
 			Endpoints: w.Cav.Endpoints,
 			Postage:   w.Cav.Postage,
+			Epoch:     w.Cav.Epoch,
+			Prev:      w.Cav.Prev,
+			Policy:    policy,
 		},
 		Iat: w.Iat,
 		Exp: w.Exp,
 		Sig: sig,
 	}, nil
+}
+
+func policyFromWire(w wirePolicy) Policy {
+	g := make([]ActorID, len(w.Guardians))
+	for i, s := range w.Guardians {
+		g[i] = ActorID(s)
+	}
+	return Policy{Root: ActorID(w.Root), Guardians: g, K: w.K}
+}
+
+func policyToWire(p Policy) *wirePolicy {
+	return &wirePolicy{Root: string(p.Root), Guardians: nonNil(targetsToStrings(p.Guardians)), K: p.K}
 }
 
 // Encode renders a cert as wire JSON with sig as lowercase hex. The
@@ -116,10 +167,15 @@ func Encode(c Cert) ([]byte, error) {
 			Verbs:     nonNil(c.Cav.Verbs),
 			Endpoints: nonNil(c.Cav.Endpoints),
 			Postage:   c.Cav.Postage,
+			Epoch:     c.Cav.Epoch,
+			Prev:      c.Cav.Prev,
 		},
 		Iat: c.Iat,
 		Exp: c.Exp,
 		Sig: hex.EncodeToString(c.Sig),
+	}
+	if c.Cav.Policy != nil {
+		w.Cav.Policy = policyToWire(*c.Cav.Policy)
 	}
 	return json.Marshal(w)
 }
