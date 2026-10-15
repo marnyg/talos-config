@@ -30,6 +30,10 @@
 #              the per-process speak-as bound and the 30 d nag
 #   clock      ADR-0019 time as trust input: iat low-water mark vs. clock rollback;
 #              only receiver-rooted certs feed the mark (strangers never do)
+#   rotation   spike aja2 pins 1–4: root rotation via a guardian-signed epoch
+#              chain — k-of-n rotate-root certs verified by signature alone,
+#              verifier pinned at policy_0 derives its view from the chain
+#              rooted at that pin, equivocation at a rooted prev = dead
 #
 # Expected violation: approval.residualTokenReplayAcrossRedeploy is the
 # residual ADR-0015 accepts (a leaked token replays after a redeploy
@@ -37,7 +41,14 @@
 # closing it is noticed and the ADR updated. ADR-0018 (2026-09-06)
 # names one such change — token HMAC keyed from the per-process hubkey —
 # but leaves it OPEN (it strands tokens served before a redeploy); if
-# approval.qnt adopts it, move this to run_inv. (The 2026-09-05 findings
+# approval.qnt adopts it, move this to run_inv. rotation has two more:
+# rotation.residualTruncatedHistory is the pin-1 residual (a verifier
+# never shown the rotation — fresh, starved or fed a truncated history —
+# still accepts the stolen old root; a chain read closes it by choice)
+# and rotation.residualDeadStaysDead is the pin-2 residual (the
+# equivocation record is NOT safe-to-lose: a restart revives the dead
+# identity at epoch 0 until git re-feeds the pair). If either holds, the
+# design changed — update the pin and move it to run_inv. (The 2026-09-05 findings
 # that refuted doc sentences — see FINDING blocks in the headers — were
 # ruled the same day and folded into ADR-0015/0017 + the glossary.)
 #
@@ -48,7 +59,10 @@
 # for, kau; ~135 s after xwu; ~95 s before); runway's nondet
 # init reaches the 6 d boundaries in ≤ 10 steps — the 30 d speak-as
 # cliff is 720 h out and is covered by its witness tests (nag*Test,
-# rotationConvergesTest) instead; clock's 8-tick horizon is covered at 10. Every invariant
+# rotationConvergesTest) instead; clock's 8-tick horizon is covered at 10;
+# rotation's view is a fold over MAX_EPOCH=3 so 7 steps reach every
+# chain shape incl. recurrence and equivocation-after-advance (~115 s;
+# 8 steps blew past 5 min). Every invariant
 # has been mutation-tested (seeding the bug it guards against produces
 # a [violation]); authorize additionally needed a boundary-biased
 # generator before its mutants would die.
@@ -63,8 +77,8 @@ run_inv() { # file invariant steps [samples]
   quint run --invariant="$2" --max-samples="${4:-300}" --max-steps="$3" "$1.qnt"
 }
 
-expect_violation() { # file invariant steps
-  if quint run --invariant="$2" --max-samples=500 --max-steps="$3" "$1.qnt" >/dev/null 2>&1; then
+expect_violation() { # file invariant steps [samples]
+  if quint run --invariant="$2" --max-samples="${4:-500}" --max-steps="$3" "$1.qnt" >/dev/null 2>&1; then
     echo "FAIL: $1.$2 was expected to be violated (the doc claim it encodes is now satisfiable — update the FINDING)" >&2
     exit 1
   fi
@@ -73,7 +87,7 @@ expect_violation() { # file invariant steps
 
 case "$mode" in
 run)
-  for f in approval authorize runway clock; do
+  for f in approval authorize runway clock rotation; do
     echo "== $f (tests) =="
     quint test "$f.qnt"
   done
@@ -87,8 +101,12 @@ run)
   run_inv runway invAll 60 1000
   echo "== clock =="
   run_inv clock invAll 30 500
+  echo "== rotation =="
+  run_inv rotation invAll 20 500
   echo "== expected violations =="
   expect_violation approval residualTokenReplayAcrossRedeploy 30
+  expect_violation rotation residualTruncatedHistory 30 3000   # pin 1 residual: unshown verifier accepts the old root
+  expect_violation rotation residualDeadStaysDead 30 3000      # pin 2 residual: restart loses the equivocation record (needs a ≥k thief, a rooted pair, a restart: ~1 trace in 200)
   ;;
 verify)
   quint verify --invariant=invAll --max-steps=15 hub.qnt
@@ -97,6 +115,7 @@ verify)
   quint verify --invariant=invAll --max-steps=2 authorize.qnt
   quint verify --invariant=invAll --max-steps=10 runway.qnt
   quint verify --invariant=invAll --max-steps=10 clock.qnt
+  quint verify --invariant=invAll --max-steps=7 rotation.qnt
   ;;
 *)
   echo "usage: $0 [run|verify]" >&2
