@@ -36,9 +36,9 @@ consented to" — and only the receiver may say it (inv 2, 3).
 - ADR-0010's point: rotation changes which key speaks for an identity
   *without* re-issuing a consent, grant or role; otherwise it is
   re-enrollment under another name.
-- ADR-0003's discipline: whatever the receiver holds is a type, never
-  a slice a caller's bundle could be confused with.
-- Trivial pin ⇒ identity map: an unrotated fleet sees no verdict change.
+- ADR-0003's discipline: what the receiver holds is a type, never a
+  slice a caller's bundle could be confused with. Trivial pin ⇒
+  identity map: an unrotated fleet sees no verdict change.
 
 ## Considered Options
 
@@ -81,11 +81,11 @@ key: nothing resolves to I, every chain under I is unverifiable at R.
 Consents stay addressed to the identity address (`kit.SpeakAs.Iss` for
 members, `-admin-address` for the hub). What does not change:
 `Authorize`'s steps, `VerifyChain`'s fold, rule 4 / `answersFor`,
-attenuation, the mark (`lw`): a held pin's rotations are guardian-
-signed, not R-signed, and do not feed `lw` (as the held `speak-as`
-does not, ADR-0003). A `rotate-root` cert still never appears in a
-chain. The pin is receiver-held only: `Bundle` has no field for it,
-and a "pin" a stranger mails is an attenuated twin that is ignored.
+attenuation, the mark (`lw`: a pin's rotations are guardian-signed,
+not R-signed, and no more feed `lw` than a held `speak-as`, ADR-0003).
+A `rotate-root` cert still never appears in a chain. The pin is
+receiver-held only: `Bundle` has no field for it; a "pin" a stranger
+mails is an attenuated twin that is ignored.
 
 Consumer wiring (talos, N=1): `#bundle` gains `rotations` — the list
 of rotations the hub holds, each a list of certs, empty today; git
@@ -100,12 +100,12 @@ on every `#bundle`, and passes its held pins as `Receiver.Pins`
 `Authority()` unchanged).
 
 Residual: a receiver's pin is as fresh as its last beat. A member
-starved of `#bundle` keeps admitting the rotated-away root until the
-chain reaches it — the starvation bound ADR-0010 already states; a
-member cannot be made to admit a key its own pin does not derive.
+starved of `#bundle` admits the rotated-away root until the chain
+reaches it (ADR-0010's starvation bound); it can never be made to
+admit a key its own pin does not derive.
 
-Out of scope: declaring guardians (`4mg`, the policy stays trivial
-here), the re-pin ceremony after a dead view, the on-chain follower.
+Out of scope: declaring guardians (`4mg`; the policy stays trivial),
+the re-pin ceremony after a dead view, the on-chain follower.
 
 - Open: **the old root under its own name.** For a legacy EOA the
   identity address *is* the epoch-0 root key, and `{c.Iss}` is always
@@ -116,15 +116,10 @@ here), the re-pin ceremony after a dead view, the on-chain follower.
   reachable *only* through its pin (drop a resolved `s` with `s.ID ==
   p.Address` unless `p.Admits(s.ID)`). Not resolved here; for the
   model (`d0o0.1`).
-- Open: `*Pin` is mutable and "not safe for concurrent use"; ADR-0005
-  wants the verifier's inputs installed atomically and judged from a
-  snapshot. Whether `HoldPins` copies or the member swaps the slice
-  under a lock is a runtime call, not a rule.
 - Open: a member's pin advances only on what the hub relays in
-  `#bundle`. The hub can starve a member (withhold), never forge (k
-  guardian signatures verify at the member against its own pin) —
-  consistent with inv 3, but it makes the hub a pin *authority* in
-  ADR-0010's N=1 sense for the fleet; worth a sentence there.
+  `#bundle`: the hub can starve, never forge (k guardian signatures
+  verify at the member against its own pin) — inv 3 holds, but the hub
+  is a pin *authority* for the fleet in ADR-0010's N=1 sense.
 
 > A receiver resolves a root key to an identity through a pin it
 > holds: beside its consents and its `speak-as` set, it holds one pin
