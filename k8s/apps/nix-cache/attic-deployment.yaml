@@ -62,8 +62,10 @@ spec:
             - secretRef:
                 name: attic-token-key # ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64
           env:
+            # Plain `info` logs every sqlx statement (seen on first
+            # start, 2026-10-16); keep attic's own lines, mute the ORM.
             - name: RUST_LOG
-              value: info
+              value: info,sqlx=warn,sea_orm_migration=warn
           ports:
             - name: http
               containerPort: 8080
