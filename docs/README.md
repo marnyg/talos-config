@@ -39,4 +39,11 @@ In monorepos, services/apps/packages may have their own `docs/` mirroring this l
   authoritative for the *talos deployment* (the protocol's first, N=1
   consumer). See the sub-scope's own [`README.md`](../protocol/docs/README.md).
 
+- [**workouts**](../workouts/docs/) — the self-hosted workout tracker
+  (epic `talos-config-yz75`): a data-plane app on Longhorn behind the
+  group gate, not part of the control plane. Only
+  [`desired-state/domain-model.md`](../workouts/docs/desired-state/domain-model.md)
+  so far (exercises, workouts/sets, templates, metrics; records are
+  derived). Read it before touching `workouts/`.
+
 <!-- e.g. - [config-server](../config-server/docs/) -->

@@ -19,6 +19,13 @@
 
 ## Read first
 
+- 2026-10-16 — **`k8s/apps/workouts` pod sits in ErrImagePull** until
+  `ghcr.io/marnyg/workouts` is made public (GitHub UI; container
+  visibility has no API). Nothing else is wrong with it. The volume is
+  empty until `workouts import` runs (`deployment.yaml` header). The
+  Strong export it needs is `~/strong-export-2026-10-16/` on the
+  laptop only — licensed media, never in git (`yz75`).
+
 - 2026-10-04 — **Commits on `main` must be ssh-signed by the owner key**
   (ADR-0030, `lehx`): the pre-push hook refuses an unsigned tip, and once
   deployed the hub will not serve one. The nixos box is configured; the

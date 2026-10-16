@@ -5,41 +5,42 @@
 
 ## Last session
 
-2026-10-15: **pins wired into authorization (`d0o0`, protocol ADR-0011
-Proposed)** — the follow-through on ADR-0010 that makes a rotation
-*mean* something at a receiver. Swarm of three (`c5705eb` ADR,
-`0870a68` `authorize.qnt`, `3388cac` code), gates re-run
-(`quint test/run/verify`, `go test` protocol + config-server,
-`scripts/test-iroh.sh`). FINDING on the way: the hop must be
-subtractive for pinned addresses (old EOA key == identity address).
-Details in `protocol/docs/day-to-day/handoff.md`. Earlier the same
-day: `aja2` closed (ADR-0010 + `rotation.qnt` + `cert/rotation.go`,
-`87a3ac1`), desired-state amended per owner ruling.
-
-- **Deployed 2026-10-16 11:19Z** (`fly/deploy.sh` via the nixos
-  builder, image `341b542`, machine v83), unsealed 11:21:17Z, hubkey
-  `2a812ca5…`. Every pin is trivial (`{root}, k=1`) so no verdict
-  moved; `marius-mac` renewed 11 s after unseal, cp1 answered at
-  +13 s, zero hub warnings. Relay loopback-probe noise ~2/min vs the
-  1.7/min baseline — within noise.
+2026-10-16: **workouts tracker built end to end** (epic `yz75`, a
+detour from `ivof`). Strong v6.2.5 on the phone was explored over
+adb/uiautomator, then its REST backend (`back.strong.app`, JWT via
+`/auth/login`, okhttp UA to pass the WAF) gave the structured export:
+258 exercises with instructions + media URLs (108 videos, ~400
+stills on `files.strong.app`, public), 8 templates, 72 logs — saved
+**outside the repo** at `~/strong-export-2026-10-16/` (licensed
+content; README there). New Go module `workouts/` (C-free, modernc
+sqlite): `docs/desired-state/domain-model.md` (sub-scope), `store/`
+(schema + derived records/PRs; Brzycki, rep-max rows = heaviest set
+with ≥ n reps — numbers match Strong's), `strongimport/` (idempotent,
+synthetic fixture), `web/` (server-rendered PWA, live logging screen
+over a JSON API, SW + manifest, inline-SVG charts), `cmd/workouts`
+(`serve` / `import`). Commits `d31b54a` → `7862442`, pushed.
+`nix build .#workouts-bin` is the gate (added to pre-push + CI's
+vendor-hash matrix). Image `ghcr.io/marnyg/workouts@sha256:15ea29f4`
+pushed from the nixos builder; `k8s/apps/workouts/` synced by ArgoCD
+(PVC bound, Ingress `workouts.gw.mesh.internal` gated `admins`).
 
 ## Loose threads
 
-- `d0o0.1/.2/.3` merged, **awaiting owner close**; `d0o0` stays open
-  for the durable `talos/` copy of pins/rotations (not safe-to-lose
-  per ADR-0010) — or re-scope and close.
-- ADR-0011 Open: rule 3 (aud binding) not pin-aware; `authorize.qnt`
-  pre-d0o0 laws quantify the unpinned receiver (bridge laws cover).
-- `unsealIssuer` logs/pairs the admitting KEY, not the identity —
-  revisit against ce8 when a real rotation exists.
-- vendorHash for config-server-bin / iroh-transport / actors-bin
-  re-bumped this session (protocol/ changed again).
-- Standing: `e6pu.2.{1,2,3}` awaiting close since 10-12; `whxz`,
-  `e7ru`, `4mg`; 9 `<!-- stale? -->` flags; `jlgz`, `bsj`, `bhui`.
+- **Pod is in `ErrImagePull`**: the ghcr package is private and
+  container visibility has no API — flip it in the GitHub UI, then
+  seed the volume (`l8mc`, commands in `deployment.yaml`'s header).
+- The Strong password went through chat — rotate it.
+- Template editor + metric pages are tested only by the Go walk-through
+  (`web_test.go`); no hands-on run on the phone yet.
+- Standing from before: `d0o0.1/.2/.3` + `e6pu.2.{1,2,3}` awaiting
+  owner close; `whxz`, `e7ru`, `4mg`; 9 `<!-- stale? -->` flags.
 
 ## Suggested next steps
 
-- Close the three `d0o0` tasks; decide `d0o0`'s remaining scope
-  (`talos/pins/<address>.json` → hub `Pin.Hold` at construction).
-- Back to `ivof`: sandbox-agent live acceptance, then the parent actor.
-- `4mg`: EIP-712 + seed decoupling as one decision.
+- `l8mc`: make the package public → ArgoCD self-heals → `kubectl cp`
+  the export → `workouts import` → open on the phone, add to home
+  screen, log one real session; fix what the thumb finds.
+- Decide whether "build in-house vs deploy wger" deserves an ADR (the
+  choice was made in conversation 2026-10-16: Go+SQLite PWA, Strong
+  API as the seed; no OSS tracker).
+- Back to `ivof` (sandbox-agent live acceptance, parent actor).

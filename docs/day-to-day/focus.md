@@ -17,6 +17,11 @@ pins into every receiver) — model + code built, trivial pins
 everywhere; the durable `talos/` copy of pins/rotations is the open
 remainder.
 
+**Detour 2026-10-16:** the workouts tracker (`yz75`) is built and
+synced; what remains is operator work (`l8mc`: ghcr package public,
+seed the volume, first real session on the phone). Then back to the
+line above.
+
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for
 real work, and the first with a durable datastore of its own; it is
