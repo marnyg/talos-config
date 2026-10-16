@@ -5,51 +5,39 @@
 
 ## Last session
 
-2026-10-13: **root rotation designed and built (spike `talos-config-aja2`,
-protocol ADR-0010 Proposed)** — a review session on the repo's ideas
-turned into a design: keep "the wallet is the identity", make the root
-recoverable without touching protocol inv 2/10. Swarm of three
-(`538330a` ADR, `038461e` `rotation.qnt`, `1eaebf6` `cert/rotation.go`),
-all gates re-run (`check.sh run`, verify depth 7, `go test`,
-`scripts/test-iroh.sh` green). Details in
-`protocol/docs/day-to-day/handoff.md`.
+2026-10-15: **pins wired into authorization (`d0o0`, protocol ADR-0011
+Proposed)** — the follow-through on ADR-0010 that makes a rotation
+*mean* something at a receiver. Swarm of three (`c5705eb` ADR,
+`0870a68` `authorize.qnt`, `3388cac` code), gates re-run
+(`quint test/run/verify`, `go test` protocol + config-server,
+`scripts/test-iroh.sh`). FINDING on the way: the hop must be
+subtractive for pinned addresses (old EOA key == identity address).
+Details in `protocol/docs/day-to-day/handoff.md`. Earlier the same
+day: `aja2` closed (ADR-0010 + `rotation.qnt` + `cert/rotation.go`,
+`87a3ac1`), desired-state amended per owner ruling.
 
-- The N=1 consequence to name: the owner has **two roots with distinct
-  jobs** — wallet policy = identity (guardians rotate it for everyone);
-  the ssh/age key (ADR-0030 `allowed-signers`) = **pin authority** for
-  the hub's view of that identity + confidentiality root. Nothing in
-  `talos/` changes until the wallet declares guardians; today's
-  `guardians0 = {root}, k=1` is the declared choice.
-- `4mg` gained a note: EIP-712 typed signing + decoupling the secrets
-  seed from a wallet signature are one decision superseding `ce8`.
+- Deployment effect today: **none** — every pin is trivial
+  (`{root}, k=1`); the hub pins each `-admin-address`, members pin
+  their Kit's `speak-as` issuer, `#bundle` has an empty `rotations`.
+  The hub image will need a redeploy to carry it; no unseal change.
 
 ## Loose threads
 
-- **Desired-state amendments awaiting the owner** (surfaced by
-  docs-update, not applied): protocol inv 4 verb set (+`rotate-root`),
-  the "root capture" structural trade-off → ADR-0010's wording (with
-  the model's "rooted" amendment), inv 2 / inv 6 wording for a cert
-  class that is a transition; root domain-model glossary **Pin
-  authority**; protocol glossary terms.
-- `aja2.1/.2/.3` merged, **awaiting owner close**; `aja2` closes once
-  the amendments are ruled. `e6pu.2.{1,2,3}` still awaiting close from
-  2026-10-12.
-- vendorHash for config-server-bin / iroh-transport / actors-bin is
-  stale after the `protocol/cert` change — bumped in this session's
-  landing commit if nix finished; otherwise the pre-push hook says so.
-- Threads to file (from worker reports): birth receipt that keeps
-  inv 13 (`{lease, image}` only; child binds its key to the lease);
-  `Policy.Hash` vs EIP-712 struct hash; rotate-root certs carrying
-  base caveats; the sketch's "negotiated guardians" cell overloading
-  *guardian*.
-- Standing: 9 `<!-- stale? -->` flags; `jlgz`, `bsj` (blocks `ivof`),
-  `bhui`; the `e6pu` live acceptance (sandbox-agent image + spawn).
+- `d0o0.1/.2/.3` merged, **awaiting owner close**; `d0o0` stays open
+  for the durable `talos/` copy of pins/rotations (not safe-to-lose
+  per ADR-0010) — or re-scope and close.
+- ADR-0011 Open: rule 3 (aud binding) not pin-aware; `authorize.qnt`
+  pre-d0o0 laws quantify the unpinned receiver (bridge laws cover).
+- `unsealIssuer` logs/pairs the admitting KEY, not the identity —
+  revisit against ce8 when a real rotation exists.
+- vendorHash for config-server-bin / iroh-transport / actors-bin
+  re-bumped this session (protocol/ changed again).
+- Standing: `e6pu.2.{1,2,3}` awaiting close since 10-12; `whxz`,
+  `e7ru`, `4mg`; 9 `<!-- stale? -->` flags; `jlgz`, `bsj`, `bhui`.
 
 ## Suggested next steps
 
-- Rule the amendments above; `bd close` the three tasks; ADR-0010 →
-  Accepted when the hub consumes `Pin`.
-- Back to `ivof`: rebuild `sandbox-agent` with the child and run the
-  live acceptance, then the parent actor.
-- `4mg` as one decision (EIP-712 + seed), now that `ce8`'s objection
-  is gone.
+- Close the three `d0o0` tasks; decide `d0o0`'s remaining scope
+  (`talos/pins/<address>.json` → hub `Pin.Hold` at construction).
+- Back to `ivof`: sandbox-agent live acceptance, then the parent actor.
+- `4mg`: EIP-712 + seed decoupling as one decision.

@@ -16,9 +16,11 @@ stream facet (`agent-events`, chain-on-connect admitted by
 (root ADR-0037) with no protocol change. **2026-10-13:** root rotation
 (ADR-0010 Proposed, `rotation.qnt`, `cert/rotation.go`) — the wallet
 root becomes recoverable by a guardian-signed epoch chain, inv 2/10
-verbatim. **Next is the owner's pick:** rule the desired-state
-amendments and wire `Pin` into the hub, M5 money (`0bc.5`), or the
-parent actor (N=2 consumer).
+verbatim. **2026-10-15:** pins wired into authorization (ADR-0011,
+`d0o0`): `Receiver.Pins`, subtractive resolution hop, hub + members
+hold trivial pins, `#bundle` carries rotations. **Next is the owner's
+pick:** the durable pin/rotation copy in `talos/` (closes `d0o0`), M5
+money (`0bc.5`), or the parent actor (N=2 consumer).
 
 **Toward goal:** `desired-state/goals.md` — *Sovereign identity with a
 survivable compromise story* (root capture is now bounded by the

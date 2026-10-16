@@ -824,7 +824,11 @@ provisioning or recovery path may depend on it.
   the wallet's policy is the identity. Two owner roots, two jobs:
   wallet policy = identity; ssh/age key = pin authority + confidentiality
   root. Until the wallet declares guardians its policy is `{root}, k=1`
-  — today's security, declared.
+  — today's security, declared. _Built 2026-10-15 (protocol ADR-0011,
+  `d0o0`)_: the hub holds a trivial pin per `-admin-address` and
+  `unsealIssuer` accepts only a root the pin admits; every member pins
+  its Kit's `speak-as` issuer and folds the rotations `#bundle` carries;
+  `Authorize` resolves a signer to the identity through the pin.
 - **Kit** — what `Issuer.Mint` hands a new member: its `member` cert
   (90 d), the **beat grant** — one `invoke` grant to the Owner's
   `#renew` + `#bundle` facets (`target: wallet`, `issuer.BeatFacets`;

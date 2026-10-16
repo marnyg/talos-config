@@ -33,3 +33,15 @@
   safe-to-lose cache that is not safe to lose (ADR-0019's test).
   Landed on: reject both, dead until re-pinned out of band — and, by
   the model (`rotation.qnt` FINDING), only when the pair is *rooted*.
+- 2026-10-15 — Tried **an additive pin hop** (resolved sovereign S also
+  yields identity I when I's pin admits S; nothing removed). Ruled out
+  (`d-pin-adr`, then `authorize.qnt` mutant p1): a legacy EOA's
+  identity address IS its epoch-0 key, so the old key kept resolving to
+  itself and matching the consent. Landed on: subtractive for pinned
+  addresses — a pinned identity is reachable only through its pin
+  (ADR-0011).
+- 2026-10-15 — Tried making `res` (the law-bearing verdict) the pinned
+  receiver. Ruled out for now: five pre-existing raw-field laws have no
+  pin edge and break on every rotated acceptance; keeping them verbatim
+  forced `res` unpinned + `resPin` pinned + bridge laws. Follow-up:
+  restate them pin-aware.

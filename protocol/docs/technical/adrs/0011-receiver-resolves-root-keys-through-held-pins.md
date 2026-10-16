@@ -67,11 +67,16 @@ consented to" — and only the receiver may say it (inv 2, 3).
 `Receiver{ID, Consents, SpeakAs, Pins}`: `Pins []*cert.Pin` is the set
 of identities R has committed to — epoch-0 policy plus every rotation
 R has verified and held (`Pin.Hold`). `resolve(c, speakAs, now,
-groups)` keeps its set — `{c.Iss} ∪ {s.Iss | live speak-as s naming
-c.Iss}` — and then, for each sovereign `s` in it and each `p ∈
-r.Pins` with `p.Admits(s.ID)`, appends `{ID: p.Address, EffExp:
-s.EffExp, Via: s.Via, ViaPin: p}`. One hop, after the speak-as hop,
+groups)` computes its key set `ks = {c.Iss} ∪ {s.Iss | live speak-as s
+naming c.Iss}` as before; with no pins held that IS the result. With
+pins the hop is **subtractive for pinned addresses**: `(ks \ {p.Address
+| p ∈ Pins}) ∪ {p.Address | p ∈ Pins, ∃k ∈ ks: p.Admits(k)}` — each
+appended entry inherits the admitting key's `EffExp`/`Via` and carries
+`ViaPin: p`. A pinned address is reachable ONLY through its pin; an
+unpinned name resolves as today. One hop, after the speak-as hop,
 never iterated: a pin maps a key to an address, not to another key.
+_(Ruled by the model, `d0o0.1`, 2026-10-15: the additive first cut is
+mutant p1 of `authorize.qnt`, killed by `invOldRootDiesOnRotation`.)_
 The hop applies wherever `resolve` is used — the member-cert issuer
 (2a/2b, `memberSovereigns`) and every grant issuer in `chainUnder` /
 `VerifyChain` — so the hub's per-connect check and its envelope path
@@ -107,15 +112,21 @@ admit a key its own pin does not derive.
 Out of scope: declaring guardians (`4mg`; the policy stays trivial),
 the re-pin ceremony after a dead view, the on-chain follower.
 
-- Open: **the old root under its own name.** For a legacy EOA the
-  identity address *is* the epoch-0 root key, and `{c.Iss}` is always
-  in the resolved set. After I: `0xf568 → 0xNEW`, a cert signed by the
-  old key resolves to `eth:0xf568`-the-signer, which the consent to
-  `eth:0xf568` matches — the pin hop adds, it never removes. ADR-0010
-  pin 3 (`invOldRootDiesOnAdvance`) needs a pinned address to be
-  reachable *only* through its pin (drop a resolved `s` with `s.ID ==
-  p.Address` unless `p.Admits(s.ID)`). Not resolved here; for the
-  model (`d0o0.1`).
+- Resolved (was Open): **the old root under its own name.** For a
+  legacy EOA the identity address *is* the epoch-0 root key, so an
+  additive hop let a cert signed by the old key resolve to itself and
+  match the consent. Hence the subtractive rule above. Built
+  `3388cac` (`d0o0.3`): `cert.Receiver.Pins`, `actor.HoldPins`, hub
+  pins per admin address, member pin per Kit identity, `#bundle.
+  rotations`.
+- Open: **rule 3 (aud binding) is not pin-aware** — a consent-only
+  chain presented by the identity's *new* root itself (`aud: I`,
+  signer `0xNEW`) is `AudUnbound` without a speak-as I→0xNEW. The
+  root acts through hot keys in practice; left as a decision.
+- Open: the pre-d0o0 laws in `authorize.qnt` quantify the UNPINNED
+  receiver; bridge laws (trivial ⇒ same verdict; rotated ⇒ verdict of
+  the unpinned receiver with re-addressed consents) transfer coverage.
+  Restating them with a raw pin edge is a follow-up.
 - Open: a member's pin advances only on what the hub relays in
   `#bundle`: the hub can starve, never forge (k guardian signatures
   verify at the member against its own pin) — inv 3 holds, but the hub
@@ -123,8 +134,9 @@ the re-pin ceremony after a dead view, the on-chain follower.
 
 > A receiver resolves a root key to an identity through a pin it
 > holds: beside its consents and its `speak-as` set, it holds one pin
-> per identity it committed to, and a sovereign a cert resolves to
-> also resolves to every pinned identity whose live view names that
-> sovereign as root. Consents stay addressed to the identity. A
+> per identity it committed to; a pinned identity is reachable only
+> through its pin — a cert's resolved keys yield the identity exactly
+> when the pin's live view names one of them as root — and unpinned
+> names resolve as before. Consents stay addressed to the identity. A
 > rotation changes which key speaks for an identity; it touches no
 > consent, grant or role.

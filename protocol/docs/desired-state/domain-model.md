@@ -376,6 +376,22 @@ protocol scope must never contradict these entries.
   current policy's root (`Pin.Admits`). Loss of the held rotations
   revives a dead identity at epoch 0 (`rotation.qnt`
   `residualDeadStaysDead`) — durability is the consumer's.
+  **Receiver-held input to Authorize** _(ADR-0011, built 2026-10-15,
+  `d0o0`)_: `Receiver{ID, Consents, SpeakAs, Pins}` — the third
+  receiver-held set, never from the caller's bundle. Issuer resolution
+  (step 2a) gains one hop, **subtractive for pinned addresses**: with
+  key set `ks` (signer ∪ live speak-as issuers), the result is
+  `(ks \ pinned addresses) ∪ {p.Address | ∃k ∈ ks: p.Admits(k)}` — a
+  pinned identity is reachable only through its pin; a trivial pin
+  (`{root: I, guardians: [I], k: 1}`) is the identity map and changes
+  no verdict (`authorize.qnt` `invTrivialPinsPreserveVerdicts`); after
+  a rotation the old root dies at the receiver and the new root is
+  admitted exactly as the identity (`invOldRootDiesOnRotation`,
+  `invNewRootAdmittedViaPin`); a dead view admits nothing. Consents
+  stay addressed to the identity address. The hub pins each admin
+  address, a member pins its Kit's `speak-as` issuer; `#bundle`
+  carries the hub's held rotations (a safe-to-lose copy the member
+  re-verifies against its own pin).
 - **Equivocation** — two verifying rotations with the same `(epoch,
   prev)` and different `policy`, **at a prev the verifier's chain has
   reached** (`rotation.qnt` FINDING: an unrooted pair from an invented
@@ -404,10 +420,12 @@ protocol scope must never contradict these entries.
   `VerifyChain` (ADR-0002: a connection is an invocation) plus the
   deployment layer's member/group/blocklist rules. Inputs: the
   receiver's own configuration (key `R`, its consent grant(s), the
-  `speak-as` certs it *holds* naming `R` as `aud` — Go `cert.Receiver`),
-  its accept table, the ALPN, the caller's bundle {`member`,
-  `invoke[]`, `speak-as`}. Resolve the issuer through `speak-as`; the
-  resolved `iss` must be one R holds a live consent grant for; for each
+  `speak-as` certs it *holds* naming `R` as `aud`, and the **pins** it
+  holds — Go `cert.Receiver`), its accept table, the ALPN, the caller's
+  bundle {`member`, `invoke[]`, `speak-as`}. Resolve the issuer through
+  `speak-as`, then through the receiver's pins (ADR-0011: a pinned
+  identity is reachable only through its pin); the resolved `iss` must
+  be one R holds a live consent grant for; for each
   grant build the chain [consent(R→iss), grant], verify every
   sig/exp/caveat, intersect, require target ∋ R **or** target ∋ P for a
   principal P whose live `speak-as P→R` R holds (ADR-0003; never one

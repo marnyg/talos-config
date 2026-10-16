@@ -3,6 +3,15 @@
 <!-- "Weather, not climate" for the protocol scope. Each entry
      `YYYY-MM-DD — <note>`. Deployment weather lives in the root notes. -->
 
+- 2026-10-15 — **`authorize.qnt` depth-2 verify is ~305–342 s** since
+  the pin draw (was ~173–233 s); CI's nightly `check.sh verify` has no
+  hard timeout but a local run needs patience. A second verify line
+  covers `invTrivialPinsPreserveVerdicts` (~80 s). Cheapest lever if it
+  must shrink: drop `OWNER1_NEW` from `gen`'s first-link issuer draw
+  (`genNear`'s `FChainRootRotated` still covers the chain).
+- 2026-10-15 — **Workers hit Anthropic 429s mid-task** (c-pin-resolve
+  stalled after three retries and needed a "keep going"); when three
+  agents + the orchestrator share one account, stagger launches.
 - 2026-10-13 — **`rotation.qnt` verify depth is 7, not 8** (~115 s
   alone; ~190 s beside another quint run; 8 blew past 5 min). Its
   `residualDeadStaysDead` needs 3000 samples to surface in random
