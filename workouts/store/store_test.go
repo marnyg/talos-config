@@ -9,7 +9,7 @@ import (
 )
 
 func f(v float64) *float64 { return &v }
-func i(v int) *int          { return &v }
+func i(v int) *int         { return &v }
 
 func open(t *testing.T) *Store {
 	t.Helper()
