@@ -422,14 +422,28 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 		}
 	}()
 	waitFor(t, ctx, "gw beat", func() bool { return gw.Beats() == 1 })
-	if err := dev.Beat(ctx); err != nil { // pick up gw in the name map
-		t.Fatal(err)
+	// No explicit dev.Beat: the desk's directory predates gw, so the
+	// first Target misses (unknown name) and must re-beat on its own
+	// (MinRebeat is a millisecond here) — the same self-heal that covers
+	// a known member whose advertised facets changed (ErrNotFacet).
+	tb := dev.Beats()
+	if member, facet, err := dev.Target("jackett.gw", 80); err != nil || member != "gw" || facet != "ingress-http" {
+		t.Fatalf("jackett.gw:80 → %s/%s %v", member, facet, err)
+	}
+	if dev.Beats() != tb+1 {
+		t.Fatalf("Target should have re-beaten once: %d → %d", tb, dev.Beats())
 	}
 	if e := issuer.Lookup(dev.Bundle().NameMap, "gw"); len(e) != 1 || e[0].Location == nil || !slices.Equal(e[0].Location.Cav.Facet, []string{"ingress-http"}) {
 		t.Fatalf("gw's reach-me-at should advertise ingress-http: %+v", e)
 	}
-	if member, facet, err := dev.Target("jackett.gw", 80); err != nil || member != "gw" || facet != "ingress-http" {
-		t.Fatalf("jackett.gw:80 → %s/%s %v", member, facet, err)
+	// A wrong port on a fresh directory: one rate-limited re-beat, then
+	// the same error — not a loop.
+	tb = dev.Beats()
+	if _, _, err := dev.Target("gw", 50000); !errors.Is(err, nodeagent.ErrNotFacet) {
+		t.Fatalf("gw:50000 should be ErrNotFacet: %v", err)
+	}
+	if dev.Beats() != tb+1 {
+		t.Fatalf("a miss re-beats exactly once: %d → %d", tb, dev.Beats())
 	}
 	if _, _, err := dev.Zone("sonarr.aa-bb-cc-dd-ee-ff"); !errors.Is(err, nodeagent.ErrNotThatKind) {
 		t.Fatalf("a service name under a node must not resolve: %v", err)

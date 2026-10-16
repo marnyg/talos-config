@@ -94,8 +94,27 @@ func (a *Agent) Zone(name string) (member string, kind policy.Kind, err error) {
 }
 
 // Target is what a flow to <name>:<port> means, as (member, facet).
+//
+// Like Dial, it treats a miss as evidence the directory is a beat old
+// and re-beats (rate-limited, MinRebeat) before answering: the name is
+// unknown (a member enrolled since), or the port is no facet of the
+// kind the cached record advertises (ErrNotFacet, ErrNotThatKind) —
+// which, since a member's kind is read off its own advertisement, is
+// what a member that began serving looks like until its new reach-me-at
+// arrives on a beat (2026-10-17: the Mac started serving ssh and every
+// peer read it as a node for up to a beat interval, 6 h). A genuinely
+// wrong port costs one rate-limited beat, then the same error.
 func (a *Agent) Target(name string, port uint16) (member, facet string, err error) {
+	member, facet, err = target(name, port, a.Resolve)
+	if err == nil || !staleTarget(err) || !a.rebeat(context.Background()) {
+		return member, facet, err
+	}
 	return target(name, port, a.Resolve)
+}
+
+// staleTarget: the Target misses a fresh beat may cure.
+func staleTarget(err error) bool {
+	return errors.Is(err, ErrUnknownName) || errors.Is(err, ErrNotFacet) || errors.Is(err, ErrNotThatKind)
 }
 
 // Dial connects to the member called name under facet, presenting this

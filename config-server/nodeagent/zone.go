@@ -24,6 +24,10 @@ var ErrUnknownName = errors.New("nodeagent: name not in the name map")
 // (a service name under a member that serves no gateway facet).
 var ErrNotThatKind = errors.New("nodeagent: name depth does not match the member's kind")
 
+// ErrNotFacet: the port is no facet in the vocabulary of the kind the
+// member's record advertises.
+var ErrNotFacet = errors.New("nodeagent: port is not a facet of the member's kind")
+
 // HubName is the hub's bare name on the presentation (hub.<zone>). The
 // hub is a well-known actor, not a member: it holds no member cert and
 // is not in the name map, so Resolve answers this name from the hub
@@ -85,8 +89,11 @@ func zone(name string, resolve func(string) ([]issuer.NameEntry, error)) (member
 }
 
 // target is zone plus the port: what a flow to <name>:<port> means, as
-// (member, facet). A port that is no facet of the kind is a plain
-// error: not staleness, nothing a beat would cure.
+// (member, facet). A port that is no facet of the kind is ErrNotFacet
+// — over a directory a beat old it may be staleness after all: a kind
+// is read off what the member advertises, and a member that starts
+// serving (a device gaining ssh, ADR-0038) changes its kind under a
+// map that still shows the old record. Agent.Target re-beats on it.
 func target(name string, port uint16, resolve func(string) ([]issuer.NameEntry, error)) (member, facet string, err error) {
 	member, kind, err := zone(name, resolve)
 	if err != nil {
@@ -94,7 +101,7 @@ func target(name string, port uint16, resolve func(string) ([]issuer.NameEntry, 
 	}
 	facet = policy.FacetByPort(kind, port)
 	if facet == "" {
-		return "", "", fmt.Errorf("nodeagent: port %d is not a %s facet", port, kind)
+		return "", "", fmt.Errorf("%w: port %d on a %s", ErrNotFacet, port, kind)
 	}
 	return member, facet, nil
 }
