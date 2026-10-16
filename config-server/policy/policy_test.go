@@ -109,8 +109,11 @@ func TestAcceptTable(t *testing.T) {
 	if _, ok := at[ALPN("ingress-http")]; ok {
 		t.Fatal("a node must not accept a gateway facet's ALPN")
 	}
-	if AcceptTable("device") != nil {
-		t.Fatal("device is not a kind")
+	if at := AcceptTable(KindDevice); at[ALPN("ssh")] != "ssh" || len(at) != 1 {
+		t.Fatalf("device accept table = %v", at)
+	}
+	if AcceptTable("phone") != nil {
+		t.Fatal("phone is not a kind")
 	}
 }
 
@@ -122,7 +125,7 @@ func TestParseRejects(t *testing.T) {
 		t.Fatalf("baseline should parse: %v", err)
 	}
 	cases := map[string]string{
-		"unknown kind":        ok + "device: {inbound: []}\n",
+		"unknown kind":        ok + "phone: {inbound: []}\n",
 		"facet of other kind": strings.Replace(ok, "facet: apid", "facet: ingress-http", 1),
 		"relay facet":         strings.Replace(ok, "facet: apid, group: admins}]}\ngateway", "facet: apid, group: admins}]}\nhub: {inbound: [{facet: relay, group: admins}]}\ngateway", 1),
 		"port key":            strings.Replace(ok, "group: admins}", "group: admins, port: \"80\"}", 1),

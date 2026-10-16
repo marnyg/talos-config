@@ -466,7 +466,12 @@ provisioning or recovery path may depend on it.
   stays app-layer; since ADR-0034 the appliances' door too — the raw
   `jellyfin` splice was retired 2026-10-06), `rdp` (raw TCP to the
   win2k25 guest's RDP Service, natural port 3389 — the NodePort path
-  died with nebula, `j5c5`); hub `hub-http` (stream) plus
+  died with nebula, `j5c5`); hub `hub-http` (stream); **device**
+  `ssh` (raw TCP to the device's own sshd, natural port 22 — ADR-0038,
+  2026-10-17: a device that serves a facet is a receiver of kind
+  `device`; one that serves nothing still only initiates. The mesh
+  grant says who may knock, sshd's own authentication who may log in
+  — the `rdp` two-gate pattern) plus
   the Issuer's actor facets. **The iroh relay is not a facet**: it is
   a keyless transport child whose access hook sees only a NodeId, so
   no grant can be presented to it — relay access is membership-implied
@@ -492,7 +497,7 @@ provisioning or recovery path may depend on it.
   Ports exist only inside a facet definition (forward) and in the
   device-local map (expose) — never in a grant. A facet has one
   **natural port** (`policy.FacetPort`: `apid` 50000, `kube-api`
-  6443, `hub-http` 80, `ingress-http` 80, `rdp` 3389), the port its service listens on at the
+  6443, `hub-http` 80, `ingress-http` 80, `rdp` 3389, `ssh` 22), the port its service listens on at the
   receiver and the port every presentation shows for it, so
   `cp1.mesh.internal:50000` reads the same on a bridge, a tun, or the
   node itself; a port is read in the vocabulary of the name's kind
@@ -895,10 +900,17 @@ provisioning or recovery path may depend on it.
   nebula, P4.2 2026-09-21.)_
 - **Recipe** — the Owner's declared who×facet table,
   `talos/mesh-policy-v3.yaml`: rows `{facet, host|group}` under a
-  **receiver kind** (`node`, `gateway`, `hub` — the actors that hold
-  accept tables; a device only initiates and is not a kind). Kind ≡
+  **receiver kind** (`node`, `gateway`, `hub`, `device` — the actors
+  that hold accept tables; a device that serves nothing holds none
+  and only initiates, one that serves `ssh` is a `device` receiver —
+  ADR-0038). Kind ≡
   facet vocabulary: each kind owns a closed, disjoint facet set, so a
-  row's kind is validation structure (Nickel), never compiled data.
+  row's kind is validation structure (Nickel), never compiled data —
+  **not an access-control concept**: who may reach a facet is the
+  row's `host|group` (a principal or a group), where it is honored is
+  the receiver's consent. A presentation reads a member as *one* kind
+  (`zone.KindOf`, the first advertised facet's); whether it should
+  read the port off the advertisement instead is thread `m6xc`.
   Its *meaning* is `Recipe.Allows(caller, kind, facet)` — some row
   under the kind names the facet and the caller's name or one of its
   groups; `Compile(recipe, caller, now)` must emit grants that

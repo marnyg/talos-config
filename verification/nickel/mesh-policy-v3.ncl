@@ -25,7 +25,7 @@
 #     each other's control surfaces — carried from v2 as a contract.
 #
 # Contract-per-invariant, each mutation-tested (list in check.sh):
-#   ClosedKinds           Policy is a closed record {node, gateway, hub}.
+#   ClosedKinds           Policy is a closed record {node, gateway, hub, device}.
 #   Facet <kind>          closed facet set per kind, exactly the glossary.
 #   RuleShape             closed record {facet, host|group}: `port`/`proto`
 #                         or any typoed key ⇒ blame.
@@ -55,6 +55,9 @@ let facets = {
   node = ["apid", "kube-api"],
   gateway = ["ingress-http", "rdp"],
   hub = ["hub-http"],
+  # A device that serves is a receiver (ADR-0038): its own sshd, raw
+  # TCP, the mesh grant the first gate and sshd's auth the second.
+  device = ["ssh"],
 }
 in
 
@@ -171,12 +174,14 @@ let NodeIsolatesMachines =
 in
 
 {
-  # Closed record: the receiver kinds are exactly the actors that hold
-  # accept tables. `device` is gone (a device only initiates; it has
-  # no facets), and an unknown kind fails.
+  # Closed record: the receiver kinds are exactly the facet
+  # vocabularies. `device` returned 2026-10-17 (ADR-0038) as the
+  # vocabulary of what a device may serve — a kind is not a kind of
+  # member. An unknown kind fails.
   Policy = {
     node | std.contract.Sequence [Scope "node", NodeIsolatesMachines],
     gateway | Scope "gateway",
     hub | Scope "hub",
+    device | Scope "device",
   },
 }

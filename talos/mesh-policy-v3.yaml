@@ -13,6 +13,7 @@
 #            node     apid | kube-api
 #            gateway  ingress-http | rdp
 #            hub      hub-http
+#            device   ssh
 #          Never a port: ports live in the receiver's own accept table
 #          (facet → forward). Reachability is not a facet. The iroh
 #          relay is not a facet (transport; membership-implied access).
@@ -66,3 +67,12 @@ hub:
     # v2's :80 rules; per-route gates decide who sees what.
     - {facet: hub-http, group: admins}
     - {facet: hub-http, group: media}
+device:
+  inbound:
+    # A device's own sshd (ADR-0038): `ssh nixos.mesh.internal` from an
+    # admin device, raw TCP to 127.0.0.1:22 on the receiver. Honored
+    # only at the devices that serve the facet (irohup -forward
+    # ssh=127.0.0.1:22 — the receiver's consent is its opt-in); sshd's
+    # own authentication is the second gate, so this row says who may
+    # knock, not who may log in.
+    - {facet: ssh, group: admins}

@@ -24,7 +24,7 @@
 # over the nebula render's talos/mesh-policy.yaml, went with nebula in
 # Mesh v3 Phase 4; its mutations 1-7 are in git history.)
 #   v3 (mesh-policy-v3.ncl):
-#     8. unknown receiver kind (`device`)         Policy (closed)
+#     8. unknown receiver kind (`phone`)          Policy (closed)
 #     9. `facet: apid` under gateway              Facet gateway
 #    10. `facet: icmp` under hub (reachability)   Facet hub
 #    10b. `facet: relay` under hub (transport)    Facet hub

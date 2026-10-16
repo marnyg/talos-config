@@ -5,7 +5,20 @@
 
 ## Last session
 
-2026-10-16: **workouts tracker built end to end** (epic `yz75`, a
+2026-10-17: **ssh to devices over the mesh** (`thz2`, ADR-0038
+Proposed). Owner's framing "this is an ACL problem, not a kind" was
+right about the authorization (recipe row = principal/group, consent
+= where) and the ADR says so; the kind change is only vocabulary
+bookkeeping. New receiver kind `device` `{ssh}` (port 22) in
+`config-server/policy`, the Nickel contract, the recipe
+(`{facet: ssh, group: admins}`); `irohup -forward ssh=127.0.0.1:22`
+makes the daemon serve it; `-bridge` takes any facet with a kind.
+Gates: `go test` policy/nodeagent/issuer/irohup, nickel `check.sh`,
+`scripts/test-iroh.sh` all green. **Not yet deployed**: the hub must
+redeploy + unseal to compile the row; the Mac plist and the NixOS
+unit (outside the repo) need the `-forward` flag.
+
+Earlier, 2026-10-16: **workouts tracker built end to end** (epic `yz75`, a
 detour from `ivof`). Strong v6.2.5 on the phone was explored over
 adb/uiautomator, then its REST backend (`back.strong.app`, JWT via
 `/auth/login`, okhttp UA to pass the WAF) gave the structured export:
@@ -26,6 +39,8 @@ pushed from the nixos builder; `k8s/apps/workouts/` synced by ArgoCD
 
 ## Loose threads
 
+- `thz2` open until a live `ssh nixos.mesh.internal` from the Mac;
+  `m6xc` (presentations read one kind per member) filed, not decided.
 - **Pod is in `ErrImagePull`**: the ghcr package is private and
   container visibility has no API — flip it in the GitHub UI, then
   seed the volume (`l8mc`, commands in `deployment.yaml`'s header).
@@ -37,6 +52,9 @@ pushed from the nixos builder; `k8s/apps/workouts/` synced by ArgoCD
 
 ## Suggested next steps
 
+- ssh live run: add `-forward ssh=127.0.0.1:22` to the box's unit and
+  the Mac's plist, `fly/deploy.sh` + unseal, wait one beat, `ssh
+  nixos.mesh.internal`; then ADR-0038 → Accepted, close `thz2`.
 - `l8mc`: make the package public → ArgoCD self-heals → `kubectl cp`
   the export → `workouts import` → open on the phone, add to home
   screen, log one real session; fix what the thumb finds.

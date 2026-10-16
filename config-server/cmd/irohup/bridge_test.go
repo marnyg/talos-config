@@ -21,3 +21,18 @@ func TestBridgeFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestForwardFlag(t *testing.T) {
+	var f forwards
+	if err := f.Set("ssh=127.0.0.1:22"); err != nil {
+		t.Fatal(err)
+	}
+	if f["ssh"] != "127.0.0.1:22" || f.String() != "ssh=127.0.0.1:22" {
+		t.Fatalf("parsed %v", f)
+	}
+	for _, bad := range []string{"ssh", "ssh=nope", "apid=127.0.0.1:50000", "ingress-http=127.0.0.1:80", "ssh=127.0.0.1:2222"} {
+		if err := f.Set(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

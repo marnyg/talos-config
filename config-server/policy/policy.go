@@ -47,18 +47,24 @@ const BlocklistFile = "mesh-blocklist-v3.txt"
 // bounds hub starvation at 6 days, one day inside this.
 const GrantTTL int64 = 7 * 24 * 60 * 60
 
-// Kind is a receiver kind — the actors that hold accept tables. A
-// device only initiates and has no facets, so it is not a kind.
+// Kind is a receiver kind — a facet vocabulary, not a kind of member
+// (glossary "Facet": kind ≡ facet vocabulary). A device that serves
+// nothing is not a receiver and reads as a node (zone.KindOf); one
+// that serves a device facet (ssh, ADR-0038) is a receiver of kind
+// device. The authorization is the same as for any kind: a grant
+// addressed to a group or a principal, honored where the receiver
+// consented — the kind only says which facet names are legal.
 type Kind string
 
 const (
 	KindNode    Kind = "node"
 	KindGateway Kind = "gateway"
 	KindHub     Kind = "hub"
+	KindDevice  Kind = "device"
 )
 
 // Kinds is the closed receiver-kind set, in recipe order.
-var Kinds = []Kind{KindNode, KindGateway, KindHub}
+var Kinds = []Kind{KindNode, KindGateway, KindHub, KindDevice}
 
 // Facets are the closed facet set per kind — the glossary's "Facet"
 // entry verbatim, and the same table as mesh-policy-v3.ncl. Adding a
@@ -70,6 +76,9 @@ var facets = map[Kind][]string{
 	KindNode:    {"apid", "kube-api"},
 	KindGateway: {"ingress-http", "rdp"},
 	KindHub:     {"hub-http"},
+	// A device's own sshd (ADR-0038): raw TCP, the mesh grant is the
+	// first gate and sshd's own authentication the second (as rdp).
+	KindDevice: {"ssh"},
 }
 
 // facetPorts is the natural port of a facet: where its service listens
@@ -83,6 +92,7 @@ var facetPorts = map[string]uint16{
 	"hub-http":     80,
 	"ingress-http": 80,
 	"rdp":          3389,
+	"ssh":          22,
 }
 
 // FacetPort returns the natural port of facet, or 0 if it has none.
@@ -165,11 +175,13 @@ type Scope struct {
 	Inbound []Rule `yaml:"inbound"`
 }
 
-// Recipe is the parsed talos/mesh-policy-v3.yaml.
+// Recipe is the parsed talos/mesh-policy-v3.yaml. A kind absent from
+// the document is an empty scope (`inbound: []`): no grant names it.
 type Recipe struct {
 	Node    Scope `yaml:"node"`
 	Gateway Scope `yaml:"gateway"`
 	Hub     Scope `yaml:"hub"`
+	Device  Scope `yaml:"device"`
 }
 
 // Scope returns the rows under kind k (nil for an unknown kind).
@@ -181,6 +193,8 @@ func (r Recipe) Scope(k Kind) []Rule {
 		return r.Gateway.Inbound
 	case KindHub:
 		return r.Hub.Inbound
+	case KindDevice:
+		return r.Device.Inbound
 	}
 	return nil
 }

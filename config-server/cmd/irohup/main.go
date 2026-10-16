@@ -25,6 +25,7 @@
 //	irohup -rekey                            # discard the key too: a new NodeId
 //	irohup -paste                            # headless: paste the signature instead
 //	irohup -enroll-only                      # enroll (browser or -paste) and exit
+//	irohup -tun ... -forward ssh=127.0.0.1:22 # also SERVE: this device's sshd as the ssh facet (ADR-0038)
 //
 // talosctl through the bridge: `talosctl -e 127.0.0.1:50000 -n <node>`
 // with the node's hostname in the endpoint's SAN set — see
@@ -44,6 +45,15 @@
 // linux gets the zone declared per-link in systemd-resolved by the
 // setup itself. See tun.go and fakeip/{utun_darwin,tun_linux}.go.
 //
+// Serving (ADR-0038): -forward <facet>=<host:port> makes the member a
+// receiver of kind device — it advertises the facet in its reach-me-at,
+// consents to the Owner for it, and splices each admitted stream to the
+// loopback target. The grant is the recipe's (`{facet: ssh, group:
+// admins}`); the service's own authentication (sshd's keys) is the
+// second gate. Without -forward the member only initiates, as before.
+// From another admin device: `ssh <name>.mesh.internal` through its
+// tun, or `-bridge <name>/ssh=127.0.0.1:2222` without one.
+//
 // State (~/.config/talos-mesh/<name>.iroh/, or -state DIR): the same
 // layout as a node's /var/lib/p0agent (nodeagent.State): key,
 // kit.json, bundle.json, hub.json, mark. The key is the only state;
@@ -59,7 +69,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -77,6 +86,7 @@ import (
 func main() {
 	log.SetFlags(0)
 	var br bridges
+	var fw forwards
 	var (
 		hub      = flag.String("hub", "https://marnyg-talos-config.fly.dev", "hub base URL (HTTPS: enrollment and /.well-known)")
 		relay    = flag.String("relay", "", "iroh home relay URL (default: the hub — one hostname on fly, ADR-0022)")
@@ -92,7 +102,8 @@ func main() {
 		tunMode  = flag.Bool("tun", false, "desktop presentation: utun + 198.18/15 fake IPs + split DNS instead of bridges (root at start; drops to -user)")
 		runAs    = flag.String("user", "_talosmesh", "with -tun: the user to drop to after the privileged setup")
 	)
-	flag.Var(&br, "bridge", "<member>/<facet>=<host:port> local TCP bridge; repeatable (facets: "+strings.Join(policy.Facets(policy.KindNode), ", ")+")")
+	flag.Var(&br, "bridge", "<member>/<facet>=<host:port> local TCP bridge; repeatable (any facet with a kind; the receiver decides)")
+	flag.Var(&fw, "forward", "<facet>=<host:port> facet this device SERVES, spliced to a loopback target; repeatable (device facets: "+strings.Join(policy.Facets(policy.KindDevice), ", ")+")")
 	flag.Parse()
 
 	// Privileged setup first, before anything else runs: it takes no
@@ -125,8 +136,8 @@ func main() {
 		}
 	}
 	for _, b := range br {
-		if !slices.Contains(policy.Facets(policy.KindNode), b.Facet) {
-			log.Fatalf("-bridge %s/%s: %q is not a node facet (%v)", b.Name, b.Facet, b.Facet, policy.Facets(policy.KindNode))
+		if policy.KindOf(b.Facet) == "" {
+			log.Fatalf("-bridge %s/%s: %q is not a facet of any kind", b.Name, b.Facet, b.Facet)
 		}
 	}
 	if *relay == "" {
@@ -177,8 +188,12 @@ func main() {
 	}
 
 	logger := log.New(os.Stderr, "", log.Ltime)
+	// Kind device: with -forward the member serves (advertises, consents,
+	// accepts); without it Forward is empty and nothing is advertised —
+	// a caller-only member, read as a node by presentations (zone.KindOf).
 	a, err := nodeagent.Start(nodeagent.Options{
 		Config: nodeagent.Config{Hub: *hub, Relay: *relay}, State: state,
+		Kind: policy.KindDevice, Forward: fw,
 		BindAddr: *bindAddr, Log: logger, BeatEvery: *beat,
 	})
 	if err != nil {
