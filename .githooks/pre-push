@@ -42,7 +42,7 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
       'protocol/**/*.go' 'protocol/*.go' 'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' \
       'actors/**/*.go' 'actors/*.go' \
       'go.mod' 'go.sum' '*/go.mod' '*/go.sum' \
-      'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 2>/dev/null || true)
+      'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 'workouts/nix/default.nix' 2>/dev/null || true)
     [ -n "$files" ] && touched="$touched$files
 " && pushed="$pushed$local_ref $local_sha
 "
@@ -58,7 +58,7 @@ EOF
     printf '%s' "$pushed" | sort -u | while read -r local_ref local_sha; do
       [ -z "$local_sha" ] && continue
       flake="git+file://$repo?ref=$local_ref&rev=$local_sha"
-      for attr in config-server-bin iroh-transport actors-bin; do
+      for attr in config-server-bin iroh-transport actors-bin workouts-bin; do
         echo "pre-push: checking .#$attr.goModules vendorHash at ${local_sha%"${local_sha#???????}"}…" >&2
         # Realise first (substitution allowed — a stale cached output is
         # exactly the case), then --rebuild (implies --check) compares.
