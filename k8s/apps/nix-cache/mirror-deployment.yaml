@@ -1,0 +1,128 @@
+# The cache.nixos.org pull-through (mirror-config.yaml has the nginx
+# policy and the why; namespace.yaml the reach).
+#
+# Storage: longhorn-bulk, one replica on nas1's SATA tier, like the
+# media library and for the same reason — large and re-downloadable
+# (ADR-0011/0031). 200 Gi claimed; nginx's max_size is 190g so LRU
+# eviction runs before the filesystem fills. Retain class: a pruned
+# PVC costs a manual PV cleanup, not a refill from the uplink — cheap
+# either way, but consistent with the tier.
+#
+# Placement: nodeSelector nas1 because hostPort needs one node and the
+# replica is there anyway (RWO attaches locally, no NFS hop). nas1 away
+# is the mirror away; nix falls through to cache.nixos.org on its own
+# (connect-timeout on the client keeps that fall-through quick).
+# Recreate: RWO + hostPort both forbid two pods at once.
+#
+# Two ways in, one daemon:
+#   - LAN machines: http://cache.lan:5000 (hostPort; cache.lan is the
+#     router's record for nas1, 10.0.0.74 — until the router is in, an
+#     /etc/hosts line does the same).
+#   - pods (sandbox agents, future in-cluster builders):
+#     http://nixos-mirror.nix-cache.svc.cluster.local
+#
+# Client side (nix.conf):
+#   substituters = http://cache.lan:5000 https://cache.nixos.org
+#   connect-timeout = 5
+# No extra trusted-public-keys: the mirror forwards upstream's
+# signatures. The URL must be in `trusted-substituters` (or the user
+# in `trusted-users`) for a non-root `nix build` to be allowed to add
+# it; a system-level nix.conf sidesteps that.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nixos-mirror
+  namespace: nix-cache
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-bulk
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nixos-mirror
+  namespace: nix-cache
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nixos-mirror
+  template:
+    metadata:
+      labels:
+        app: nixos-mirror
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: nas1
+      # nginx-unprivileged runs as uid 101; fsGroup makes the ext4
+      # root of the Longhorn volume writable for it on mount.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+              hostPort: 5000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            - name: cache
+              mountPath: /var/cache/nix
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: nixos-mirror
+        - name: cache
+          persistentVolumeClaim:
+            claimName: nixos-mirror
+---
+# For pods: in-cluster builders substitute from here instead of
+# crossing the uplink per build.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nixos-mirror
+  namespace: nix-cache
+spec:
+  selector:
+    app: nixos-mirror
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

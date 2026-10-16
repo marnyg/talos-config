@@ -1,0 +1,108 @@
+# nginx as a pull-through cache of cache.nixos.org. Plain proxy_cache
+# rather than ncps/Attic-style re-signing: every .narinfo is forwarded
+# byte-for-byte with cache.nixos.org's own `Sig:` line, so a client
+# needs no new trusted key and this pod holds no signing material —
+# there is nothing here worth protecting, which is what lets it sit on
+# a LAN port without a gate. The whole volume is a safe-to-lose cache
+# in the invariant-2 sense: wipe it and the next request refills it.
+#
+# A binary cache is three kinds of object, and the policy below is per
+# kind:
+#   /nix-cache-info      answered locally (never proxied). Priority 30
+#                        beats upstream's 40, so when both are listed
+#                        nix asks the mirror first regardless of the
+#                        order in `substituters`. StoreDir must match
+#                        the client's or nix rejects the cache.
+#   /<hash>.narinfo      small, immutable once published. Hits cached
+#                        for a year (`inactive` evicts sooner); 404s briefly (5m) so a fleet of
+#                        machines asking for the same missing path do
+#                        not each cross the uplink — nix itself holds a
+#                        negative answer for 1h (narinfo-cache-negative-
+#                        ttl), so a longer TTL here buys nothing.
+#   /nar/<hash>.nar.*    large, content-addressed, immutable. Cached for
+#                        good; evicted only by max_size (LRU) or
+#                        `inactive`. proxy_cache_lock makes concurrent
+#                        first requests for one NAR a single upstream
+#                        fetch; the lock timeouts are long because a
+#                        multi-GB NAR on a home uplink is minutes, and
+#                        the default 5s would send every waiter upstream
+#                        on its own.
+#
+# Upstream cache headers are ignored on purpose: the TTLs above are the
+# policy, not whatever Fastly sends. Caching is keyed on $uri alone so
+# host/query variants share one entry. Upstream is resolved once at
+# startup (an `upstream` block, not a per-request resolver); the Fastly
+# anycast address is stable enough that a pod restart is the fix if it
+# ever is not.
+#
+# nginx-unprivileged listens on 8080 and keeps pid/temp under /tmp; the
+# cache directory is the PVC (uid/gid 101, the image's nginx user — the
+# Deployment sets fsGroup). conf.d is included in nginx's http{} block,
+# so proxy_cache_path/log_format/upstream are legal here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nixos-mirror
+  namespace: nix-cache
+data:
+  default.conf: |
+    proxy_cache_path /var/cache/nix levels=1:2 keys_zone=nix:64m
+                     max_size=190g inactive=180d use_temp_path=off;
+
+    upstream nixos {
+      server cache.nixos.org:443;
+      keepalive 16;
+    }
+
+    log_format cache '$remote_addr [$time_local] "$request" $status '
+                     '$body_bytes_sent $upstream_cache_status '
+                     '$request_time';
+
+    server {
+      listen 8080;
+      server_name _;
+      access_log /dev/stdout cache;
+
+      location = /nix-cache-info {
+        default_type text/x-nix-cache-info;
+        return 200 "StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 30\n";
+      }
+
+      location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+      }
+
+      location / {
+        proxy_pass https://nixos;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host cache.nixos.org;
+        proxy_ssl_server_name on;
+        proxy_ssl_name cache.nixos.org;
+        proxy_ssl_protocols TLSv1.2 TLSv1.3;
+
+        proxy_cache nix;
+        proxy_cache_key $uri;
+        proxy_cache_methods GET HEAD;
+        proxy_ignore_headers Cache-Control Expires Set-Cookie Vary;
+        proxy_cache_valid 200 1y;
+        proxy_cache_valid 404 5m;
+        proxy_cache_valid any 0;
+        proxy_cache_lock on;
+        proxy_cache_lock_timeout 30m;
+        proxy_cache_lock_age 30m;
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        proxy_cache_revalidate off;
+
+        # Buffering is what makes caching possible: the client is
+        # streamed from the file nginx is writing. (proxy_max_temp_file
+        # _size does not apply to cacheable responses, so a multi-GB NAR
+        # is fine without tuning.)
+        proxy_buffering on;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+
+        add_header X-Cache-Status $upstream_cache_status always;
+      }
+    }

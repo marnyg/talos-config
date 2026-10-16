@@ -1,0 +1,25 @@
+# `nix-cache`: the cluster's Nix binary caches (spike talos-config-kyiy).
+# Two services with different reach live here:
+#
+#   - `nixos-mirror` (this commit): a pull-through cache of
+#     cache.nixos.org for the LAN. Reached as http://cache.lan:5000 —
+#     a hostPort on nas1, deliberately NOT through ingress-nginx, which
+#     is ClusterIP-only so the gateway stays its sole caller
+#     (k8s/apps/ingress-nginx/application.yaml). The name is a LAN-only
+#     DNS record (the OpenWrt router's dnsmasq), so off the LAN it is
+#     NXDOMAIN and nix skips it in milliseconds; over the mesh the CDN
+#     beats the home uplink anyway, so there is nothing to route.
+#   - Attic (next): the cache for things WE build, behind the ingress at
+#     cache.gw.mesh.internal like every other app — the only source for
+#     those paths, so it must be reachable wherever the mesh is.
+#
+# Labeled privileged for the hostPort alone, the same reasoning as
+# k8s/apps/files/namespace.yaml: PSS baseline rejects any hostPort,
+# NodePorts start at 30000, and `cache.lan:5000` is the conventional
+# nix-serve port. The mirror itself runs as nginx-unprivileged.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nix-cache
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
