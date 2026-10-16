@@ -4,7 +4,20 @@
      Backward-looking. Resets each session. -->
 
 ## Last session
-2026-10-17: **Home Assistant deployed** (commit `17e576d`):
+2026-10-20: **Prowlarr deployed beside Jackett** (commit `24d9052`):
+`k8s/apps/prowlarr/` in the radarr shape — Longhorn 2Gi, PSS
+restricted on 1000, `lscr.io/linuxserver/prowlarr:2.6.5`, API key
+sealed in git and seeded into `config.xml` on a fresh volume (the one
+departure from sonarr/radarr, whose keys are generated), Ingress
+`prowlarr.gw.mesh.internal` behind the admins gate. The sonarr/radarr
+configurators register themselves as Prowlarr applications
+(`POST /api/v1/applications`, PUT when present; `PROWLARR_API_KEY`
+optional) — pairing driven from the *arr side because only that pod
+knows its own key. **Accepted live**: both apps paired (fullSync),
+Prowlarr's only health item is "no indexers enabled". Jackett and its
+Torznab entries untouched; retirement is bead `6t21`.
+
+Previous session, 2026-10-17: **Home Assistant deployed** (commit `17e576d`):
 `k8s/apps/homeassistant/` — Longhorn 10Gi `/config`, image
 `2026.10.2` pinned by digest, Ingress `home.gw.mesh.internal` behind
 the admins gate with the 1 h nginx timeouts for `/api/websocket`.
@@ -25,6 +38,11 @@ admins gate, master password as the second gate; accepted from the
 Mac over https including the `/notifications/hub` WebSocket.
 
 ## Loose threads
+- Prowlarr has no indexers yet: add them in the UI (or do `6t21` and
+  seed from git). Until then its sync pushes nothing; the Jackett
+  entries in Sonarr/Radarr keep working. Adding the same trackers in
+  both means duplicate indexer rows in Sonarr/Radarr — fine, until
+  `6t21` removes the Jackett ones.
 - Home Assistant first-start acceptance: open
   `https://home.gw.mesh.internal` from a mesh device, expect the
   onboarding page (not a 400 — that would mean the trusted_proxies
