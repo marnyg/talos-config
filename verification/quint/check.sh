@@ -54,9 +54,18 @@
 #
 # Depths: hub/approval verify at 12–15 steps; enroll's growing sets
 # verify at 8; authorize regenerates its whole scenario every step so
-# depth 2 is exhaustive (~173 s with the ADR-0004 wildcard target sets,
-# zeb; ~170 s since cav.target may name a principal the receiver answers
-# for, kau; ~135 s after xwu; ~95 s before); runway's nondet
+# depth 2 is exhaustive (~345 s wall / 342 s solver for invAll with the
+# ADR-0010 pins, d0o0 — OVER the 5-minute budget; the pre-pin file measured
+# 233 s wall / 184 s solver on the same machine the same day, i.e. the
+# header's ~173 s was already optimistic. The four pin laws in invAll
+# cost ~35 s of solver time together; the rest is the larger scenario
+# (pins, bundlePins, OWNER1_NEW as a signer) making every pre-existing
+# law a little slower — no single law is the hog standalone.
+# invTrivialPinsPreserveVerdicts, a biconditional over two full
+# `authorize` encodings with no concrete hypothesis, verifies on its own
+# line, ~85 s solver / ~100 s wall; ~173 s with the ADR-0004 wildcard
+# target sets, zeb; ~170 s since cav.target may name a principal the
+# receiver answers for, kau; ~135 s after xwu; ~95 s before); runway's nondet
 # init reaches the 6 d boundaries in ≤ 10 steps — the 30 d speak-as
 # cliff is 720 h out and is covered by its witness tests (nag*Test,
 # rotationConvergesTest) instead; clock's 8-tick horizon is covered at 10;
@@ -97,6 +106,7 @@ run)
   done
   echo "== authorize =="
   run_inv authorize invAll 20 1000
+  run_inv authorize invTrivialPinsPreserveVerdicts 20 1000   # d0o0: out of invAll for verify time; see Depths
   echo "== runway =="
   run_inv runway invAll 60 1000
   echo "== clock =="
@@ -113,6 +123,7 @@ verify)
   quint verify --invariant=invAll --max-steps=12 approval.qnt
   quint verify --invariant=invAll --max-steps=8 enroll.qnt
   quint verify --invariant=invAll --max-steps=2 authorize.qnt
+  quint verify --invariant=invTrivialPinsPreserveVerdicts --max-steps=2 authorize.qnt   # d0o0, ~85 s; see Depths
   quint verify --invariant=invAll --max-steps=10 runway.qnt
   quint verify --invariant=invAll --max-steps=10 clock.qnt
   quint verify --invariant=invAll --max-steps=7 rotation.qnt
