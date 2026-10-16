@@ -61,6 +61,15 @@ type hubManager struct {
 	// re-seals it while the master stays held).
 	issuer  *issuer.Issuer
 	wallets []cert.ActorID // adminAddrs as eth: actor ids
+	// pins are the hub's commitments to its admin identities (protocol
+	// ADR-0010, d0o0): one per wallet, the trivial epoch-0 policy
+	// {root: w, guardians: {w}, k: 1} — a legacy EOA is its own root.
+	// The Issuer's actor holds the same *Pin values (Receiver.Pins), so
+	// a speak-as issuer is judged by Pin.Admits both at unseal and in
+	// every Authorize. In-memory: nothing rotates a hub pin yet (a
+	// non-trivial policy from talos/ and persisting Held() are follow-
+	// ups); with trivial pins every verdict is unchanged.
+	pins map[cert.ActorID]*cert.Pin
 
 	// enroll is the Enroll actor (ADR-0024): own key, consented to by
 	// the Issuer for #mint-device, speaking to it over the in-process
@@ -158,7 +167,49 @@ func newHubManager(root string, adminAddrs []string, wan hubTransport) (*hubMana
 		}
 		wallets = append(wallets, w)
 	}
-	return &hubManager{root: root, adminAddrs: adminAddrs, issuer: iss, wallets: wallets, enroll: en, wan: wanEp}, nil
+	pins := make(map[cert.ActorID]*cert.Pin, len(wallets))
+	for _, w := range wallets {
+		pins[w] = cert.NewPin(w, trivialPolicy(w))
+	}
+	m := &hubManager{root: root, adminAddrs: adminAddrs, issuer: iss, wallets: wallets, pins: pins, enroll: en, wan: wanEp}
+	m.holdPins()
+	return m, nil
+}
+
+// trivialPolicy is the epoch-0 policy of a legacy EOA: the address is
+// its own root and sole guardian, so Pin.Admits(w) holds until a
+// rotation is held.
+func trivialPolicy(w cert.ActorID) cert.Policy {
+	return cert.Policy{Root: w, Guardians: []cert.ActorID{w}, K: 1}
+}
+
+// holdPins hands the Issuer's actor the hub's pins, in wallet order.
+func (m *hubManager) holdPins() {
+	pins := make([]*cert.Pin, 0, len(m.wallets))
+	for _, w := range m.wallets {
+		if p := m.pins[w]; p != nil {
+			pins = append(pins, p)
+		}
+	}
+	m.issuer.Actor.HoldPins(pins)
+}
+
+// admittedRoots is the speak-as issuers the hub accepts for the given
+// wallets: each wallet's CURRENT root key as its pin's view has it, and
+// nothing for a wallet whose pin is dead or missing. With trivial pins
+// this is the wallets themselves.
+func (m *hubManager) admittedRoots(wallets []cert.ActorID) []cert.ActorID {
+	out := make([]cert.ActorID, 0, len(wallets))
+	for _, w := range wallets {
+		p := m.pins[w]
+		if p == nil {
+			continue
+		}
+		if root := p.View().Policy.Root; p.Admits(root) {
+			out = append(out, root)
+		}
+	}
+	return out
 }
 
 // listen runs the Issuer's actor for the process's life. Sealed or
@@ -278,18 +329,25 @@ func (m *hubManager) masterWallet() string {
 // speak-as proposal. The signature selects the wallet among the
 // allowlist (the proposal names it as iss); it must be the wallet that
 // unsealed the master, when one did (ce8: one root, two signatures).
+// The candidate issuers are what the hub's pins ADMIT for those wallets
+// (protocol ADR-0010): the identity's current root — the wallet itself
+// until a rotation is held — and nothing for a dead identity.
 func (m *hubManager) unsealIssuer(sigHex string) (string, error) {
 	if len(m.wallets) == 0 {
 		return "", fmt.Errorf("no admin addresses configured; cannot verify speak-as signature")
 	}
-	candidates := m.wallets
+	wallets := m.wallets
 	if mw := m.masterWallet(); mw != "" {
-		candidates = []cert.ActorID{issuer.WalletID(mw)}
+		wallets = []cert.ActorID{issuer.WalletID(mw)}
+	}
+	candidates := m.admittedRoots(wallets)
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no admin wallet's pin admits a root (rotated away or dead): %w", issuer.ErrNotAllowed)
 	}
 	w, err := m.issuer.Unseal(sigHex, candidates)
 	if err != nil {
-		if errors.Is(err, issuer.ErrNotAllowed) && len(candidates) < len(m.wallets) {
-			return "", fmt.Errorf("speak-as must be signed by %s, the wallet that unsealed the master: %w", candidates[0], err)
+		if errors.Is(err, issuer.ErrNotAllowed) && len(wallets) < len(m.wallets) {
+			return "", fmt.Errorf("speak-as must be signed by %s, the wallet that unsealed the master: %w", wallets[0], err)
 		}
 		return "", err
 	}

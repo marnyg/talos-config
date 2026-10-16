@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -147,6 +148,87 @@ func TestUnsealIssuer(t *testing.T) {
 	}
 	if line, warn := m.identityLine(); warn || !strings.Contains(line, wellKnownAddr) || !strings.Contains(line, "120 d left") {
 		t.Fatalf("unsealed identity line: %q warn=%v", line, warn)
+	}
+}
+
+// TestUnsealIssuerPinAdmits: the speak-as issuer is judged by the hub's
+// pin for the wallet (protocol ADR-0010). With the trivial pin every
+// admin unseals as before; with a pin whose current policy names
+// another root — a rotation the hub holds, constructed directly here —
+// the wallet's own signature is refused (the old root died with its
+// epoch) and the new root's accepted under the wallet's name; a dead
+// pin admits neither. The Issuer's actor holds the same pins, so
+// Authorize sees the same view.
+func TestUnsealIssuerPinAdmits(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr, otherAddr(t)})
+	wk := issuer.WalletID(wellKnownAddr)
+	if got := m.issuer.Actor.Pins(); len(got) != 2 || got[0].Address != wk || !got[0].Admits(wk) {
+		t.Fatalf("actor pins = %v", got)
+	}
+	if _, err := m.unsealIssuer(speakAsSig(t, m, testKey(t))); err != nil {
+		t.Fatalf("trivial pin refused the wallet: %v", err)
+	}
+
+	// Rotate the well-known wallet to otherKey (guardian = the wallet
+	// itself, k = 1): the hub now admits otherKey AS the well-known
+	// identity and the well-known key not at all.
+	m2 := testHubManager(t, []string{wellKnownAddr})
+	p0 := trivialPolicy(wk)
+	next := issuer.WalletID(otherAddr(t))
+	p1 := cert.Policy{Root: next, Guardians: []cert.ActorID{next}, K: 1}
+	rc, err := cert.Sign(cert.Cert{Aud: string(wk), Can: cert.VerbRotateRoot,
+		Cav: cert.Caveats{Epoch: 1, Prev: p0.Hash(), Policy: &p1}, Iat: 1, Exp: m2.issuer.Actor.Now() + 3600}, cert.NewEthSigner(testKey(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rot, err := cert.AssembleRotation(wk, p0, 1, []cert.Cert{rc}, m2.issuer.Actor.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m2.pins[wk].Hold(rot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m2.unsealIssuer(speakAsSig(t, m2, testKey(t))); err == nil || !errors.Is(err, issuer.ErrNotAllowed) {
+		t.Fatalf("old root unsealed after rotation: %v", err)
+	}
+	if m2.issuer.Serving() == nil {
+		t.Fatal("identity unsealed by the rotated-away root")
+	}
+	// The new root signs the proposal addressed to ITSELF (the speak-as
+	// names the signing key as iss; the pin maps it to the identity).
+	if addr, err := m2.unsealIssuer(speakAsSig(t, m2, otherKey(t))); err != nil || addr != otherAddr(t) {
+		t.Fatalf("new root refused after rotation: %v (%s)", err, addr)
+	}
+	// The hub's speak-as is now from the new root; its Authorize must
+	// resolve that key to the well-known identity through the pin.
+	sa := m2.issuer.SpeakAs()
+	if sa == nil || sa.Iss != next {
+		t.Fatalf("held speak-as iss = %v", sa)
+	}
+
+	// Dead pin: a second, distinct successor at epoch 1 ⇒ equivocation;
+	// neither key unseals.
+	m3 := testHubManager(t, []string{wellKnownAddr})
+	p1b := cert.Policy{Root: next, Guardians: []cert.ActorID{next, wk}, K: 1}
+	rcb, err := cert.Sign(cert.Cert{Aud: string(wk), Can: cert.VerbRotateRoot,
+		Cav: cert.Caveats{Epoch: 1, Prev: p0.Hash(), Policy: &p1b}, Iat: 1, Exp: m3.issuer.Actor.Now() + 3600}, cert.NewEthSigner(testKey(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotb, err := cert.AssembleRotation(wk, p0, 1, []cert.Cert{rcb}, m3.issuer.Actor.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m3.pins[wk].Hold(rot); err != nil {
+		t.Fatal(err)
+	}
+	if err := m3.pins[wk].Hold(rotb); !errors.Is(err, cert.ErrEquivocation) {
+		t.Fatalf("second successor: %v", err)
+	}
+	for name, k := range map[string]*secp256k1.PrivateKey{"old root": testKey(t), "new root": otherKey(t)} {
+		if _, err := m3.unsealIssuer(speakAsSig(t, m3, k)); err == nil || !errors.Is(err, issuer.ErrNotAllowed) {
+			t.Fatalf("dead pin admitted the %s: %v", name, err)
+		}
 	}
 }
 
