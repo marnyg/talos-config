@@ -1,0 +1,123 @@
+{
+ "_links": {},
+ "total": 3,
+ "_embedded": {
+  "measurement": [
+   {
+    "_links": {
+     "self": {
+      "href": "/api/users/u1/measurements/bench"
+     },
+     "tag": [
+      {
+       "href": "/api/users/u1/tags/chest"
+      }
+     ]
+    },
+    "id": "bench",
+    "name": {
+     "en": "Bench Press (Barbell)"
+    },
+    "cellTypeConfigs": [
+     {
+      "cellType": "BARBELL_WEIGHT",
+      "mandatory": true
+     },
+     {
+      "cellType": "REPS",
+      "mandatory": true
+     },
+     {
+      "cellType": "RPE",
+      "isExponent": true
+     }
+    ],
+    "isGlobal": true,
+    "measurementType": "EXERCISE",
+    "media": [
+     {
+      "url": "https://files.strong.app/users/global/VIDaaa.mp4",
+      "contentType": "video/mp4"
+     },
+     {
+      "url": "https://files.strong.app/users/global/THUaaa%403x.png",
+      "contentType": "image/png"
+     },
+     {
+      "url": "https://files.strong.app/users/global/IMGmissing.jpg",
+      "contentType": "image/jpeg"
+     }
+    ],
+    "instructions": {
+     "en": "Step one||Step two"
+    }
+   },
+   {
+    "_links": {
+     "self": {
+      "href": "/api/users/u1/measurements/pullup"
+     },
+     "tag": [
+      {
+       "href": "/api/users/u1/tags/back"
+      }
+     ]
+    },
+    "id": "pullup",
+    "name": {
+     "en": "Pull Up (Assisted)"
+    },
+    "cellTypeConfigs": [
+     {
+      "cellType": "ASSISTED_BODYWEIGHT",
+      "mandatory": true
+     },
+     {
+      "cellType": "REPS",
+      "mandatory": true
+     },
+     {
+      "cellType": "RPE",
+      "isExponent": true
+     }
+    ],
+    "isGlobal": true,
+    "measurementType": "EXERCISE",
+    "media": []
+   },
+   {
+    "_links": {
+     "self": {
+      "href": "/api/users/u1/measurements/run"
+     },
+     "tag": [
+      {
+       "href": "/api/users/u1/tags/cardio"
+      }
+     ]
+    },
+    "id": "run",
+    "name": {
+     "en": "Running"
+    },
+    "cellTypeConfigs": [
+     {
+      "cellType": "DISTANCE",
+      "mandatory": true
+     },
+     {
+      "cellType": "DURATION",
+      "mandatory": true
+     },
+     {
+      "cellType": "RPE",
+      "isExponent": true
+     }
+    ],
+    "isGlobal": true,
+    "measurementType": "EXERCISE",
+    "media": []
+   }
+  ]
+ }
+}

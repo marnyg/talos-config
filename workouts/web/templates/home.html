@@ -1,0 +1,29 @@
+{{define "content"}}
+<header class="top"><h1>Start Workout</h1></header>
+<section>
+  <h2>Quick start</h2>
+  <form method="post" action="/workouts/start"><button class="primary wide">START AN EMPTY WORKOUT</button></form>
+</section>
+<section>
+  <div class="row"><h2>Templates</h2>
+    <span class="grow"></span>
+    <a class="btn" href="/templates/new/edit">+ Template</a>
+    <details class="menu"><summary class="btn">+ Folder</summary>
+      <form method="post" action="/folders" class="inline"><input name="name" placeholder="Folder name" required><button>Add</button></form>
+    </details>
+  </div>
+  {{range .Data.Folders}}
+  <h3>{{.Name}} ({{len .Templates}})</h3>
+  <div class="cards">
+    {{range .Templates}}
+    <a class="card" href="/templates/{{.ID}}">
+      <strong>{{.Name}}</strong>
+      <p class="muted small">{{range $i, $e := .Exercises}}{{if $i}}, {{end}}{{len $e.Sets}} × {{$e.Exercise.Name}}{{end}}</p>
+      <p class="small">🕘 {{ago .LastPerformed}}</p>
+    </a>
+    {{end}}
+    {{if not .Templates}}<p class="muted">No templates</p>{{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}

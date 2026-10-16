@@ -1,0 +1,48 @@
+{{define "content"}}
+{{$e := .Data.Exercise}}
+<header class="top"><a class="back" href="/exercises">‹</a><h1>{{$e.Name}}</h1></header>
+<nav class="subtabs">
+  <a href="?s=about" class="{{if eq .Data.Section "about"}}on{{end}}">ABOUT</a>
+  <a href="?s=history" class="{{if eq .Data.Section "history"}}on{{end}}">HISTORY</a>
+  <a href="?s=charts" class="{{if eq .Data.Section "charts"}}on{{end}}">CHARTS</a>
+  <a href="?s=records" class="{{if eq .Data.Section "records"}}on{{end}}">RECORDS</a>
+</nav>
+{{if eq .Data.Section "about"}}
+<section>
+  {{if $e.MediaOf "video"}}<video class="media" src="/media/{{$e.MediaOf "video"}}" {{if $e.MediaOf "image"}}poster="/media/{{$e.MediaOf "image"}}"{{end}} autoplay loop muted playsinline></video>
+  {{else if $e.MediaOf "image"}}<img class="media" src="/media/{{$e.MediaOf "image"}}" alt="">{{end}}
+  {{if $e.Instructions}}<h2>Instructions</h2><ol>{{range $e.Instructions}}<li>{{.}}</li>{{end}}</ol>{{end}}
+  <h2>Body part</h2><p>{{title (label $e.BodyPart)}}</p>
+  <h2>Category</h2><p>{{title (label $e.Category)}}</p>
+  <p class="muted small">Records: {{join $e.CellTypes ", "}}</p>
+  {{if $e.Archived}}<form method="post" action="/exercises/{{$e.ID}}/archive"><input type="hidden" name="archived" value="0"><button class="wide">Unarchive</button></form>
+  {{else}}<form method="post" action="/exercises/{{$e.ID}}/archive"><button class="wide">Archive (hide from pickers)</button></form>{{end}}
+</section>
+{{else if eq .Data.Section "history"}}
+<section>
+  {{range .Data.History}}
+  <div class="card block"><a href="/workouts/{{.WorkoutID}}"><strong>{{.WorkoutName}}</strong></a><div class="muted small">{{date .StartedAt}}</div>
+    <table class="plain"><tr><th>Sets performed</th><th>1RM</th></tr>
+    {{range $i, $s := .Sets}}<tr><td>{{if setKind $s.Kind}}{{setKind $s.Kind}}{{else}}{{add $i 1}}{{end}}&emsp;{{template "setline" $s}}</td><td>{{if $s.Est1RM}}{{int $s.Est1RM}}{{end}}</td></tr>{{end}}
+    </table></div>
+  {{else}}<p class="muted">Never performed</p>{{end}}
+</section>
+{{else if eq .Data.Section "charts"}}
+<section>{{range .Data.Charts}}<h2>{{.Title}}</h2>{{chart .Points}}{{end}}</section>
+{{else if eq .Data.Section "records"}}
+{{$r := .Data.Records}}
+<section>
+  <h2>Personal records</h2>
+  <table class="plain">
+    <tr><td>Estimated 1RM</td><td class="right">{{if $r.Est1RM}}{{int $r.Est1RM.Value}} kg{{else}}-{{end}}</td></tr>
+    <tr><td>Max volume</td><td class="right">{{if $r.MaxVolume}}{{num $r.MaxVolume.Value}} kg{{else}}-{{end}}</td></tr>
+    <tr><td>Max weight</td><td class="right">{{if $r.MaxWeight}}{{num $r.MaxWeight.Value}} kg{{else}}-{{end}}</td></tr>
+  </table>
+  <table class="plain"><tr><th>REPS</th><th>BEST PERFORMANCE</th><th class="right">ESTIMATED</th></tr>
+  {{range $n := seq 12}}{{$b := index $r.RepMax $n}}
+    <tr><td>{{$n}}</td><td>{{if $b}}{{num $b.WeightKg}} kg (×{{$b.Reps}})<br><span class="muted small">{{day $b.At}}</span>{{else}}-{{end}}</td><td class="right">{{if $r.Est1RM}}{{int ($r.EstimateAtReps $n)}} kg{{else}}-{{end}}</td></tr>
+  {{end}}
+  </table>
+</section>
+{{end}}
+{{end}}

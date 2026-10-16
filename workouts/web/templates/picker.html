@@ -1,0 +1,14 @@
+{{define "content"}}
+<header class="top"><a class="back" href="{{.Data.Return}}">‹</a><h1>{{.Title}}</h1></header>
+{{template "exercise-filter" .Data}}
+<ul class="list">
+{{range .Data.Exercises}}
+  <li class="item"><form method="post" action="/log/add"><input type="hidden" name="exercise" value="{{.ID}}">
+    <button class="row plain">
+      {{if .Thumb}}<img class="thumb" src="/media/{{.Thumb}}" alt="">{{else}}<span class="thumb letter">{{slice .Name 0 1}}</span>{{end}}
+      <div class="grow left">{{.Name}}<br><span class="muted small">{{title .BodyPart}}</span></div>
+      {{if .PerformedCount}}<span class="muted">{{.PerformedCount}}</span>{{end}}
+    </button></form></li>
+{{else}}<li class="muted">No exercises match. <a href="/exercises/new">Create one</a></li>{{end}}
+</ul>
+{{end}}

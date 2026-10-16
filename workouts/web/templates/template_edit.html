@@ -1,0 +1,27 @@
+{{define "content"}}
+<header class="top"><a class="back" href="{{if eq .Data.ID "new"}}/{{else}}/templates/{{.Data.ID}}{{end}}">‹</a><h1>{{.Title}}</h1>
+  <span class="grow"></span><button class="btn primary" id="tpl-save">Save</button></header>
+<section id="tpl-editor" data-id="{{.Data.ID}}">
+  <label>Name <input id="tpl-name" value="{{.Data.Name}}"></label>
+  <label>Folder <select id="tpl-folder">
+    <option value="">— none —</option>
+    {{$fid := .Data.FolderID}}{{range .Data.Folders}}{{if .ID}}<option value="{{.ID}}" {{if and $fid (eq .ID (deref2 $fid))}}selected{{end}}>{{.Name}}</option>{{end}}{{end}}
+  </select></label>
+  <label>Notes <textarea id="tpl-notes" rows="2">{{.Data.Notes}}</textarea></label>
+  <div id="tpl-exercises"></div>
+  <button class="wide" id="tpl-add">+ ADD EXERCISE</button>
+  {{if ne .Data.ID "new"}}<form method="post" action="/templates/{{.Data.ID}}/delete" onsubmit="return confirm('Delete template?')"><button class="wide danger">DELETE TEMPLATE</button></form>{{end}}
+</section>
+<dialog id="picker">
+  <header class="top"><button class="back" onclick="document.getElementById('picker').close()">‹</button><h1>Add exercise</h1></header>
+  <input type="search" id="picker-q" placeholder="Search" autocomplete="off">
+  <ul class="list" id="picker-list">
+    {{range .Data.Picker.Exercises}}<li class="item" data-id="{{.ID}}" data-name="{{.Name}}" data-cells="{{json .CellTypes}}"><div class="row">
+      {{if .Thumb}}<img class="thumb" src="/media/{{.Thumb}}" alt="">{{else}}<span class="thumb letter">{{slice .Name 0 1}}</span>{{end}}
+      <div>{{.Name}}<br><span class="muted small">{{title .BodyPart}}</span></div></div></li>{{end}}
+  </ul>
+</dialog>
+<script>
+window.TEMPLATE = {{json .Data.Template}};
+</script>
+{{end}}

@@ -1,0 +1,20 @@
+{{define "content"}}
+<header class="top"><h1>Profile</h1></header>
+<section>
+  <p><strong>{{.Data.Workouts}}</strong> workouts</p>
+  <h2>Workouts per week</h2>
+  {{chart .Data.Weeks}}
+</section>
+<section>
+  <h2>Settings</h2>
+  {{$s := .Data.Settings}}
+  <form method="post" action="/settings" class="form">
+    <label>Default rest timer (seconds) <input type="number" name="rest_s" value="{{index $s "rest_s"}}" placeholder="120"></label>
+    <label>Weight unit <select name="weight_unit"><option value="kg" {{if ne (index $s "weight_unit") "lb"}}selected{{end}}>kg</option><option value="lb" {{if eq (index $s "weight_unit") "lb"}}selected{{end}}>lb</option></select></label>
+    <label>Size unit <select name="length_unit"><option value="cm" {{if ne (index $s "length_unit") "in"}}selected{{end}}>cm</option><option value="in" {{if eq (index $s "length_unit") "in"}}selected{{end}}>in</option></select></label>
+    <label>Available plates (kg, comma separated) <input name="plates" value="{{index $s "plates"}}" placeholder="25,20,15,10,5,2.5,1.25"></label>
+    <button class="primary wide">Save</button>
+  </form>
+  <p class="muted small">Workouts v0 · <a href="/static/about.html">about</a></p>
+</section>
+{{end}}

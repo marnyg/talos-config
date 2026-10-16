@@ -1,0 +1,16 @@
+{{define "content"}}
+<header class="top"><a class="back" href="/">‹</a><h1>{{.Data.Name}}</h1>
+  <span class="grow"></span><a class="btn" href="/templates/{{.Data.ID}}/edit">Edit</a></header>
+<section>
+  <p class="muted">Last performed: {{ago .Data.LastPerformed}}</p>
+  {{if .Data.Notes}}<p>{{.Data.Notes}}</p>{{end}}
+  <ul class="list">
+  {{range .Data.Exercises}}
+    <li class="item"><a href="/exercises/{{.ExerciseID}}" class="row">
+      {{if .Exercise.Thumb}}<img class="thumb" src="/media/{{.Exercise.Thumb}}" alt="">{{else}}<span class="thumb letter">{{slice .Exercise.Name 0 1}}</span>{{end}}
+      <div><strong>{{len .Sets}} × {{.Exercise.Name}}</strong><br><span class="muted small">{{title .Exercise.BodyPart}}{{if .Note}} · {{.Note}}{{end}}</span></div></a></li>
+  {{end}}
+  </ul>
+</section>
+<form method="post" action="/workouts/start" class="sticky-bottom"><input type="hidden" name="template" value="{{.Data.ID}}"><button class="primary wide">START WORKOUT</button></form>
+{{end}}

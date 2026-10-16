@@ -158,7 +158,7 @@ func TestWorkoutLifecycle(t *testing.T) {
 	if r.MaxWeight == nil || r.MaxWeight.Value != 60 || r.MaxVolume == nil || r.MaxVolume.Value != 480 {
 		t.Fatalf("records %+v %+v", r.MaxWeight, r.MaxVolume)
 	}
-	if r.RepMax[8] == nil || r.RepMax[8].WeightKg != 60 || r.RepMax[10] != nil { // warmup 40×10 excluded
+	if r.RepMax[8] == nil || r.RepMax[8].WeightKg != 60 || r.RepMax[1].Reps != 8 || r.RepMax[9] != nil { // rows 1–8 from 60×8; warmup 40×10 excluded
 		t.Fatalf("rep max %+v %+v", r.RepMax[8], r.RepMax[10])
 	}
 	if n, _ := s.WorkoutPRs(ctx, w.ID); n != 1 { // 60×8 beats 60×7 on est 1RM and volume: one set

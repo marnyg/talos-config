@@ -96,8 +96,10 @@ func (s *Store) ExerciseRecords(ctx context.Context, exerciseID string) (Records
 	if r.MaxVolume, err = s.bestBy(ctx, exerciseID, "volume"); err != nil {
 		return r, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT reps, MAX(weight_kg), workout_id, MIN(started_at) FROM set_done
-		WHERE exercise_id = ? AND reps BETWEEN 1 AND 12 AND weight_kg IS NOT NULL GROUP BY reps`, exerciseID)
+	// Row n = the heaviest set with at least n reps (Strong's reading:
+	// a 75×6 fills rows 1–6); ties go to the earliest.
+	rows, err := s.db.QueryContext(ctx, `SELECT weight_kg, reps, workout_id, started_at FROM set_done
+		WHERE exercise_id = ? AND reps >= 1 AND weight_kg IS NOT NULL ORDER BY weight_kg DESC, reps DESC, started_at ASC`, exerciseID)
 	if err != nil {
 		return r, err
 	}
@@ -105,12 +107,17 @@ func (s *Store) ExerciseRecords(ctx context.Context, exerciseID string) (Records
 	for rows.Next() {
 		var b BestSet
 		var at string
-		if err := rows.Scan(&b.Reps, &b.WeightKg, &b.WorkoutID, &at); err != nil {
+		if err := rows.Scan(&b.WeightKg, &b.Reps, &b.WorkoutID, &at); err != nil {
 			return r, err
 		}
 		b.Value = b.WeightKg
 		b.At, _ = ParseTime(at)
-		r.RepMax[b.Reps] = &b
+		for n := 1; n <= 12 && n <= b.Reps; n++ {
+			if r.RepMax[n] == nil {
+				b := b
+				r.RepMax[n] = &b
+			}
+		}
 	}
 	return r, rows.Err()
 }

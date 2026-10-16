@@ -1,0 +1,16 @@
+{{define "content"}}
+<header class="top"><a class="back" href="/measure">‹</a><h1>{{.Data.Label}}</h1></header>
+<section>
+  {{chart .Data.Points}}
+  <form method="post" action="/measure/{{.Data.Key}}" class="row">
+    <input type="number" step="0.1" inputmode="decimal" name="value" placeholder="{{.Data.Unit}}" required>
+    <input type="date" name="date" value="{{today}}">
+    <button class="primary">Add</button>
+  </form>
+  <h2>History</h2>
+  <table class="plain">
+  {{range .Data.Entries}}<tr><td>{{day .At}}</td><td class="right">{{num .Value}} {{$.Data.Unit}}</td>
+    <td class="right"><form method="post" action="/measure/{{$.Data.Key}}/{{.ID}}/delete"><button class="plain small">✕</button></form></td></tr>{{end}}
+  </table>
+</section>
+{{end}}

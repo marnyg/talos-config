@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c2127">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>{{.Title}} · Workouts</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body data-tab="{{.Tab}}">
+{{if .Flash}}<div class="flash" id="flash">{{.Flash}}</div>{{end}}
+{{if and .Current (not .NoBanner)}}
+<a class="banner" href="/log">▶ {{.Current.Name}} in progress — <span data-since="{{.Current.StartedAt.Unix}}"></span></a>
+{{end}}
+<main>
+{{template "content" .}}
+</main>
+<nav class="tabs">
+  <a href="/profile" class="{{if eq .Tab "profile"}}on{{end}}"><span>👤</span>Profile</a>
+  <a href="/history" class="{{if eq .Tab "history"}}on{{end}}"><span>🕘</span>History</a>
+  <a href="/" class="{{if eq .Tab "workout"}}on{{end}}"><span>➕</span>Workout</a>
+  <a href="/exercises" class="{{if eq .Tab "exercises"}}on{{end}}"><span>🏋</span>Exercises</a>
+  <a href="/measure" class="{{if eq .Tab "measure"}}on{{end}}"><span>📏</span>Measure</a>
+</nav>
+<script src="/static/app.js"></script>
+</body>
+</html>
+
+{{define "setline"}}{{if .WeightKg}}{{kg .WeightKg}} kg{{end}}{{if .Reps}}{{if .WeightKg}} × {{end}}{{derefi .Reps}}{{if not .WeightKg}} reps{{end}}{{end}}{{if .DistanceM}}{{num (div1000 .DistanceM)}} km{{end}}{{if .DurationS}} {{secs .DurationS}}{{end}}{{if .RPE}} <span class="muted">@{{num (deref .RPE)}}</span>{{end}}{{end}}
+{{define "exercise-filter"}}
+<form class="filter" method="get">
+  <input type="search" name="q" value="{{.Filter.Query}}" placeholder="Search" autocomplete="off">
+  <select name="body" onchange="this.form.submit()"><option value="">Any body part</option>{{$b := .Filter.BodyPart}}{{range .BodyParts}}<option value="{{.}}" {{if eq . $b}}selected{{end}}>{{title (label .)}}</option>{{end}}</select>
+  <select name="cat" onchange="this.form.submit()"><option value="">Any category</option>{{$c := .Filter.Category}}{{range .Cats}}<option value="{{.}}" {{if eq . $c}}selected{{end}}>{{title (label .)}}</option>{{end}}</select>
+</form>
+{{end}}

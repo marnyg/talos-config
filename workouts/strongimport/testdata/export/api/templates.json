@@ -1,0 +1,127 @@
+{
+ "_links": {},
+ "total": 1,
+ "_embedded": {
+  "template": [
+   {
+    "_links": {
+     "self": {
+      "href": "/api/users/u1/templates/t1"
+     },
+     "folder": [
+      {
+       "href": "/api/users/u1/folders/u1-my-templates"
+      }
+     ]
+    },
+    "id": "t1",
+    "index": 0,
+    "name": {
+     "custom": "Upper "
+    },
+    "access": "PRIVATE",
+    "logType": "TEMPLATE",
+    "_embedded": {
+     "cellSetGroup": [
+      {
+       "_links": {
+        "measurement": {
+         "href": "/api/users/u1/measurements/bench"
+        }
+       },
+       "_embedded": {},
+       "id": "tg1",
+       "cellSets": [
+        {
+         "id": "ts1",
+         "cells": [
+          {
+           "id": "ts1BARBELL_WEIGHT",
+           "cellType": "BARBELL_WEIGHT",
+           "value": "60.0"
+          },
+          {
+           "id": "ts1REPS",
+           "cellType": "REPS",
+           "value": "8"
+          },
+          {
+           "id": "ts1RPE",
+           "cellType": "RPE",
+           "value": ""
+          }
+         ],
+         "isCompleted": false
+        },
+        {
+         "id": "tr1",
+         "cells": [
+          {
+           "id": "tr1REST_TIMER",
+           "cellType": "REST_TIMER",
+           "value": "120.0"
+          }
+         ],
+         "isCompleted": false
+        },
+        {
+         "id": "ts2",
+         "cells": [
+          {
+           "id": "ts2BARBELL_WEIGHT",
+           "cellType": "BARBELL_WEIGHT",
+           "value": "60.0"
+          },
+          {
+           "id": "ts2REPS",
+           "cellType": "REPS",
+           "value": "7"
+          },
+          {
+           "id": "ts2RPE",
+           "cellType": "RPE",
+           "value": ""
+          }
+         ],
+         "isCompleted": false
+        }
+       ]
+      },
+      {
+       "_links": {
+        "measurement": {
+         "href": "/api/users/u1/measurements/pullup"
+        }
+       },
+       "_embedded": {},
+       "id": "tg2",
+       "cellSets": [
+        {
+         "id": "ts3",
+         "cells": [
+          {
+           "id": "ts3ASSISTED_BODYWEIGHT",
+           "cellType": "ASSISTED_BODYWEIGHT",
+           "value": "25.0"
+          },
+          {
+           "id": "ts3REPS",
+           "cellType": "REPS",
+           "value": "6"
+          },
+          {
+           "id": "ts3RPE",
+           "cellType": "RPE",
+           "value": ""
+          }
+         ],
+         "isCompleted": false
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,17 @@
+{{define "content"}}
+<header class="top"><h1>History</h1><span class="grow"></span><span class="muted">{{.Data.Total}} workouts</span></header>
+{{range .Data.Months}}
+<h2 class="row">{{.Month}}<span class="grow"></span><span class="muted small">{{len .Workouts}} workouts</span></h2>
+{{range .Workouts}}{{template "workout-card" .}}{{end}}
+{{else}}<p class="muted">No workouts yet.</p>{{end}}
+<div class="row">{{if gt .Data.Page 0}}<a class="btn" href="?page={{add .Data.Page -1}}">‹ Newer</a>{{end}}<span class="grow"></span>{{if .Data.More}}<a class="btn" href="?page={{add .Data.Page 1}}">Older ›</a>{{end}}</div>
+{{end}}
+{{define "workout-card"}}
+<a class="card block" href="/workouts/{{.ID}}">
+  <strong>{{.Name}}</strong><div class="muted small">{{date .StartedAt}}</div>
+  <table class="plain"><tr><th>Sets</th><th class="right">Best set</th></tr>
+  {{range .Exercises}}<tr><td>{{len .Sets}} × {{.Exercise.Name}}</td><td class="right">{{with bestSet .Sets}}{{template "setline" .}}{{end}}</td></tr>{{end}}
+  </table>
+  <div class="stats"><span>⏱ {{dur .Duration}}</span><span>🏋 {{num .Volume}} kg</span><span>🏆 {{.PRs}} PRs</span></div>
+</a>
+{{end}}

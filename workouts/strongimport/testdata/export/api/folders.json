@@ -1,0 +1,25 @@
+{
+ "_links": {},
+ "total": 2,
+ "_embedded": {
+  "folder": [
+   {
+    "_links": {},
+    "id": "u1-my-templates",
+    "name": {
+     "en": "My Templates"
+    },
+    "index": 0
+   },
+   {
+    "_links": {},
+    "id": "example-templates",
+    "isGlobal": true,
+    "name": {
+     "en": "Example Templates"
+    },
+    "index": -1
+   }
+  ]
+ }
+}

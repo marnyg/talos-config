@@ -1,0 +1,11 @@
+{{define "content"}}
+<header class="top"><h1>Measure</h1></header>
+<ul class="list">
+{{$l := .Data.Latest}}{{$u := .Data.Units}}
+{{range $m := metrics}}
+  {{if eq $m.Key "neck"}}<h2>Body part</h2>{{end}}
+  <li class="item"><a class="row" href="/measure/{{$m.Key}}"><span class="grow">{{$m.Label}}</span>
+    {{with index $l $m.Key}}<span>{{num .Value}} {{index $u $m.Unit}}</span><span class="muted small">&nbsp;{{day .At}}</span>{{end}}</a></li>
+{{end}}
+</ul>
+{{end}}

@@ -1,0 +1,10 @@
+{{define "content"}}
+<header class="top"><a class="back" href="/exercises">‹</a><h1>New exercise</h1></header>
+<form method="post" action="/exercises" class="form">
+  <label>Name <input name="name" required autofocus></label>
+  <label>Body part <select name="body">{{range .Data.BodyParts}}<option value="{{.}}">{{title (label .)}}</option>{{end}}</select></label>
+  <label>Category <select name="cat">{{range .Data.Cats}}<option value="{{.}}">{{title (label .)}}</option>{{end}}</select></label>
+  <label>Instructions (one step per line) <textarea name="instructions" rows="4"></textarea></label>
+  <button class="primary wide">Create</button>
+</form>
+{{end}}

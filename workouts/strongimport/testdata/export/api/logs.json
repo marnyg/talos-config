@@ -1,0 +1,274 @@
+{
+ "_links": {},
+ "total": 2,
+ "_embedded": {
+  "log": [
+   {
+    "_links": {
+     "self": {
+      "href": "/api/users/u1/logs/w1"
+     },
+     "template": {
+      "href": "/api/users/u1/templates/t1"
+     }
+    },
+    "id": "w1",
+    "name": {
+     "custom": "Upper "
+    },
+    "timezoneId": "Europe/Oslo",
+    "startDate": "2026-10-14T15:28:30.000Z",
+    "endDate": "2026-10-14T16:24:00.000Z",
+    "logType": "WORKOUT",
+    "access": "PRIVATE",
+    "_embedded": {
+     "cellSetGroup": [
+      {
+       "_links": {
+        "measurement": {
+         "href": "/api/users/u1/measurements/bench"
+        }
+       },
+       "_embedded": {},
+       "id": "g1",
+       "cellSets": [
+        {
+         "id": "s1",
+         "cells": [
+          {
+           "id": "s1BARBELL_WEIGHT",
+           "cellType": "BARBELL_WEIGHT",
+           "value": "60.0"
+          },
+          {
+           "id": "s1REPS",
+           "cellType": "REPS",
+           "value": "8"
+          },
+          {
+           "id": "s1RPE",
+           "cellType": "RPE",
+           "value": ""
+          }
+         ],
+         "isCompleted": true
+        },
+        {
+         "id": "r1",
+         "cells": [
+          {
+           "id": "r1REST_TIMER",
+           "cellType": "REST_TIMER",
+           "value": "120.0"
+          }
+         ],
+         "isCompleted": true
+        },
+        {
+         "id": "s2",
+         "cells": [
+          {
+           "id": "s2BARBELL_WEIGHT",
+           "cellType": "BARBELL_WEIGHT",
+           "value": "60.0"
+          },
+          {
+           "id": "s2REPS",
+           "cellType": "REPS",
+           "value": "7"
+          },
+          {
+           "id": "s2RPE",
+           "cellType": "RPE",
+           "value": "8.5"
+          }
+         ],
+         "isCompleted": true
+        },
+        {
+         "id": "s3",
+         "cells": [
+          {
+           "id": "s3BARBELL_WEIGHT",
+           "cellType": "BARBELL_WEIGHT",
+           "value": "50.0"
+          },
+          {
+           "id": "s3REPS",
+           "cellType": "REPS",
+           "value": "12"
+          },
+          {
+           "id": "s3RPE",
+           "cellType": "RPE",
+           "value": ""
+          }
+         ],
+         "isCompleted": true,
+         "cellSetTag": "DROP_SET"
+        },
+        {
+         "id": "s4",
+         "cells": [
+          {
+           "id": "s4BARBELL_WEIGHT",
+           "cellType": "BARBELL_WEIGHT",
+           "value": "60.0"
+          },
+          {
+           "id": "s4REPS",
+           "cellType": "REPS",
+           "value": "5"
+          },
+          {
+           "id": "s4RPE",
+           "cellType": "RPE",
+           "value": ""
+          }
+         ],
+         "isCompleted": false
+        },
+        {
+         "id": "n1",
+         "cells": [
+          {
+           "id": "n1NOTE",
+           "cellType": "NOTE",
+           "value": "felt heavy"
+          }
+         ],
+         "isCompleted": true
+        }
+       ]
+      },
+      {
+       "_links": {
+        "measurement": {
+         "href": "/api/users/u1/measurements/run"
+        }
+       },
+       "_embedded": {},
+       "id": "g2",
+       "cellSets": [
+        {
+         "id": "s5",
+         "cells": [
+          {
+           "id": "s5DISTANCE",
+           "cellType": "DISTANCE",
+           "value": "5000.0"
+          },
+          {
+           "id": "s5DURATION",
+           "cellType": "DURATION",
+           "value": "1500.0"
+          }
+         ],
+         "isCompleted": true
+        }
+       ]
+      },
+      {
+       "_links": {
+        "measurement": {
+         "href": "/api/users/u1/measurements/ghost"
+        }
+       },
+       "_embedded": {},
+       "id": "g3",
+       "cellSets": [
+        {
+         "id": "s6",
+         "cells": [
+          {
+           "id": "s6REPS",
+           "cellType": "REPS",
+           "value": "10"
+          }
+         ],
+         "isCompleted": true
+        }
+       ]
+      },
+      {
+       "_links": {
+        "measurement": {
+         "href": "/api/users/u1/measurements/pullup"
+        }
+       },
+       "_embedded": {},
+       "id": "g4",
+       "cellSets": [
+        {
+         "id": "n2",
+         "cells": [
+          {
+           "id": "n2NOTE",
+           "cellType": "NOTE",
+           "value": "no sets"
+          }
+         ],
+         "isCompleted": true
+        }
+       ]
+      }
+     ]
+    }
+   },
+   {
+    "_links": {
+     "self": {
+      "href": "/api/users/u1/logs/w0"
+     },
+     "template": {
+      "href": "/api/users/u1/templates/deleted"
+     }
+    },
+    "id": "w0",
+    "name": {
+     "en": "Afternoon Workout"
+    },
+    "timezoneId": "Europe/Oslo",
+    "startDate": "2026-10-07T15:00:00.000Z",
+    "endDate": "2026-10-07T16:00:00.000Z",
+    "logType": "WORKOUT",
+    "_embedded": {
+     "cellSetGroup": [
+      {
+       "_links": {
+        "measurement": {
+         "href": "/api/users/u1/measurements/bench"
+        }
+       },
+       "_embedded": {},
+       "id": "g0",
+       "cellSets": [
+        {
+         "id": "s0",
+         "cells": [
+          {
+           "id": "s0BARBELL_WEIGHT",
+           "cellType": "BARBELL_WEIGHT",
+           "value": "60.0"
+          },
+          {
+           "id": "s0REPS",
+           "cellType": "REPS",
+           "value": "6"
+          },
+          {
+           "id": "s0RPE",
+           "cellType": "RPE",
+           "value": ""
+          }
+         ],
+         "isCompleted": true
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ }
+}
