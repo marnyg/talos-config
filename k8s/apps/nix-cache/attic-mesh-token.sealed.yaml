@@ -1,0 +1,31 @@
+# The Attic token the mesh path acts as (attic-deployment.yaml, the
+# `gate` sidecar). Why a token exists at all: the group gate on the
+# Ingress already proves "admin device", but Attic's only notion of
+# write permission is a JWT it signed — it cannot read X-Mesh-Groups.
+# So the sidecar adds this one as `Authorization: Bearer` to every
+# request that passed the gate, and a member device needs no `attic
+# login` credential: the mesh identity is the whole credential, as for
+# ArgoCD or Forgejo reads. Past the gate this is ambient authority,
+# which the invariants already accept one hop past the bridge.
+#
+# Scope: pull/push/create/configure on `main` only — no destroy, no
+# other caches. sub=mesh-admins, 5 years. Minted in-pod and sealed in
+# one pipeline (never printed; bootstrap.md has the command); it is
+# bound to attic-token-key.sealed.yaml, so rotating that key means
+# re-minting this.
+#
+# Pods do not get it: they reach atticd directly through the Service's
+# `api` port and carry their own, narrower token.
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: attic-mesh-token
+  namespace: nix-cache
+spec:
+  encryptedData:
+    ATTIC_MESH_TOKEN: AgAPR740clgP63CWqUhSsJRGWLwYttu4B1kUXvRZq6SLX+BIdkwSVvRHon9OwzPVudjS4BjATrZ4MqZN76DGWa7iiLDtcm8Nz09zo5/dlW3uLXZgS66HoiXDblYs64E0TyRhFWNPL+jsaPiMfPZhDoGpDuwfqnsGlox7H7jb9NOsYt4OQhRto70srJPPA3Gh5VjN+Ih/Wi5I3zc3TlAIDuBRRp323Qo3Lvz1glnrqv/1gVuXeDwhHiejkzrGSa7G1WEusuhxpj8thuRUdIPBbePwNWkWPUJ2GsGCawoOoTUP9jLW6JzooJNoeTD2R356yl71fR4QQBwrxzkFAkN+r1QTmyL0MAYhT376ePteNXlNA2J7u+Do9arSCwG6eEMATkI2OFRFW/20t95Xa4jl3zW0gaxYFAYDkBuqRH5Ercbz9ns2T+I0crShZtFltwzOf37SQUL8Q9kWhu3/IlXjTXuo++xwCJi2s/ciY4rUyH2VxZIEUDeQpa/6keKTowesVizYVKWuhbqxqgtlW2YZac1OC9E/jU1IOfG73dTftj0GepY1qyrPPbpX5bXtc+ckA4LppPIMsQkBwwOQ97ToSXWzDvU4Ov4IyF8875bl8LldKL6cy4AoQxpcHyZuu6mRHmNn7f2g404Zws5mQOkSHK+8Kpn0Jg4vcD52tq9dawD/5WGF2iDzLDXX1zp2+t+iOFCTfOxgoTUGB149ncOj5wOqvN9+mRn7zoxKiYVKu/Hf49qYFhATTX7kWrvrjKy+8BXU+/eT95c9IN6X6t666Yv3kR2OrdRjA+Xha5U1R/D3NymMZF2UbyIGv9C3nioRn9gwXS5d80cdFlUHNmC+9nTdDEhr8fSbF+3ZMmfUbgLV6YyNT/OyU+Os0vq4tlvn830ifQQOTXjzPK/PrXMg5gjTIVObs5UCaOlsvnhRkbg1RpP++gT2sROSO9aHLuSrYACo+GE0R627H8Vtm2GQsxxLJrFCKrJA2e5nJS8BNI/TDKxVkHQXO80tLGueweOHUgwfa+g4ojN4KioIxzmptJQJFVyzxnnPnguKsfGtZy9Kdo2nPEmSxYzDAx/z6OGsTh2f7/gaZWKfu9SRjOJnwmZQa7P3QT01T+iTDXwSwO72zPSU8sqUQYBsDGemvX+1X+sIyywuCsTBIrwbXxoBWvqfw5Or3i+afJIRPxDTzakBIeLG6uSfSlT6idNuUkn6IJ5BSRXsNiHK+DTsk9ETjznNxFu9SVIuYJBx0CUdtkMowrfUAl+ojhkKtF/IfekcPQcyG+JHFHVS91DbnNQaImYStV+jxWGuA6W1dsuZEkYYrLBNEkM8SebsovXKUi2+E1+HgejAq8iiPg5fjyVjuwyuHNF5shDuEqFUYrJxWTk3cRJgqpFL4BEl1v51E1aWUxOxSNUE5++io3dsJj77cnRHwrTZnsUmA3sbkhvK5KWgcPGqT9X/2WM+EhwQvdggi+HPOe8mgeryOWNlOdFUieB+rNBL52BHpf52ZiP3uzf5Cc3yVybMmpn2KaidZ8TZGOhgkpkGmXDSqf8JFCahoO0No+UVB7GGHd/q2OMRhjXF8/YlEnXP2ZigI0XAoYBKzxddDw5RtVJ/LcGxPBeduEjeUtN4lc18Y3n6qvv+opqerWmDExqP08zZnDtrzbfYAnDq+uekDiSzz2sFrvkoCzvz8ATx+wa5kdZXhiQsCr8YVbTJERyFuuHfeJLZbcsXeTC3tCmapRSSMj6B4HvFq0VvfEfJiMHXvRtw9uFWQKqmGVDu+0fysHkS6/iIstRRaZQtCQq3Hi18xQhafHfsOeUoR8kwEFvzNbaZDb6SFUpN3AUyxiT7EVnkl2hvDEGrYcac/gklrzVL9iWq9xxYjiNbEduu+nKE/pjfQUFjgYMLvHC86bVcegw=
+  template:
+    metadata:
+      name: attic-mesh-token
+      namespace: nix-cache

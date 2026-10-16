@@ -21,36 +21,44 @@ It serves as soon as it is up. Until the OpenWrt router carries the
 
 (nas1's declared address, `talos/machines/6c-bf-b5-05-51-a8/`.)
 
-## 2. Attic: admin token, cache, public key
+## 2. Attic: create the cache (no credential)
 
-`atticadm` runs in the pod and signs with the sealed key. The token
-below is the owner's: every permission on every cache, one year.
-It prints once; it lives in `~/.config/attic/config.toml` on the
-laptop after `attic login` and nowhere else.
-
-```sh
-A="kubectl -n nix-cache exec deploy/attic -- /bin/atticadm -f /config/server.toml"
-$A make-token --sub owner --validity 1y \
-  --pull '*' --push '*' --delete '*' \
-  --create-cache '*' --configure-cache '*' --configure-cache-retention '*' --destroy-cache '*'
-```
-
-On the laptop (on the mesh; `attic` is `nixpkgs#attic-client`):
+On the laptop (on the mesh; `attic` is `nixpkgs#attic-client`). The
+mesh is the credential: the Ingress's group gate admits the device and
+the `gate` sidecar supplies Attic's token (attic-mesh-token.sealed.yaml),
+so `attic login` takes no token.
 
 ```sh
-attic login homelab http://cache.gw.mesh.internal <token>
+attic login homelab http://cache.gw.mesh.internal
 attic cache create main
-# Pulls need no token: the mesh + group gate is the reader's identity
-# (attic-ingress.yaml); the token gates writes. Priority stays attic's
-# default 41 (below cache.nixos.org's 40), so nixpkgs paths never
-# cost a round trip here — nix sorts substituters by priority.
+# Public: pulls need no Attic identity even past the gate. Priority
+# stays attic's default 41 (below cache.nixos.org's 40), so nixpkgs
+# paths never cost a round trip here — nix sorts substituters by
+# priority.
 attic cache configure main --public
 attic cache info main                 # → Public Key: main:…
 ```
 
-Further tokens (CI, a second machine) are narrower: `--push main
---pull main` and a shorter validity. There is no revocation short of
-rotating the sealed key, which invalidates all of them.
+### Tokens, when something is not on the mesh path
+
+`atticadm` runs in the pod and signs with the sealed key. Pods (a
+builder, CI inside the cluster) reach atticd directly at
+`attic.nix-cache.svc:80` and need a token of their own; mint it
+narrow and seal it beside the consumer:
+
+```sh
+A="kubectl -n nix-cache exec deploy/attic -c atticd -- /bin/atticadm -f /config/server.toml"
+$A make-token --sub <who> --validity 90d --pull main --push main \
+  | tr -d '\n' | kubectl create secret generic <name> -n <ns> --dry-run=client -o yaml \
+      --from-file=ATTIC_TOKEN=/dev/stdin \
+  | kubeseal --cert talos/clusters/homelab/sealed-secrets.crt -o yaml
+```
+
+The mesh token itself was minted the same way (`--sub mesh-admins
+--validity 5y --pull main --push main --create-cache main
+--configure-cache main --configure-cache-retention main`). There is no
+revocation short of rotating `attic-token-key`, which invalidates all
+of them — re-mint the mesh token first when you do.
 
 ## 3. Client nix.conf
 
@@ -95,8 +103,9 @@ exec attic push homelab:main $OUT_PATHS
 ```
 post-build-hook = /etc/nix/upload-to-cache.sh
 ```
-The hook runs as the daemon's user (root): `attic login` must have
-been run as root too, or `HOME` pointed at a config that has.
+The hook runs as the daemon's user (root), so root needs its own
+`attic login homelab http://cache.gw.mesh.internal` once (no token;
+it only records the endpoint), or `HOME` pointed at a config that has.
 
 **attic watch-store** — a user process that pushes every new store
 path as it appears: `attic watch-store homelab:main`. Asynchronous,

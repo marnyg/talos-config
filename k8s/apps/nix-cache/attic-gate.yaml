@@ -1,0 +1,45 @@
+# The `gate` sidecar's nginx config (attic-mesh-token.sealed.yaml says
+# why it exists). One job: forward to atticd on localhost and replace
+# the Authorization header with the sealed mesh token. Only the Ingress
+# reaches this port, and only after the group gate's auth_request — a
+# caller that did not pass the gate never gets here.
+#
+# A sidecar rather than an ingress-nginx configuration-snippet: snippet
+# annotations are off in the controller (ingress-nginx default since
+# 1.9), and turning them on is a cluster-wide knob for one header.
+#
+# This is a *.template, not a .conf: the nginx image's entrypoint runs
+# envsubst over /etc/nginx/templates/*.template into conf.d at start,
+# which is how the token gets from the Secret's env into the config.
+# NGINX_ENVSUBST_FILTER (deployment) limits substitution to ATTIC_*,
+# so nginx's own $host/$uri survive. Named default.conf.template so
+# the output overwrites the image's default.conf — which listens on
+# 8080, atticd's port in the shared pod network namespace.
+#
+# Streaming both ways: `attic push` sends whole NARs, request
+# buffering off keeps nginx from spooling each one to disk first.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: attic-gate
+  namespace: nix-cache
+data:
+  default.conf.template: |
+    server {
+      listen 8081;
+      server_name _;
+      client_max_body_size 0;
+      proxy_request_buffering off;
+      proxy_buffering off;
+      proxy_read_timeout 600s;
+      proxy_send_timeout 600s;
+
+      location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Authorization "Bearer ${ATTIC_MESH_TOKEN}";
+      }
+    }

@@ -9,8 +9,13 @@
 # through to building. 100 Gi; retention (6 months default) and GC keep
 # it bounded.
 #
-# Reach: the Ingress (attic-ingress.yaml) for member devices, the
-# Service for pods. Pushes need an Attic token on top of either.
+# Reach, two ports on one Service:
+#   gate (8081) — the Ingress's backend: the nginx sidecar, which adds
+#     the sealed mesh token (attic-mesh-token.sealed.yaml) and hands
+#     the request to atticd. A member device past the group gate can
+#     pull and push with no credential of its own.
+#   api  (8080) — atticd itself, for pods on the pod network; they
+#     carry their own token.
 #
 # The image is upstream's nix-built one (dockerTools, /bin/atticd +
 # /bin/atticadm + busybox), no user set. It runs here as uid 1000 with
@@ -79,6 +84,40 @@ spec:
               readOnly: true
             - name: data
               mountPath: /data
+        - name: gate
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          # The image's nginx user; the pod-level 1000 is atticd's and
+          # the volume's, not this container's.
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          envFrom:
+            - secretRef:
+                name: attic-mesh-token # ATTIC_MESH_TOKEN
+          env:
+            - name: NGINX_ENVSUBST_FILTER
+              value: ^ATTIC_
+          ports:
+            - name: gate
+              containerPort: 8081
+          volumeMounts:
+            - name: gate
+              mountPath: /etc/nginx/templates
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 8081
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
           # TCP, not HTTP: attic's binary-cache routes live under
           # /<cache>/ and there is no unauthenticated health path at the
           # root, so a GET would 404 and fail the probe.
@@ -105,8 +144,13 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: attic
+        - name: gate
+          configMap:
+            name: attic-gate
 ---
-# Pods (in-cluster builders) use http://attic.nix-cache.svc.cluster.local
+# api: pods (in-cluster builders) use
+# http://attic.nix-cache.svc.cluster.local/main with their own token.
+# gate: the Ingress only (see header).
 apiVersion: v1
 kind: Service
 metadata:
@@ -116,6 +160,9 @@ spec:
   selector:
     app: attic
   ports:
-    - name: http
+    - name: api
       port: 80
       targetPort: 8080
+    - name: gate
+      port: 8081
+      targetPort: 8081
