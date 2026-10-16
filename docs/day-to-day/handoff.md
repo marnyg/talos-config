@@ -24,8 +24,8 @@ Previous session (2026-10-16): HTTPS over the mesh built and accepted
 
 ## Loose threads
 
-- `SIGNUPS_ALLOWED=true` in `vaultwarden/deployment.yaml` until the
-  first account exists; flip to `"false"` in a follow-up commit.
+- Vaultwarden signups are off since `d13b5a1` (first account made,
+  `l5v8` closed); further users by invitation from inside the vault.
 - Vaultwarden's `rsa_key.pem` (its own JWT signing key) sits on the
   Longhorn volume like Forgejo's `secret_key`; both are data plane but
   are what `9io` (encrypt the user volume) is about.
@@ -45,9 +45,6 @@ Previous session (2026-10-16): HTTPS over the mesh built and accepted
 
 ## Suggested next steps
 
-- Open https://vault.gw.mesh.internal in Firefox, create the account,
-  point the extension at it (Self-hosted → Server URL), then flip
-  `SIGNUPS_ALLOWED` and close `l5v8`.
 - `android/build.sh --publish` on the box so the TV/other devices get
   the https-capable app; test the Bitwarden Android app on the Sony.
 - Back to `ivof` (sandbox-agent live acceptance, the parent actor).
