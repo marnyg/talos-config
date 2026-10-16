@@ -1,0 +1,96 @@
+# Workouts: the Strong replacement (workouts/, epic yz75). One static Go
+# binary, one SQLite file + the exercise media on one Longhorn volume
+# (ADR-0029). Data-plane state under invariant 2's exception: payload,
+# backed up with the volume, nothing the control plane depends on.
+#
+# Seeding: the Strong export (licensed media, kept out of git) goes in
+# with the binary's own importer, from a laptop over the mesh:
+#
+#   kubectl -n workouts cp ~/strong-export-2026-10-16 \
+#     $(kubectl -n workouts get pod -l app=workouts -o name | cut -d/ -f2):/tmp/export
+#   kubectl -n workouts exec deploy/workouts -- workouts import -data /var/lib/workouts /tmp/export
+#
+# Re-running is idempotent (rows keep Strong's ids).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workouts
+  namespace: workouts
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workouts
+  namespace: workouts
+spec:
+  replicas: 1
+  # RWO volume + SQLite: no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: workouts
+  template:
+    metadata:
+      labels:
+        app: workouts
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workouts
+          # workouts/build.sh prints the digest; pin it here.
+          image: ghcr.io/marnyg/workouts:dev
+          args: ["serve", "-data", "/var/lib/workouts", "-listen", ":8080", "-tz", "Europe/Oslo"]
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/workouts
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: workouts
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: workouts
+  namespace: workouts
+spec:
+  selector:
+    app: workouts
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -59,6 +59,9 @@
           # (-tags iroh, cgo) and their static variant for the image. See
           # actors/nix/default.nix.
           actors = import ./actors/nix { inherit pkgs lib; self = self'; };
+          # The workout tracker (epic yz75): pure Go, no cgo. See
+          # workouts/nix/default.nix.
+          workouts = import ./workouts/nix { inherit pkgs lib; self = self'; };
         in
         lib.mkMerge [
           {
@@ -79,6 +82,8 @@
             # nix build .#actors-static  — musl, what actors/image.nix ships (linux)
             # nix build .#actors-image   — the child/provisioner image (linux)
             packages.actors-bin = actors.bin;
+            # nix build .#workouts-bin   — bin/workouts + the module's go test
+            packages.workouts-bin = workouts.bin;
 
             # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go
             #                               package, drift-checked against iroh-go/iroh
@@ -426,6 +431,15 @@
               configServer = configServer.static;
             };
             packages.actors-static = actors.static;
+            packages.workouts-static = workouts.static;
+            # nix build .#workouts-image — the tracker's pod image
+            # (workouts/image.nix; driver: workouts/build.sh).
+            packages.workouts-image = import ./workouts/image.nix {
+              inherit pkgs lib;
+              self = inputs.self;
+              nix2container = inputs'.nix2container.packages.nix2container;
+              workouts = workouts.static;
+            };
             # nix build .#actors-image — the child/provisioner image
             # (actors/image.nix; driver: actors/build.sh).
             packages.actors-image = import ./actors/image.nix {

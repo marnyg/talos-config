@@ -1,0 +1,25 @@
+# workouts.gw.mesh.internal, gated behind the wallet like the *arr apps
+# and SillyTavern (k8s/apps/media/ingress.yaml explains the mechanism):
+# the app has no auth of its own (single user), so the group gate is
+# what keeps "every exposed service authenticates against the wallet"
+# true. Media uploads are not a feature; the default body size stands.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: workouts
+  namespace: workouts
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: workouts.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: workouts
+                port:
+                  number: 8080
