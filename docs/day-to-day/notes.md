@@ -1197,3 +1197,7 @@
   pre-push hook `--rebuild`s each `goModules` (minutes each). Run the
   hook's loop in the background right after the merge, not inside
   `git push`; log at `/tmp/swarm/vendorhash.log` this session.
+- 2026-10-19 — `curl https://<x>.gw.mesh.internal` from the Mac fails
+  with exit 60: curl (nix/homebrew build) reads its own CA bundle, not
+  the keychain the mesh root was added to. `-k` for acceptance checks;
+  the browsers trust it.
