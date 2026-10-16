@@ -1,0 +1,39 @@
+# Attic over the mesh (ADR-0009 pattern): plain HTTP, hostname routing,
+# behind the admins group gate like Forgejo. The gate works for nix
+# for the same reason it works for git (forgejo/ingress.yaml): the
+# device's daemon carries every request to a .gw name through the
+# identity stream and the gateway signs the X-Mesh-Token — the client
+# program never sees it. So `nix build` with this substituter passes
+# as a member device and a non-member gets 401; pushes additionally
+# carry an Attic token (bootstrap.md). Pods never come this way: they
+# use attic.nix-cache.svc on the pod network.
+#
+# Body size unlimited: `attic push` streams whole NARs (the actors
+# image is hundreds of MB). Longer proxy timeouts for the same reason;
+# nginx's 60s default would cut a slow upload mid-stream.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: attic
+  namespace: nix-cache
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # Stream uploads to attic rather than spooling each NAR to nginx's
+    # disk first.
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: cache.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: attic
+                port:
+                  number: 80

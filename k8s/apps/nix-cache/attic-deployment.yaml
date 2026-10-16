@@ -1,0 +1,119 @@
+# Attic: the binary cache for our own builds (attic-config.yaml has
+# the why; namespace.yaml the split from the nixos-mirror).
+#
+# One volume, longhorn-bulk: db + chunks together (see config), one
+# replica on nas1's SATA tier. Everything in it is re-derivable — from
+# source, slowly — which is ADR-0011's definition of bulk; the pod
+# itself is not pinned (RWO attaches across the LAN from wherever it
+# lands). nas1 away is this cache away, same as the mirror; nix falls
+# through to building. 100 Gi; retention (6 months default) and GC keep
+# it bounded.
+#
+# Reach: the Ingress (attic-ingress.yaml) for member devices, the
+# Service for pods. Pushes need an Attic token on top of either.
+#
+# The image is upstream's nix-built one (dockerTools, /bin/atticd +
+# /bin/atticadm + busybox), no user set. It runs here as uid 1000 with
+# fsGroup for the volume; atticd needs nothing in /etc/passwd.
+# Only `latest` and sha tags are published; pinned by digest, resolved
+# 2026-10-16.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: attic
+  namespace: nix-cache
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-bulk
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attic
+  namespace: nix-cache
+spec:
+  replicas: 1
+  # RWO volume + sqlite: never two at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: attic
+  template:
+    metadata:
+      labels:
+        app: attic
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: atticd
+          image: ghcr.io/zhaofengli/attic@sha256:18574aba70fc89d2b695273fbe2e7b2f8ad7e8e786b4cc535124fbe14bada1d0
+          command: [/bin/atticd, -f, /config/server.toml, --mode, monolithic]
+          envFrom:
+            - secretRef:
+                name: attic-token-key # ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64
+          env:
+            - name: RUST_LOG
+              value: info
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: data
+              mountPath: /data
+          # TCP, not HTTP: attic's binary-cache routes live under
+          # /<cache>/ and there is no unauthenticated health path at the
+          # root, so a GET would 404 and fail the probe.
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: config
+          configMap:
+            name: attic
+        - name: data
+          persistentVolumeClaim:
+            claimName: attic
+---
+# Pods (in-cluster builders) use http://attic.nix-cache.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: attic
+  namespace: nix-cache
+spec:
+  selector:
+    app: attic
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

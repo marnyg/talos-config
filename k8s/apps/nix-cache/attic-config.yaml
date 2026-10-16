@@ -1,0 +1,57 @@
+# atticd server config (spike talos-config-kyiy). Attic is the cache
+# for what WE build — config-server-bin, actors, the images, whatever a
+# laptop's post-build-hook pushes — as opposed to the nixos-mirror
+# beside it, which only relays cache.nixos.org. The two differ in
+# reach because they differ in source: nixpkgs has a CDN, our builds
+# have only this.
+#
+# Monolithic mode: API and garbage collector in one process. sqlite,
+# not Postgres, for the Forgejo reason: one replica, one tenant, and a
+# second stateful service for the sake of a bigger database is the
+# wrong trade at N=1. Database and chunk store sit on the SAME volume
+# (attic-deployment.yaml): the db is an index over the chunks, and the
+# two diverging — one restored, the other not — is worse than losing
+# both, which is a rebuild from source.
+#
+# The JWT signing key is NOT here: atticd takes it from
+# ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64 (attic-token-key.sealed.yaml)
+# in place of jwt.signing.token-rs256-secret-base64.
+#
+# api-endpoint is what `attic` prints and embeds in cache info — the
+# mesh name, which is also the substituter URL. Pods push/pull through
+# the Service instead (bootstrap.md).
+#
+# Chunking defaults from upstream's template; zstd. Retention is per
+# cache (`attic cache configure --retention-period`), the GC loop here
+# only runs it; without a retention period nothing is ever deleted.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: attic
+  namespace: nix-cache
+data:
+  server.toml: |
+    listen = "0.0.0.0:8080"
+    allowed-hosts = []
+    api-endpoint = "http://cache.gw.mesh.internal/"
+    require-proof-of-possession = true
+
+    [database]
+    url = "sqlite:///data/server.db?mode=rwc"
+
+    [storage]
+    type = "local"
+    path = "/data/storage"
+
+    [chunking]
+    nar-size-threshold = 65536
+    min-size = 16384
+    avg-size = 65536
+    max-size = 262144
+
+    [compression]
+    type = "zstd"
+
+    [garbage-collection]
+    interval = "12 hours"
+    default-retention-period = "6 months"
