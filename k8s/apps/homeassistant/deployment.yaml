@@ -1,0 +1,152 @@
+# Home Assistant Core at https://home.gw.mesh.internal. One Longhorn
+# volume (ADR-0029) is /config: configuration.yaml and its includes,
+# .storage/ (users, integrations, dashboards, the auth tokens the
+# companion app holds), the sqlite recorder database and the media
+# folder. All of it is data plane (invariant 2's exception): nothing
+# the control plane depends on lives here, and losing the volume loses
+# the automations and history, not membership. `bsj` (backup target)
+# covers it like Forgejo and Vaultwarden.
+#
+# Reverse proxy: ingress-nginx forwards X-Forwarded-For on every
+# request, and Home Assistant answers 400 to a forwarded request unless
+# the proxy's address is listed in http.trusted_proxies. The init
+# container seeds a configuration.yaml with the pod CIDR
+# (talos/base/*.yaml podSubnets) on a fresh volume only — after first
+# start Home Assistant owns the file, as Sonarr owns config.xml. The
+# include files are touched for the same reason: HA creates them only
+# when it creates configuration.yaml itself, and an !include of a
+# missing file fails that component.
+#
+# Identity: Home Assistant authenticates itself (owner account from
+# onboarding, long-lived tokens for the companion app). The SIWE bridge
+# gates reachability on the Ingress (group admins, ingress.yaml); the
+# HA login is the second gate. The X-Mesh-Name header could log a
+# device in as a person later (the Grafana pattern, spike i1il) — HA
+# has no header-auth provider in core, so not now.
+#
+# HTTPS: the companion app and the browser both work over plain http,
+# but the PWA install, the camera/microphone and the location features
+# want a secure context, so the published name is the https one
+# (ADR-0033, meshtls) — TLS terminates on the device, the wire from
+# the gateway inward stays plain HTTP, and HA sees X-Forwarded-Proto.
+#
+# Network: ClusterIP only (namespace.yaml explains the baseline PSS).
+# Discovery-based integrations and USB radios need hostNetwork / a
+# device mount on a pinned node, which would also put :8123 on the LAN
+# outside the mesh gate; revisit once a concrete integration needs it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: homeassistant-config
+  namespace: homeassistant
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homeassistant
+  namespace: homeassistant
+spec:
+  replicas: 1
+  # RWO volume + sqlite: no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: homeassistant
+  template:
+    metadata:
+      labels:
+        app: homeassistant
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: config
+          # Helper pin: one tag across k8s/apps (rg 'image: busybox').
+          image: busybox:1.38
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              [ -f /config/configuration.yaml ] && exit 0
+              cat > /config/configuration.yaml << 'YAMLEOF'
+              # Seeded by k8s/apps/homeassistant/deployment.yaml on first
+              # start; Home Assistant owns this file from then on.
+              default_config:
+
+              http:
+                use_x_forwarded_for: true
+                # ingress-nginx pods (talos podSubnets).
+                trusted_proxies:
+                  - 10.244.0.0/16
+
+              automation: !include automations.yaml
+              script: !include scripts.yaml
+              scene: !include scenes.yaml
+              YAMLEOF
+              for f in automations.yaml scripts.yaml scenes.yaml; do
+                [ -f "/config/$f" ] || echo '[]' > "/config/$f"
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      containers:
+        - name: homeassistant
+          # Pinned by digest; the 2026.10.2 tag resolved on 2026-10-17
+          # (same manifest as `stable` that day).
+          image: ghcr.io/home-assistant/home-assistant:2026.10.2@sha256:33afb0659d786213264c2211f8d91c5fe87461c56eba6a3a546eb05fc71e89f4
+          env:
+            - name: TZ
+              value: Europe/Oslo
+          ports:
+            - containerPort: 8123
+          securityContext:
+            # Root with the runtime's default capability set, which is
+            # what s6's /init expects (namespace.yaml); no additions.
+            # Not drop-ALL: s6 chowns and switches uid on the way in,
+            # and a root with no CHOWN/SETUID fails there, not here.
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: config
+              mountPath: /config
+          readinessProbe:
+            httpGet:
+              # 302 to /onboarding.html or the login page; any 2xx/3xx
+              # means the http integration is up.
+              path: /
+              port: 8123
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: homeassistant-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: homeassistant
+  namespace: homeassistant
+spec:
+  selector:
+    app: homeassistant
+  ports:
+    - port: 8123
+      targetPort: 8123

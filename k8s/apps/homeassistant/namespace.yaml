@@ -1,0 +1,19 @@
+# `homeassistant`: Home Assistant Core, the home-automation hub. Only
+# Home Assistant lives here.
+#
+# Labeled baseline, not the cluster-wide restricted default: the
+# official image is an s6-overlay container whose /init must start as
+# root (it fixes ownership and spawns hass as a child; running the
+# whole thing as a non-root uid is unsupported upstream and breaks on
+# /run). Baseline still forbids hostNetwork, hostPath, privileged and
+# added capabilities, which is what keeps the pod off the LAN: without
+# hostNetwork, mDNS/SSDP discovery (Chromecast, HomeKit, Sonos) and a
+# USB Zigbee/Z-Wave stick are out of reach. That is a deliberate first
+# cut — integrations are added by address — and the trade-off is
+# written down in deployment.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: homeassistant
+  labels:
+    pod-security.kubernetes.io/enforce: baseline

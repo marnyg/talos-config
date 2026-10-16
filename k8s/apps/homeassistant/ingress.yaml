@@ -1,0 +1,35 @@
+# home.gw.mesh.internal, behind the group gate like Vaultwarden and the
+# *arr apps (k8s/apps/media/ingress.yaml explains the mechanism). The
+# browser and the companion app both go through the device's tunnel
+# and carry the gateway-signed X-Mesh-Token, so a non-member device
+# never reaches the login page. Home Assistant's own login is the
+# second gate (deployment.yaml).
+#
+# The frontend is one long-lived WebSocket on /api/websocket (same
+# port); the read timeout keeps nginx from cutting it every 60 s. Both
+# hops in front of nginx are stdlib reverse proxies, which forward the
+# Upgrade.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homeassistant
+  namespace: homeassistant
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    # Backup downloads/uploads and media go through here.
+    nginx.ingress.kubernetes.io/proxy-body-size: 512m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: home.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homeassistant
+                port:
+                  number: 8123
