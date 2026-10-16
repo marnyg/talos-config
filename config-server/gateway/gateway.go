@@ -77,7 +77,16 @@ func Proxy(upstream *url.URL, signer *meshtoken.Signer) http.Handler {
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(upstream)
 			r.Out.Host = r.In.Host // nginx routes by it
-			r.SetXForwarded()      // X-Forwarded-Host/Proto for oauth2-proxy's redirects
+			r.SetXForwarded()      // X-Forwarded-Host/Proto for the apps' redirects
+			// The stream is plaintext, so SetXForwarded says http. The peer
+			// may have terminated TLS on its own device (ADR-0033: the
+			// daemon's :443 fiction) and says so with X-Forwarded-Proto:
+			// https " honoured, because the peer is the admitted member
+			// and the only party on this stream; the value stays one of
+			// two words. nginx passes it on with use-forwarded-headers.
+			if r.In.Header.Get("X-Forwarded-Proto") == "https" {
+				r.Out.Header.Set("X-Forwarded-Proto", "https")
+			}
 			// RemoteAddr is the caller's key ("ed:…"), which SplitHostPort
 			// cheerfully splits at the colon: no address to forward. The
 			// key travels as HeaderNode; nginx adds its own -For.

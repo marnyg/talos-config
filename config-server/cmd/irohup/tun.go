@@ -15,10 +15,16 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
+	"github.com/marnyg/talos-config/config-server/meshtls"
 	"github.com/marnyg/talos-config/config-server/meshtun"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"golang.zx2c4.com/wireguard/tun"
 )
+
+// tlsDir is the presentation root's home under the state dir: the key
+// beside the member key (same custody), the cert world-readable for
+// the trust-store install (ADR-0033).
+const tlsDir = "tls"
 
 // The desktop presentation (359.9.6, decision fgr): one process,
 // launched as root (launchd on darwin, systemd on linux), that does
@@ -116,16 +122,23 @@ func chownTree(dir string, uid, gid int) error {
 }
 
 // serveTun runs the presentation (meshtun) over the utun until ctx
-// ends or the tun path breaks.
-func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *meshtun.Pool, logger *log.Logger) error {
+// ends or the tun path breaks. The device root for :443 is minted on
+// first run under <state>/tls; trusting it is a one-time act of the
+// login user (trustNote), never of this process.
+func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *meshtun.Pool, stateDir, label string, logger *log.Logger) error {
 	if os.Geteuid() == 0 {
 		return errors.New("serveTun as root: privilegedSetup must run first")
 	}
+	auth, err := meshtls.Load(filepath.Join(stateDir, tlsDir), label)
+	if err != nil {
+		return err
+	}
+	trustNote(auth.RootPath(), logger)
 	link, err := fakeip.NewTunLink(t.dev, 512)
 	if err != nil {
 		return err
 	}
-	mt, err := meshtun.Start(meshtun.Options{Agent: a, Link: link, Pool: pool, Log: logger})
+	mt, err := meshtun.Start(meshtun.Options{Agent: a, Link: link, Pool: pool, TLS: auth, Log: logger})
 	if err != nil {
 		link.Close()
 		return err

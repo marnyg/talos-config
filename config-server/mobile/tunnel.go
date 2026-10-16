@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
+	"github.com/marnyg/talos-config/config-server/meshtls"
 	"github.com/marnyg/talos-config/config-server/meshtun"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
@@ -107,6 +108,16 @@ func Start(stateDir, hub, relay string, tunFd, mtu int, upstreamDNS, localAddrs,
 	}
 	advertiseLocal(a, localAddrs, logger)
 
+	// The :443 fiction (ADR-0033): the device root under the state
+	// dir, minted on first use; CACertPEM is how the user gets it into
+	// Android's user CA store (Chrome honours that store; most apps,
+	// API " 24, do not " they stay on http://).
+	auth, err := meshtls.Load(TLSDir(stateDir), tlsLabel(a))
+	if err != nil {
+		_ = a.Close()
+		closeFile(lf)
+		return nil, err
+	}
 	link, err := fakeip.NewFDLink(tunFd, uint32(mtu))
 	if err != nil {
 		_ = a.Close()
@@ -119,7 +130,7 @@ func Start(stateDir, hub, relay string, tunFd, mtu int, upstreamDNS, localAddrs,
 			return c.Control(func(fd uintptr) { protector.Protect(int32(fd)) })
 		}
 	}
-	mt, err := meshtun.Start(meshtun.Options{Agent: a, Link: link, Upstreams: upstreamDNS, DialControl: control, Log: logger})
+	mt, err := meshtun.Start(meshtun.Options{Agent: a, Link: link, Upstreams: upstreamDNS, DialControl: control, TLS: auth, Log: logger})
 	if err != nil {
 		_ = a.Close()
 		closeFile(lf)
@@ -309,6 +320,15 @@ func (t *Tunnel) NamesJSON() string {
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	out, _ := json.Marshal(rows)
 	return string(out)
+}
+
+// tlsLabel names the device in its root's subject: the member name
+// when enrolled (always, here: Start refuses otherwise).
+func tlsLabel(a *nodeagent.Agent) string {
+	if kit := a.Kit(); kit != nil {
+		return kit.Member.Cav.Name
+	}
+	return ""
 }
 
 func closeFile(f *os.File) {

@@ -3,6 +3,25 @@
 Bead `talos-config-9z4e` (supersedes `90a`). Items are **verified-in-repo**
 unless marked `unverified:` (from memory, no web access; check first).
 
+**2026-10-18 (`eu0m`): built — termination 4 + root E, ADR-0033
+Accepted.** The forcing app was the workouts PWA (`k8s/apps/workouts`),
+not Vaultwarden. Pre-checks resolved from source:
+- nameConstraints on a locally trusted root: Safari/trustd **yes**
+  (`Security/trust/trustd/SecPolicyServer.c`, permitted subtrees seeded
+  from a trusted anchor); Chrome macOS **yes**
+  (`net/cert/internal/trust_store_mac.cc`, `WithEnforceAnchorConstraints`);
+  Firefox **yes** (mozpkix `pkixbuild.cpp` checks every issuer's
+  constraints, the anchor included); Chrome Android **no**
+  (`trust_store_android.cc` → `TrustStoreInMemory::AddTrustAnchor`, no
+  anchor constraints; Chrome Root Store is the default verifier there,
+  `use_chrome_root_store = true`). Consequence recorded in ADR-0033.
+- Android apps targeting API ≥ 24 ignore user CAs unless opted in;
+  Chrome opts in. Android 11+ forbids app-driven CA install: the app
+  exports the file, the user installs from Settings.
+- Ed25519 leaves: not negotiated by browsers; leaves are P-256.
+- oauth2-proxy references below are stale: the group gate is
+  `siwe-oidc /authz` (ADR-0032); the cookie question moved with it.
+
 ## Question
 
 Mesh-served apps are reached as `http://<svc>.gw.mesh.internal` inside an

@@ -20,3 +20,10 @@ func dnsNote(ifname string) {
 	}
 	log.Printf("split DNS: no resolvectl — point %s at %s yourself (names will not resolve until then; IPs work)", zone, fakeip.ResolverIP)
 }
+
+// trustNote says how the login user trusts the device root once. On
+// NixOS the declarative form is security.pki.certificateFiles pointing
+// at the path; elsewhere p11-kit's `trust anchor`.
+func trustNote(rootPath string, logger *log.Logger) {
+	logger.Printf("https: device root at %s — trust it once: NixOS security.pki.certificateFiles = [ %q ], or `sudo trust anchor %s`", rootPath, rootPath, rootPath)
+}

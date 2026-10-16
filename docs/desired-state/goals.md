@@ -57,11 +57,13 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   (`auth_request` → the bridge's `/authz` group gate on the gateway-
   signed identity token, ADR-0032; oauth2-proxy retired 2026-10-06),
   and Jellyfin (jellyfin-plugin-sso).
-  Remaining scope deliberately deferred: HTTPS over the mesh (spike
-  `9z4e`, 2026-10-06, `docs/spikes/tls-over-mesh.md`) — a wallet-rooted
-  mesh CA is ruled out (ADR-0018: the seed is never a signing key; a
-  `speak-as` root rotates per redeploy); when an app forces it, TLS
-  terminates on the device behind a name-constrained per-device CA.
+  HTTPS over the mesh **built 2026-10-18** (ADR-0033, `eu0m`; spike
+  `9z4e`, `docs/spikes/tls-over-mesh.md`): TLS terminates on the
+  device behind a name-constrained per-device root (`meshtls`), the
+  gateway honours the device's `X-Forwarded-Proto`; a wallet-rooted
+  mesh CA stays ruled out (ADR-0018: the seed is never a signing key;
+  a `speak-as` root rotates per redeploy). `http://` is served beside
+  it for clients that cannot trust a user CA.
   The app-layer seam is moving (spike `i1il`, task `a0ys`): the gateway
   will mint a signed per-request identity token the bridge verifies,
   so group-gated apps need no login and OIDC apps log in without the

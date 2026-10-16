@@ -5,16 +5,31 @@ package meshtun
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"net"
 	"net/netip"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
+	"github.com/marnyg/talos-config/config-server/meshtls"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
+	"github.com/marnyg/talos-config/protocol/facethttp"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
+
+// HTTPSPort is the one port of the fiction that is not a facet's
+// natural port: a flow to <fake IP>:443 is terminated on the device
+// (meshtls, ADR-0033) and rides the same facet a flow to :80 would —
+// ingress-http on a gateway, hub-http on the hub. Presentation only:
+// no kind advertises it, no policy row names it.
+const HTTPSPort uint16 = 443
+
+// httpPort is the natural port the TLS fiction stands in front of.
+const httpPort uint16 = 80
 
 // Options configures Start.
 type Options struct {
@@ -34,6 +49,9 @@ type Options struct {
 	// DialControl runs on every upstream DNS socket (mobile:
 	// VpnService.protect so the forwarder cannot loop into the tun).
 	DialControl func(network, address string, c syscall.RawConn) error
+	// TLS is the device's presentation root; nil ⇒ no :443, flows
+	// there are refused as any non-facet port is.
+	TLS *meshtls.Authority
 	// Log; nil ⇒ log.Default().
 	Log *log.Logger
 }
@@ -55,6 +73,8 @@ type Tun struct {
 	Pool     *Pool
 	Stack    *fakeip.Stack // its Stats: what never reached a flow or the resolver
 	Stats    Stats
+	// Front is the :443 terminator, nil without Options.TLS.
+	Front *meshtls.Front
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -98,19 +118,55 @@ func Start(o Options) (*Tun, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t := &Tun{Resolver: res, Pool: pool, ctx: ctx, cancel: cancel, log: logger}
+	if o.TLS != nil {
+		front, err := meshtls.NewFront(meshtls.FrontOptions{
+			Authority: o.TLS,
+			Resolve: func(fqdn string) (meshtls.Target, error) {
+				bare, ok := fakeip.InZone(fqdn)
+				if !ok {
+					return meshtls.Target{}, fmt.Errorf("%w: %q", nodeagent.ErrUnknownName, fqdn)
+				}
+				member, facet, err := a.Target(bare, httpPort)
+				if err != nil {
+					return meshtls.Target{}, err
+				}
+				return meshtls.Target{Member: member, Facet: facet}, nil
+			},
+			Open: func(ctx context.Context, tg meshtls.Target) (net.Conn, error) {
+				raw, err := pool.Open(ctx, tg.Member, tg.Facet)
+				if err != nil {
+					return nil, err
+				}
+				return facethttp.Dialed(raw, tg.Facet, ""), nil
+			},
+			Log: logger,
+		})
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		t.Front = front
+	}
 	s, err := fakeip.NewStack(o.Link, t.flow, res.HandleUDP)
 	if err != nil {
 		cancel()
+		if t.Front != nil {
+			t.Front.Close()
+		}
 		return nil, err
 	}
 	t.Stack = s
 	logger.Printf("tun: resolver on %s:53 for *.%s, upstream %q", fakeip.ResolverIP, fakeip.Zone, o.Upstreams)
+	if t.Front != nil {
+		logger.Printf("tun: https on <fake IP>:%d for *.%s, root %s", HTTPSPort, fakeip.Zone, o.TLS.RootPath())
+	}
 	return t, nil
 }
 
 // flow runs one accepted TCP flow: which vocabulary a port is read in
 // depends on who the name is — hub.<zone>:80 is hub-http, <svc>.gw:80
-// is ingress-http, cp1:50000 is apid (nodeagent.Target).
+// is ingress-http, cp1:50000 is apid (nodeagent.Target). :443 is the
+// TLS fiction in front of the :80 facet (https).
 func (t *Tun) flow(app fakeip.Conn, dst netip.AddrPort) {
 	t.Stats.Flows.Add(1)
 	t.Stats.FlowsOpen.Add(1)
@@ -120,6 +176,10 @@ func (t *Tun) flow(app fakeip.Conn, dst netip.AddrPort) {
 	if !ok {
 		t.Stats.FlowErrors.Add(1)
 		t.log.Printf("tun: flow to %s: not a name we minted", dst)
+		return
+	}
+	if dst.Port() == HTTPSPort && t.Front != nil {
+		t.https(app, name)
 		return
 	}
 	member, facet, err := t.Pool.a.Target(name, dst.Port())
@@ -142,10 +202,29 @@ func (t *Tun) flow(app fakeip.Conn, dst netip.AddrPort) {
 	t.log.Printf("tun: %s/%s (%s): stream done: %dB in, %dB out, %s", member, facet, name, in, out, time.Since(t0).Round(time.Millisecond))
 }
 
+// https hands one :443 flow to the front: TLS terminated here with a
+// leaf for the name, requests proxied as plain HTTP over the stream to
+// the member's HTTP facet (the one :80 would ride), X-Forwarded-Proto:
+// https added. The front owns app once Serve has taken it.
+func (t *Tun) https(app fakeip.Conn, name string) {
+	fqdn := name + "." + strings.TrimSuffix(fakeip.Zone, ".")
+	t0 := time.Now()
+	tg, err := t.Front.Serve(t.ctx, app, fqdn)
+	if err != nil {
+		t.Stats.FlowErrors.Add(1)
+		t.log.Printf("tun: https %s: %v", fqdn, err)
+		return // flow's deferred Close ends it
+	}
+	t.log.Printf("tun: https %s/%s (%s): connection done, %s", tg.Member, tg.Facet, fqdn, time.Since(t0).Round(time.Millisecond))
+}
+
 // Close stops serving: flows in progress are cancelled, the stack is
 // stopped (close the link first), the pool's connections dropped.
 func (t *Tun) Close() {
 	t.cancel()
 	t.Stack.Close()
+	if t.Front != nil {
+		t.Front.Close()
+	}
 	t.Pool.Close()
 }

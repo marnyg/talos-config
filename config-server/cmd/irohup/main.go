@@ -45,6 +45,13 @@
 // linux gets the zone declared per-link in systemd-resolved by the
 // setup itself. See tun.go and fakeip/{utun_darwin,tun_linux}.go.
 //
+// HTTPS (ADR-0033): a flow to <fake IP>:443 is terminated in the daemon
+// with a leaf for the name, signed by a per-device root minted under
+// <state>/tls on first run (meshtls), and proxied as plain HTTP over
+// the same stream :80 rides, with X-Forwarded-Proto: https. The root
+// is trusted once by the login user (the startup log says how); until
+// then https:// warns and http:// works as before. No mesh CA exists.
+//
 // Serving (ADR-0038): -forward <facet>=<host:port> makes the member a
 // receiver of kind device — it advertises the facet in its reach-me-at,
 // consents to the Owner for it, and splices each admitted stream to the
@@ -218,7 +225,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := serveTun(ctx, tunUp, a, pool, logger); err != nil && ctx.Err() == nil {
+			if err := serveTun(ctx, tunUp, a, pool, dir, dev, logger); err != nil && ctx.Err() == nil {
 				// The utun or its route is gone and we cannot re-add:
 				// exit non-zero so launchd/systemd restarts us as root.
 				logger.Printf("fatal: %v", err)

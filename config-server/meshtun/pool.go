@@ -7,7 +7,9 @@
 //
 //	tun → fakeip.Stack → { UDP/53: fakeip.Resolver gated by the zone rule (nodeagent.Zone);
 //	                       TCP to <fake IP>:<port>: nodeagent.Target → one stream on a
-//	                                                 pooled connection to (member, facet) }
+//	                                                 pooled connection to (member, facet);
+//	                       TCP to <fake IP>:443:    meshtls.Front → TLS ends here, each request
+//	                                                 one plain-HTTP round trip on the :80 facet }
 //
 // Extracted from cmd/irohup (359.9.6) for the Android app (359.9.4) so
 // the two presentations cannot drift: the zone rule, the port

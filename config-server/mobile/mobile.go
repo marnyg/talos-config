@@ -29,6 +29,7 @@ import (
 	"sync"
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
+	"github.com/marnyg/talos-config/config-server/meshtls"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
@@ -52,6 +53,30 @@ const (
 	// Zone is the presentation zone without its trailing dot.
 	Zone = "mesh.internal"
 )
+
+// TLSDir is where the device's presentation root lives (meshtls,
+// ADR-0033): under the state dir, beside the member key.
+func TLSDir(stateDir string) string { return filepath.Join(stateDir, "tls") }
+
+// CACertPEM returns the device root as PEM, minting it if this is the
+// first call (the tunnel would mint the same one on Start). Kotlin
+// writes it to Downloads so the user can install it: Settings "
+// Security " Encryption & credentials " Install a certificate " CA
+// certificate. Chrome then trusts https://*.mesh.internal; apps that
+// do not opt into user CAs keep using http://. The root is this
+// device's alone: re-minted if lost (Rekey removes it), re-trusted
+// with one install.
+func CACertPEM(stateDir string) (string, error) {
+	label := ""
+	if kit, ok, err := (nodeagent.State{Dir: stateDir}).Kit(); err == nil && ok {
+		label = kit.Member.Cav.Name
+	}
+	a, err := meshtls.Load(TLSDir(stateDir), label)
+	if err != nil {
+		return "", err
+	}
+	return string(a.RootPEM()), nil
+}
 
 // NodeID returns this device's NodeId (ed:<hex>), minting the key under
 // stateDir if there is none yet. Rekey is the only thing that changes
@@ -111,7 +136,9 @@ func Reenroll(stateDir string) error {
 	return nil
 }
 
-// Rekey discards everything, the key included: a brand-new NodeId.
+// Rekey discards everything, the key included: a brand-new NodeId. The
+// presentation root goes too (a new device, a new root); the old one
+// stays trusted in Android's store until the user removes it there.
 func Rekey(stateDir string) error {
 	if err := Reenroll(stateDir); err != nil {
 		return err
@@ -120,6 +147,9 @@ func Rekey(stateDir string) error {
 		if err := os.Remove(filepath.Join(stateDir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+	}
+	if err := os.RemoveAll(TLSDir(stateDir)); err != nil {
+		return err
 	}
 	return nil
 }

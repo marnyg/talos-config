@@ -1,8 +1,9 @@
 # ADR-0033: Browser TLS on the mesh is a device-local presentation; there is no mesh CA
 
-- Status: Proposed — direction decided 2026-10-06, implement only when
-  an app forces it
-- Date: 2026-10-06
+- Status: Accepted — direction decided 2026-10-06; built 2026-10-18
+  (`talos-config-eu0m`) when the workouts PWA forced it: a service
+  worker and standalone install need a secure context
+- Date: 2026-10-06, revised 2026-10-18
 - Related: ADR-0018 (the seed is never a signing key), ADR-0022 (hub
   TLS is web PKI), ADR-0026 (gateway), ADR-0032; spike
   `talos-config-9z4e` (`docs/spikes/tls-over-mesh.md`); retires the
@@ -31,8 +32,9 @@ it?
   `*.mesh.internal`, browser TLS) is where the model meets a web that
   assumes global names and web PKI — keep the fragility there.
 - `.internal` is ICANN-reserved: no public CA will ever issue for it.
-- Browsers do not accept Ed25519 TLS leaves (`unverified:` per
-  browser), so a member key cannot be its own leaf.
+- Browsers do not accept Ed25519 TLS leaves (TLS 1.3 signature-scheme
+  lists omit it), so a member key cannot be its own leaf; leaves are
+  P-256.
 
 ## Considered Options
 
@@ -96,14 +98,39 @@ introduced. The `goals.md` deferred scope is reworded accordingly.
   (`config-server/gateway/gateway.go:71`).
 - Secure cookies and `https://` OIDC issuers only once every browser
   client is on https; the TV splice is unaffected.
-- Open before building: `nameConstraints` honoured on locally
-  installed roots per browser (`unverified:`); which Android clients
-  beyond Chrome trust a user CA.
+- Built as `config-server/meshtls` (root + leaves + the terminating
+  reverse proxy, C-free) wired into `meshtun` for `:443`; both
+  daemons (`irohup -tun`, the Android `mobile.Tunnel`) mint the root
+  under `<state>/tls`. The gateway honours the peer's
+  `X-Forwarded-Proto: https`; ingress-nginx runs
+  `use-forwarded-headers` so the apps see it (the controller is
+  gateway-only, which is what that knob presumes).
+- **`nameConstraints` on a locally trusted root, verified in source
+  2026-10-18:** enforced by Safari/trustd (`SecPolicyServer.c` seeds
+  the permitted subtrees from a trusted anchor), by Chrome on macOS
+  (`trust_store_mac.cc`: `WithEnforceAnchorConstraints`) and by
+  Firefox everywhere (mozpkix checks every issuer's constraints,
+  anchor included). **Not** by Chrome on Android:
+  `trust_store_android.cc` loads user roots with `AddTrustAnchor()`,
+  which carries no anchor-constraint enforcement. So on the phone the
+  root's reach in Chrome is bounded by the device's custody alone —
+  the same radius as its member key, which lives beside it — not by
+  the constraint. The root still carries the constraint (critical):
+  the daemon never signs outside the zone regardless, and a verifier
+  that honours it gets the smaller radius.
+- Android apps targeting API ≥ 24 ignore the user CA store unless
+  their network security config opts in (Android docs); Chrome opts
+  in, the Jellyfin app and the like do not and stay on `http://`.
+  Android 11+ lets no app install a CA on its own: the app exports
+  the root as a file and the user installs it from Settings once.
 
 ### Confirmation
 
-`curl --cacert <device-ca> https://argocd.gw.mesh.internal` succeeds
-on a trusting device; `rg cookie-secure k8s/apps/` is `true` only
+`curl --cacert <state>/tls/ca.crt https://argocd.gw.mesh.internal`
+succeeds on a trusting device; `https://workouts.gw.mesh.internal`
+opens clean in Chrome on the phone and Safari on the laptop, Chrome
+offers "Install app" and the service worker registers, `http://`
+still answers 200; `rg cookie-secure k8s/apps/` is `true` only
 after every browser client is on https; `rg -l x509 protocol/` stays
 empty. Invalidated if a client class that cannot install a device CA
 (a third-party appliance app) ever needs https — then F is the only

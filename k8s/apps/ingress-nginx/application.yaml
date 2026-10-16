@@ -15,8 +15,12 @@
 # this controller to forge them (talos-config-1gv closed for good with
 # xnat; the geo/map gate that blanked the headers from non-pod sources
 # while hostNetwork lasted went with it). Plain HTTP by design — the
-# QUIC stream encrypts the wire; HTTPS arrives with the wallet-derived
-# CA (task refs 162c630d, deferred).
+# QUIC stream encrypts the wire. Browser HTTPS is terminated on the
+# device, never here (ADR-0033): the daemon says X-Forwarded-Proto:
+# https, the gateway honours it, and use-forwarded-headers below makes
+# the controller pass it to the apps instead of stamping its own
+# scheme. Safe for the same reason the identity headers are: the
+# gateway is the only caller and it sets or strips what it forwards.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -33,6 +37,8 @@ spec:
         controller:
           service:
             type: ClusterIP
+          config:
+            use-forwarded-headers: "true"
           ingressClassResource:
             default: true
           # HA sweep slice 2 (talos-config-9l67): the controller is

@@ -36,7 +36,10 @@ import org.json.JSONObject
  *    and signs with the wallet at /status; Go polls until the Kit
  *    arrives and persists it.
  *  - Enrolled: connect toggle (VpnService) + the plane's name map as
- *    this member sees it (Tunnel.NamesJSON), Tailscale-style.
+ *    this member sees it (Tunnel.NamesJSON), Tailscale-style; and the
+ *    export of the device's HTTPS root (Mobile.CACertPEM, ADR-0033) "
+ *    Android 11+ lets no app install a CA itself, so the user saves
+ *    the file and installs it from Settings once.
  */
 class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -53,6 +56,7 @@ class MainActivity : Activity() {
     private lateinit var toggleButton: Button
     private lateinit var refreshButton: Button
     private lateinit var debugButton: Button
+    private lateinit var exportCaButton: Button
     private lateinit var connStatus: TextView
     private lateinit var hostsList: ListView
 
@@ -71,6 +75,7 @@ class MainActivity : Activity() {
         toggleButton = findViewById(R.id.toggle_button)
         refreshButton = findViewById(R.id.refresh_button)
         debugButton = findViewById(R.id.debug_button)
+        exportCaButton = findViewById(R.id.export_ca_button)
         connStatus = findViewById(R.id.conn_status)
         hostsList = findViewById(R.id.hosts_list)
 
@@ -80,6 +85,7 @@ class MainActivity : Activity() {
         toggleButton.setOnClickListener { toggleVpn() }
         refreshButton.setOnClickListener { refreshNames() }
         debugButton.setOnClickListener { startActivity(Intent(this, DebugActivity::class.java)) }
+        exportCaButton.setOnClickListener { exportCa() }
     }
 
     override fun onResume() {
@@ -191,12 +197,56 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_VPN || resultCode != RESULT_OK) return
-        startForegroundService(Intent(this, MeshVpnService::class.java))
+        if (resultCode != RESULT_OK) return
+        when (requestCode) {
+            REQUEST_VPN -> {
+                startForegroundService(Intent(this, MeshVpnService::class.java))
+                scope.launch {
+                    delay(500)
+                    render()
+                    refreshNames()
+                }
+            }
+            REQUEST_EXPORT_CA -> data?.data?.let { writeCa(it) }
+        }
+    }
+
+    // -- HTTPS root (ADR-0033) -------------------------------------------
+
+    /**
+     * Lets the user save the device root as a .crt (Storage Access
+     * Framework: no storage permission, Downloads by default), then
+     * tells them where in Settings to install it. The root is minted
+     * on first use and shared with the tunnel; nothing leaves the
+     * device but this file, and it asserts nothing to anyone else.
+     */
+    private fun exportCa() {
+        val name = Store.name(this) ?: "device"
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("application/x-x509-ca-cert")
+            .putExtra(Intent.EXTRA_TITLE, "talos-mesh-$name-ca.crt")
+        startActivityForResult(intent, REQUEST_EXPORT_CA)
+    }
+
+    private fun writeCa(uri: android.net.Uri) {
         scope.launch {
-            delay(500)
-            render()
-            refreshNames()
+            try {
+                val pem = withContext(Dispatchers.IO) {
+                    val p = Mobile.caCertPEM(Store.stateDir(this@MainActivity).absolutePath)
+                    contentResolver.openOutputStream(uri, "wt")?.use { it.write(p.toByteArray()) }
+                        ?: throw IllegalStateException("cannot open $uri")
+                    p
+                }
+                if (pem.isNotEmpty()) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setMessage(R.string.export_ca_done)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                connStatus.text = getString(R.string.export_ca_failed, e.message ?: e.toString())
+            }
         }
     }
 
@@ -235,5 +285,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_VPN = 1
+        private const val REQUEST_EXPORT_CA = 2
     }
 }

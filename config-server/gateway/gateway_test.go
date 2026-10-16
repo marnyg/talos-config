@@ -125,3 +125,43 @@ func TestProxyUpstreamDown(t *testing.T) {
 		_ = client.Close()
 	}
 }
+
+// X-Forwarded-Proto: the stream is plaintext, so the default is http;
+// a peer that terminated TLS on its device (ADR-0033) says https and is
+// believed; any other value is replaced.
+func TestProxyForwardedProto(t *testing.T) {
+	var got string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Forwarded-Proto")
+	}))
+	defer upstream.Close()
+	u, _ := url.Parse(upstream.URL)
+	handler, stop := HTTPFacet("ingress-http", Proxy(u, testSigner), nil)
+	defer stop()
+
+	for _, tc := range []struct{ in, want string }{
+		{"", "http"},
+		{"https", "https"},
+		{"http", "http"},
+		{"gopher", "http"},
+	} {
+		client, server := net.Pipe()
+		go handler(context.Background(), server, cert.Identity{Key: laptopKey, Name: "laptop"}, laptopKey)
+		req, _ := http.NewRequest("GET", "http://workouts.gw.mesh.internal/", nil)
+		if tc.in != "" {
+			req.Header.Set("X-Forwarded-Proto", tc.in)
+		}
+		if err := req.Write(client); err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.ReadResponse(bufio.NewReader(client), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		_ = client.Close()
+		if got != tc.want {
+			t.Errorf("inbound %q: upstream saw %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
