@@ -1,0 +1,37 @@
+# vault.gw.mesh.internal, behind the group gate like Forgejo and the
+# *arr apps (k8s/apps/media/ingress.yaml explains the mechanism). The
+# gate is the mesh, not a cookie: the browser extension, the mobile app
+# and the web vault all carry the gateway-signed X-Mesh-Token because
+# they all go through the device's tunnel, so a non-member device never
+# sees the login API at all. Vaultwarden's own master-password login is
+# the second gate (deployment.yaml).
+#
+# Live sync is a WebSocket on /notifications/hub (same port since
+# Vaultwarden 1.29). Both hops in front of nginx are stdlib reverse
+# proxies, which forward the Upgrade; the read timeout below keeps
+# nginx from cutting an idle socket every 60 s.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vaultwarden
+  namespace: vaultwarden
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    # Attachments and Sends (Vaultwarden caps each at 500 MiB by
+    # default; the clients at 100 MiB).
+    nginx.ingress.kubernetes.io/proxy-body-size: 128m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: vault.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vaultwarden
+                port:
+                  number: 8080

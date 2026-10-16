@@ -1,0 +1,135 @@
+# Vaultwarden: a Bitwarden-compatible server, so the stock Bitwarden
+# browser extensions and apps point at https://vault.gw.mesh.internal
+# instead of bitwarden.com. One Longhorn volume (ADR-0029) holds the
+# sqlite database, attachments, Sends, icon cache and the RSA keypair
+# Vaultwarden mints on first start for its own JWTs. All of it is data
+# plane (invariant 2's exception): the vault payload is end-to-end
+# encrypted under each user's master password before it reaches the
+# server, and nothing the control plane depends on lives here. Losing
+# the volume loses the vaults (every client keeps a full encrypted copy
+# it can export) — `bsj` (backup target) covers it like Forgejo.
+#
+# HTTPS: the Bitwarden clients and the web vault refuse a plain-http
+# server (Web Crypto needs a secure context), so DOMAIN is the https
+# name. The wire is still plain HTTP from the gateway inward (ADR-0009
+# pattern) — TLS terminates on the device itself (ADR-0033, meshtls),
+# and the gateway + ingress-nginx forward X-Forwarded-Proto: https. A
+# device without the mesh root installed gets a browser warning and a
+# client that will not connect; the fix is on the device, not here.
+#
+# Identity: Vaultwarden authenticates itself (email + master password,
+# optional 2FA) and that credential IS the encryption key, so there is
+# no SSO here by design — the SIWE bridge gates reachability on the
+# Ingress (group admins, ingress.yaml), the master password gates the
+# vault. No admin panel (ADMIN_TOKEN unset → /admin is 404): every
+# setting is an env var in this block, which keeps the config in git.
+#
+# First account: SIGNUPS_ALLOWED is true so the first user can register
+# from the web vault. Flip it to "false" in a follow-up commit once the
+# household's accounts exist; invitations from an existing user still
+# work after that (INVITATIONS_ALLOWED defaults to true).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vaultwarden
+  namespace: vaultwarden
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vaultwarden
+  namespace: vaultwarden
+spec:
+  replicas: 1
+  # RWO volume + sqlite: no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vaultwarden
+  template:
+    metadata:
+      labels:
+        app: vaultwarden
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vaultwarden
+          # Alpine variant (static musl binary + web-vault); pinned by
+          # digest, the 1.37.4-alpine tag resolved on 2026-10-19.
+          image: docker.io/vaultwarden/server:1.37.4-alpine@sha256:19ea2b669945d842dadc3d500f2d6a795866a003330f59a47b9634658bae98bb
+          env:
+            - name: DOMAIN
+              value: https://vault.gw.mesh.internal
+            # Non-root: the image defaults to :80.
+            - name: ROCKET_PORT
+              value: "8080"
+            - name: ROCKET_ADDRESS
+              value: 0.0.0.0
+            - name: DATA_FOLDER
+              value: /data
+            # Rocket spools multipart uploads (attachments, Sends) here;
+            # /tmp is an emptyDir because the root fs is read-only.
+            - name: TMPDIR
+              value: /tmp
+            - name: SIGNUPS_ALLOWED
+              value: "true"
+            - name: SHOW_PASSWORD_HINT
+              value: "false"
+            # ingress-nginx sets X-Forwarded-For; used for login
+            # rate-limiting and the admin log only.
+            - name: IP_HEADER
+              value: X-Forwarded-For
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /alive
+              port: 8080
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: vaultwarden
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vaultwarden
+  namespace: vaultwarden
+spec:
+  selector:
+    app: vaultwarden
+  ports:
+    - port: 8080
+      targetPort: 8080
