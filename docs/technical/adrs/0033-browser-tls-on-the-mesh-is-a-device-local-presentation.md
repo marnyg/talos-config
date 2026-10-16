@@ -101,7 +101,9 @@ introduced. The `goals.md` deferred scope is reworded accordingly.
 - Built as `config-server/meshtls` (root + leaves + the terminating
   reverse proxy, C-free) wired into `meshtun` for `:443`; both
   daemons (`irohup -tun`, the Android `mobile.Tunnel`) mint the root
-  under `<state>/tls`. The gateway honours the peer's
+  under `<state>/tls`; `irohup`'s privileged setup also trusts it
+  (System keychain / p11-kit) before dropping root, so the Mac needs
+  no manual step. The gateway honours the peer's
   `X-Forwarded-Proto: https`; ingress-nginx runs
   `use-forwarded-headers` so the apps see it (the controller is
   gateway-only, which is what that knob presumes).
@@ -121,8 +123,10 @@ introduced. The `goals.md` deferred scope is reworded accordingly.
 - Android apps targeting API ≥ 24 ignore the user CA store unless
   their network security config opts in (Android docs); Chrome opts
   in, the Jellyfin app and the like do not and stay on `http://`.
-  Android 11+ lets no app install a CA on its own: the app exports
-  the root as a file and the user installs it from Settings once.
+  Android 11+ lets no app install a CA on its own (only a device
+  owner via `DevicePolicyManager.installCaCert`): the app exports the
+  root as a file and opens Settings, where the user installs it once;
+  on Android ≤ 10 the `KeyChain` install intent does it in one tap.
 
 ### Confirmation
 

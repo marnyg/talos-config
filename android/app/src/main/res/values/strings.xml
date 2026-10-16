@@ -26,7 +26,8 @@
     <string name="debug_no_log">(no log yet — the file appears when the tunnel starts)</string>
     <string name="debug_no_error">(none recorded since app start)</string>
     <string name="lookup_hint">Extra name to resolve (e.g. jellyfin.gw.mesh.internal)</string>
-    <string name="export_ca">Export HTTPS certificate</string>
-    <string name="export_ca_done">Saved. To trust it: Settings → Security → Encryption &amp; credentials → Install a certificate → CA certificate → pick the file. Chrome then opens https://…mesh.internal without warnings; other apps keep using http://.</string>
+    <string name="export_ca">Install HTTPS certificate</string>
+    <string name="open_settings">Open Settings</string>
+    <string name="export_ca_done">Saved. Android lets only Settings install a CA: Security → Encryption &amp; credentials → Install a certificate → CA certificate → pick the file. Chrome then opens https://…mesh.internal without warnings; other apps keep using http://.</string>
     <string name="export_ca_failed">Could not export the certificate: %1$s</string>
 </resources>

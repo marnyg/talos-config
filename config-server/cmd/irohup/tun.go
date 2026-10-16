@@ -47,11 +47,14 @@ type tunSetup struct {
 
 // privilegedSetup is the one function that runs as root. It takes no
 // network input: create the utun and route the fake range into it
-// (fakeip.Setup), make sure the state dir exists and belongs to the
-// service user, then drop to that user for good. After it returns,
-// euid != 0 is asserted; anything privileged added later fails here at
-// startup rather than silently in production.
-func privilegedSetup(stateDir, runAs string) (*tunSetup, error) {
+// (fakeip.Setup), mint the device's HTTPS root if there is none and
+// put it in the system trust store (trustRoot; ADR-0033 — the root is
+// this device's presentation artifact, so the daemon that owns it is
+// the right party to trust it, once), make sure the state dir exists
+// and belongs to the service user, then drop to that user for good.
+// After it returns, euid != 0 is asserted; anything privileged added
+// later fails here at startup rather than silently in production.
+func privilegedSetup(stateDir, runAs, label string) (*tunSetup, error) {
 	if os.Geteuid() != 0 {
 		return nil, errors.New("-tun needs root at start (launchd/systemd, or sudo); it drops to -user after the tun is up")
 	}
@@ -75,6 +78,20 @@ func privilegedSetup(stateDir, runAs string) (*tunSetup, error) {
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		_ = dev.Close()
 		return nil, err
+	}
+	// The root is minted here (as root, chowned below with the rest)
+	// so the trust-store install can happen in the same privileged
+	// breath; serveTun reloads it as the service user.
+	auth, err := meshtls.Load(filepath.Join(stateDir, tlsDir), label)
+	if err != nil {
+		_ = dev.Close()
+		return nil, err
+	}
+	if err := trustRoot(auth.RootPath()); err != nil {
+		// Not fatal: https warns until the user does it by hand (the
+		// note says how); everything else works.
+		log.Printf("https: could not trust the device root automatically: %v", err)
+		trustNote(auth.RootPath(), log.Default())
 	}
 	if err := chownTree(stateDir, uid, gid); err != nil {
 		_ = dev.Close()
@@ -122,9 +139,8 @@ func chownTree(dir string, uid, gid int) error {
 }
 
 // serveTun runs the presentation (meshtun) over the utun until ctx
-// ends or the tun path breaks. The device root for :443 is minted on
-// first run under <state>/tls; trusting it is a one-time act of the
-// login user (trustNote), never of this process.
+// ends or the tun path breaks. The device root for :443 was minted
+// (and trusted) by privilegedSetup; this reloads it unprivileged.
 func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *meshtun.Pool, stateDir, label string, logger *log.Logger) error {
 	if os.Geteuid() == 0 {
 		return errors.New("serveTun as root: privilegedSetup must run first")
@@ -133,7 +149,6 @@ func serveTun(ctx context.Context, t *tunSetup, a *nodeagent.Agent, pool *meshtu
 	if err != nil {
 		return err
 	}
-	trustNote(auth.RootPath(), logger)
 	link, err := fakeip.NewTunLink(t.dev, 512)
 	if err != nil {
 		return err

@@ -111,7 +111,7 @@ func Start(stateDir, hub, relay string, tunFd, mtu int, upstreamDNS, localAddrs,
 	// The :443 fiction (ADR-0033): the device root under the state
 	// dir, minted on first use; CACertPEM is how the user gets it into
 	// Android's user CA store (Chrome honours that store; most apps,
-	// API " 24, do not " they stay on http://).
+	// API ≥ 24, do not — they stay on http://).
 	auth, err := meshtls.Load(TLSDir(stateDir), tlsLabel(a))
 	if err != nil {
 		_ = a.Close()

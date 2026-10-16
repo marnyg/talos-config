@@ -60,8 +60,8 @@ func TLSDir(stateDir string) string { return filepath.Join(stateDir, "tls") }
 
 // CACertPEM returns the device root as PEM, minting it if this is the
 // first call (the tunnel would mint the same one on Start). Kotlin
-// writes it to Downloads so the user can install it: Settings "
-// Security " Encryption & credentials " Install a certificate " CA
+// writes it to Downloads so the user can install it: Settings →
+// Security → Encryption & credentials → Install a certificate → CA
 // certificate. Chrome then trusts https://*.mesh.internal; apps that
 // do not opt into user CAs keep using http://. The root is this
 // device's alone: re-minted if lost (Rekey removes it), re-trusted

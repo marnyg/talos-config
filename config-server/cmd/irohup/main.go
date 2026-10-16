@@ -48,9 +48,11 @@
 // HTTPS (ADR-0033): a flow to <fake IP>:443 is terminated in the daemon
 // with a leaf for the name, signed by a per-device root minted under
 // <state>/tls on first run (meshtls), and proxied as plain HTTP over
-// the same stream :80 rides, with X-Forwarded-Proto: https. The root
-// is trusted once by the login user (the startup log says how); until
-// then https:// warns and http:// works as before. No mesh CA exists.
+// the same stream :80 rides, with X-Forwarded-Proto: https. The
+// privileged setup also puts the root in the system trust store
+// (darwin: System keychain; linux: p11-kit `trust anchor`, or the
+// NixOS security.pki line the log names) — one act, idempotent. No
+// mesh CA exists; http:// works as before beside it.
 //
 // Serving (ADR-0038): -forward <facet>=<host:port> makes the member a
 // receiver of kind device — it advertises the facet in its reach-me-at,
@@ -122,7 +124,7 @@ func main() {
 			log.Fatal("-tun needs an explicit -state (HOME is root's at start and -user's after the drop)")
 		}
 		var err error
-		if tunUp, err = privilegedSetup(*stateDir, *runAs); err != nil {
+		if tunUp, err = privilegedSetup(*stateDir, *runAs, strings.ToLower(strings.TrimSpace(*name))); err != nil {
 			log.Fatal(err)
 		}
 	}

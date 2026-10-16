@@ -5,7 +5,10 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.security.KeyChain
 import android.util.Base64
 import android.view.View
 import android.widget.ArrayAdapter
@@ -26,6 +29,8 @@ import kotlinx.coroutines.withContext
 import mobile.Mobile
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 
 /**
  * The whole UI: one activity, two states.
@@ -37,9 +42,11 @@ import org.json.JSONObject
  *    arrives and persists it.
  *  - Enrolled: connect toggle (VpnService) + the plane's name map as
  *    this member sees it (Tunnel.NamesJSON), Tailscale-style; and the
- *    export of the device's HTTPS root (Mobile.CACertPEM, ADR-0033) "
- *    Android 11+ lets no app install a CA itself, so the user saves
- *    the file and installs it from Settings once.
+ *    install of the device's HTTPS root (Mobile.CACertPEM, ADR-0033):
+ *    on Android ≤ 10 the KeyChain install intent (one confirm); on
+ *    11+ no app may install a CA itself — only a device owner (MDM)
+ *    can — so the user saves the file and the app opens the Settings
+ *    screen where it is installed once.
  */
 class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -214,14 +221,34 @@ class MainActivity : Activity() {
     // -- HTTPS root (ADR-0033) -------------------------------------------
 
     /**
-     * Lets the user save the device root as a .crt (Storage Access
-     * Framework: no storage permission, Downloads by default), then
-     * tells them where in Settings to install it. The root is minted
-     * on first use and shared with the tunnel; nothing leaves the
-     * device but this file, and it asserts nothing to anyone else.
+     * Gets the device root into Android's user CA store. Android ≤ 10:
+     * KeyChain's install intent takes the bytes and asks the user to
+     * confirm. Android 11+ (API 30) removed that for CAs, so the user
+     * saves the root as a .crt (Storage Access Framework: no storage
+     * permission, Downloads by default) and is sent to Settings →
+     * Security to install it. The root is minted on first use and
+     * shared with the tunnel; nothing leaves the device but this file,
+     * and it asserts nothing to anyone else.
      */
     private fun exportCa() {
         val name = Store.name(this) ?: "device"
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            scope.launch {
+                try {
+                    val pem = withContext(Dispatchers.IO) { Mobile.caCertPEM(Store.stateDir(this@MainActivity).absolutePath) }
+                    val cert = CertificateFactory.getInstance("X.509")
+                        .generateCertificate(pem.byteInputStream()) as X509Certificate
+                    startActivity(
+                        KeyChain.createInstallIntent()
+                            .putExtra(KeyChain.EXTRA_CERTIFICATE, cert.encoded)
+                            .putExtra(KeyChain.EXTRA_NAME, "talos-mesh $name")
+                    )
+                } catch (e: Exception) {
+                    connStatus.text = getString(R.string.export_ca_failed, e.message ?: e.toString())
+                }
+            }
+            return
+        }
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
             .setType("application/x-x509-ca-cert")
@@ -241,7 +268,12 @@ class MainActivity : Activity() {
                 if (pem.isNotEmpty()) {
                     AlertDialog.Builder(this@MainActivity)
                         .setMessage(R.string.export_ca_done)
-                        .setPositiveButton(android.R.string.ok, null)
+                        .setPositiveButton(R.string.open_settings) { _, _ ->
+                            // The CA-install screen has no public intent;
+                            // Security is one tap away from it.
+                            startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
                         .show()
                 }
             } catch (e: Exception) {
