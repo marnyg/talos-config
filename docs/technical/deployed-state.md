@@ -218,16 +218,23 @@ history and, where the numbers still matter, in ADR-0006 and
 ## Hub on fly — _verified 2026-10-04_
 
 - App `marnyg-talos-config`, region `arn`, one `shared-cpu-1x`/256 MB
-  machine (`7817426a194968`), **image
-  `registry.fly.io/marnyg-talos-config:925dc9d`** (nix-built
+  machine (`7817426a194968`, v83), **image
+  `registry.fly.io/marnyg-talos-config:341b542`** (nix-built
   `fly/image.nix`: static `config-server -tags iroh` + static
   `iroh-relay` + busybox; `talos/` comes from the signed git tip,
-  ADR-0030), deployed 2026-10-04 15:43Z via `fly/deploy.sh` from the
-  nixos box and unsealed by the owner with both signatures (`speak-as`
-  + `MasterMessage`). First nebula-free image was `0e67661`
+  ADR-0030), deployed 2026-10-16 11:19Z via `HUB_BUILDER=mar@nixos
+  fly/deploy.sh` from the laptop and unsealed by the owner at 11:21:17Z
+  with both signatures (`speak-as` + `MasterMessage`). Ships: receiver-
+  held **pins** (protocol ADR-0010/0011 — trivial `{root}, k=1` for the
+  one admin address and every member's Kit identity; `#bundle` carries
+  an empty `rotations`), `protocol/facethttp` + the agent child's
+  `#task`/`#steer`/`#abort` (root ADR-0037). Member re-beat observed:
+  `marius-mac` renewed onto the new hubkey 11 s after unseal; cp1
+  answered auto-bootstrap over the plane at +13 s. Previous image
+  `925dc9d` (2026-10-04); first nebula-free image `0e67661`
   (2026-09-20).
-- **hubkey `ed:60669a3c…`** (ephemeral, new on every unseal; was
-  `a65c301d…`) speaks for `0xf568…9406` (`speak-as` cert,
+- **hubkey `ed:2a812ca5…`** (ephemeral, new on every unseal; was
+  `60669a3c…`, before that `a65c301d…`) speaks for `0xf568…9406` (`speak-as` cert,
   groups `admins machines media`, verbs `member invoke`), served at
   `/.well-known/talos-hub/{speak-as,reach-me-at}`. `/sealed` → 200.
   Auto-bootstrap read `etcd-running` off cp1 over the plane 8 s after

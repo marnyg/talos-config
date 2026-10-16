@@ -16,10 +16,12 @@ Details in `protocol/docs/day-to-day/handoff.md`. Earlier the same
 day: `aja2` closed (ADR-0010 + `rotation.qnt` + `cert/rotation.go`,
 `87a3ac1`), desired-state amended per owner ruling.
 
-- Deployment effect today: **none** — every pin is trivial
-  (`{root}, k=1`); the hub pins each `-admin-address`, members pin
-  their Kit's `speak-as` issuer, `#bundle` has an empty `rotations`.
-  The hub image will need a redeploy to carry it; no unseal change.
+- **Deployed 2026-10-16 11:19Z** (`fly/deploy.sh` via the nixos
+  builder, image `341b542`, machine v83), unsealed 11:21:17Z, hubkey
+  `2a812ca5…`. Every pin is trivial (`{root}, k=1`) so no verdict
+  moved; `marius-mac` renewed 11 s after unseal, cp1 answered at
+  +13 s, zero hub warnings. Relay loopback-probe noise ~2/min vs the
+  1.7/min baseline — within noise.
 
 ## Loose threads
 
