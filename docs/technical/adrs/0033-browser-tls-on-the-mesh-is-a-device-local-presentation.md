@@ -140,8 +140,12 @@ introduced. The `goals.md` deferred scope is reworded accordingly.
 succeeds on a trusting device; `https://workouts.gw.mesh.internal`
 opens clean in Chrome on the phone and Safari on the laptop, Chrome
 offers "Install app" and the service worker registers, `http://`
-still answers 200 (Mac half confirmed 2026-10-16 in Firefox: lock,
-200 both schemes; trustd `verify-cert` passes with the constraint); `rg cookie-secure k8s/apps/` is `true` only
+still answers 200 (confirmed 2026-10-16 — Mac: Firefox lock, 200
+both schemes, trustd `verify-cert` passes with the constraint; Sony
+XQ-BQ52, Android 13, Chrome: "Connection is secure", `sw.js`
+registered on the https origin, `Page.getInstallabilityErrors` empty,
+menu offers "Install and create shortcut"; root installed via the
+app's Save → Settings flow, PIN/biometric required by Android); `rg cookie-secure k8s/apps/` is `true` only
 after every browser client is on https; `rg -l x509 protocol/` stays
 empty. Invalidated if a client class that cannot install a device CA
 (a third-party appliance app) ever needs https — then F is the only
