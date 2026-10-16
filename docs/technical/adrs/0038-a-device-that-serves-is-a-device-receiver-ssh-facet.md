@@ -1,8 +1,10 @@
 # ADR-0038: A device that serves is a receiver of kind `device`; its first facet is `ssh`
 
-- Status: Proposed — code, contract and recipe row landed 2026-10-17
-  (`talos-config-thz2`); awaits the hub redeploy + unseal that compiles
-  the row and a live `ssh nixos.mesh.internal` from the Mac.
+- Status: Accepted 2026-10-17 (owner). Live: hub redeployed + unsealed
+  (`2a1c111`); `ssh mar@nixos.mesh.internal` from the Mac → fake IP
+  198.18.1.1, `nixos/ssh` connected in 148 ms, the box logged
+  `admitted "marius-mac" [admins] → ssh 127.0.0.1:22`. Both daemons
+  advertise `facets [ssh]` (nixos repo `6b4e0f3`, `forward.ssh`).
 - Date: 2026-10-17
 - Related: ADR-0017 (+ 2026-09-18 amendment: kind ≡ facet vocabulary,
   wildcard targets), ADR-0015 (git cannot enumerate receiver keys),
@@ -101,6 +103,11 @@ phone's tunnel) maps `:22 → (name, ssh)`.
 - Bad / to watch: a member advertising facets from two vocabularies is
   still read as one kind (`m6xc`). The first such member will be a
   device serving both `ssh` and something else.
+- Found live: a peer's directory is a beat old (6 h), and kind is read
+  off the advertisement, so a member that *starts* serving reads as a
+  node until the peer re-beats — box → Mac failed "port 22 is not a
+  node facet". Fixed in `6ac3122`: `Agent.Target` re-beats on a miss
+  (`ErrNotFacet`/`ErrNotThatKind`/unknown), as `Dial` already did.
 - Ops: sshd on the serving device must listen on loopback (default);
   the Mac's launchd plist and the box's systemd unit gain
   `-forward ssh=127.0.0.1:22`; a hub redeploy + unseal compiles the

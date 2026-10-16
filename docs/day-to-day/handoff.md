@@ -6,7 +6,7 @@
 ## Last session
 
 2026-10-17: **ssh to devices over the mesh** (`thz2`, ADR-0038
-Proposed). Owner's framing "this is an ACL problem, not a kind" was
+Accepted, **live**: Mac → `ssh mar@nixos.mesh.internal` works). Owner's framing "this is an ACL problem, not a kind" was
 right about the authorization (recipe row = principal/group, consent
 = where) and the ADR says so; the kind change is only vocabulary
 bookkeeping. New receiver kind `device` `{ssh}` (port 22) in
@@ -14,9 +14,12 @@ bookkeeping. New receiver kind `device` `{ssh}` (port 22) in
 (`{facet: ssh, group: admins}`); `irohup -forward ssh=127.0.0.1:22`
 makes the daemon serve it; `-bridge` takes any facet with a kind.
 Gates: `go test` policy/nodeagent/issuer/irohup, nickel `check.sh`,
-`scripts/test-iroh.sh` all green. **Not yet deployed**: the hub must
-redeploy + unseal to compile the row; the Mac plist and the NixOS
-unit (outside the repo) need the `-forward` flag.
+`scripts/test-iroh.sh` all green. Hub deployed (`2a1c111`) + unsealed;
+nixos repo `6b4e0f3` adds `forward.ssh` to both talos-mesh modules,
+switched on the box (gen from committed lock) and the Mac (gen 121).
+Found live: a member that starts serving reads as a node in peers'
+directories for up to a beat → `6ac3122` makes `Agent.Target` re-beat
+on a miss. **Not yet on the daemons**: both run `2a1c111`.
 
 Earlier, 2026-10-16: **workouts tracker built end to end** (epic `yz75`, a
 detour from `ivof`). Strong v6.2.5 on the phone was explored over
@@ -39,8 +42,13 @@ pushed from the nixos builder; `k8s/apps/workouts/` synced by ArgoCD
 
 ## Loose threads
 
-- `thz2` open until a live `ssh nixos.mesh.internal` from the Mac;
-  `m6xc` (presentations read one kind per member) filed, not decided.
+- Bump the nixos repo's `talos-config` input to `6ac3122` and rebuild
+  both (box → Mac ssh needs it, or a box daemon restart). The Mac's
+  **pending** nixpkgs update (uncommitted lock in `~/git/nixos`, plus a
+  quint-language-server npmDepsHash bump) fails on atuin 18.23.0's
+  e2e PTY test in the darwin sandbox — build from the committed lock.
+- `m6xc` (presentations read one kind per member) filed, not decided.
+- Phone as an ssh client needs an APK built from ≥ `2a1c111`.
 - **Live and seeded** (`l8mc` closed): package flipped public, volume
   seeded through a busybox pod + a one-off import pod (scratch image
   has no shell, so `deployment.yaml`'s `kubectl cp`/`exec` recipe is
@@ -53,9 +61,7 @@ pushed from the nixos builder; `k8s/apps/workouts/` synced by ArgoCD
 
 ## Suggested next steps
 
-- ssh live run: add `-forward ssh=127.0.0.1:22` to the box's unit and
-  the Mac's plist, `fly/deploy.sh` + unseal, wait one beat, `ssh
-  nixos.mesh.internal`; then ADR-0038 → Accepted, close `thz2`.
+- Close `thz2` after box → Mac ssh is confirmed on `6ac3122`.
 - Open `workouts.gw.mesh.internal` on the phone, add to home screen,
   log one real session; fix what the thumb finds. Fix the seeding
   recipe in `k8s/apps/workouts/deployment.yaml`.
