@@ -1,0 +1,44 @@
+# metrics-server: the resource Metrics API behind `kubectl top` and
+# HPAs. Separate from Prometheus on purpose — Prometheus is the
+# history, this is the live number the scheduler-side APIs ask for, and
+# the two do not share a wire format. Was missing entirely ("Metrics
+# API not available") until epic talos-config-xhk3.
+#
+# --kubelet-insecure-tls: Talos' kubelet serves a self-signed cert by
+# default (serverTLSBootstrap is off — talos/base/*.yaml:45 — and there
+# is no CSR approver). The connection is still kubelet-authenticated by
+# the metrics-server ServiceAccount token; what is skipped is verifying
+# the kubelet's identity, on a LAN the cluster already trusts for the
+# API endpoint. The alternative (serverTLSBootstrap + kubelet-serving
+# cert approver) is a machine-config change plus a controller; not
+# worth it for a read-only metrics path.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/metrics-server
+    chart: metrics-server
+    targetRevision: 3.14.0
+    helm:
+      valuesObject:
+        args:
+          - --kubelet-insecure-tls
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        serviceMonitor:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

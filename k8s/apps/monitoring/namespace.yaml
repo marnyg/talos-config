@@ -1,0 +1,25 @@
+# `monitoring`: the observability stack (epic talos-config-xhk3) —
+# kube-prometheus-stack, Loki + Alloy, metrics-server. One namespace for
+# all of it because the pieces cross-reference by Service name
+# (Grafana → Prometheus/Loki, Alloy → Loki) and the Prometheus Operator's
+# default ServiceMonitor selectors are namespace-scoped.
+#
+# PSS privileged, scoped here like longhorn-system: node-exporter runs
+# hostPID + hostNetwork with / mounted read-only, and Alloy reads
+# /var/log/pods off the host as root — neither fits baseline. Everything
+# else in the namespace (Prometheus, Grafana, Loki, kube-state-metrics)
+# runs non-root with a read-only rootfs regardless; the label is the
+# namespace's ceiling, not what every pod claims.
+#
+# Observability data is data plane under invariant 2: the TSDB, the log
+# chunks and Grafana's sqlite are a projection of a cluster that is
+# itself re-derivable, and losing them loses history, not a capability.
+# Dashboards, datasources and alert rules are provisioned from git
+# (ConfigMaps + the chart's sidecar), so a wiped volume comes back
+# configured and empty.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    pod-security.kubernetes.io/enforce: privileged

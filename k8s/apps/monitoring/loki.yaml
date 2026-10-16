@@ -1,0 +1,127 @@
+# Logs: Loki, single binary on a filesystem store (epic
+# talos-config-xhk3). Alloy (alloy.yaml) ships every pod's stdout/stderr
+# and the cluster's Events here; Grafana reads it as datasource `Loki`
+# (kube-prometheus-stack.yaml). Before this, a crashed pod's last words
+# lived only as long as containerd kept the file — and a rescheduled
+# pod's not at all.
+#
+# Single binary, not SimpleScalable: the chart's default is a three-tier
+# S3-backed deployment with two memcached pools (8Gi of cache by
+# default) for log volumes this cluster is several orders of magnitude
+# below. One StatefulSet, one 30Gi Longhorn volume, 14 d retention via
+# the compactor. The price is one replica: Loki down = no log queries
+# and Alloy buffering on its own, which for a homelab is the same
+# failure mode as Prometheus and accepted the same way.
+#
+# Data plane (invariant 2, namespace.yaml); 2 Longhorn replicas on nvme
+# because the volume is small and rebuilding a 30Gi replica is cheap,
+# not because the logs are irreplaceable. Pinned off nas1 with the
+# other memory-heavy pods.
+#
+# auth_enabled false: single tenant. Loki has no auth of its own
+# regardless (the tenant header is a label, not a credential); it is
+# reached only in-cluster, by Alloy and Grafana, and is not exposed on
+# an Ingress.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 7.3.0
+    helm:
+      valuesObject:
+        deploymentMode: SingleBinary
+        loki:
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 1
+          storage:
+            type: filesystem
+          schemaConfig:
+            configs:
+              - from: "2024-04-01"
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: loki_index_
+                  period: 24h
+          limits_config:
+            retention_period: 336h
+            # Alloy's event source and bursty pods (ArgoCD's controller)
+            # exceed the 4MB/s default when a node comes back.
+            ingestion_rate_mb: 16
+            ingestion_burst_size_mb: 32
+          compactor:
+            retention_enabled: true
+            delete_request_store: filesystem
+          # Pattern ingester backs Grafana's "Patterns" tab in Explore
+          # Logs; cheap at this volume.
+          pattern_ingester:
+            enabled: true
+        singleBinary:
+          replicas: 1
+          persistence:
+            enabled: true
+            size: 30Gi
+            storageClass: longhorn
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values: [nas1]
+        # Everything the SimpleScalable default brings that a single
+        # binary does not need.
+        backend:
+          replicas: 0
+        read:
+          replicas: 0
+        write:
+          replicas: 0
+        gateway:
+          enabled: false
+        test:
+          enabled: false
+        lokiCanary:
+          enabled: false
+        chunksCache:
+          enabled: false
+        resultsCache:
+          enabled: false
+        minio:
+          enabled: false
+        monitoring:
+          # Rendered only once the Operator CRDs exist (Capabilities
+          # gate in the chart), so the first sync of this Application
+          # before kube-prometheus-stack lands is fine.
+          serviceMonitor:
+            enabled: true
+            metricsInstance:
+              enabled: false
+          # The chart's self-monitoring installs a GrafanaAgent CR and
+          # wants the agent operator; Alloy covers this.
+          selfMonitoring:
+            enabled: false
+            grafanaAgent:
+              installOperator: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

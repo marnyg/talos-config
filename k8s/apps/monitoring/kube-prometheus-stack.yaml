@@ -1,0 +1,325 @@
+# Metrics: Prometheus Operator + Prometheus + Alertmanager + Grafana +
+# node-exporter + kube-state-metrics, one chart (epic talos-config-xhk3).
+# Until this landed the cluster had no metrics at all — not even
+# metrics-server — and every incident in notes.md (w1 off for 8 days,
+# bulk replicas faulted for 12, nas1 rebuilding for hours) was found by
+# a human noticing something was slow.
+#
+# Version pinned EXACTLY (Longhorn's reasoning, not ingress-nginx's):
+# the chart carries the Operator CRDs and Grafana's major, both of
+# which have broken on upgrade before; upgrades are a deliberate act
+# with the release notes read.
+#
+# Talos specifics:
+#   - controller-manager, scheduler, etcd and kube-proxy bind their
+#     metrics to loopback by default; talos/clusters/homelab/cluster.yaml
+#     moves them to the node address. Without that these four targets
+#     stay down and their dashboards blank.
+#   - etcd is a Talos service, not a pod, so there is nothing for a
+#     Service selector to find: it is scraped by static endpoint (cp1's
+#     declared LAN address — the same literal cluster.yaml uses) on the
+#     plain-text metrics port 2381.
+#   - controller-manager and scheduler ARE static pods with the
+#     `component:` labels the chart's Services select on; scraped over
+#     https with the Prometheus ServiceAccount token (RBAC permits
+#     /metrics via system:monitoring).
+#   - the kubelet is scraped through its own :10250 with the same token
+#     (default), which Talos permits.
+#
+# Grafana login (proxy-to-grafana; spike i1il, ADR-0032, ADR-0039): the
+# Ingress gates on `admins` and Grafana trusts X-Mesh-Name as the user.
+# The gateway is the only caller of ingress-nginx, so the header is
+# exactly as trustworthy as the X-Mesh-Token the gate verified — a
+# device, not a person, is the principal (ArgoCD's -token-client
+# reasoning: dashboards carry no per-person state worth splitting). Every
+# auto-created user is an org Admin because the Ingress already proved
+# `admins`. The chart's generated local `admin` stays as break-glass at
+# /login, like ArgoCD's.
+#
+# Storage: Prometheus 20Gi / 15d, Alertmanager 1Gi, Grafana 2Gi, all on
+# the default Longhorn class (nvme, 2 replicas). Data plane under
+# invariant 2 (see namespace.yaml). The memory-heavy pods (Prometheus,
+# Grafana) keep off nas1 (7Gi, the media tier) by hostname, the way the
+# download clients pin TO it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 92.10.0
+    helm:
+      valuesObject:
+        # Shorter resource names: kube-prometheus-stack-prometheus-… is
+        # a mouthful in every kubectl line and Grafana URL.
+        fullnameOverride: kps
+        cleanPrometheusOperatorObjectNames: true
+
+        defaultRules:
+          create: true
+          rules:
+            # No etcd-on-pods alerts: Talos etcd is a host service with
+            # its own lifecycle; the metrics still land for dashboards.
+            etcd: true
+            # No external Alertmanager receiver yet, so the watchdog
+            # heartbeat has nobody to tell.
+            general: true
+
+        kubeEtcd:
+          enabled: true
+          endpoints:
+            - 10.0.0.68
+          service:
+            enabled: true
+            port: 2381
+            targetPort: 2381
+          serviceMonitor:
+            scheme: http
+
+        kubeProxy:
+          enabled: true
+
+        kubeControllerManager:
+          enabled: true
+
+        kubeScheduler:
+          enabled: true
+
+        # Talos exposes no CoreDNS metrics change; defaults scrape the
+        # kube-dns Service on :9153.
+        coreDns:
+          enabled: true
+
+        nodeExporter:
+          enabled: true
+          operatingSystems:
+            # The chart would otherwise also render darwin/aix bits.
+            linux:
+              enabled: true
+            darwin:
+              enabled: false
+            aix:
+              enabled: false
+        prometheus-node-exporter:
+          # Talos mounts the root fs read-only and the chart's default
+          # hostRootFsMount is fine; exclude the containerd/kubelet
+          # mount churn so the filesystem dashboards stay readable.
+          extraArgs:
+            - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/kubelet/.+|var/lib/containerd/.+|var/mnt/longhorn.*/replicas/.+)($|/)
+            - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+
+        kube-state-metrics:
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+        prometheusOperator:
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          # Operator admission webhooks need a cert; the chart's
+          # patch Jobs mint a self-signed one in-cluster. Fine here,
+          # nothing else trusts it.
+          admissionWebhooks:
+            enabled: true
+
+        prometheus:
+          prometheusSpec:
+            retention: 15d
+            # Below the volume: the TSDB never fills the disk it lives
+            # on, whatever the retention window says.
+            retentionSize: 17GiB
+            scrapeInterval: 30s
+            evaluationInterval: 30s
+            # Pick up ServiceMonitors / PodMonitors / PrometheusRules /
+            # Probes from EVERY namespace, not only those labelled
+            # `release: kube-prometheus-stack`. Longhorn, ingress-nginx
+            # and ArgoCD render their own monitors in their own
+            # namespaces; the convention "exposing metrics = a
+            # ServiceMonitor next to the app" needs this.
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            probeSelectorNilUsesHelmValues: false
+            scrapeConfigSelectorNilUsesHelmValues: false
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: longhorn
+                  accessModes: [ReadWriteOnce]
+                  resources:
+                    requests:
+                      storage: 20Gi
+            resources:
+              requests:
+                cpu: 100m
+                memory: 1Gi
+              limits:
+                memory: 2.5Gi
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                    - matchExpressions:
+                        - key: kubernetes.io/hostname
+                          operator: NotIn
+                          values: [nas1]
+
+        alertmanager:
+          alertmanagerSpec:
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: longhorn
+                  accessModes: [ReadWriteOnce]
+                  resources:
+                    requests:
+                      storage: 1Gi
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 128Mi
+          # Receivers: none yet. Nothing public may carry a page
+          # (invariant 5) and no in-mesh notifier exists; alerts show
+          # in Grafana's Alertmanager view until one does (talos-config
+          # follow-up on the epic).
+          config:
+            route:
+              receiver: "null"
+              group_by: [alertname, namespace]
+            receivers:
+              - name: "null"
+
+        grafana:
+          enabled: true
+          # Subchart, so the parent's override does not reach it; the
+          # Ingress (ingress.yaml) dials Service `grafana`.
+          fullnameOverride: grafana
+          defaultDashboardsEnabled: true
+          defaultDashboardsTimezone: Europe/Oslo
+          # Break-glass local admin from the sealed secret next to this
+          # file (grafana-admin.sealed.yaml); see there for why not the
+          # chart's generated one.
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+          deploymentStrategy:
+            type: Recreate
+          persistence:
+            enabled: true
+            type: pvc
+            storageClassName: longhorn
+            accessModes: [ReadWriteOnce]
+            size: 2Gi
+          grafana.ini:
+            server:
+              root_url: https://grafana.gw.mesh.internal
+            analytics:
+              check_for_updates: false
+              reporting_enabled: false
+            news:
+              news_feed_enabled: false
+            auth:
+              # The header IS the session; no "sign out" that would
+              # only loop back in.
+              disable_signout_menu: true
+            auth.proxy:
+              enabled: true
+              header_name: X-Mesh-Name
+              header_property: username
+              auto_sign_up: true
+              # Grafana checks the TCP peer (not X-Forwarded-For)
+              # against this list; ingress-nginx is a pod, so the pod
+              # CIDR (Talos default podSubnets). What this buys is
+              # modest: it rejects a header asserted from a node or
+              # the LAN, but any pod can reach grafana:80 and name
+              # itself, because this CNI enforces no NetworkPolicy
+              # (the same gap k8s/apps/sandbox/agent.yaml records for
+              # the agent's egress — and the same bypass every
+              # auth-url gated Service already has). Closing it is a
+              # CNI question, not a Grafana one; thread on the epic.
+              whitelist: 10.244.0.0/16
+              enable_login_token: false
+            auth.anonymous:
+              enabled: false
+            auth.basic:
+              # /login still works for the break-glass admin.
+              enabled: true
+            users:
+              # The Ingress gate already proved `admins`.
+              auto_assign_org_role: Admin
+              default_theme: dark
+            security:
+              # Cookies travel inside the device's https (ADR-0033) and
+              # the identity stream; Grafana never sees TLS itself.
+              cookie_secure: false
+              cookie_samesite: lax
+            log:
+              mode: console
+          sidecar:
+            dashboards:
+              enabled: true
+              # ConfigMaps labelled grafana_dashboard=1 in ANY
+              # namespace: a dashboard lives next to the app it
+              # describes (k8s/apps/<app>/dashboard.yaml).
+              searchNamespace: ALL
+              folderAnnotation: grafana_folder
+              provider:
+                foldersFromFilesStructure: true
+            datasources:
+              enabled: true
+              searchNamespace: ALL
+          additionalDataSources:
+            # Loki (k8s/apps/monitoring/loki.yaml), single binary, no
+            # gateway: the plain :3100 Service.
+            - name: Loki
+              type: loki
+              uid: loki
+              access: proxy
+              url: http://loki.monitoring.svc.cluster.local:3100
+              jsonData:
+                maxLines: 1000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values: [nas1]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The Operator CRDs exceed the client-side-apply annotation limit
+      # (Longhorn's reason).
+      - ServerSideApply=true

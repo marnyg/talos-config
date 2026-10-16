@@ -1,0 +1,26 @@
+# Grafana's break-glass local admin, a sealed secret the chart's
+# Grafana reads (grafana.admin.existingSecret in
+# kube-prometheus-stack.yaml). Normal login is the mesh header
+# (auth.proxy on X-Mesh-Name); this is /login when the gateway or the
+# bridge is down. Read it through the wallet-gated kubeconfig —
+#   kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' | base64 -d
+# Sealed rather than chart-generated: the chart's random password is
+# re-rolled on every ArgoCD render, and the Deployment's checksum/secret
+# annotation would roll the pod with it. Rotate: reseal with kubeseal
+# --cert talos/clusters/homelab/sealed-secrets.crt (Forgejo's recipe,
+# k8s/apps/forgejo/sysadmin.sealed.yaml); Grafana picks it up on restart.
+---
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: grafana-admin
+  namespace: monitoring
+spec:
+  encryptedData:
+    admin-password: AgARb0C7sAQtzpUMcD6A/VN8Io0DHaLfkVG8g99QMgvAX2ww2L6C3zvUJk7+2TT7N0tB/mky3tPDx47JJxHwv/IJ2Cm7/Et/F0hvZPfL5yShWfa9zQkaF6nFRV6gFRME6ec0XmtfPTIGPU3PtotMCB1mSe7j1tlhh8UJnXSfVxpaJuesJYd7F5R//gX/OZ4U4ISUEupU8X63KrnzzObzVLPMxFqlCEj8gxj3SECfNTu1C+Hmg5q7jxVO/QvsIPHB14RzZot7c3UoZYzuakESDOmjA2CANT7umBni16XOlUXPE3JC+kiStf9FBuEGYyWnOQtTtc3ctOiTfuAMZxlj5JawuZsr3qcV5h2FPxFyu6/DAruUf44jmtZo57vYgD17EZX4FoqEMrLEeGvqeLptkU/HfMXuCpqlQcqod03QpyJeQOOygdKnlMgmr5rsLc1rncHKzG5UrhJfR+eGZ4q6wT1pbJDIUtgpQ+3FKktl5Ao1NKQxY8L41dlS3GmLPod7RfY4S17My9x6j2R2Gkjuv/kTTi387D6Fsx+9X/BJmqWHga2KLqVs5ymb4eLgWtP6TgzEG9MezsIaMkAdvnPHKlklkHXbO8h83ErPOYxDzXQZ6G1ZbDdOzvwd5qr+877VQtRklJ7qkI6UkQ7rEyR1YShhtoL33GbreXmqKrSP/o7eS1Da9J0E34H5uUXZKJ7GkQFzyUIzwEe/STvkydDX3n1WnHp2hpjE6Y1UnMwxOWxVGg==
+    admin-user: AgBtp3j8mE297i4u55i6zA6K1PspcRiQGJWY/O3RrT0rTHjd7VkKAw965jmmuRpUpmQEHB8dZkia9liov+FLGFwCGW1hNyEivEpv78lPOkGcpAGutWS7iaac5c6dTqGBZx37E95F/EbiVFww8mBNLN5cTqHZwgiWWwKcop2fAcs01cS4GnpWRSHlvSY71XKTJ+ZwMPl5igjSPcz7p99/ANeOluv+i6nLoZw+EqYHG0QY06yENAsi8VXB2Gq+raVsPeBFhjUVE/9a0b3MSMxV9ac1Q5NKhTRn/C8lsrwe24PilKdScbxVW/u3EeKGLM/lt8Vt+CpNt+JnbmXE1yAWyGxkEhp2iIUxla74BjLvJ0MPm6sn8ukh7KJ+HQs76tMqFAbJ4bCFci2HdUjIzGQRi7X65qtweVIE3i9yG19hiYcmK0XjCttpvy8QwyEuxcYaedfevYh/jScO9gNkxbroWFFq84/seEji1zCS665kfLg0i3AmW4YU8VT3+56fy9zkR3e+epDq54lZk5V2WgaTVmh3E99aOL55RfIdm7yvpPYVCb4ILyIIDYtkbGS44CFyTBBFCTzGtnCYTr0geu7V6lnXguuVznsOI/BlhRgc42E7guRJ6fZTMEeczeTLjMqTrmIrNyFfPY1Tmv0BDe6v+fIRNnWrnR3s9KAdj5TbvXG+lXg/zyrtk6cIrApXCdlWjHZKXNXMyw==
+  template:
+    metadata:
+      name: grafana-admin
+      namespace: monitoring

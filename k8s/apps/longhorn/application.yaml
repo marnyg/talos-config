@@ -52,6 +52,12 @@ spec:
         # are a deliberate act, and the check can be run by hand first.
         preUpgradeChecker:
           jobEnabled: false
+        # Scraped by kube-prometheus-stack (k8s/apps/monitoring): volume
+        # robustness, replica placement, disk capacity per node. The
+        # ServiceMonitor renders only once the Operator CRDs exist.
+        metrics:
+          serviceMonitor:
+            enabled: true
         defaultSettings:
           # Talos user volumes mount at /var/mnt/<name>; Longhorn's own
           # default (/var/lib/longhorn) would land on EPHEMERAL.

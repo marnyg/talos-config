@@ -41,6 +41,14 @@ spec:
             use-forwarded-headers: "true"
           ingressClassResource:
             default: true
+          # Per-Ingress request rate, latency and status codes for every
+          # *.gw name, scraped by kube-prometheus-stack
+          # (k8s/apps/monitoring). :10254 is a separate ClusterIP
+          # Service, still only reachable in-cluster.
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
           # HA sweep slice 2 (talos-config-9l67): the controller is
           # stateless, so two replicas on distinct nodes keep every
           # *.gw name up through a node loss — the gateway dials the

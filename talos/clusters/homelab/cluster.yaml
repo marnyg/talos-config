@@ -23,6 +23,29 @@ cluster:
       # image. NodePorts bind the primary node IP only again since the
       # same change — `nodeport-addresses: 0.0.0.0/0` existed for
       # nebula0; Jellyfin's 30096 for the TV is LAN-direct.)
+  # Control-plane metrics for Prometheus (k8s/apps/monitoring, epic
+  # talos-config-xhk3). Talos' static pods bind their metrics listeners
+  # to loopback, so nothing in the pod network can scrape them; these
+  # move the listeners onto the node address. Exposure is LAN-only and
+  # read-only: controller-manager and scheduler keep RBAC-authenticated
+  # /metrics (kube-prometheus-stack scrapes with its ServiceAccount
+  # token), etcd's :2381 is the plain-text metrics/health port (not the
+  # client port, which stays mTLS on :2379), kube-proxy's :10249 is
+  # unauthenticated like node-exporter. Nothing here is public
+  # (invariant 5): the LAN is behind the home router, and the cluster
+  # already trusts it for the API server endpoint above.
+  controllerManager:
+    extraArgs:
+      bind-address: 0.0.0.0
+  scheduler:
+    extraArgs:
+      bind-address: 0.0.0.0
+  etcd:
+    extraArgs:
+      listen-metrics-urls: http://0.0.0.0:2381
+  proxy:
+    extraArgs:
+      metrics-bind-address: 0.0.0.0:10249
   inlineManifests:
     - name: argocd-namespace
       contents: |
