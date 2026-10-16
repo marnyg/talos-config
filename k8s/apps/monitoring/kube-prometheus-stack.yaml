@@ -298,12 +298,15 @@ spec:
               url: http://loki.monitoring.svc.cluster.local:3100
               jsonData:
                 maxLines: 1000
+          # 512Mi OOMKilled Grafana 13 twice on 2026-10-16 within
+          # minutes of the first dashboard browsing (idle ~250Mi; a
+          # few Compute Resources panels in flight push it past 512).
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 384Mi
             limits:
-              memory: 512Mi
+              memory: 1536Mi
           affinity:
             nodeAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
