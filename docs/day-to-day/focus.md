@@ -17,10 +17,10 @@ pins into every receiver) — model + code built, trivial pins
 everywhere; the durable `talos/` copy of pins/rotations is the open
 remainder.
 
-**Detour 2026-10-16:** the workouts tracker (`yz75`) is built and
-synced; what remains is operator work (`l8mc`: ghcr package public,
-seed the volume, first real session on the phone). Then back to the
-line above.
+**Detour 2026-10-16, done:** the workouts tracker (`yz75`) is live and
+seeded, and HTTPS over the mesh (ADR-0033, `eu0m`) landed so it
+installs as a PWA. What remains is using it (first real session on the
+phone). Back to the line above.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for

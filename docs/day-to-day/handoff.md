@@ -5,76 +5,47 @@
 
 ## Last session
 
-2026-10-17: **ssh to devices over the mesh** (`thz2`, ADR-0038
-Accepted, **live** both ways: Mac ⇄ nixos ssh, phone reaches both sshds). Owner's framing "this is an ACL problem, not a kind" was
-right about the authorization (recipe row = principal/group, consent
-= where) and the ADR says so; the kind change is only vocabulary
-bookkeeping. New receiver kind `device` `{ssh}` (port 22) in
-`config-server/policy`, the Nickel contract, the recipe
-(`{facet: ssh, group: admins}`); `irohup -forward ssh=127.0.0.1:22`
-makes the daemon serve it; `-bridge` takes any facet with a kind.
-Gates: `go test` policy/nodeagent/issuer/irohup, nickel `check.sh`,
-`scripts/test-iroh.sh` all green. Hub deployed (`2a1c111`) + unsealed;
-nixos repo `6b4e0f3` adds `forward.ssh` to both talos-mesh modules,
-switched on the box (gen from committed lock) and the Mac (gen 121).
-Found live: a member that starts serving reads as a node in peers'
-directories for up to a beat → `6ac3122` makes `Agent.Target` re-beat
-on a miss. **Not yet on the daemons**: both run `2a1c111`.
+2026-10-16: **HTTPS over the mesh, built and accepted** (`eu0m` closed,
+ADR-0033 Accepted; forced by the workouts PWA). New C-free package
+`config-server/meshtls` (per-device P-256 root, nameConstraints
+`mesh.internal` critical, leaf per name, terminating reverse proxy);
+`meshtun` sends `<fake IP>:443` to it over the `:80` facet's stream with
+`X-Forwarded-Proto: https` + `X-Forwarded-Port: 443`. `irohup -tun` and
+the Android tunnel mint the root under `<state>/tls`; the app gained
+"Install HTTPS certificate". Gateway honours the peer's
+`X-Forwarded-Proto: https` (image `2c1ecae`); ingress-nginx runs
+`use-forwarded-headers`. Commits `fbe2f23` → `3b4a70e`, hub deployed +
+unsealed. Acceptance: Mac Firefox lock + http 200; Sony (Android 13)
+Chrome "Connection is secure", `sw.js` registered on https,
+`Page.getInstallabilityErrors` empty. Pre-checks resolved from browser
+source: nameConstraints on a local root enforced by Safari, Chrome/macOS,
+Firefox — **not** Chrome/Android (recorded in ADR-0033 + the spike memo).
 
-Earlier, 2026-10-16: **workouts tracker built end to end** (epic `yz75`, a
-detour from `ivof`). Strong v6.2.5 on the phone was explored over
-adb/uiautomator, then its REST backend (`back.strong.app`, JWT via
-`/auth/login`, okhttp UA to pass the WAF) gave the structured export:
-258 exercises with instructions + media URLs (108 videos, ~400
-stills on `files.strong.app`, public), 8 templates, 72 logs — saved
-**outside the repo** at `~/strong-export-2026-10-16/` (licensed
-content; README there). New Go module `workouts/` (C-free, modernc
-sqlite): `docs/desired-state/domain-model.md` (sub-scope), `store/`
-(schema + derived records/PRs; Brzycki, rep-max rows = heaviest set
-with ≥ n reps — numbers match Strong's), `strongimport/` (idempotent,
-synthetic fixture), `web/` (server-rendered PWA, live logging screen
-over a JSON API, SW + manifest, inline-SVG charts), `cmd/workouts`
-(`serve` / `import`). Commits `d31b54a` → `7862442`, pushed.
-`nix build .#workouts-bin` is the gate (added to pre-push + CI's
-vendor-hash matrix). Image `ghcr.io/marnyg/workouts@sha256:15ea29f4`
-pushed from the nixos builder; `k8s/apps/workouts/` synced by ArgoCD
-(PVC bound, Ingress `workouts.gw.mesh.internal` gated `admins`).
+Side quest in `~/git/nixos` (pushed through `c13fa00`): talos-config
+input bumped, the stray nixpkgs/home-manager/… lock bumps committed so
+the repo matches the Mac's generation 123, quint-language-server moved
+to `importNpmLock` (no `npmDepsHash`), atuin `doCheck = false`.
 
 ## Loose threads
 
-- Bump the nixos repo's `talos-config` input to `6ac3122` and rebuild
-  both, so the Target self-heal runs on the daemons (box → Mac worked
-  after a box daemon restart). The Mac's Remote Login ACL is the local
-  `admin` group, which the owner account is not in; the box's key is
-  authorized by nixos repo `8d7c05a` (switch with `?ref=master`). The Mac's
-  **pending** nixpkgs update (uncommitted lock in `~/git/nixos`, plus a
-  quint-language-server npmDepsHash bump) fails on atuin 18.23.0's
-  e2e PTY test in the darwin sandbox — build from the committed lock.
-- `m6xc` (presentations read one kind per member) filed, not decided.
-- Phone: APK `084bc75` installed over USB adb from the Mac (built on
-  the box — its debug keystore, `ptgc`; same signature, no re-enroll).
-  From `adb shell`, `nc nixos.mesh.internal 22` / `marius-mac…:22` get
-  the OpenSSH banners; both receivers logged `admitted "phone"`. A real
-  login needs an ssh client app + key on the phone. Not published to
-  `android-latest` (`build.sh --publish` on the box). The app's list
-  shows the cached bundle's kinds until Refresh after the first beat.
-- **Live and seeded** (`l8mc` closed): package flipped public, volume
-  seeded through a busybox pod + a one-off import pod (scratch image
-  has no shell, so `deployment.yaml`'s `kubectl cp`/`exec` recipe is
-  wrong — rewrite it to the pod recipe in notes.md).
-- The Strong password went through chat — rotate it.
-- Template editor + metric pages are tested only by the Go walk-through
-  (`web_test.go`); no hands-on run on the phone yet.
-- Standing from before: `d0o0.1/.2/.3` + `e6pu.2.{1,2,3}` awaiting
-  owner close; `whxz`, `e7ru`, `4mg`; 9 `<!-- stale? -->` flags.
+- Android APK `a2cbc76` is on the Sony only — not published to
+  `android-latest`; the TV has the old app (http still works there).
+- Mac auto-trust does not work under launchd (admin trust write needs a
+  session); the manual `add-trusted-cert` the log prints stays. Fine
+  for now; a root rotation means repeating it + a Firefox restart.
+- Chrome/Android ignores the root's name constraint: phone root reach
+  = device custody. Accepted in ADR-0033; revisit if a shared device
+  ever installs one.
+- `--cookie-secure`/https OIDC issuer: deferred until every browser
+  client is on https (ADR-0033 consequences); nothing flipped.
+- From before, still open: `thz2` (ssh live run), `m6xc`, the workouts
+  `deployment.yaml` seeding recipe, the Strong password rotation,
+  `d0o0.*` / `e6pu.2.*` awaiting close, 9+ `<!-- stale? -->` notes.
 
 ## Suggested next steps
 
-- Close `thz2` after box → Mac ssh is confirmed on `6ac3122`.
-- Open `workouts.gw.mesh.internal` on the phone, add to home screen,
-  log one real session; fix what the thumb finds. Fix the seeding
-  recipe in `k8s/apps/workouts/deployment.yaml`.
-- Decide whether "build in-house vs deploy wger" deserves an ADR (the
-  choice was made in conversation 2026-10-16: Go+SQLite PWA, Strong
-  API as the seed; no OSS tracker).
-- Back to `ivof` (sandbox-agent live acceptance, parent actor).
+- `android/build.sh --publish` on the box so the TV/other devices get
+  the https-capable app; install the root on any device that wants it.
+- Tap "Install and create shortcut" on the phone and log a real
+  session in the standalone PWA (the `yz75` follow-up).
+- Back to `ivof` (sandbox-agent live acceptance, the parent actor).

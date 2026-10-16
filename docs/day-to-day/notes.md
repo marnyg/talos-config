@@ -19,6 +19,32 @@
 
 ## Read first
 
+- 2026-10-16 — **HTTPS on the mesh is device-local (ADR-0033).** Each
+  daemon's root is `<state>/tls/ca.crt` (Mac:
+  `/var/lib/talos-mesh/marius-mac.iroh/tls/`, key 0600 beside the
+  member key). Trusting it is per device, once: Mac — `sudo security
+  add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain
+  <ca.crt>` by hand (launchd's attempt is refused: no user session),
+  then **restart Firefox** (it reads the keychain only at startup);
+  Android — app → "Install HTTPS certificate" → Save → Open Settings →
+  *More security settings* (Sony) → Encryption & credentials → Install
+  a certificate → CA certificate (PIN). Deleting `tls/` re-mints a new
+  root: every browser on that device re-trusts. Phone root:
+  `talos-mesh device CA 097e77d2 (phone)`; Mac: `af40c8b2 (marius-mac)`.
+- 2026-10-16 — **Driving the Sony over USB:** no `adb` on PATH; `nix
+  build nixpkgs#android-tools`. Debug APK ⇒ `adb shell run-as
+  dev.marnyg.mesh` reads the app's files (`files/member/…`); Chrome
+  DevTools via `adb forward tcp:9222
+  localabstract:chrome_devtools_remote` (`/json/list` shows service
+  workers; CDP `Page.getInstallabilityErrors`). Secure windows (PIN,
+  biometric) screenshot black and need the human.
+- 2026-10-16 — **Mac rebuild is `sudo darwin-rebuild switch --flake
+  .#mac`** in `~/git/nixos` (not `nix run .# -- switch`); it needs the
+  password, so pre-build with `nix build
+  .#darwinConfigurations.mac.system` and hand the switch over.
+  Headless `nvim` checks lie: `image.nvim` aborts `init.lua` without a
+  terminal, so filetypes/LSP after it never load — test in a pty.
+
 - 2026-10-16 — **workouts is live** at `workouts.gw.mesh.internal`,
   seeded. The image is scratch (no `sh`/`tar`), so `kubectl cp` and
   `exec` do not work on it: to re-seed, use a busybox pod on the PVC
@@ -207,18 +233,18 @@
   opened — the rule added 2026-09-13 lasts until reboot) plus Docker
   Desktop on the mac running the musl `p0relay` under `--platform
   linux/amd64`. In-process tests (`smoke`) punch to loopback even on
-  the filtered laptop and prove nothing about the host path.
+  the filtered laptop and prove nothing about the host path. <!-- stale? -->
 - 2026-09-13 — `iroh-ffi` tracing (`P0_LOG=debug` in `p0relay`, or
   `iroh.SetLogLevel`) writes to **stdout**, the Go `logf` to stderr —
   capture with `>file 2>&1`. Every startup probes UDP 7842 (QAD) on the
   relay for 3 s and times out (relay has no QUIC); harmless, silenced
-  by `p5g`.
+  by `p5g`. <!-- stale? -->
 
 - 2026-09-15 — **Any Talos extension that mounts under `/var` needs
   `depends: - service: cri`**, or `talosctl upgrade`/`reboot` hangs at
   `teardownLifecycle` ("luks2-EPHEMERAL … still in use"). Symptom:
   `talosctl services` shows `ext-nebula`/`ext-iscsid` Finished and the
-  offender still Running; `talosctl service ext-<x> stop` unblocks it.
+  offender still Running; `talosctl service ext-<x> stop` unblocks it. <!-- stale? -->
 
 - 2026-09-16 — **P0.2 scratch on the NixOS box was torn down at the
   gate** (same day): `p0agent-standin`, `~/p0-jf/`, the `/data/p0test`
@@ -468,7 +494,7 @@
   quiet fortnight means a ~25 min cold run; add a weekly `schedule:`
   if that bites. **Upstream iroh's `.cargo/config.toml` pins
   `-fuse-ld=lld` for x86_64-linux** — the `iroh-relay` derivation
-  `rm`s it in `postPatch`; keep that when bumping iroh.
+  `rm`s it in `postPatch`; keep that when bumping iroh. <!-- stale? -->
 - 2026-09-06 — Swarm orchestration via herdr: `herdr tab create` +
   `pane split` per worker, `herdr agent start <name> --kind pi --pane
   <id>`, `herdr agent prompt <name> "<pointer to brief>"`; poll with
@@ -482,12 +508,12 @@
 - 2026-09-13 — **`git pull --rebase` destroys merge commits.** The
   repo's default rebase flattened all six `merge swarm/*` commits of
   the M2 swarm (content intact, SHAs in bead notes gone). Either
-  `git pull --rebase=merges`, or `git fetch` + inspect before merging.
+  `git pull --rebase=merges`, or `git fetch` + inspect before merging. <!-- stale? -->
 - 2026-09-13 — **A worker cut off by API 429 is not lost.** The herdr
   agent stays alive and `idle` with its context; `herdr pane read
   <pane> --source recent-unwrapped` shows exactly where it stopped.
   Check that before re-doing work; uncommitted files survive in the
-  worktree (`git status` there).
+  worktree (`git status` there). <!-- stale? -->
 - 2026-09-13 — `nix flake check --impure` now includes
   `.#iroh-transport` (runs the iroh handshake suite, ~25 s warm).
   Hand-run `go test` in `iroh-transport/` needs both
@@ -495,16 +521,16 @@
   and `IROH_RELAY_BIN=$(nix build .#iroh-relay --print-out-paths)/bin/iroh-relay`
   (relay test skips without the latter). `.#iroh-transport-static`
   exists only on Linux; no Linux builder is configured on the Mac —
-  the CI `static` job is the only place the musl link runs.
+  the CI `static` job is the only place the musl link runs. <!-- stale? -->
 - 2026-09-13 — **`herdr worktree create` + `--base main` cuts from the
   local `main`**, so wave-2 workers see wave-1 merges only after the
   orchestrator merged them locally — merge before launching the next
   wave, never push-and-pull mid-swarm. Retire a worker right after its
   merge (`herdr worktree remove --workspace <id> --force; git worktree
-  prune; git branch -d`); `create.json` holds the workspace id.
+  prune; git branch -d`); `create.json` holds the workspace id. <!-- stale? -->
 - 2026-09-13 — CI `static` job (iroh-transport.yml) is `continue-on-error`:
   a red `static` never fails the workflow. Check it explicitly with
-  `gh run view <id>`; the job id is needed for `--log`.
+  `gh run view <id>`; the job id is needed for `--log`. <!-- stale? -->
 - 2026-09-18 — **The next hub deploy asks for two signatures at
   `/status`** (decision `ce8`): the master message as before, plus
   the hubkey speak-as proposal. The proposal is per wallet and names
