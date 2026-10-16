@@ -142,6 +142,13 @@ spec:
                 secretKeyRef:
                   name: jackett
                   key: apiKey
+            # Prowlarr pairing (configure.sh); optional, see sonarr.
+            - name: PROWLARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: prowlarr
+                  key: apiKey
+                  optional: true
           volumeMounts:
             - name: config
               mountPath: /config

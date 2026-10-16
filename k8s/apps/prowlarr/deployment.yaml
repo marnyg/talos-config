@@ -1,0 +1,144 @@
+# App state (prowlarr.db: indexers, app pairings) on the default longhorn
+# class, RWO 2 replicas, per ADR-0011 — same shape as radarr.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prowlarr-config
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prowlarr
+  namespace: media
+spec:
+  replicas: 1
+  # RWO /config: no rolling update (Multi-Attach), see radarr.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prowlarr
+  template:
+    metadata:
+      labels:
+        app: prowlarr
+    spec:
+      # No library mount, so no nas1 exclusion needed (the NFS-hang
+      # reasoning in radarr/deployment.yaml does not apply).
+      #
+      # PSS restricted, same shape as radarr: everything runs as 1000 (the
+      # linuxserver image's non-root mode; PUID/PGID dropped), s6-overlay
+      # gets a 1000-owned /run via the scratch subdir; fsGroup makes the
+      # fresh ext4 /config volume writable by 1000.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: config
+          # Helper pin: one tag across k8s/apps (rg 'image: busybox').
+          image: busybox:1.38
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              mkdir -p /scratch/run
+              # Seed only on a fresh volume: Prowlarr owns config.xml after
+              # that. Unlike sonarr/radarr the ApiKey is seeded too (from
+              # the sealed secret) so the *arr configurators know it.
+              [ -f /config/config.xml ] && exit 0
+              cat > /config/config.xml << XMLEOF
+              <Config>
+                <Port>9696</Port>
+                <BindAddress>*</BindAddress>
+                <ApiKey>$PROWLARR_API_KEY</ApiKey>
+                <AuthenticationMethod>External</AuthenticationMethod>
+                <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
+              </Config>
+              XMLEOF
+          env:
+            - name: PROWLARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: prowlarr
+                  key: apiKey
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: scratch
+              mountPath: /scratch
+      containers:
+        - name: prowlarr
+          image: lscr.io/linuxserver/prowlarr:2.6.5
+          ports:
+            - containerPort: 9696
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: scratch
+              mountPath: /run
+              subPath: run
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 9696
+              # kubelet's default Host is the pod IP, which Allowed Hosts
+              # (configure.sh) rejects with 400.
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            initialDelaySeconds: 15
+            periodSeconds: 10
+        - name: configurator
+          # Helper pin: one tag across k8s/apps (rg 'image: curlimages/curl').
+          image: curlimages/curl:8.22.0
+          command: ["/bin/sh", "/scripts/configure.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: prowlarr-config
+        - name: scratch
+          emptyDir: {}
+        - name: scripts
+          configMap:
+            name: prowlarr-configurator
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prowlarr
+  namespace: media
+spec:
+  selector:
+    app: prowlarr
+  ports:
+    - port: 9696
+      targetPort: 9696

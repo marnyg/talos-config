@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prowlarr-configurator
+  namespace: media
+data:
+  # Prowlarr is the indexer manager: it holds the indexers and pushes
+  # them into Sonarr/Radarr itself ("Apps" sync). The pairing runs the
+  # other way round from what the UI suggests — each *arr's configurator
+  # registers itself here (POST /api/v1/applications with its own key
+  # from config.xml), since it is the one that knows its key; Prowlarr's
+  # key is sealed in git (sealed-secret.yaml) so they can call this API.
+  #
+  # Runs beside Jackett for now (2026-10-20): the indexers themselves
+  # are added in the UI, and the Jackett entries the sonarr/radarr
+  # configurators own stay. Prowlarr only ever removes indexers it
+  # created, so the two coexist. Seeding the indexers from git and
+  # retiring Jackett is the follow-up.
+  configure.sh: |
+    #!/bin/sh
+    set -e
+
+    PROWLARR_URL="http://localhost:9696"
+
+    echo "Waiting for Prowlarr to start..."
+    until curl -sf "$PROWLARR_URL/ping" > /dev/null 2>&1; do
+      sleep 5
+    done
+
+    API_KEY=$(sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml)
+    AUTH="X-Api-Key: $API_KEY"
+
+    # Allowed Hosts, same reasoning as radarr's configure.sh: the names
+    # Prowlarr is reached by — the configurator (localhost), sonarr/radarr
+    # (the Service, also the prowlarrUrl they sync indexers from), the
+    # mesh. Host settings only apply after a restart, so restart only on
+    # change.
+    allowed="localhost,prowlarr,prowlarr.media,prowlarr.media.svc,prowlarr.media.svc.cluster.local,prowlarr.gw.mesh.internal"
+    host=$(curl -sf -H "$AUTH" "$PROWLARR_URL/api/v1/config/host")
+    if ! printf '%s' "$host" | grep -q "\"allowedHosts\": *\"$allowed\""; then
+      echo "Setting allowed hosts..."
+      printf '%s' "$host" | sed "s/\"allowedHosts\": *\"[^\"]*\"/\"allowedHosts\": \"$allowed\"/" > /tmp/host.json
+      curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+        --data-binary @/tmp/host.json "$PROWLARR_URL/api/v1/config/host/1" \
+        && curl -sf -o /dev/null -X POST -H "$AUTH" "$PROWLARR_URL/api/v1/system/restart" \
+        || echo "WARN: allowed hosts failed"
+      sleep 15
+      until curl -sf "$PROWLARR_URL/ping" > /dev/null 2>&1; do sleep 5; done
+    fi
+
+    echo "Prowlarr configuration complete!"
+    sleep infinity

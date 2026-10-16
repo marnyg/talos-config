@@ -225,5 +225,58 @@ data:
       fi
     fi
 
+    # Register with Prowlarr (k8s/apps/prowlarr) as an application, so it
+    # pushes its indexers into Sonarr. The pairing is driven from this
+    # side because Sonarr's key is generated on first start and lives
+    # only in config.xml, while Prowlarr's is sealed in git. Same owner
+    # semantics as the indexers: PUT an existing entry (a fresh Sonarr
+    # volume means a new key), POST a missing one. Prowlarr validates the
+    # POST against Sonarr live, and its own allowed-hosts restart may be
+    # in flight, so retry a while. Optional: no secret, no pairing.
+    if [ -n "$PROWLARR_API_KEY" ]; then
+      PROWLARR_URL="http://prowlarr:9696"
+      PAUTH="X-Api-Key: $PROWLARR_API_KEY"
+      name="Sonarr"
+      body='{
+        "name": "'"$name"'",
+        "syncLevel": "fullSync",
+        "implementation": "Sonarr",
+        "configContract": "SonarrSettings",
+        "fields": [
+          {"name": "prowlarrUrl", "value": "'"$PROWLARR_URL"'"},
+          {"name": "baseUrl", "value": "http://sonarr:8989"},
+          {"name": "apiKey", "value": "'"$API_KEY"'"},
+          {"name": "syncCategories", "value": [5030, 5040, 5070]},
+          {"name": "animeSyncCategories", "value": [5070]},
+          {"name": "syncAnimeStandardFormatSearch", "value": true}
+        ],
+        "tags": []
+      }'
+      n=0
+      until apps=$(curl -sf -H "$PAUTH" "$PROWLARR_URL/api/v1/applications"); do
+        n=$((n + 1))
+        if [ "$n" -ge 18 ]; then echo "WARN: Prowlarr unreachable, pairing skipped"; break; fi
+        sleep 10
+      done
+      if [ "$n" -lt 18 ]; then
+        eid=$(printf '%s\n' "$apps" | awk -v n="$name" \
+          '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+        if [ -n "$eid" ]; then
+          echo "Refreshing Prowlarr application $name (id $eid)..."
+          curl -sf -o /dev/null -X PUT -H "$PAUTH" -H "Content-Type: application/json" \
+            -d "${body%\}}, \"id\": $eid}" "$PROWLARR_URL/api/v1/applications/$eid" || echo "WARN: Prowlarr $name refresh failed"
+        else
+          echo "Registering with Prowlarr as $name..."
+          n=0
+          until curl -sf -o /dev/null -X POST -H "$PAUTH" -H "Content-Type: application/json" \
+            -d "$body" "$PROWLARR_URL/api/v1/applications"; do
+            n=$((n + 1))
+            if [ "$n" -ge 18 ]; then echo "WARN: Prowlarr $name pairing failed"; break; fi
+            sleep 10
+          done
+        fi
+      fi
+    fi
+
     echo "Sonarr configuration complete!"
     sleep infinity

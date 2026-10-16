@@ -144,6 +144,14 @@ spec:
                 secretKeyRef:
                   name: jackett
                   key: apiKey
+            # Prowlarr pairing (configure.sh); optional so a missing secret
+            # degrades to "no pairing" instead of blocking the pod.
+            - name: PROWLARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: prowlarr
+                  key: apiKey
+                  optional: true
           volumeMounts:
             - name: config
               mountPath: /config

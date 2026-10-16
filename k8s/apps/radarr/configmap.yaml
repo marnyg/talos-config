@@ -194,5 +194,51 @@ data:
       }' "$RADARR_URL/api/v3/indexer" || echo "WARN: NZBgeek indexer failed"
     fi
 
+    # Register with Prowlarr as an application; see sonarr/configmap.yaml
+    # for the reasoning (the pairing is driven from this side because
+    # only this pod knows Radarr's key).
+    if [ -n "$PROWLARR_API_KEY" ]; then
+      PROWLARR_URL="http://prowlarr:9696"
+      PAUTH="X-Api-Key: $PROWLARR_API_KEY"
+      name="Radarr"
+      body='{
+        "name": "'"$name"'",
+        "syncLevel": "fullSync",
+        "implementation": "Radarr",
+        "configContract": "RadarrSettings",
+        "fields": [
+          {"name": "prowlarrUrl", "value": "'"$PROWLARR_URL"'"},
+          {"name": "baseUrl", "value": "http://radarr:7878"},
+          {"name": "apiKey", "value": "'"$API_KEY"'"},
+          {"name": "syncCategories", "value": [2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060]}
+        ],
+        "tags": []
+      }'
+      n=0
+      until apps=$(curl -sf -H "$PAUTH" "$PROWLARR_URL/api/v1/applications"); do
+        n=$((n + 1))
+        if [ "$n" -ge 18 ]; then echo "WARN: Prowlarr unreachable, pairing skipped"; break; fi
+        sleep 10
+      done
+      if [ "$n" -lt 18 ]; then
+        eid=$(printf '%s\n' "$apps" | awk -v n="$name" \
+          '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+        if [ -n "$eid" ]; then
+          echo "Refreshing Prowlarr application $name (id $eid)..."
+          curl -sf -o /dev/null -X PUT -H "$PAUTH" -H "Content-Type: application/json" \
+            -d "${body%\}}, \"id\": $eid}" "$PROWLARR_URL/api/v1/applications/$eid" || echo "WARN: Prowlarr $name refresh failed"
+        else
+          echo "Registering with Prowlarr as $name..."
+          n=0
+          until curl -sf -o /dev/null -X POST -H "$PAUTH" -H "Content-Type: application/json" \
+            -d "$body" "$PROWLARR_URL/api/v1/applications"; do
+            n=$((n + 1))
+            if [ "$n" -ge 18 ]; then echo "WARN: Prowlarr $name pairing failed"; break; fi
+            sleep 10
+          done
+        fi
+      fi
+    fi
+
     echo "Radarr configuration complete!"
     sleep infinity

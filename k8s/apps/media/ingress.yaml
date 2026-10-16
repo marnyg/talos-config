@@ -153,6 +153,27 @@ spec:
                 port:
                   number: 9117
 ---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prowlarr
+  namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: prowlarr.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prowlarr
+                port:
+                  number: 9696
+---
 # Seerr is ungated like Jellyfin, not like the *arr apps: its users are
 # household members signing in with their Jellyfin account (seerr
 # authenticates against jellyfin server-side), who have no wallet.
