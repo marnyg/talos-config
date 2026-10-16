@@ -6,7 +6,7 @@
 ## Last session
 
 2026-10-17: **ssh to devices over the mesh** (`thz2`, ADR-0038
-Accepted, **live**: Mac → `ssh mar@nixos.mesh.internal` works). Owner's framing "this is an ACL problem, not a kind" was
+Accepted, **live** both ways: Mac ⇄ nixos ssh, phone reaches both sshds). Owner's framing "this is an ACL problem, not a kind" was
 right about the authorization (recipe row = principal/group, consent
 = where) and the ADR says so; the kind change is only vocabulary
 bookkeeping. New receiver kind `device` `{ssh}` (port 22) in
@@ -43,12 +43,21 @@ pushed from the nixos builder; `k8s/apps/workouts/` synced by ArgoCD
 ## Loose threads
 
 - Bump the nixos repo's `talos-config` input to `6ac3122` and rebuild
-  both (box → Mac ssh needs it, or a box daemon restart). The Mac's
+  both, so the Target self-heal runs on the daemons (box → Mac worked
+  after a box daemon restart). The Mac's Remote Login ACL is the local
+  `admin` group, which the owner account is not in; the box's key is
+  authorized by nixos repo `8d7c05a` (switch with `?ref=master`). The Mac's
   **pending** nixpkgs update (uncommitted lock in `~/git/nixos`, plus a
   quint-language-server npmDepsHash bump) fails on atuin 18.23.0's
   e2e PTY test in the darwin sandbox — build from the committed lock.
 - `m6xc` (presentations read one kind per member) filed, not decided.
-- Phone as an ssh client needs an APK built from ≥ `2a1c111`.
+- Phone: APK `084bc75` installed over USB adb from the Mac (built on
+  the box — its debug keystore, `ptgc`; same signature, no re-enroll).
+  From `adb shell`, `nc nixos.mesh.internal 22` / `marius-mac…:22` get
+  the OpenSSH banners; both receivers logged `admitted "phone"`. A real
+  login needs an ssh client app + key on the phone. Not published to
+  `android-latest` (`build.sh --publish` on the box). The app's list
+  shows the cached bundle's kinds until Refresh after the first beat.
 - **Live and seeded** (`l8mc` closed): package flipped public, volume
   seeded through a busybox pod + a one-off import pod (scratch image
   has no shell, so `deployment.yaml`'s `kubectl cp`/`exec` recipe is
