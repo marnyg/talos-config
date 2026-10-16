@@ -15,7 +15,13 @@ const systemKeychain = "/Library/Keychains/System.keychain"
 // root (admin trust settings), where Safari and Chrome read it — Chrome
 // with the name constraint enforced, Safari too (trustd). Idempotent:
 // a root that already verifies is left alone. Needs root, which
-// privilegedSetup has.
+// privilegedSetup has — but under launchd that is not enough: writing
+// admin trust settings takes an interactive authorization, and with
+// no session the call fails "authorization was denied since no user
+// interaction was possible" (seen 2026-10-16). So this succeeds for
+// an interactive `sudo irohup -tun` and otherwise falls back to
+// trustNote; the daemon serves https either way, trusted or not.
+// Firefox reads the keychain at startup: restart it after trusting.
 func trustRoot(rootPath string) error {
 	if out, err := exec.Command("security", "verify-cert", "-c", rootPath, "-L", "-p", "basic").CombinedOutput(); err == nil {
 		log.Printf("https: device root already trusted (%s)", rootPath)

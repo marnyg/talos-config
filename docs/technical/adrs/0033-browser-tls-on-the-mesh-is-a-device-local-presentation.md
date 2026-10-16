@@ -101,9 +101,15 @@ introduced. The `goals.md` deferred scope is reworded accordingly.
 - Built as `config-server/meshtls` (root + leaves + the terminating
   reverse proxy, C-free) wired into `meshtun` for `:443`; both
   daemons (`irohup -tun`, the Android `mobile.Tunnel`) mint the root
-  under `<state>/tls`; `irohup`'s privileged setup also trusts it
-  (System keychain / p11-kit) before dropping root, so the Mac needs
-  no manual step. The gateway honours the peer's
+  under `<state>/tls`; `irohup`'s privileged setup tries to trust it
+  (System keychain / p11-kit) before dropping root. **Found live
+  2026-10-16:** under launchd `security add-trusted-cert -d` is
+  refused even as root ("authorization was denied since no user
+  interaction was possible" — admin trust settings need an
+  interactive authorization), so on the Mac the one manual
+  `sudo security add-trusted-cert …` the log prints stays; Firefox
+  reads the System keychain only at startup, so it needs a restart
+  after. The automatic path works for an interactive `sudo irohup`. The gateway honours the peer's
   `X-Forwarded-Proto: https`; ingress-nginx runs
   `use-forwarded-headers` so the apps see it (the controller is
   gateway-only, which is what that knob presumes).
@@ -134,7 +140,8 @@ introduced. The `goals.md` deferred scope is reworded accordingly.
 succeeds on a trusting device; `https://workouts.gw.mesh.internal`
 opens clean in Chrome on the phone and Safari on the laptop, Chrome
 offers "Install app" and the service worker registers, `http://`
-still answers 200; `rg cookie-secure k8s/apps/` is `true` only
+still answers 200 (Mac half confirmed 2026-10-16 in Firefox: lock,
+200 both schemes; trustd `verify-cert` passes with the constraint); `rg cookie-secure k8s/apps/` is `true` only
 after every browser client is on https; `rg -l x509 protocol/` stays
 empty. Invalidated if a client class that cannot install a device CA
 (a third-party appliance app) ever needs https — then F is the only

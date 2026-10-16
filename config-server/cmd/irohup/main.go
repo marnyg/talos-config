@@ -49,9 +49,11 @@
 // with a leaf for the name, signed by a per-device root minted under
 // <state>/tls on first run (meshtls), and proxied as plain HTTP over
 // the same stream :80 rides, with X-Forwarded-Proto: https. The
-// privileged setup also puts the root in the system trust store
+// privileged setup tries to put the root in the system trust store
 // (darwin: System keychain; linux: p11-kit `trust anchor`, or the
-// NixOS security.pki line the log names) — one act, idempotent. No
+// NixOS security.pki line the log names) — one act, idempotent; where
+// that needs a user session (launchd refuses the admin trust write
+// without one) the log prints the one command to run by hand. No
 // mesh CA exists; http:// works as before beside it.
 //
 // Serving (ADR-0038): -forward <facet>=<host:port> makes the member a
