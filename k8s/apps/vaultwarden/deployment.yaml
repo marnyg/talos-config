@@ -24,10 +24,10 @@
 # vault. No admin panel (ADMIN_TOKEN unset → /admin is 404): every
 # setting is an env var in this block, which keeps the config in git.
 #
-# First account: SIGNUPS_ALLOWED is true so the first user can register
-# from the web vault. Flip it to "false" in a follow-up commit once the
-# household's accounts exist; invitations from an existing user still
-# work after that (INVITATIONS_ALLOWED defaults to true).
+# Accounts: SIGNUPS_ALLOWED was true for the first registration
+# (2026-10-19) and is off since; new users come in by invitation from
+# an existing user (INVITATIONS_ALLOWED defaults to true), or by
+# flipping it back for one commit.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -85,7 +85,7 @@ spec:
             - name: TMPDIR
               value: /tmp
             - name: SIGNUPS_ALLOWED
-              value: "true"
+              value: "false"
             - name: SHOW_PASSWORD_HINT
               value: "false"
             # ingress-nginx sets X-Forwarded-For; used for login
