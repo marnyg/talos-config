@@ -22,8 +22,10 @@ seeded, and HTTPS over the mesh (ADR-0033, `eu0m`) landed so it
 installs as a PWA. What remains is using it (first real session on the
 phone). **Detour 2026-10-19, done:** Vaultwarden (`l5v8`) at
 `vault.gw.mesh.internal` — the first https-only consumer of ADR-0033
-beyond the PWA; first account + extension pairing remain. Back to the
-line above.
+beyond the PWA; first account + extension pairing remain. **Detour
+2026-10-17, done:** Home Assistant (`k8s/apps/homeassistant`) at
+`home.gw.mesh.internal`; first-start acceptance and the discovery
+question (`b311`) remain. Back to the line above.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for

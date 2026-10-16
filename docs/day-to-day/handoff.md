@@ -4,25 +4,34 @@
      Backward-looking. Resets each session. -->
 
 ## Last session
+2026-10-17: **Home Assistant deployed** (commit `17e576d`):
+`k8s/apps/homeassistant/` — Longhorn 10Gi `/config`, image
+`2026.10.2` pinned by digest, Ingress `home.gw.mesh.internal` behind
+the admins gate with the 1 h nginx timeouts for `/api/websocket`.
+Two departures from the Vaultwarden shape: the namespace is PSS
+**baseline** (the official image is s6-overlay and `/init` must be
+root; non-root is unsupported upstream), and an init container seeds
+`configuration.yaml` once with `http.trusted_proxies: [10.244.0.0/16]`
+— without it HA 400s every request ingress-nginx forwards. ClusterIP
+only: no mDNS/SSDP discovery, no USB radios (bead `b311`). HA's own
+onboarding account is the second gate; no header auth in core.
+**Not yet accepted live** — pushed, ArgoCD syncs on its own; nobody
+has opened the onboarding page yet.
 
-2026-10-19: **Vaultwarden deployed** (`l5v8`, commit `eb1ad52`):
-`k8s/apps/vaultwarden/` — Longhorn 2Gi volume, PSS-restricted pod on
-uid 65534 (`ROCKET_PORT=8080`), `DOMAIN=https://vault.gw.mesh.internal`
-because the Bitwarden clients need a secure context, which ADR-0033's
-device-side TLS supplies. Ingress behind the admins group gate (the
-extension and apps ride the device tunnel, so they carry the
-X-Mesh-Token like a browser); Vaultwarden's master password is the
-second gate — no SSO by design, the password is the encryption key.
-ArgoCD synced it on push. Acceptance from the Mac: `/alive` 200 over
-https through the gate, `/api/config` advertises the https endpoints,
-the `/notifications/hub` WebSocket upgrade reaches Vaultwarden through
-gateway → nginx (401 from Vaultwarden, not a proxy error). Longer
-nginx read/send timeouts on the Ingress keep that socket open.
-
-Previous session (2026-10-16): HTTPS over the mesh built and accepted
-(`eu0m`, ADR-0033, `config-server/meshtls`); the workouts PWA installs.
+Previous session (2026-10-16, docs say 10-19): Vaultwarden deployed
+(`l5v8`, `eb1ad52`) — Longhorn 2Gi, PSS-restricted on uid 65534,
+`DOMAIN=https://vault.gw.mesh.internal` (ADR-0033 secure context),
+admins gate, master password as the second gate; accepted from the
+Mac over https including the `/notifications/hub` WebSocket.
 
 ## Loose threads
+- Home Assistant first-start acceptance: open
+  `https://home.gw.mesh.internal` from a mesh device, expect the
+  onboarding page (not a 400 — that would mean the trusted_proxies
+  seed did not take or the pod CIDR moved); then the companion app on
+  the Sony over the tunnel.
+- `b311`: discovery/USB for HA needs hostNetwork or a device mount on
+  a pinned node, which also puts :8123 on the LAN outside the gate.
 
 - Vaultwarden signups are off since `d13b5a1` (first account made,
   `l5v8` closed); further users by invitation from inside the vault.
