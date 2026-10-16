@@ -41,9 +41,10 @@ pushed from the nixos builder; `k8s/apps/workouts/` synced by ArgoCD
 
 - `thz2` open until a live `ssh nixos.mesh.internal` from the Mac;
   `m6xc` (presentations read one kind per member) filed, not decided.
-- **Pod is in `ErrImagePull`**: the ghcr package is private and
-  container visibility has no API — flip it in the GitHub UI, then
-  seed the volume (`l8mc`, commands in `deployment.yaml`'s header).
+- **Live and seeded** (`l8mc` closed): package flipped public, volume
+  seeded through a busybox pod + a one-off import pod (scratch image
+  has no shell, so `deployment.yaml`'s `kubectl cp`/`exec` recipe is
+  wrong — rewrite it to the pod recipe in notes.md).
 - The Strong password went through chat — rotate it.
 - Template editor + metric pages are tested only by the Go walk-through
   (`web_test.go`); no hands-on run on the phone yet.
@@ -55,9 +56,9 @@ pushed from the nixos builder; `k8s/apps/workouts/` synced by ArgoCD
 - ssh live run: add `-forward ssh=127.0.0.1:22` to the box's unit and
   the Mac's plist, `fly/deploy.sh` + unseal, wait one beat, `ssh
   nixos.mesh.internal`; then ADR-0038 → Accepted, close `thz2`.
-- `l8mc`: make the package public → ArgoCD self-heals → `kubectl cp`
-  the export → `workouts import` → open on the phone, add to home
-  screen, log one real session; fix what the thumb finds.
+- Open `workouts.gw.mesh.internal` on the phone, add to home screen,
+  log one real session; fix what the thumb finds. Fix the seeding
+  recipe in `k8s/apps/workouts/deployment.yaml`.
 - Decide whether "build in-house vs deploy wger" deserves an ADR (the
   choice was made in conversation 2026-10-16: Go+SQLite PWA, Strong
   API as the seed; no OSS tracker).

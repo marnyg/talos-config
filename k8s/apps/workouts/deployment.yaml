@@ -4,12 +4,13 @@
 # backed up with the volume, nothing the control plane depends on.
 #
 # Seeding: the Strong export (licensed media, kept out of git) goes in
-# with the binary's own importer, from a laptop over the mesh:
-#
-#   kubectl -n workouts cp ~/strong-export-2026-10-16 \
-#     $(kubectl -n workouts get pod -l app=workouts -o name | cut -d/ -f2):/tmp/export
-#   kubectl -n workouts exec deploy/workouts -- workouts import -data /var/lib/workouts /tmp/export
-#
+# with the binary's own importer. The image is scratch — no sh, no tar
+# — so kubectl cp/exec cannot target it; instead (done 2026-10-16):
+#   1. a busybox pod on the PVC: `tar -C <export> -cf - api media |
+#      kubectl exec -i seed -- sh -c 'mkdir -p /data/strong-export &&
+#      tar -C /data/strong-export -xf -'`
+#   2. a one-off pod from this image with args
+#      [import, -data, /var/lib/workouts, /var/lib/workouts/strong-export]
 # Re-running is idempotent (rows keep Strong's ids).
 apiVersion: v1
 kind: PersistentVolumeClaim
