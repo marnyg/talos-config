@@ -1,0 +1,31 @@
+# etcd on cp1, scraped by static address. Talos runs etcd as a host
+# service (not a pod), so no Service selector reaches it, and the
+# chart's kubeEtcd.endpoints path (a hand-written Endpoints object) is
+# dead under ArgoCD 3, which excludes Endpoints/EndpointSlice from what
+# it manages. A ScrapeConfig is the Operator's own answer for targets
+# outside Kubernetes.
+#
+# :2381 is etcd's plain-text metrics/health listener, moved off
+# loopback by talos/clusters/homelab/cluster.yaml; the client port
+# :2379 stays mTLS and untouched. 10.0.0.68 is cp1's declared LAN
+# address — the same literal as the API endpoint, a second control
+# plane adds a second line (dsuj). jobName keeps the chart's etcd
+# dashboard and alert rules (selecting job="kube-etcd") working.
+#
+# Plain manifest under the root app: the CRD arrives with
+# kube-prometheus-stack, and the root app skips the dry run on a
+# missing kind, so this heals a loop later.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: kube-etcd
+  namespace: monitoring
+spec:
+  jobName: kube-etcd
+  scheme: HTTP
+  metricsPath: /metrics
+  staticConfigs:
+    - targets:
+        - 10.0.0.68:2381
+      labels:
+        node: talos-wu6-eib

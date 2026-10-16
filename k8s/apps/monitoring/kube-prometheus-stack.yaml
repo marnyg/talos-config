@@ -16,9 +16,13 @@
 #     moves them to the node address. Without that these four targets
 #     stay down and their dashboards blank.
 #   - etcd is a Talos service, not a pod, so there is nothing for a
-#     Service selector to find: it is scraped by static endpoint (cp1's
-#     declared LAN address — the same literal cluster.yaml uses) on the
-#     plain-text metrics port 2381.
+#     Service selector to find; etcd-scrapeconfig.yaml next to this
+#     file scrapes it by static address (cp1's declared LAN address, the
+#     same literal cluster.yaml uses) on the plain-text metrics port
+#     2381. The chart's own kubeEtcd.endpoints mechanism renders a bare
+#     Endpoints object, which ArgoCD 3 excludes by default and never
+#     creates; kubeEtcd stays enabled only for the dashboard + rules it
+#     gates.
 #   - controller-manager and scheduler ARE static pods with the
 #     `component:` labels the chart's Services select on; scraped over
 #     https with the Prometheus ServiceAccount token (RBAC permits
@@ -71,14 +75,10 @@ spec:
 
         kubeEtcd:
           enabled: true
-          endpoints:
-            - 10.0.0.68
           service:
-            enabled: true
-            port: 2381
-            targetPort: 2381
+            enabled: false
           serviceMonitor:
-            scheme: http
+            enabled: false
 
         kubeProxy:
           enabled: true
