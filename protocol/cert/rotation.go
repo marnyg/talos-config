@@ -392,8 +392,10 @@ func (p *Pin) View() View {
 // Admits ports rotation.qnt `admits`: a delegation signed by root is
 // acceptable iff the view is alive and root is the CURRENT policy's
 // root (pin 3: only the root delegates, old roots die with their epoch
-// — invOldRootDiesOnAdvance, invDeadAcceptsNothing). The hub uses it
-// to judge a speak-as's issuer; it is not wired into Authorize.
+// — invOldRootDiesOnAdvance, invDeadAcceptsNothing). Authorize's
+// resolve applies it to every key a signer resolves to (the pin hop,
+// Receiver.Pins); the hub also uses it directly to judge which wallet
+// may unseal the issuer.
 func (p *Pin) Admits(root ActorID) bool {
 	v := p.View()
 	return !v.Dead && v.Policy.Root == root

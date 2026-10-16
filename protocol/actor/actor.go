@@ -150,6 +150,16 @@ type Actor struct {
 	// and those this actor issued to its own hot keys (used by #renew to
 	// recognise its own issuance).
 	SpeakAs []cert.Cert
+	// Pins are the identities this actor has committed to (protocol
+	// ADR-0010): one cert.Pin per identity address, holding its epoch-0
+	// policy and every rotation verified so far. Handed to the inbox's
+	// chain verifier as cert.Receiver.Pins, where a pinned address is
+	// reachable only through its pin. Opt-in runtime state like SpeakAs
+	// (ADR-0005 family): nil means every address resolves as before.
+	// Unexported (the field would shadow the Pins accessor): install
+	// through HoldPins, read through Pins; the *Pin values are shared
+	// with the holder, who feeds rotations through Pin.Hold.
+	pins []*cert.Pin
 	// Mailbox is the bounded inbound queue depth; 0 ⇒ DefaultMailbox.
 	Mailbox int
 	// Clock is the local unauthenticated clock (Unix seconds); nil ⇒
@@ -268,6 +278,27 @@ func (a *Actor) Hold(consents, speakAs []cert.Cert) {
 	defer a.mu.Unlock()
 	a.Consents = append([]cert.Cert(nil), consents...)
 	a.SpeakAs = append([]cert.Cert(nil), speakAs...)
+}
+
+// HoldPins replaces the actor's pin set atomically with respect to the
+// mailbox loop (replace-whole, like Hold; Consents and SpeakAs are
+// untouched). The slice is copied; the *Pin values are not — the
+// holder keeps feeding them rotations through Pin.Hold, and Pin is
+// not safe for concurrent use, so the holder serialises Pin.Hold
+// against its own verifications.
+func (a *Actor) HoldPins(pins []*cert.Pin) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.pins = append([]*cert.Pin(nil), pins...)
+}
+
+// Pins returns a snapshot of the held pins (what HoldPins last
+// installed): the receiver-side input a cert.Receiver needs beside
+// Authority(). The slice is a copy; the *Pin values are the live ones.
+func (a *Actor) Pins() []*cert.Pin {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]*cert.Pin(nil), a.pins...)
 }
 
 // EditConsents applies edit to the held Consents atomically with respect
@@ -599,6 +630,7 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 		ID:       a.ID(),
 		Consents: consents,
 		SpeakAs:  speakAs,
+		Pins:     a.Pins(),
 		Chain:    a.chainRule,
 		HWM:      a.hwm,
 	}, now)
