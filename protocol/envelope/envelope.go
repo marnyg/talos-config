@@ -127,12 +127,15 @@ type ChainVerifier func(
 // Receiver is the verifier-side state an actor holds for Verify: its own
 // id, the consents it issued (roots of every valid chain, invariant 2),
 // the speak-as certs it holds naming it as aud (the principals it
-// answers for, protocol ADR-0003), the chain rule, and its volatile seq
-// high-water marks.
+// answers for, protocol ADR-0003), the pins it holds for the identities
+// it has committed to (protocol ADR-0010; passed through to
+// cert.Receiver.Pins, never read here), the chain rule, and its volatile
+// seq high-water marks.
 type Receiver struct {
 	ID       cert.ActorID
 	Consents []cert.Cert
 	SpeakAs  []cert.Cert
+	Pins     []*cert.Pin
 	Chain    ChainVerifier
 	HWM      *HWM
 }
@@ -593,7 +596,7 @@ func Verify(e Envelope, r Receiver, now int64) (Result, error) {
 		return Result{}, ErrNoChainVerifier
 	}
 	chain, speakAs := SplitProof(e.Proof)
-	eff, verified, err := r.Chain(cert.Receiver{ID: r.ID, Consents: r.Consents, SpeakAs: r.SpeakAs}, chain, speakAs, e.From, e.To.Facet, now)
+	eff, verified, err := r.Chain(cert.Receiver{ID: r.ID, Consents: r.Consents, SpeakAs: r.SpeakAs, Pins: r.Pins}, chain, speakAs, e.From, e.To.Facet, now)
 	if err != nil {
 		// Verified, not Result{}: the rooted certs the chain rule did
 		// verify still advance the caller's low-water mark.

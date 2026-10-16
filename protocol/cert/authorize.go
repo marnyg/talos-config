@@ -38,13 +38,22 @@ type Receiver struct {
 	// admits at R (ADR-0003). Other certs in the slice are ignored, so
 	// an actor may pass its whole speak-as set.
 	SpeakAs []Cert
+	// Pins are the identities R has COMMITTED to (ADR-0010): one Pin per
+	// identity address, holding the epoch-0 policy and every rotation R
+	// has verified. resolve lets a signer reach a pinned address only
+	// through its pin (`Pin.Admits`), so a rotated-away root dies and a
+	// dead identity admits nothing. Receiver-held only, like SpeakAs:
+	// Bundle has no pins field, so nothing a caller presents can create,
+	// move or kill one (authorize.qnt invCallerPinsIgnored). Nil means
+	// "today's receiver": every address resolves as before.
+	Pins []*Pin
 }
 
 // Input is the complete, self-contained input to Authorize. The function
 // is pure: no I/O, no clock reads. Now is the verifier's EFFECTIVE clock
 // max(local, lw) (ADR-0019); the caller computes it from a clock.Mark.
 type Input struct {
-	Receiver    Receiver          // R's own configuration: id, consents, held speak-as
+	Receiver    Receiver          // R's own configuration: id, consents, held speak-as, pins
 	AcceptTable map[string]string // ALPN class → facet (producer-owned)
 	Blocklist   map[ActorID]bool  // blocked peer keys
 	Now         int64             // effective clock
@@ -206,11 +215,14 @@ func (a *authCtx) sigOK(c Cert, effExp, now int64) bool {
 // signer itself) the cert may be attributed to, and the cert's effective
 // expiry along that path — c.Exp for direct issuance, min(c.Exp, s.Exp)
 // through a speak-as s (ADR-0018 axiom 2, "verification-time validity").
-// Via is the speak-as that vouches (nil for the signer itself).
+// Via is the speak-as that vouches (nil for the signer itself). ViaPin
+// is the receiver-held pin that mapped the vouching key to this
+// identity (nil when no pin hop was taken) — diagnostics only.
 type sovereign struct {
 	ID     ActorID
 	EffExp int64
 	Via    *Cert
+	ViaPin *Pin
 }
 
 // resolve ports the model's resolve(speakAs, signer, verb, groups, now):
@@ -243,8 +255,26 @@ type sovereign struct {
 // the hot key issues (those are gated by cav.verbs / cav.groups).
 // Resolution is one hop: a speak-as is non-delegable, so the wallet it
 // names is not itself resolved further.
-func (a *authCtx) resolve(c Cert, speakAs []Cert, now int64, groups []string) []sovereign {
-	out := []sovereign{{ID: c.Iss, EffExp: c.Exp}}
+//
+// Then the pin hop (ADR-0010, d0o0; the model's `resolve(pins, …)`):
+// the KEYS found so far resolve to every identity whose receiver-held
+// pin ADMITS them (view alive, root == key). The hop is SUBTRACTIVE for
+// pinned addresses: an address R holds a pin for is reachable only
+// through that pin — a legacy EOA's identity address IS its epoch-0
+// root key, so after a rotation the OLD key would otherwise still
+// self-resolve to the identity and match the consent (the additive hop
+// was the first cut; authorize.qnt invOldRootDiesOnRotation refutes it,
+// mutant p1). With no pins the list is returned untouched (today's
+// receiver, byte for byte). A trivial pin (root == address) subtracts
+// the name and adds it back — the identity map
+// (invTrivialPinsPreserveVerdicts); a rotated pin admits the new root
+// under the identity's name and nothing else
+// (invNewRootAdmittedViaPin); a dead pin admits nothing
+// (invDeadPinAdmitsNothing). One hop like speak-as: the identities a
+// pin yields are not resolved further. Pins the caller might carry do
+// not exist as a type (invCallerPinsIgnored).
+func (a *authCtx) resolve(c Cert, speakAs []Cert, now int64, groups []string, pins []*Pin) []sovereign {
+	ks := []sovereign{{ID: c.Iss, EffExp: c.Exp}}
 	for i := range speakAs {
 		sa := speakAs[i]
 		if sa.Can != VerbSpeakAs || sa.Aud != string(c.Iss) {
@@ -256,7 +286,39 @@ func (a *authCtx) resolve(c Cert, speakAs []Cert, now int64, groups []string) []
 			continue
 		}
 		via := sa
-		out = append(out, sovereign{ID: sa.Iss, EffExp: min(c.Exp, sa.Exp), Via: &via})
+		ks = append(ks, sovereign{ID: sa.Iss, EffExp: min(c.Exp, sa.Exp), Via: &via})
+	}
+	if len(pins) == 0 {
+		return ks
+	}
+	// ks \ {p.Address | p ∈ pins}
+	out := make([]sovereign, 0, len(ks)+len(pins))
+	for _, k := range ks {
+		pinned := false
+		for _, p := range pins {
+			if p != nil && p.Address == k.ID {
+				pinned = true
+				break
+			}
+		}
+		if !pinned {
+			out = append(out, k)
+		}
+	}
+	// ∪ {p.Address | p ∈ pins, ∃k ∈ ks: p.Admits(k.ID)} — over the
+	// ORIGINAL ks, so a trivial pin re-admits the name it subtracted.
+	// The effective expiry and Via are the admitting key's: the pin maps
+	// a vouching path to a name, it does not lengthen it.
+	for _, p := range pins {
+		if p == nil {
+			continue
+		}
+		for _, k := range ks {
+			if p.Admits(k.ID) {
+				out = append(out, sovereign{ID: p.Address, EffExp: k.EffExp, Via: k.Via, ViaPin: p})
+				break
+			}
+		}
 	}
 	return out
 }
@@ -325,7 +387,7 @@ func (a *authCtx) rootedHotKeys(speakAs []Cert, principals map[ActorID]bool) map
 // are stranger-chosen (3cx) ⇒ reject.
 func (a *authCtx) memberSovereigns(in Input, m Cert) []sovereign {
 	var out []sovereign
-	for _, w := range a.resolve(m, in.Bundle.SpeakAs, in.Now, m.Cav.Groups) {
+	for _, w := range a.resolve(m, in.Bundle.SpeakAs, in.Now, m.Cav.Groups, in.Receiver.Pins) {
 		if w.EffExp > in.Now &&
 			a.consentTargets(in.Receiver, a.consentsFor(in.Receiver.Consents, in.Receiver.ID, w.ID, in.Now), in.Now) {
 			out = append(out, w)
@@ -570,7 +632,7 @@ func (a *authCtx) chainUnder(consent Cert, chain, speakAs []Cert, r Receiver, si
 			return chainVerdict{}, i, ErrChainVerb
 		case !a.verify(l):
 			return chainVerdict{}, i, ErrSigMismatch
-		case !a.linksTo(eff.Aud, l, speakAs, now):
+		case !a.linksTo(eff.Aud, l, speakAs, now, r.Pins):
 			return chainVerdict{}, i, ErrChainLinkage
 		}
 		var err error
@@ -613,8 +675,9 @@ func (a *authCtx) chainUnder(consent Cert, chain, speakAs []Cert, r Receiver, si
 // group-covering speak-as covering l.Can — which chainUnder has already
 // pinned to the root consent's verb) to the key prevAud names. A group
 // or "*" prevAud matches no resolved principal, so it ends the chain.
-func (a *authCtx) linksTo(prevAud string, l Cert, speakAs []Cert, now int64) bool {
-	for _, p := range a.resolve(l, speakAs, now, grantGroups(l)) {
+// pins are the receiver's (the pin hop applies to every grant issuer).
+func (a *authCtx) linksTo(prevAud string, l Cert, speakAs []Cert, now int64, pins []*Pin) bool {
+	for _, p := range a.resolve(l, speakAs, now, grantGroups(l), pins) {
 		if prevAud == string(p.ID) {
 			return true
 		}
@@ -753,7 +816,7 @@ func (a *authCtx) groupSatisfied(in Input, grp string, member Cert, w ActorID) b
 	if !slices.Contains(member.Cav.Groups, grp) {
 		return false
 	}
-	for _, mw := range a.resolve(member, in.Bundle.SpeakAs, in.Now, member.Cav.Groups) {
+	for _, mw := range a.resolve(member, in.Bundle.SpeakAs, in.Now, member.Cav.Groups, in.Receiver.Pins) {
 		if mw.ID == w && mw.EffExp > in.Now {
 			return true
 		}

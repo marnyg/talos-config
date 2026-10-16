@@ -163,6 +163,15 @@ type Agent struct {
 	kit    *issuer.Kit
 	hub    *HubRecord
 	bundle *issuer.Bundle
+	// pins are this node's commitments to the identities it consents
+	// to (protocol ADR-0010): one per Owner address (kit.SpeakAs.Iss),
+	// trivial until a #bundle carries the owner's rotations, which are
+	// folded in (hubclient.go foldRotations) and handed to the actor as
+	// Receiver.Pins. Values are replaced, never mutated, so an
+	// in-flight Authorize never races a fold. In memory plus whatever
+	// the persisted bundle carries: a restart re-folds the last
+	// bundle's rotations, nothing older.
+	pins map[cert.ActorID]*cert.Pin
 }
 
 // Start binds the node's identity on iroh and loads its state. It
@@ -548,8 +557,10 @@ func (a *Agent) installAuthority() {
 	kit := a.Kit()
 	if kit == nil || len(a.facets) == 0 {
 		a.actor.Hold(nil, nil)
+		a.actor.HoldPins(nil)
 		return
 	}
+	a.holdPins(kit.SpeakAs.Iss)
 	now := a.actor.Now()
 	consent, err := cert.Sign(cert.Cert{
 		Aud: string(kit.SpeakAs.Iss),
@@ -563,6 +574,43 @@ func (a *Agent) installAuthority() {
 		return
 	}
 	a.actor.Hold([]cert.Cert{consent}, nil)
+}
+
+// holdPins (re)installs the node's pin for identity, with the current
+// bundle's rotations folded in, as the actor's Receiver.Pins. The pin
+// is kept across beats and kits so a rotation once folded stays
+// folded for the process's life (the hub re-sends its history on
+// every beat anyway). Nil identity ⇒ no pins.
+func (a *Agent) holdPins(identity cert.ActorID) {
+	if identity == "" {
+		a.actor.HoldPins(nil)
+		return
+	}
+	a.mu.Lock()
+	if a.pins == nil {
+		a.pins = map[cert.ActorID]*cert.Pin{}
+	}
+	pin := a.pins[identity]
+	if pin == nil {
+		pin = trivialPin(identity)
+	}
+	var rotations [][]cert.Cert
+	if a.bundle != nil {
+		rotations = a.bundle.Rotations
+	}
+	a.mu.Unlock()
+	if len(rotations) > 0 || len(pin.Held()) > 0 {
+		pin = foldRotations(pin, rotations, a.actor.Now(), func(err error) { a.log.Printf("pins: %v", err) })
+		if v := pin.View(); v.Dead {
+			a.log.Printf("pins: identity %s is DEAD at epoch %d (equivocation); nothing under it verifies until re-pinned", identity, v.Epoch+1)
+		} else if v.Epoch > 0 {
+			a.log.Printf("pins: identity %s at epoch %d, root %s", identity, v.Epoch, v.Policy.Root)
+		}
+	}
+	a.mu.Lock()
+	a.pins[identity] = pin
+	a.mu.Unlock()
+	a.actor.HoldPins([]*cert.Pin{pin})
 }
 
 // Beat is one renewal beat against the hub.
@@ -622,6 +670,9 @@ func (a *Agent) beat(ctx context.Context) error {
 	a.mu.Lock()
 	a.bundle = &b
 	a.mu.Unlock()
+	if len(b.Rotations) > 0 {
+		a.holdPins(kit.SpeakAs.Iss)
+	}
 	if err := a.o.State.SaveMark(a.actor.LowWater()); err != nil {
 		a.log.Printf("persisting mark: %v", err)
 	}
@@ -784,7 +835,7 @@ func (a *Agent) serveConns(ctx context.Context) {
 func (a *Agent) Authorize(alpn string, peer cert.ActorID, b cert.Bundle) cert.Result {
 	consents, speakAs := a.actor.Authority()
 	res := cert.Authorize(cert.Input{
-		Receiver:    cert.Receiver{ID: a.ID(), Consents: consents, SpeakAs: speakAs},
+		Receiver:    cert.Receiver{ID: a.ID(), Consents: consents, SpeakAs: speakAs, Pins: a.actor.Pins()},
 		AcceptTable: a.accept,
 		Blocklist:   a.blocklist(),
 		Now:         a.actor.Now(),

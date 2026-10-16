@@ -131,7 +131,7 @@ func (m *hubManager) authorizeStream(alpn string, peer cert.ActorID, b cert.Bund
 		}
 	}
 	res := cert.Authorize(cert.Input{
-		Receiver:    cert.Receiver{ID: m.issuer.ID(), Consents: consents, SpeakAs: speakAs},
+		Receiver:    cert.Receiver{ID: m.issuer.ID(), Consents: consents, SpeakAs: speakAs, Pins: m.issuer.Actor.Pins()},
 		AcceptTable: hubFacets,
 		Blocklist:   blocklist,
 		Now:         m.issuer.Actor.Now(),

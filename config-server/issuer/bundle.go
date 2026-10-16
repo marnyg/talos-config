@@ -92,19 +92,28 @@ func EncodeBundleRequest(member cert.Cert) ([]byte, error) {
 // replaces its copy with (decision j0b), and the speak-as that resolves
 // this hubkey — the same one #renew's output needs — and the name map:
 // every member this hub has witnessed on the beat, with its location
-// when known (namemap.go; the caller's own entry included).
+// when known (namemap.go; the caller's own entry included) — and the
+// rotations the hub holds for the identities it pins (protocol
+// ADR-0010): each entry is one rotation's k rotate-root certs, which
+// the receiver re-verifies against ITS OWN pin (cert.AssembleRotation +
+// Pin.Hold) exactly as it replaces the blocklist copy. Like the
+// blocklist it is a safe-to-lose copy (ADR-0019): nothing in it is a
+// pin, nothing in it widens — a rotation the receiver's pin does not
+// root is held but changes no verdict. Empty today.
 type Bundle struct {
 	Grants    []cert.Cert
 	Blocklist []cert.ActorID
 	SpeakAs   cert.Cert
 	NameMap   []NameEntry
+	Rotations [][]cert.Cert
 }
 
 type wireBundle struct {
-	Grants    []json.RawMessage `json:"grants"`
-	Blocklist []cert.ActorID    `json:"blocklist"`
-	SpeakAs   json.RawMessage   `json:"speak_as"`
-	NameMap   []wireNameEntry   `json:"name_map"`
+	Grants    []json.RawMessage   `json:"grants"`
+	Blocklist []cert.ActorID      `json:"blocklist"`
+	SpeakAs   json.RawMessage     `json:"speak_as"`
+	NameMap   []wireNameEntry     `json:"name_map"`
+	Rotations [][]json.RawMessage `json:"rotations,omitempty"`
 }
 
 // EncodeBundle renders a Bundle as JSON.
@@ -126,6 +135,17 @@ func EncodeBundle(b Bundle) ([]byte, error) {
 	}
 	if w.NameMap, err = encodeNameMap(b.NameMap); err != nil {
 		return nil, err
+	}
+	for _, r := range b.Rotations {
+		certs := make([]json.RawMessage, 0, len(r))
+		for _, c := range r {
+			raw, err := cert.Encode(c)
+			if err != nil {
+				return nil, err
+			}
+			certs = append(certs, raw)
+		}
+		w.Rotations = append(w.Rotations, certs)
 	}
 	return json.Marshal(w)
 }
@@ -163,6 +183,27 @@ func DecodeBundle(raw []byte) (Bundle, error) {
 	b.SpeakAs = sa
 	if b.NameMap, err = decodeNameMap(w.NameMap); err != nil {
 		return Bundle{}, err
+	}
+	// Absent key ⇒ no rotations (older hubs). Shape only: each cert is
+	// a signature-valid rotate-root; whether the k of them prove a
+	// transition from a policy the receiver's pin roots is the pin's
+	// verdict (cert.AssembleRotation), not the decoder's.
+	for i, r := range w.Rotations {
+		certs := make([]cert.Cert, 0, len(r))
+		for j, raw := range r {
+			c, err := cert.DecodeCert(raw)
+			if err != nil {
+				return Bundle{}, fmt.Errorf("issuer: bundle rotation %d cert %d: %w", i, j, err)
+			}
+			if c.Can != cert.VerbRotateRoot {
+				return Bundle{}, fmt.Errorf("issuer: bundle rotation %d cert %d: can %q is not rotate-root", i, j, c.Can)
+			}
+			if err := cert.Verify(c); err != nil {
+				return Bundle{}, fmt.Errorf("issuer: bundle rotation %d cert %d: %w", i, j, err)
+			}
+			certs = append(certs, c)
+		}
+		b.Rotations = append(b.Rotations, certs)
 	}
 	return b, nil
 }
@@ -219,7 +260,7 @@ func (i *Issuer) bundleHandler(_ context.Context, inv *actor.Invocation) ([]byte
 	}
 	i.witness(m)
 	caller := policy.Caller{Key: inv.From, Name: m.Cav.Name, Groups: m.Cav.Groups}
-	out := Bundle{Blocklist: bl, SpeakAs: *i.SpeakAs(), NameMap: i.nameMap(now, bl)}
+	out := Bundle{Blocklist: bl, SpeakAs: *i.SpeakAs(), NameMap: i.nameMap(now, bl), Rotations: heldRotations(i.Actor.Pins())}
 	for _, g := range policy.Compile(recipe, caller, now) {
 		signed, err := cert.Sign(g, i.signer)
 		if err != nil {
@@ -228,6 +269,20 @@ func (i *Issuer) bundleHandler(_ context.Context, inv *actor.Invocation) ([]byte
 		out.Grants = append(out.Grants, signed)
 	}
 	return EncodeBundle(out)
+}
+
+// heldRotations is what the hub's pins have verified, as #bundle
+// carries it: one cert list per rotation, pin order then hold order
+// (the receiver's Pin.Hold is order-independent). Empty while every
+// pin is trivial.
+func heldRotations(pins []*cert.Pin) [][]cert.Cert {
+	var out [][]cert.Cert
+	for _, p := range pins {
+		for _, r := range p.Held() {
+			out = append(out, r.Certs)
+		}
+	}
+	return out
 }
 
 // verifyMember is the member-cert check a receiver runs (glossary steps
