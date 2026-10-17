@@ -4,7 +4,27 @@
      Backward-looking. Resets each session. -->
 
 ## Last session
-Swarm of seven over the ready queue (one wave, file-disjoint; reports
+**Wave 2** (five workers, all merged, beads noted, not closed):
+`2004` rejectStatus drops the dead `ErrSig` case; `63u5` every pre-read
+failure in `clusterwatch.step` marks the storage row too; `2nqw` gateway
+`enrollHeadless` backs off 30 s→10 min between expired device flows
+(`cmd/gateway/backoff.go`, + a `main_stub.go` so the package vets
+untagged); `6tgj` `issuer.NameEntry.Live` shared by `Resolve` and
+`NamesJSON` (`Online = len(live)>0`, `Node` = first live entry);
+**`5gz` relay membership gate**: the iroh-relay child uses `[access.http]`
+→ `POST /relay/access` on the hub (loopback-only, per-process bearer via
+`IROH_RELAY_HTTP_BEARER_TOKEN`), admitting the hub's own id + witnessed
+non-blocklisted members, **failing open while cold** (<5 min since start,
+issuer not serving incl. the nag window, or no witnessed members);
+`Mint` now witnesses so a fresh member's first beat crosses the gate;
+mode + counters on the `/status` relay line (`relayadmit.go`).
+Real-binary `TestRelayChild` passes with the hook (`IROH_RELAY_BIN`).
+**Not deployed yet** — first live check after deploy: a member reconnect
+after 5 min, watch the relay line's admitted/denied and the log for
+`relay access: bad X-Iroh-NodeId` (header value assumed = iroh-base
+`PublicKey` Display = lowercase hex; confirmed in iroh-base v1.1.0 source).
+
+**Wave 1**: swarm of seven over the ready queue (one wave, file-disjoint; reports
 under `/tmp/swarm/<name>.md`, beads noted, **none closed**):
 
 - `3leu` — sandbox-agent's Forgejo header file moved onto a

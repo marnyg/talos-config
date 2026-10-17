@@ -218,7 +218,7 @@ classDiagram
     class Issuer["Issuer — hubkey = speak-as.aud = iroh EndpointId\n#renew #bundle #mint-device #mint-machine · hub-http:/config"]
     class Enroll["Enroll — own key, no wallet delegation\nWAN: device flow, wallet approval"]
     class Provisioner["Provisioner — own key, holds the secrets seed\nWAN: /config (+boot token), /enroll/machine, KMS"]
-    class Shell["Shell (not an actor): mux, /unseal, /sealed, /status,\n/.well-known speak-as + reach-me-at, relay child"]
+    class Shell["Shell (not an actor): mux, /unseal, /sealed, /status,\n/.well-known speak-as + reach-me-at, relay child + its access hook"]
     class Member["Member (node agent, irohup, app)"]
     Wallet --> Issuer : speak-as (unseal)
     Wallet ..> Provisioner : seed (2nd EIP-191 sig, same wallet)
@@ -514,8 +514,9 @@ provisioning or recovery path may depend on it.
 - **Name map** — the directory members receive on the renewal beat
   (`#bundle`'s `name_map`, built 2026-09-19). Two halves with different
   owners, **neither minted by the hub**: **name → NodeId** is the
-  Owner's namespace, *witnessed* by the member certs the Issuer sees on
-  the beat — git supplies the names, members mint the keys (ADR-0015),
+  Owner's namespace, *witnessed* by the member certs the Issuer signs at
+  Mint and sees on the beat (Mint-witnessing since `5gz`, 2026-10-17, so a
+  fresh member can cross the gated relay for its first beat) — git supplies the names, members mint the keys (ADR-0015),
   and the hub keeps no registry (invariant 1: the grant is the record),
   so each entry ships the hubkey-signed member cert itself as the proof
   of the binding (decision `2fc`; supersedes "pure function of git",

@@ -213,7 +213,7 @@ func startRelay(t *testing.T) string {
 	port := l.Addr().(*net.TCPAddr).Port
 	l.Close()
 	cfg := filepath.Join(t.TempDir(), "relay.toml")
-	if err := os.WriteFile(cfg, []byte(relayConfig(port)), 0o600); err != nil {
+	if err := os.WriteFile(cfg, []byte(relayConfig(port, relayHook{})), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(bin, "--dev", "--config-path", cfg)
