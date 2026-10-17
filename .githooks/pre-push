@@ -5,7 +5,9 @@
 # config-server-bin, iroh-transport and actors-bin vendor the local
 # `replace`d modules (protocol/, iroh-transport/, iroh-go/iroh/) into a
 # fixed-output derivation, so any change under those trees — or to a
-# go.mod/go.sum — changes the hash while a cached vendor dir keeps
+# go.mod/go.sum of those modules (not any nested spike module: deleting
+# iroh-go/mobile/go.mod cost a full no-op dance, 2026-10-17) — changes
+# the hash while a cached vendor dir keeps
 # building fine locally. CI's `vendor-hash` job catches it, but we push
 # straight to main and nobody reads a red Actions tab: on 2026-09-20
 # main sat red for 14 pushes until darwin-rebuild hit the stale cache
@@ -41,7 +43,7 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
     files=$(git -C "$repo" diff --name-only $range -- \
       'protocol/**/*.go' 'protocol/*.go' 'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' \
       'actors/**/*.go' 'actors/*.go' \
-      'go.mod' 'go.sum' '*/go.mod' '*/go.sum' \
+      'config-server/go.*' 'protocol/go.*' 'iroh-transport/go.*' 'iroh-go/go.*' 'actors/go.*' 'workouts/go.*' \
       'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 'workouts/nix/default.nix' 2>/dev/null || true)
     [ -n "$files" ] && touched="$touched$files
 " && pushed="$pushed$local_ref $local_sha
