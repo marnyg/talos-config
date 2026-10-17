@@ -354,26 +354,25 @@ func (g *clusterWatcher) step(ctx context.Context) {
 	}
 	byMAC, err := machines.Load(filepath.Join(g.root, "machines"))
 	if err != nil {
-		g.fail(fmt.Errorf("loading machines: %w", err))
+		g.failAll(fmt.Errorf("loading machines: %w", err))
 		return
 	}
 	m, ok := byMAC[bs.Target]
 	if !ok {
-		g.fail(fmt.Errorf("control plane %s not declared", bs.Target))
+		g.failAll(fmt.Errorf("control plane %s not declared", bs.Target))
 		return
 	}
 	ctx, cancel := context.WithTimeout(ctx, gitopsDialTimeout)
 	defer cancel()
 	fc, err := g.dial(ctx, bs.Name, "kube-api", gitopsDialTimeout)
 	if err != nil {
-		g.fail(fmt.Errorf("dial %s/kube-api: %w", bs.Name, err))
+		g.failAll(fmt.Errorf("dial %s/kube-api: %w", bs.Name, err))
 		return
 	}
 	defer fc.Close() //nolint:errcheck
 	kc, err := g.kubeClient(m, fc)
 	if err != nil {
-		g.fail(err)
-		g.setStorage(storageSnapshot{}, err)
+		g.failAll(err)
 		return
 	}
 	defer kc.CloseIdleConnections()
@@ -443,6 +442,16 @@ func (g *clusterWatcher) fail(err error) {
 		}
 		s.LastPoll, s.Idle, s.Err = time.Now(), "", err.Error()
 	})
+}
+
+// failAll records a failure that happened before either read could
+// start — machines, control-plane lookup, dial, client build — on both
+// rows. Each keeps its last good read beside the error; without this
+// the storage row kept showing a stale healthy count with nothing to
+// say the poll had stopped reaching the cluster (talos-config-63u5).
+func (g *clusterWatcher) failAll(err error) {
+	g.fail(err)
+	g.setStorage(storageSnapshot{}, err)
 }
 
 // kubeClient is an API-server client over one facet connection: every
