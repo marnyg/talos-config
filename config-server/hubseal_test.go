@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -291,6 +292,10 @@ func TestUnsealRejectsGarbageSignature(t *testing.T) {
 	}
 }
 
+// wg0Interface matches the `interface: wg0` line of the Talos
+// network.interfaces document the hub injected before phase 2.
+var wg0Interface = regexp.MustCompile(`(?m)^\s*-?\s*interface:\s*["']?wg0["']?\s*$`)
+
 func TestConfigRefusedWhileSealed(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr})
 	m.publicURL = "https://hub.example"
@@ -314,8 +319,12 @@ func TestConfigRefusedWhileSealed(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "ExtensionServiceConfig") {
 		t.Error("unsealed config missing the injected agent document")
 	}
-	if strings.Contains(rec.Body.String(), "wg0") {
-		t.Error("served config still injects wg0 — phase 2 removed it")
+	// Anchor on the YAML line the old network.interfaces entry carried
+	// rather than a bare substring: the served config embeds freshly
+	// generated base64 cert material, and any 3-byte window of that can
+	// spell "wg0" (base64 has no ':' or whitespace, so this cannot).
+	if wg0Interface.MatchString(rec.Body.String()) {
+		t.Error("served config still injects the wg0 interface document — phase 2 removed it")
 	}
 }
 
