@@ -1,6 +1,7 @@
 # ADR-0039: CI is one in-cluster, host-mode Forgejo runner whose unsandboxed builds feed Attic
 
-- Status: Proposed
+- Status: Accepted 2026-10-17 (owner). Live: run #9 green, cache
+  HITs from the Mac; credentials on memory emptyDirs since `7828ce2`.
 - Date: 2026-10-17
 - Related: ADR-0035 (kata for agent workloads — not used here),
   ADR-0011 (longhorn-bulk = re-derivable), ADR-0029 (Longhorn classes),
