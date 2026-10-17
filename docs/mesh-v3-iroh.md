@@ -446,7 +446,9 @@ the forward table only), `ExtensionServiceConfig` for relay URL/policy
 Bead `talos-config-359.1.2`, branch `spike/mesh-v3-p0.2`; working plan
 and step-by-step log in `docs/mesh-v3-p0.2-android.md`. Owner's phone
 (Sony XQ-BQ52, Android 13). Everything on the device is **Go in one
-gomobile AAR**: `iroh-go/mobile` (package `p0mobile`: iroh endpoint,
+gomobile AAR**: `iroh-go/mobile` (deleted 2026-10-17 with `android-p0`,
+`4xw7` — superseded by `config-server/{fakeip,meshtun,mobile}` and
+`android/`; see git history) (package `p0mobile`: iroh endpoint,
 gvisor netstack on the tun fd, fake-IP DNS for `*.mesh.internal`) inside
 the spike APK `iroh-go/android-p0/` (`VpnService`, split-routed
 `198.18.0.0/15` only). Node side: `p0agent serve` as a stand-in on the
