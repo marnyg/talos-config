@@ -3,17 +3,21 @@ package main
 // Cluster watch: the hub's read-only eye on the cluster over the
 // control plane's kube-api facet, feeding two /status rows. Nothing
 // here acts (ADR-0027: why this and not an in-cluster alerter or a
-// scoped token). One dial, one client cert, two GETs per poll:
+// scoped token). One dial, one client cert, three GETs per poll:
 //
 //   - gitops: ArgoCD's root Application (`apps`, the app of apps that
-//     syncs k8s/clusters/homelab; the per-directory children it emits
-//     are NOT watched — talos-config-2c2x) and its two ages — this
-//     file.
+//     syncs k8s/clusters/homelab) and its two ages, plus the
+//     Application list of the same namespace so the per-directory
+//     children the root emits are held to the same two ages
+//     (talos-config-2c2x: since app-of-apps the children do the real
+//     syncing, and a child stuck the 9l67 way left the root reading
+//     Synced) — this file.
 //   - storage: Longhorn's Volume list and its robustness — storage.go
 //     (cnb5).
 //
-// A third read belongs here too, but as a conscious addition (ADR-0027
-// consequences), not a habit.
+// The children list is the gitops read widened, not a new concern. A
+// third concern belongs here too, but as a conscious addition
+// (ADR-0027 consequences), not a habit.
 //
 // Why (talos-config-9l67, 2026-09-29): argocd-application-controller-0
 // sat Terminating on a dead node from 09-21 to 09-29 and nothing
@@ -69,9 +73,13 @@ const (
 	// gitopsOpLongAfter: a sync op still Running for this long is stuck
 	// (later waves wait on an earlier wave's health forever).
 	gitopsOpLongAfter = 30 * time.Minute
-	// gitopsApp is the root Application, namespace/name.
-	gitopsApp     = "argocd/apps"
-	gitopsAppPath = "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/apps"
+	// gitopsApp is the root Application, namespace/name; the children
+	// are every other Application in that namespace (gitopsAppsPath).
+	gitopsNamespace = "argocd"
+	gitopsAppName   = "apps"
+	gitopsApp       = gitopsNamespace + "/" + gitopsAppName
+	gitopsAppsPath  = "/apis/argoproj.io/v1alpha1/namespaces/" + gitopsNamespace + "/applications"
+	gitopsAppPath   = gitopsAppsPath + "/" + gitopsAppName
 	// gitopsServerName is the SAN the API server is verified against;
 	// kube-apiserver's cert always carries it.
 	gitopsServerName = "kubernetes"
@@ -90,11 +98,71 @@ type gitopsSnapshot struct {
 	OpStartedAt  time.Time
 	OpFinishedAt time.Time
 	OpMessage    string
+	Children     gitopsChildren
+}
+
+// gitopsChildren is what the last Application list saw across the
+// root's children, reduced to the one child per age that is worst off
+// — the row names a culprit, not a table. Like the root fields it is
+// the last good read; Err beside it says the latest list failed.
+type gitopsChildren struct {
+	Listed bool   // false ⇒ no list has been read yet; the rest is zero
+	Err    string // last list failure, "" when the last poll read the list
+	Count  int
+	// Stuck*: the child with the oldest sync op still Running.
+	StuckName    string
+	StuckSince   time.Time
+	StuckMessage string
+	// Stale*: the child with the oldest reconciledAt; a zero StaleAt
+	// with a name is a child ArgoCD has never reconciled.
+	StaleName string
+	StaleAt   time.Time
+	// Off*: the first child not Synced, or Degraded/Missing — context,
+	// never a warn on its own (auto-sync passes through OutOfSync).
+	OffName  string
+	OffState string // "<sync>/<health>"
+}
+
+// summarizeChildren reduces an Application list to gitopsChildren,
+// skipping the root itself.
+func summarizeChildren(items []argoApp) gitopsChildren {
+	c := gitopsChildren{Listed: true}
+	for _, a := range items {
+		name := a.Metadata.Name
+		if name == gitopsAppName {
+			continue
+		}
+		c.Count++
+		if op := a.Status.OperationState; op != nil && op.Phase == "Running" &&
+			(c.StuckName == "" || op.StartedAt.Before(c.StuckSince)) {
+			c.StuckName, c.StuckSince, c.StuckMessage = name, op.StartedAt, op.Message
+		}
+		if c.StaleName == "" || staler(a.Status.ReconciledAt, c.StaleAt) {
+			c.StaleName, c.StaleAt = name, a.Status.ReconciledAt
+		}
+		// A child with no sync status yet is the never-reconciled case
+		// above, not an off one.
+		if sync, health := a.Status.Sync.Status, a.Status.Health.Status; c.OffName == "" && sync != "" &&
+			(sync != "Synced" || health == "Degraded" || health == "Missing") {
+			c.OffName, c.OffState = name, sync+"/"+health
+		}
+	}
+	return c
+}
+
+// staler reports whether reconciledAt t is older than than; a zero t
+// (never reconciled) is older than any time.
+func staler(t, than time.Time) bool {
+	if than.IsZero() {
+		return false
+	}
+	return t.IsZero() || t.Before(than)
 }
 
 // line renders the /status row and whether it warrants the warn class:
 // a fetch error, a reconcile older than gitopsStaleAfter, or an op
-// Running longer than gitopsOpLongAfter.
+// Running longer than gitopsOpLongAfter — for the root, and for the
+// worst-off child on each age.
 func (g gitopsSnapshot) line(now time.Time) (string, bool) {
 	if g.Idle != "" {
 		return "idle — " + g.Idle, false
@@ -131,15 +199,46 @@ func (g gitopsSnapshot) line(now time.Time) (string, bool) {
 	default:
 		parts = append(parts, "last op "+g.OpPhase)
 	}
+	if c := g.Children; c.Listed {
+		parts = append(parts, fmt.Sprintf("%d children", c.Count))
+		if c.StuckName != "" && now.Sub(c.StuckSince) > gitopsOpLongAfter {
+			warn = true
+			msg := fmt.Sprintf("child %s STUCK Running since %s", c.StuckName, ago(now, c.StuckSince))
+			if c.StuckMessage != "" {
+				msg += " (" + c.StuckMessage + ")"
+			}
+			parts = append(parts, msg)
+		}
+		switch {
+		case c.StaleName == "":
+		case c.StaleAt.IsZero():
+			warn = true
+			parts = append(parts, "child "+c.StaleName+" NEVER RECONCILED")
+		case now.Sub(c.StaleAt) > gitopsStaleAfter:
+			warn = true
+			parts = append(parts, fmt.Sprintf("child %s NOT RECONCILED for %s", c.StaleName, ago(now, c.StaleAt)))
+		}
+		if c.OffName != "" {
+			parts = append(parts, fmt.Sprintf("child %s %s", c.OffName, c.OffState))
+		}
+	}
 	if g.Err != "" {
 		warn = true
 		parts = append(parts, "last poll failed: "+g.Err)
 	}
+	if g.Children.Err != "" {
+		warn = true
+		parts = append(parts, "last poll failed: "+g.Children.Err)
+	}
 	return strings.Join(parts, " — "), warn
 }
 
-// argoApp is the slice of an Application we read.
+// argoApp is the slice of an Application we read; the same shape is
+// each item of an ApplicationList.
 type argoApp struct {
+	Metadata struct {
+		Name string `json:"name"`
+	} `json:"metadata"`
 	Status struct {
 		ReconciledAt time.Time `json:"reconciledAt"`
 		Sync         struct {
@@ -283,6 +382,7 @@ func (g *clusterWatcher) step(ctx context.Context) {
 		g.fail(err)
 	} else {
 		g.recordApp(app)
+		g.recordChildren(g.fetchChildren(ctx, kc))
 	}
 	vols, err := g.fetchVolumes(ctx, kc)
 	if err != nil {
@@ -302,6 +402,7 @@ func (g *clusterWatcher) recordApp(app *argoApp) {
 			Health:       app.Status.Health.Status,
 			Revision:     app.Status.Sync.Revision,
 			ReconciledAt: app.Status.ReconciledAt,
+			Children:     s.Children, // recordChildren follows with its own read
 		}
 		if op := app.Status.OperationState; op != nil {
 			s.OpPhase, s.OpMessage = op.Phase, op.Message
@@ -310,6 +411,26 @@ func (g *clusterWatcher) recordApp(app *argoApp) {
 		if prevErr != "" {
 			log.Printf("gitops: %s readable again", gitopsApp)
 		}
+	})
+}
+
+// recordChildren replaces the children summary with one good list
+// read, or — like fail — keeps the last good one and notes the failure
+// beside it, so a list that stops answering never erases the root read
+// recorded just before.
+func (g *clusterWatcher) recordChildren(kids gitopsChildren, err error) {
+	g.setSnap(func(s *gitopsSnapshot) {
+		prev := s.Children
+		if err != nil {
+			kids = prev
+			kids.Err = err.Error()
+			if prev.Err != kids.Err {
+				log.Printf("gitops: %v", err)
+			}
+		} else if prev.Err != "" {
+			log.Printf("gitops: %s readable again", gitopsAppsPath)
+		}
+		s.Children = kids
 	})
 }
 
@@ -360,15 +481,25 @@ func (k *kubeClient) get(ctx context.Context, path string, out any) error {
 	return nil
 }
 
-// fetchOver is kubeClient + fetchApp in one call, kept so a test can
-// drive the whole path over an in-memory facet.
-func (g *clusterWatcher) fetchOver(ctx context.Context, m machines.Machine, fc facetClient) (*argoApp, error) {
+// fetchOver is kubeClient + the two gitops reads in one call, kept so
+// a test can drive the whole path over an in-memory facet. The error
+// is the root read's; a failed list read lands in the children's Err,
+// as in step.
+func (g *clusterWatcher) fetchOver(ctx context.Context, m machines.Machine, fc facetClient) (*argoApp, gitopsChildren, error) {
 	kc, err := g.kubeClient(m, fc)
 	if err != nil {
-		return nil, err
+		return nil, gitopsChildren{}, err
 	}
 	defer kc.CloseIdleConnections()
-	return g.fetchApp(ctx, kc)
+	app, err := g.fetchApp(ctx, kc)
+	if err != nil {
+		return nil, gitopsChildren{}, err
+	}
+	kids, err := g.fetchChildren(ctx, kc)
+	if err != nil {
+		kids.Err = err.Error()
+	}
+	return app, kids, nil
 }
 
 // fetchApp GETs the root Application; a body without reconciledAt is
@@ -382,6 +513,20 @@ func (g *clusterWatcher) fetchApp(ctx context.Context, kc *kubeClient) (*argoApp
 		return nil, fmt.Errorf("GET %s: no status.reconciledAt (never reconciled?)", gitopsAppPath)
 	}
 	return &app, nil
+}
+
+// fetchChildren GETs the namespace's Application list and reduces it
+// to the worst-off children. A child without reconciledAt is a stale
+// signal in the summary, not a fetch error — unlike the root, where it
+// would leave the row with nothing to show.
+func (g *clusterWatcher) fetchChildren(ctx context.Context, kc *kubeClient) (gitopsChildren, error) {
+	var list struct {
+		Items []argoApp `json:"items"`
+	}
+	if err := kc.get(ctx, gitopsAppsPath, &list); err != nil {
+		return gitopsChildren{}, err
+	}
+	return summarizeChildren(list.Items), nil
 }
 
 // fetchVolumes GETs Longhorn's Volume list (storage.go).
