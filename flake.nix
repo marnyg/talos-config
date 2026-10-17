@@ -457,6 +457,13 @@
               nix2container = inputs'.nix2container.packages.nix2container;
               pi = inputs'.nixpkgs-pi.legacyPackages.pi-coding-agent;
             };
+            # nix build .#forgejo-runner-image — the in-cluster CI runner
+            # (k8s/apps/forgejo-runner/image.nix; driver: its build.sh).
+            packages.forgejo-runner-image = import ./k8s/apps/forgejo-runner/image.nix {
+              inherit pkgs lib;
+              self = inputs.self;
+              nix2container = inputs'.nix2container.packages.nix2container;
+            };
           })
         ];
     };

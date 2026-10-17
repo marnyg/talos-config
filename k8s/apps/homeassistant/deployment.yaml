@@ -75,8 +75,8 @@ spec:
         # good. The first start here lost that race (the WebSocket the
         # UI needs was the gateway bug o8wd) and came up with no
         # trusted proxies. So the store is reconciled directly, before
-        # HA starts (HA flushes its copy on shutdown, so a live edit is
-        # overwritten): the two proxy keys are merged into `stable` on
+        # HA starts (nothing else has it open then): the two proxy keys
+        # are merged into `stable` on
         # every start, a failed pending trial is dropped, and a fresh
         # volume gets a store built from HA's own schema defaults —
         # the HA image runs this, so the defaults match the pinned

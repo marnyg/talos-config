@@ -146,6 +146,12 @@ spec:
             # nickname | email) — the member name siwe-oidc issues.
             - name: FORGEJO__oauth2_client__USERNAME
               value: nickname
+            # Actions: the in-cluster runner (k8s/apps/forgejo-runner)
+            # polls for jobs; .forgejo/workflows/ in the mirrored
+            # talos-config feeds the nix cache (0m50). Explicit rather
+            # than the default so a Forgejo bump cannot flip it.
+            - name: FORGEJO__actions__ENABLED
+              value: "true"
           ports:
             - containerPort: 3000
           securityContext:
