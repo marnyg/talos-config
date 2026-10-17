@@ -135,8 +135,11 @@ spec:
             requests:
               cpu: 100m
               memory: 256Mi
+            # 2Gi: the CI runner's first full push (0m50) held atticd's
+            # working set at the old 1Gi limit for the whole upload —
+            # mostly page cache, but no headroom left.
             limits:
-              memory: 1Gi
+              memory: 2Gi
       volumes:
         - name: config
           configMap:

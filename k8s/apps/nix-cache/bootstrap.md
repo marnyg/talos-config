@@ -2,7 +2,8 @@
 
 The manifests are declarative; what follows is the state Attic keeps in
 its own database (caches, their keys, tokens) and the configuration on
-each machine that uses the caches. Spike `talos-config-kyiy`.
+each machine that uses the caches. Design: spike `talos-config-kyiy`;
+the CI feeder: `talos-config-0m50` (`k8s/apps/forgejo-runner`).
 
 ## 0. Wait for the pods
 
