@@ -24,7 +24,8 @@
 //	irohup -reenroll                         # discard the Kit, re-sign; keep the key
 //	irohup -rekey                            # discard the key too: a new NodeId
 //	irohup -paste                            # headless: paste the signature instead
-//	irohup -enroll-only                      # enroll (browser or -paste) and exit
+//	irohup -device                           # headless, no loopback: device flow — print user code + approve URL, Owner signs on /status, poll
+//	irohup -enroll-only                      # enroll (browser, -paste or -device) and exit
 //	irohup -tun ... -forward ssh=127.0.0.1:22 # also SERVE: this device's sshd as the ssh facet (ADR-0038)
 //
 // talosctl through the bridge: `talosctl -e 127.0.0.1:50000 -n <node>`
@@ -106,6 +107,7 @@ func main() {
 		reenroll = flag.Bool("reenroll", false, "discard the Kit and re-sign with the SAME key")
 		rekey    = flag.Bool("rekey", false, "discard the key too: a brand-new NodeId")
 		paste    = flag.Bool("paste", false, "paste a signature instead of signing in the browser (headless)")
+		device   = flag.Bool("device", false, "enroll with the device flow: print a user code + approve URL and poll; the Owner signs on the hub's /status from any browser (headless hosts where -paste's loopback signing page is out of reach)")
 		enrollOn = flag.Bool("enroll-only", false, "enroll if needed, then exit (the daemon's handoff: run as its user, sign as yourself)")
 		stateDir = flag.String("state", "", "identity-plane state dir (default ~/.config/talos-mesh/<name>.iroh)")
 		bindAddr = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
@@ -137,6 +139,9 @@ func main() {
 	}
 	if *group != "admins" && *group != "media" {
 		log.Fatalf("-group must be 'admins' or 'media', got %q", *group)
+	}
+	if *paste && *device {
+		log.Fatal("-paste and -device are two headless enrollments; run one")
 	}
 	switch {
 	case *tunMode && len(br) > 0:
@@ -186,9 +191,16 @@ func main() {
 		if *tunMode {
 			// Enrollment is a user-session act (browser + wallet); the
 			// daemon has neither. Enroll as the service user once, headless.
-			log.Fatalf("not enrolled: run `sudo -u %s irohup -name %s -state %s -enroll-only` once (sign in the browser, or add -paste), then start the daemon", *runAs, dev, dir)
+			log.Fatalf("not enrolled: run `sudo -u %s irohup -name %s -state %s -enroll-only` once (sign in the browser, or add -paste or -device), then start the daemon", *runAs, dev, dir)
 		}
-		if err := enroll(strings.TrimRight(*hub, "/"), dev, *group, node, state, *paste); err != nil {
+		base := strings.TrimRight(*hub, "/")
+		var err error
+		if *device {
+			err = enrollDevice(base, dev, *group, node, state)
+		} else {
+			err = enroll(base, dev, *group, node, state, *paste)
+		}
+		if err != nil {
 			log.Fatal(err)
 		}
 	} else if *enrollOn {
@@ -272,6 +284,33 @@ func enroll(hub, name, group string, node cert.ActorID, state nodeagent.State, p
 	if err := nodeagent.CheckKit(kit, node); err != nil {
 		return err
 	}
+	return persistKit(kit, state)
+}
+
+// enrollDevice runs ONE device flow (nodeagent.EnrollDevice, the
+// gateway pod's path) and persists the Kit: the hub prints a user code
+// and an approve URL here, the Owner signs on /status from any browser,
+// and the poll redeems. For the headless host where -paste's loopback
+// signing page is out of reach. A denied or expired flow is fatal with
+// its reason — a human is at this terminal; they rerun.
+func enrollDevice(hub, name, group string, node cert.ActorID, state nodeagent.State) error {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	kit, err := nodeagent.EnrollDevice(ctx, nil, hub, node, name, group, func(f nodeagent.DeviceFlow) {
+		log.Printf("ENROLL: open %s and approve user code %s — %s to act (NodeId %s)", f.ApproveURL, f.UserCode, (time.Duration(f.ExpiresIn) * time.Second).String(), node)
+		if f.QRPNG != "" {
+			log.Printf("ENROLL: the hub also sent a QR of that URL (not rendered in the terminal)")
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("device flow: %w", err)
+	}
+	return persistKit(kit, state) // EnrollDevice already ran CheckKit against node
+}
+
+// persistKit is the enrollment tail both paths share: write the Kit
+// and say what was granted.
+func persistKit(kit issuer.Kit, state nodeagent.State) error {
 	if err := state.SaveKit(kit); err != nil {
 		return err
 	}
