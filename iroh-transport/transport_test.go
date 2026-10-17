@@ -375,3 +375,28 @@ func TestAdvertiseRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestRelayOnlineNoQADProbe: the home relay is entered in the relay map
+// with no QUIC port (talos-config-p5g), so Online returns as soon as
+// the relay connection is up instead of waiting out iroh's ~3 s QUIC
+// address discovery probe against a relay that has none — the deployed
+// relay is plain HTTP behind fly TLS with QAD off (ADR-0022), as is the
+// dev relay startRelay spawns. With RelayModeCustomFromUrls (default
+// QAD port filled in) Online took 3.0 s here; now ~0.2 s. The 1.5 s
+// bound is generous on purpose: it separates "probe" from "no probe",
+// not fast from faster. Needs IROH_RELAY_BIN; skipped otherwise.
+func TestRelayOnlineNoQADProbe(t *testing.T) {
+	ctx := testCtx(t)
+	relay := startRelay(t)
+	e, _ := bindLoopback(t, relay)
+	t0 := time.Now()
+	if err := e.Online(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(t0); d > 1500*time.Millisecond {
+		t.Fatalf("Online took %v with a QAD-less home relay; the QUIC address discovery probe is back", d)
+	}
+	if tags := e.Endpoints(); len(tags) == 0 || !strings.HasPrefix(tags[0], TagRelay) {
+		t.Fatalf("Endpoints() = %v, want a %s tag first", tags, TagRelay)
+	}
+}

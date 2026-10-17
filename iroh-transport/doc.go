@@ -56,4 +56,8 @@
 // cache (a peer it has talked to before) and otherwise fails with
 // actor.ErrUnreachable — PresetMinimal has no DNS/pkarr discovery by
 // design; piggybacked location records are the discovery layer.
+// The home relay (Options.Relay) is entered in the relay map without a
+// QUIC port, so QUIC address discovery is off by construction and
+// Online does not wait out a probe the relay would never answer
+// (ADR-0022).
 package irohtransport

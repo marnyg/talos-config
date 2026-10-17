@@ -33,6 +33,13 @@ type Options struct {
 	BindAddr string
 	// Relay is the home relay URL to use (RelayMode::Custom); "" ⇒
 	// RelayMode::Disabled. PresetMinimal never adds n0's relays.
+	//
+	// The home relay is assumed to have NO QUIC endpoint: it is entered
+	// in the relay map with quic_port unset, so iroh never runs QUIC
+	// address discovery against it. The deployed relay is plain HTTP
+	// behind fly's TLS terminator with QAD off (ADR-0022), and telling
+	// iroh so up front is what spares every endpoint the ~3 s probe
+	// timeout before Online returns (talos-config-p5g).
 	Relay string
 	// AdvertiseRelay, when set, is the relay URL Endpoints() reports
 	// instead of Relay: the address PEERS reach the same relay server
@@ -106,10 +113,14 @@ func Bind(priv ed25519.PrivateKey, o Options) (*Endpoint, error) {
 	if o.Relay == "" {
 		mode = iroh.RelayModeDisabled()
 	} else {
-		mode, err = iroh.RelayModeCustomFromUrls([]string{o.Relay})
-		if err != nil {
+		// Not RelayModeCustomFromUrls: that fills in iroh's default QAD
+		// port, and probing a relay that has no QUIC endpoint costs ~3 s
+		// at startup. QuicPort nil = no QAD (see Options.Relay).
+		m := iroh.RelayMapEmpty()
+		if err := m.Insert(iroh.RelayConfig{Url: o.Relay}); err != nil {
 			return nil, fmt.Errorf("irohtransport: relay mode: %w", err)
 		}
+		mode = iroh.RelayModeCustom(m)
 	}
 	preset := iroh.PresetMinimal() // crypto provider only: no n0 DNS, pkarr, or relays
 	seed := priv.Seed()            // iroh's SecretKey is the 32-byte Ed25519 seed
