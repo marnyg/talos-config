@@ -132,6 +132,18 @@ func wantRemote(t *testing.T, err error, code string) {
 	}
 }
 
+// countingSigner wraps a cert.Signer and counts Sign calls, so a test can
+// assert an actor never signed (7w5: no signing oracle for strangers).
+type countingSigner struct {
+	cert.Signer
+	n atomic.Int32
+}
+
+func (c *countingSigner) Sign(canon []byte) ([]byte, error) {
+	c.n.Add(1)
+	return c.Signer.Sign(canon)
+}
+
 // rawSend pushes an arbitrary signed envelope over ep to its target and
 // returns the decoded status (bypassing Actor.Send's seq counter).
 func rawSend(t *testing.T, ctx context.Context, ep *MemoryEndpoint, env envelope.Envelope) (Status, envelope.Reply) {
@@ -1019,6 +1031,8 @@ func TestTransportGoroutineRejects(t *testing.T) {
 	b, _, _ := w.actor("b")
 	a, as, aep := w.actor("a")
 	c, _, _ := w.actor("c")
+	bs := &countingSigner{Signer: b.Signer}
+	b.Signer = bs
 	w.start(b)
 
 	// Wrong target: signed for C, delivered to B.
@@ -1038,12 +1052,23 @@ func TestTransportGoroutineRejects(t *testing.T) {
 		t.Fatalf("want wrong-target, got %s", st.Code)
 	}
 	s.Close()
+	if got := bs.n.Load(); got != 1 {
+		t.Fatalf("wrong-target reject must be signed: %d sign calls", got)
+	}
 
-	// Tampered signature.
+	// Tampered signature: stream closed, no reply, no sign call (7w5:
+	// a signed reject to a stranger would be a free signing oracle).
 	e, _ = envelope.Sign(envelope.Envelope{To: envelope.Address{Target: b.ID(), Facet: "x"}, Seq: 1}, as)
 	e.Payload = []byte("tampered")
-	if st, _ := rawSend(t, w.ctx, aep, e); st.Code != StatusBadSig {
-		t.Fatalf("want bad-sig, got %s", st.Code)
+	wire, _ = envelope.Encode(e)
+	s, _ = aep.Dial(w.ctx, b.ID(), nil)
+	_ = s.SendMsg(w.ctx, wire)
+	if _, err := s.RecvMsg(w.ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("want EOF, got %v", err)
+	}
+	s.Close()
+	if got := bs.n.Load(); got != 1 {
+		t.Fatalf("bad-sig must not touch the Signer: %d sign calls", got)
 	}
 	if b.HWM().Peek(a.ID(), b.ID()) != 0 {
 		t.Fatal("cheap rejects must not touch the high-water mark")
