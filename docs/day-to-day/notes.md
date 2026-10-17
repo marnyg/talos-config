@@ -193,18 +193,12 @@
   2026-09-20: both nodes run 0.1.4, so a redeploy is one `MinRebeat`
   from being noticed.
 
-- 2026-09-03 — **Read `desired-state/domain-model.md` §"The three
-  layers" before any authority/identity discussion.** A design session
-  lost an hour to "sovereign" applied to members and an invented
-  "presence" concept; both are defined/retired there. _(Trimmed
-  2026-10-06: the "ADR-0017 still Proposed / nebula executes" tail is
-  history — v3 landed 09-21.)_ <!-- stale? -->
 - 2026-09-05 — **The Quint models are the sharper spec for
   ADR-0015/0017.** Five doc sentences were refuted and ruled the same
   day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
   `verification/quint/{authorize,runway,approval}.qnt` record the
   trace). When the glossary and a model disagree, check the model's
-  header first — it says which ruling applied. <!-- stale? -->
+  header first — it says which ruling applied.
 - 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed and
   partly built** (2026-09-17: Issuer listens in-process, Enroll →
   `#mint-device`, relay child, `/.well-known`; 2026-09-18: `#bundle`
@@ -224,27 +218,11 @@
 
 ## Mesh v3 spike infra (scratch)
 
-- 2026-09-13 — **The owner laptop is a relay-only peer.** Cisco Secure
-  Client's socket-filter extension (+ Defender netext) returns `EPIPE`
-  from `sendmsg` for unsigned binaries to any `en0` destination, so no
-  LAN-direct measurement is valid from here; use two Linux hosts. The
-  home LAN test bed is `mar@nixos` (x86_64 NixOS, 10.0.0.11, nix + docker,
-  no sudo for the agent; firewall blocks inbound UDP on `wlp12s0` unless
-  opened — the rule added 2026-09-13 lasts until reboot) plus Docker
-  Desktop on the mac running the musl `p0relay` under `--platform
-  linux/amd64`. In-process tests (`smoke`) punch to loopback even on
-  the filtered laptop and prove nothing about the host path. <!-- stale? -->
-- 2026-09-13 — `iroh-ffi` tracing (`P0_LOG=debug` in `p0relay`, or
-  `iroh.SetLogLevel`) writes to **stdout**, the Go `logf` to stderr —
-  capture with `>file 2>&1`. Every startup probes UDP 7842 (QAD) on the
-  relay for 3 s and times out (relay has no QUIC); harmless, silenced
-  by `p5g`. <!-- stale? -->
-
 - 2026-09-15 — **Any Talos extension that mounts under `/var` needs
   `depends: - service: cri`**, or `talosctl upgrade`/`reboot` hangs at
   `teardownLifecycle` ("luks2-EPHEMERAL … still in use"). Symptom:
   `talosctl services` shows `ext-nebula`/`ext-iscsid` Finished and the
-  offender still Running; `talosctl service ext-<x> stop` unblocks it. <!-- stale? -->
+  offender still Running; `talosctl service ext-<x> stop` unblocks it.
 
 - 2026-09-16 — **P0.2 scratch on the NixOS box was torn down at the
   gate** (same day): `p0agent-standin`, `~/p0-jf/`, the `/data/p0test`
@@ -430,15 +408,12 @@
   deploys. The devshell's quint is 0.30.0 (flake pin) vs 0.32.0 on
   current nixpkgs — models run on both; `verification/quint/
   _apalache-out/` is gitignored scratch.
-- 2026-09-05 — `nix develop` needs `--impure` (devenv: "was not able
-  to determine the current directory" otherwise). `check.sh verify`
-  takes ~3 min, dominated by `approval.qnt` at depth 12. <!-- stale? -->
 - 2026-09-05 — **Quint laws over many nondet dimensions hold
   vacuously.** `authorize.qnt` with ~40 independent `oneOf`s reached
   Accept with p≈2⁻¹⁵; all 7 seeded mutants survived until a
   boundary-biased generator (valid scenario + ≤2 injected faults)
   was added. Always mutation-test a new model before trusting `[ok]`.
-  Also: never `powerset()` a 25-element set in a generator. <!-- stale? -->
+  Also: never `powerset()` a 25-element set in a generator.
 - 2026-09-06 — **`iroh-go/` builds are slow cold and need the UA
   backport.** crates.io returns 403 to the generic User-Agent the
   flake's 2026-01 nixpkgs `fetchCargoVendor` sends; `iroh-go/nix/
@@ -447,19 +422,19 @@
   upstream fix. Cold on an M-series: iroh-ffi 7–10 min, iroh-relay
   8 min, uniffi-bindgen-go ~45 min; warm `nix build .#iroh-go-smoke`
   44 s. Hand-run `go build` in `iroh-go/` needs
-  `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`. <!-- stale? -->
+  `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`.
 - 2026-09-06 — `nix flake check --impure` is the canonical full check
   and is green since `81u` (18 YAML files yamlfmt'd, 0 semantic
   diffs). `--impure` is required by devenv, see the `flake.nix` header.
   yamlfmt quirk: a flow mapping that is the last sequence item before a
-  comment gets a trailing `,}` — valid YAML, all parsers agree, ugly. <!-- stale? -->
+  comment gets a trailing `,}` — valid YAML, all parsers agree, ugly.
 - 2026-09-06 — **rapid at the default 100 checks is too shallow for
   pair-faults.** In `protocol/cert` the m14 mutant (group rule as set
   overlap) died in only ~6 % of runs at 100 checks; the killing pair is
   ~0.06 % of samples. `TestFaultPairSweep` enumerates the model's fault
   space exhaustively (2424 scenarios, 0.7 s) — add a case there when a
   new law needs a specific pair. `check.sh verify` is now ~5.4 min
-  (`approval` 162 s, `clock` 110 s). <!-- stale? -->
+  (`approval` 162 s, `clock` 110 s).
 - **`pi -p` hangs after completing its answer** when stdin is left
   open. Wrap non-interactive uses: `timeout -k 10 420 pi -p
   --no-session "…" </dev/null`.
@@ -487,33 +462,13 @@
 
 ## CI / orchestration
 
-- 2026-09-12 — `.github/workflows/iroh-go.yml` is path-filtered
-  (`iroh-go/**`, flake files). Measured on the 4-vCPU runner: `smoke`
-  16 m 39 s cold / 45 s warm, `drift` 8 m 41 s (bindgen ~8 min there
-  vs ~45 min on M-series). GH cache evicts after 7 idle days, so a
-  quiet fortnight means a ~25 min cold run; add a weekly `schedule:`
-  if that bites. **Upstream iroh's `.cargo/config.toml` pins
+- 2026-09-12 — **Upstream iroh's `.cargo/config.toml` pins
   `-fuse-ld=lld` for x86_64-linux** — the `iroh-relay` derivation
-  `rm`s it in `postPatch`; keep that when bumping iroh. <!-- stale? -->
-- 2026-09-06 — Swarm orchestration via herdr: `herdr tab create` +
-  `pane split` per worker, `herdr agent start <name> --kind pi --pane
-  <id>`, `herdr agent prompt <name> "<pointer to brief>"`; poll with
-  `herdr agent list | jq '.result.agents[]|select(.name!=null)'`.
-  Workers write `~/git/swarm/_reports/<id>.md`; orchestrator rebases +
-  `--ff-only` merges in dependency order and re-runs gates on `main`.
-  _2026-09-12 update:_ `herdr worktree create --branch swarm/<name>`
-  gives each worker its own workspace + worktree under
-  `~/.herdr/worktrees/talos-config/`; briefs and reports live in
-  `/tmp/swarm/<name>.{task,context,md}` (see `MANIFEST.txt`). <!-- stale? -->
+  `rm`s it in `postPatch`; keep that when bumping iroh.
 - 2026-09-13 — **`git pull --rebase` destroys merge commits.** The
   repo's default rebase flattened all six `merge swarm/*` commits of
   the M2 swarm (content intact, SHAs in bead notes gone). Either
-  `git pull --rebase=merges`, or `git fetch` + inspect before merging. <!-- stale? -->
-- 2026-09-13 — **A worker cut off by API 429 is not lost.** The herdr
-  agent stays alive and `idle` with its context; `herdr pane read
-  <pane> --source recent-unwrapped` shows exactly where it stopped.
-  Check that before re-doing work; uncommitted files survive in the
-  worktree (`git status` there). <!-- stale? -->
+  `git pull --rebase=merges`, or `git fetch` + inspect before merging.
 - 2026-09-13 — `nix flake check --impure` now includes
   `.#iroh-transport` (runs the iroh handshake suite, ~25 s warm).
   Hand-run `go test` in `iroh-transport/` needs both
@@ -521,16 +476,7 @@
   and `IROH_RELAY_BIN=$(nix build .#iroh-relay --print-out-paths)/bin/iroh-relay`
   (relay test skips without the latter). `.#iroh-transport-static`
   exists only on Linux; no Linux builder is configured on the Mac —
-  the CI `static` job is the only place the musl link runs. <!-- stale? -->
-- 2026-09-13 — **`herdr worktree create` + `--base main` cuts from the
-  local `main`**, so wave-2 workers see wave-1 merges only after the
-  orchestrator merged them locally — merge before launching the next
-  wave, never push-and-pull mid-swarm. Retire a worker right after its
-  merge (`herdr worktree remove --workspace <id> --force; git worktree
-  prune; git branch -d`); `create.json` holds the workspace id. <!-- stale? -->
-- 2026-09-13 — CI `static` job (iroh-transport.yml) is `continue-on-error`:
-  a red `static` never fails the workflow. Check it explicitly with
-  `gh run view <id>`; the job id is needed for `--log`. <!-- stale? -->
+  the CI `static` job is the only place the musl link runs.
 - 2026-09-18 — **The next hub deploy asks for two signatures at
   `/status`** (decision `ce8`): the master message as before, plus
   the hubkey speak-as proposal. The proposal is per wallet and names

@@ -12,7 +12,17 @@ ships no USER) with a read-only root fs, admins gate on the Ingress,
 Actual's own server password as the second gate, https name because
 the web app needs a secure context (ADR-0033). Gatus row + Homepage
 tile. Verified live: `/health` UP through the gateway,
-`/account/needs-bootstrap` says not bootstrapped yet.
+owner set the server password the same day; `7yzv` closed.
+
+Same session: **the admins gate became ingress-nginx's
+`global-auth-url`** (`9235085`, `332b463`) — every Ingress is gated
+unless it opts out with `enable-global-auth: "false"` (argocd,
+jellyfin, seerr, siwe-oidc do, each with a comment saying why); the
+19 per-Ingress `auth-url` annotations went. Default flipped from
+open-unless-annotated to gated-unless-opted-out; verified identical
+401/open split from inside the controller and 200 through the
+gateway. `notes.md` lost 8 stale entries (p0relay scratch, herdr
+recipes the swarm skills own, superseded timings).
 
 Previous session (2026-10-20): **Audiobookshelf + Chaptarr in `media`** (`htsj`, `2eff6fa`).
 A `books` RWX volume on `longhorn-bulk` (200Gi, `storage/pvcs.yaml`)
@@ -30,10 +40,14 @@ app (Prowlarr has no Chaptarr type, Prowlarr#2772). Verified live: both
 
 ## Loose threads
 
-- **Actual first run:** open `https://budget.gw.mesh.internal`, set
-  the server password, create or import a budget; then close `7yzv`.
-  OpenID against the SIWE bridge (`ACTUAL_LOGIN_METHOD=openid`) is the
-  path if the household ever needs per-person accounts; not wired.
+- Actual: OpenID against the SIWE bridge (`ACTUAL_LOGIN_METHOD=openid`)
+  is the path if the household ever needs per-person accounts; not
+  wired.
+- ADR-0032 still says "one Ingress annotation per app" for the gate;
+  the mechanism is now the controller default (comments in
+  `k8s/apps/media/ingress.yaml` and `ingress-nginx/application.yaml`
+  are the authoritative description). An amendment line on the ADR
+  would close the gap.
 
 - **Chaptarr first run in the UI:** root folders `/books/audiobooks`
   and `/books/ebooks` (per-format profile object, not scriptable before
@@ -59,7 +73,6 @@ app (Prowlarr has no Chaptarr type, Prowlarr#2772). Verified live: both
 
 ## Suggested next steps
 
-- Actual: set the server password, import the first budget.
 - Do the two first-run setups above, drop one audiobook in, confirm
   Chaptarr import → ABS scan end to end; then close `htsj`.
 - Add indexers to Prowlarr so the pairing carries something.
