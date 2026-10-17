@@ -120,6 +120,15 @@ cluster:
                   # cmd-params is consumed as env — pods only see it on restart.
                   kubectl -n argocd rollout restart deployment argocd-server
 
+                  # The root Application (app of apps). It syncs ONLY
+                  # k8s/clusters/homelab: the ApplicationSet there emits one
+                  # Application per k8s/apps/<name>, plus the AppProjects.
+                  # The root refers to project `platform`, so that project
+                  # must exist before the root does — applied here from the
+                  # same file git carries, and adopted by the root on its
+                  # first sync.
+                  kubectl apply -f https://raw.githubusercontent.com/marnyg/talos-config/main/k8s/clusters/homelab/appproject-platform.yaml
+
                   kubectl apply -f - <<'EOF'
                   apiVersion: argoproj.io/v1alpha1
                   kind: Application
@@ -127,22 +136,18 @@ cluster:
                     name: apps
                     namespace: argocd
                   spec:
-                    project: default
+                    project: platform
                     source:
                       repoURL: https://github.com/marnyg/talos-config.git
                       targetRevision: main
-                      path: k8s/apps
-                      directory:
-                        recurse: true
+                      path: k8s/clusters/homelab
                     destination:
                       server: https://kubernetes.default.svc
-                      namespace: default
+                      namespace: argocd
                     syncPolicy:
                       automated:
                         prune: true
                         selfHeal: true
-                      syncOptions:
-                        - SkipDryRunOnMissingResource=true
                   EOF
               restartPolicy: OnFailure
           backoffLimit: 3

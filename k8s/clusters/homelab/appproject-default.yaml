@@ -1,0 +1,25 @@
+# ArgoCD's built-in `default` AppProject, emptied. ArgoCD recreates it
+# if deleted and refuses to delete it while it exists, so the end state
+# of "nothing lives in default" is an object with no source, no
+# destination, and no cluster-resource reach: any Application that
+# lands here — by omission of `spec.project`, by a stale manifest, or
+# by a copy-paste from upstream docs — fails validation ("repository
+# not permitted in project") instead of silently getting wildcard
+# access to the cluster.
+#
+# Every Application in this repo lives in `platform`
+# (appproject-platform.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: argocd
+  annotations:
+    # After `platform` (wave -1) — never before, so a migrating cluster
+    # cannot have the root `apps` stranded in an emptied default.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  description: Intentionally empty — see appproject-default.yaml
+  sourceRepos: []
+  destinations: []
+  clusterResourceWhitelist: []

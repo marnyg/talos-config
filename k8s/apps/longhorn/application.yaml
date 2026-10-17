@@ -31,7 +31,7 @@ metadata:
   name: longhorn
   namespace: argocd
 spec:
-  project: default
+  project: platform
   source:
     repoURL: https://charts.longhorn.io
     chart: longhorn

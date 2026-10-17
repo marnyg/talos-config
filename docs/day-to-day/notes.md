@@ -1055,9 +1055,10 @@
   the session with the old build still in the store
   (`/nix/store/2qd228lh58rf32y16sr0d16hlcvcraiv-herdr-0.8.2/bin/herdr`;
   `ls -d /nix/store/*herdr-0.8*`). Restart herdr at a natural break.
-- 2026-10-06 — **Draft manifests never go under `k8s/apps/`**: the root
-  ArgoCD Application is `path: k8s/apps, recurse, selfHeal`, so a
-  committed draft deploys on push. Spike drafts park in
+- 2026-10-06 — **Draft manifests never go under `k8s/apps/`**: every
+  directory there is an auto-synced ArgoCD Application (listed in
+  `k8s/clusters/homelab/cluster.yaml`, selfHeal), so a committed draft
+  deploys on push. Spike drafts park in
   `docs/spikes/<slug>/` and are promoted with `git mv` (see
   `docs/README.md`).
 - 2026-10-06 — **A stray `~` file at the repo root** was an editor

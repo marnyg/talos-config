@@ -1,0 +1,150 @@
+# The app of apps. Synced from git by the root `apps` Application
+# (argocd-installer Job, talos/clusters/homelab/cluster.yaml), this
+# ApplicationSet emits one `platform-<name>` Application per directory
+# under k8s/apps. Adding a workload = a new directory + one line here.
+#
+# Why one Application per directory and not one root that recurses
+# k8s/apps (the shape before 2026-10-22): a single Application is a
+# single sync operation, so one unhealthy wave-0 resource anywhere held
+# every other directory's changes until the op was terminated by hand
+# (talos-config-1ova: hit by vms/ 2026-09-29, by forgejo-runner
+# 2026-10-17). Sync waves, hooks, SSA and health gating now scope to
+# the directory that declares them. Same shape as mono-dees-nuts'
+# clusters/<cluster>/cluster.yaml, minus overlays — one cluster, no
+# environment variance, so each child points straight at its directory
+# (plain-directory source; the .md/.sh/.nix/.py files beside the
+# manifests are ignored).
+#
+# Children are plain directories, not kustomizations, on purpose: the
+# directories are flat and the repo had no kustomize before; the day a
+# directory needs patches or generators, give THAT directory a
+# kustomization.yaml and ArgoCD switches tool per source automatically.
+#
+# Cross-directory ordering (CRDs before CRs: sealed-secrets before any
+# SealedSecret, kube-prometheus-stack before ServiceMonitors, kubevirt/
+# cdi before vms) is not expressed here — the list generator emits all
+# children at once and each one retries on its own (retry block below)
+# until its CRDs exist. CRs whose CRD arrives through another child
+# carry the per-resource annotation
+#   argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+# where needed; the app-level form below is kept for parity with the
+# old root but gitops-engine only honours the per-resource one.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: homelab
+  namespace: argocd
+spec:
+  goTemplate: true
+  # A child whose Application has been deleted by hand is recreated on
+  # the next reconcile; a child removed from this list is deleted WITH
+  # its resources (the ApplicationSet owns the Application, and the
+  # Application prunes on delete via the resources finalizer the
+  # controller adds). Remove a line only when the directory's resources
+  # are meant to go.
+  syncPolicy:
+    preserveResourcesOnDeletion: false
+  generators:
+    - list:
+        elements:
+          # --- platform: ArgoCD itself, storage, ingress, secrets
+          # ArgoCD's own ConfigMaps + SSA partials on its Deployments
+          # (k8s/apps/argocd). Reconciled by ArgoCD like everything else.
+          - {name: argocd}
+          # Sealed Secrets controller: every *.sealed.yaml in the repo
+          # decrypts through it. First CRD other children wait on.
+          - {name: sealed-secrets}
+          # Longhorn (ADR-0011): nested Helm Application + the UI Ingress.
+          - {name: longhorn}
+          # StorageClasses (nvme / bulk / user tiers) + the shared RWX
+          # PVCs the media apps mount.
+          - {name: storage}
+          # ingress-nginx (ADR-0009): nested Helm Application; the admins
+          # gate is its global-auth-url.
+          - {name: ingress-nginx}
+          # In-cluster gateway (ADR-0026): the mesh-facing pod that
+          # terminates *.gw.mesh.internal and stamps X-Mesh-Name.
+          - {name: gateway}
+          # SIWE→OIDC bridge (ADR-0010): the only IdP.
+          - {name: siwe-oidc}
+          # --- observability
+          # kube-prometheus-stack, Loki, Alloy, metrics-server (nested
+          # Helm Applications), dashboards, etcd scrape config.
+          - {name: monitoring}
+          # Gatus uptime page.
+          - {name: gatus}
+          # Homepage dashboard.
+          - {name: homepage}
+          # --- virtualisation
+          # KubeVirt operator + CR (per-resource SSA annotation).
+          - {name: kubevirt}
+          # CDI operator + CR (per-resource SSA annotation).
+          - {name: cdi}
+          # win2k25 VM: ISO import → repack Job → VM in sync waves 1-2,
+          # gated on the DataVolume health check in argocd/config.yaml.
+          # Its own Application now, so a stuck import no longer holds
+          # the rest of the repo (1ova).
+          - {name: vms}
+          # --- media
+          # media namespace, Ingress for the *arr stack, shared secrets.
+          - {name: media}
+          - {name: jellyfin}
+          - {name: sonarr}
+          - {name: radarr}
+          - {name: prowlarr}
+          - {name: jackett}
+          - {name: seerr}
+          - {name: nzbget}
+          - {name: transmission}
+          - {name: libation}
+          - {name: chaptarr}
+          - {name: audiobookshelf}
+          # --- apps
+          - {name: homeassistant}
+          - {name: vaultwarden}
+          - {name: actual}
+          - {name: workouts}
+          - {name: files}
+          - {name: sillytavern}
+          - {name: nix-cache}
+          # --- forge + agents
+          - {name: forgejo}
+          - {name: forgejo-runner}
+          # Sandbox RuntimeClass + the agent Job (ADR-0036).
+          - {name: sandbox}
+          # Sovereign-actor protocol: provisioner + lighthouse.
+          - {name: sap-provisioner}
+          - {name: sap-lighthouse}
+  template:
+    metadata:
+      name: 'platform-{{ .name }}'
+      namespace: argocd
+    spec:
+      project: platform
+      source:
+        repoURL: https://github.com/marnyg/talos-config.git
+        path: 'k8s/apps/{{ .name }}'
+        targetRevision: main
+      destination:
+        server: https://kubernetes.default.svc
+        # Every manifest in k8s/apps carries its own metadata.namespace;
+        # this is the fallback the old root used, kept identical.
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        # Cold-bootstrap wedge guard: automated sync does NOT re-attempt
+        # a failed sync of the same revision unless a retry policy
+        # exists — a first-sync failure (CRD/webhook race, a SealedSecret
+        # before its controller) would otherwise wedge the child at
+        # OutOfSync until the next commit. ~15 min of budget, enough for
+        # the CRD children to settle on a reinstall.
+        retry:
+          limit: 10
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m
+        syncOptions:
+          - SkipDryRunOnMissingResource=true

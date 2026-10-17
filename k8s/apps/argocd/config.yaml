@@ -8,9 +8,10 @@
 # cost concrete — the rebuilt cluster came up with no oidc.config, no
 # policy.csv, and dex resurrected.
 #
-# Here they are ordinary manifests under the root `apps` Application
-# (path k8s/apps, recurse, selfHeal) — so they follow git HEAD and
-# self-heal, exactly like every other app in this repo.
+# Here they are ordinary manifests in the `platform-argocd` Application
+# (one of the children k8s/clusters/homelab/cluster.yaml emits, selfHeal)
+# — so they follow git HEAD and self-heal, exactly like every other app
+# in this repo.
 #
 # These are partial ConfigMaps on purpose: upstream install.yaml creates
 # each one and owns the keys we do not declare. ArgoCD's apply semantics

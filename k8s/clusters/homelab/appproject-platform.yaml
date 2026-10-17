@@ -1,0 +1,38 @@
+# The `platform` AppProject: home of every Application in this repo —
+# the `platform-<name>` children the ApplicationSet in cluster.yaml
+# emits, and the Helm Applications some of them nest (longhorn,
+# ingress-nginx, the monitoring charts). Nothing lives in `default`,
+# which appproject-default.yaml empties.
+#
+# Permissions are deliberately as wide as `default` used to be (any
+# repo, any destination, any cluster resource): the cluster has one
+# owner and one tenant, so a project boundary buys nothing here. The
+# value of this object is its *name* — it lets `default` be emptied so
+# that an Application that forgets `spec.project` fails validation
+# instead of silently getting wildcard reach under the project ArgoCD
+# ships with.
+#
+# Two writers, one object: this git copy is synced by the root `apps`
+# Application, but `apps` itself refers to project `platform`, so the
+# object must already exist when the root is created. The
+# argocd-installer Job applies the identical manifest first; ArgoCD
+# adopts it on the first sync.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    # Ahead of the ApplicationSet (wave 0) so the Applications it
+    # emits never reference a project that does not exist yet.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Everything in this repo (k8s/clusters, k8s/apps/*)
+  sourceRepos:
+    - "*"
+  destinations:
+    - server: "*"
+      namespace: "*"
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"

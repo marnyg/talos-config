@@ -1,0 +1,12 @@
+# Synced by the root `apps` Application, which the argocd-installer Job
+# (talos/clusters/homelab/cluster.yaml) applies once at cluster
+# bring-up. Everything in this directory is continuously reconciled
+# from git — editing cluster.yaml on main IS the deploy. The root owns
+# only this directory; each workload under k8s/apps/<name> is its own
+# Application, emitted by the ApplicationSet in cluster.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - cluster.yaml
+  - appproject-platform.yaml
+  - appproject-default.yaml

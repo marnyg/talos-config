@@ -5,8 +5,10 @@ package main
 // here acts (ADR-0027: why this and not an in-cluster alerter or a
 // scoped token). One dial, one client cert, two GETs per poll:
 //
-//   - gitops: ArgoCD's root Application (`apps`, the one that recurses
-//     k8s/apps) and its two ages — this file.
+//   - gitops: ArgoCD's root Application (`apps`, the app of apps that
+//     syncs k8s/clusters/homelab; the per-directory children it emits
+//     are NOT watched — talos-config-2c2x) and its two ages — this
+//     file.
 //   - storage: Longhorn's Volume list and its robustness — storage.go
 //     (cnb5).
 //
