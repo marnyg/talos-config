@@ -160,16 +160,20 @@ history and, where the numbers still matter, in ADR-0006 and
   -provisioner-id <P>` — nothing is read off a pod. Directory is
   volatile: a restart empties it until the provisioner's next beat
   (≤ 1 min).
-- **ArgoCD** _(verified 2026-09-30)_: `apps` Synced/Healthy at
-  `64dbc94`, ops completing. `argocd-application-controller` is pinned
-  to the control plane (`k8s/apps/argocd/controller-patch.yaml`).
-  The hub's `/status` **gitops** row reads the root app over cp1's
-  `kube-api` every 5 min and warns on a reconcile > 20 min old or a
-  sync op Running > 30 min (`config-server/clusterwatch.go`). The 09-29
-  hang (op waiting on the ghost gateway pod) ended with the w1 taint.
-  Hit again 2026-10-17 by a never-healthy forgejo-runner Deployment:
-  one unhealthy wave-0 resource anywhere holds the whole op
-  (`1ova`); terminate recipe in notes.md 2026-09-29.
+- **ArgoCD** _(verified 2026-10-22)_: app of apps (ADR-0040). Root
+  `apps` syncs `k8s/clusters/homelab/`; its ApplicationSet `homelab`
+  emits `platform-<name>` for each of the 37 `k8s/apps/<name>`
+  directories; 6 nested Helm Applications (longhorn, ingress-nginx,
+  kube-prometheus-stack, loki, alloy, metrics-server). All 44 in
+  AppProject `platform`, Synced/Healthy at `8045820`; `default` is
+  emptied. `argocd-application-controller` is pinned to the control
+  plane (`k8s/apps/argocd/controller-patch.yaml`). The hub's `/status`
+  **gitops** row reads the root app only over cp1's `kube-api` every
+  5 min and warns on a reconcile > 20 min old or a sync op Running
+  > 30 min (`config-server/clusterwatch.go`) — a stuck child is not
+  seen (`2c2x`). Pre-AoA history: the 09-29 hang (op waiting on the
+  ghost gateway pod) ended with the w1 taint; 2026-10-17 a
+  never-healthy forgejo-runner held the whole tree (`1ova`, now moot).
 - **Nix caches + CI** _(verified 2026-10-17; ADR-0039, `kyiy`,
   `0m50`)_: ns `nix-cache` holds a pull-through `nixos-mirror`
   (hostPort 5000 on nas1, `cache.lan` once the router has the record) and Attic

@@ -1196,3 +1196,11 @@
 - 2026-10-17 — New ghcr packages default to **private**, and only the
   browser can change that (Danger Zone; you must type the package name
   to confirm). A node pull gets 401 until then.
+- 2026-10-22 — **A new `k8s/apps/<name>` directory deploys nothing until
+  it has a line in `k8s/clusters/homelab/cluster.yaml`** (ADR-0040).
+  Conversely, deleting a line deletes the directory's resources (the
+  ApplicationSet adds the resources finalizer). Per-child ops:
+  `argocd app terminate-op platform-<name>`; the 2026-09-29 recipe
+  for the root no longer applies to workloads. The six Helm charts are
+  still their own Applications (`longhorn`, `loki`, …) nested in
+  `platform-<dir>`.

@@ -991,7 +991,8 @@ provisioning or recovery path may depend on it.
   (ruled 2026-09-06, `qrb`; EIP-712 single-act ruled out 2026-09-16,
   `ce8`).
 - **Workload plane** — Kubernetes on the machines: ArgoCD syncs
-  `k8s/` from git; the gateway terminates `ingress-http` and
+  `k8s/` from git as an app of apps (ADR-0040: one Application per
+  `k8s/apps/<name>`, emitted from `k8s/clusters/homelab/`); the gateway terminates `ingress-http` and
   ingress-nginx routes `<svc>.gw.mesh.internal` by Host (the last
   nebula-zone Ingress host, `jellyfin.cp1`, was cut 2026-09-20 once
   the TV moved to `jellyfin.gw`, `359.9.4.5`/`vftt`); SIWE→OIDC

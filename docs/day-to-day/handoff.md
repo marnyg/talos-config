@@ -4,35 +4,41 @@
      Backward-looking. Resets each session. -->
 
 ## Last session
-2026-10-17: **CI on the cluster feeds the Nix cache** (`0m50`, closed;
-ADR-0039 Accepted). `k8s/apps/forgejo-runner`: one host-mode
-forgejo-runner (`cluster-nix`, image `b60f951`, PSS baseline, nixbld
-build users, credentials on memory emptyDirs) runs
-`.forgejo/workflows/nix-cache.yml` from the pull-mirror
-`mirrors/talos-config` on each push, nightly and on dispatch. It builds
-every x86_64-linux package of this flake and the desktop, laptop and
-wsl toplevels of `marnyg/nixos`, then pushes them to Attic. Verified:
-run #9 green; config-server and all three `nixos-system-*` HIT from the
-Mac over the mesh. Getting there took nine runs and five fixes (run
-token for the private mirror, honest store registration, build users,
-attic endpoint pin, attic chunking off). Each is in `git log` and the
-image.nix/attic-config comments. Also: attic memory limit 2Gi, runner
-ns warn/audit baseline, invariant 8 enforced on the runner (`7828ce2`).
+2026-10-22: **ArgoCD became an app of apps** (`pe8m`, `8045820`;
+ADR-0040 Accepted). The root `apps` Application now syncs
+`k8s/clusters/homelab/` — an ApplicationSet (list generator) that
+emits one `platform-<name>` Application per `k8s/apps/<name>`
+directory, plus AppProject `platform` (everything) and an emptied
+`default` (fails closed). The six nested Helm Applications moved to
+`platform`. Children are plain directories (no kustomize, no
+overlays — one cluster), uniform template: automated prune+selfHeal,
+retry 10×/3m, `SkipDryRunOnMissingResource`. Installer Job applies
+the `platform` AppProject from the raw git URL before the root.
+Live cutover: root re-applied with `prune: false`, 37 children +
+6 nested adopted every resource in ~30 s, zero left on
+`instance=apps`, no pod bounced, prune re-enabled. `1ova` is closed
+by construction (a stuck `platform-vms` holds only itself). Shape
+from mono-dees-nuts' `clusters/<cluster>/cluster.yaml`.
 
-Parallel session, same worktree (its dates read 2026-10-20/21): **Actual
-Budget** (`7yzv`) at `budget.gw.mesh.internal` (Vaultwarden posture,
-verified live); **the admins gate became ingress-nginx's
-`global-auth-url`**: gated unless an Ingress opts out with
-`enable-global-auth: "false"` (argocd, jellyfin, seerr, siwe-oidc);
-**Audiobookshelf + Chaptarr** in `media` (`htsj`) on a shared `books`
-volume, both 200 through the gateway.
+Previous sessions (2026-10-17→21): CI on the cluster feeds the Nix
+cache (`0m50`, ADR-0039; nine runs, fixes in `git log` and the
+image.nix/attic-config comments); Actual Budget (`7yzv`); the admins
+gate became ingress-nginx's `global-auth-url` (opt out with
+`enable-global-auth: "false"`); Audiobookshelf + Chaptarr (`htsj`).
 
 ## Loose threads
 
+- **Adding a workload now needs a line in
+  `k8s/clusters/homelab/cluster.yaml`** as well as the directory; a
+  directory without a line is silently not deployed. Removing a line
+  deletes the directory's resources (ApplicationSet finalizer).
+- The hub's gitops row (`/status`) watches only the root `apps`; a
+  stuck child sync — the `9l67` symptom — is invisible to it (`2c2x`).
+- `deployed-state.md` ArgoCD line and the 2026-09-29 terminate recipe
+  in notes.md describe the pre-AoA shape; the recipe still works per
+  child (`argocd app terminate-op platform-<name>`).
 - `3leu` (debt): the sandbox agent's Forgejo token header still sits
   on a disk-backed emptyDir (invariant 8, same fix as the runner).
-- `1ova` (debt): one unhealthy wave-0 resource holds the whole `apps`
-  sync op (vms/ waves). Bit again today; terminate recipe in notes.md.
 - The runner image builds on the laptop path (`build.sh`, box via
   `HUB_BUILDER`); CI caches it but doesn't push to ghcr.
 - Darwin outputs (the Mac) are still built by no one. The Mac needs the
