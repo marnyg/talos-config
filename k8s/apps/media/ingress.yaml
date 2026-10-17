@@ -7,7 +7,10 @@
 # browser TLS, if an app ever forces it, is a device-local matter
 # (ADR-0033; no mesh CA).
 #
-# The auth-url annotation is the group gate (ADR-0032): nginx makes an
+# The group gate (ADR-0032) is the controller's global-auth-url
+# (k8s/apps/ingress-nginx), so every Ingress has it unless it opts out
+# with enable-global-auth: "false" (as Jellyfin and Seerr do below) or
+# names another group with its own auth-url: nginx makes an
 # auth_request subrequest per request to the bridge's /authz, carrying
 # the X-Mesh-Token the gateway signed for this request; the bridge
 # verifies it against the gateway id pinned in git and answers 200 iff
@@ -30,6 +33,7 @@ metadata:
   name: jellyfin
   namespace: media
   annotations:
+    nginx.ingress.kubernetes.io/enable-global-auth: "false"
     # Dashboard tile (k8s/apps/homepage/config.yaml explains).
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Jellyfin
@@ -297,6 +301,7 @@ metadata:
   name: seerr
   namespace: media
   annotations:
+    nginx.ingress.kubernetes.io/enable-global-auth: "false"
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Seerr
     gethomepage.dev/group: Media

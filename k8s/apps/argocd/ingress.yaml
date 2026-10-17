@@ -3,13 +3,16 @@
 # config.yaml alongside this file) so it serves
 # HTTP instead of redirecting to its self-signed TLS. Sign-in is OIDC
 # against the SIWE bridge — the wallet is the identity (sketch
-# 162c630d); the local admin account remains as break-glass.
+# 162c630d); the local admin account remains as break-glass. Opted out
+# of the controller's default admins gate (k8s/apps/ingress-nginx) on
+# purpose: ArgoCD has its own person gate (OIDC) and RBAC per user.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: argocd-server
   namespace: argocd
   annotations:
+    nginx.ingress.kubernetes.io/enable-global-auth: "false"
     # Dashboard tile (k8s/apps/homepage/config.yaml explains); the
     # ingress name matches argocd-server's app.kubernetes.io/name, so
     # no pod-selector.

@@ -39,6 +39,15 @@ spec:
             type: ClusterIP
           config:
             use-forwarded-headers: "true"
+            # The group gate (ADR-0032) as the default: every Ingress
+            # gets an auth_request subrequest to the SIWE bridge's
+            # /authz for group admins unless it opts out with
+            # nginx.ingress.kubernetes.io/enable-global-auth: "false"
+            # (k8s/apps/media/ingress.yaml explains the mechanism). An
+            # Ingress added without thinking about access is therefore
+            # admins-only, not open; a per-Ingress auth-url still takes
+            # precedence when an app needs another group.
+            global-auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
           ingressClassResource:
             default: true
           # Per-Ingress request rate, latency and status codes for every

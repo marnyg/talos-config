@@ -17,8 +17,10 @@
 # device-local presentation if an app ever forces it, ADR-0033).
 #
 # New relying party = new -client arg here + the client-side config.
-# New gated service = one auth-url annotation on its Ingress
-# (k8s/apps/media/ingress.yaml). New gateway = its member id in a
+# New gated service = nothing: every Ingress is admins-gated by the
+# controller's global-auth-url (k8s/apps/ingress-nginx); an open or
+# differently gated one says so on its Ingress
+# (k8s/apps/media/ingress.yaml explains). New gateway = its member id in a
 # -gateway arg (the pod logs "identity token issuer ed:…" at start).
 # Image: built by .github/workflows/siwe-oidc-image.yml, pinned here
 # by :<commit>@digest; a new build is a pin bump.
@@ -133,11 +135,16 @@ spec:
     - port: 80
       targetPort: 8080
 ---
+# Open: the bridge is the gate's own issuer and the OIDC endpoints the
+# relying parties' browsers redirect to; it authenticates on its own
+# terms (the wallet signature). Gating it on itself would be circular.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: siwe-oidc
   namespace: sso
+  annotations:
+    nginx.ingress.kubernetes.io/enable-global-auth: "false"
 spec:
   ingressClassName: nginx
   rules:
