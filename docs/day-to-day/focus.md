@@ -28,7 +28,9 @@ beyond the PWA; first account + extension pairing remain. **Detour
 WebSocket bug (`o8wd`, `protocol/facethttp` read deadlines); the
 discovery question (`b311`) remains. **Detour 2026-10-20, done:**
 Audiobookshelf + Chaptarr (`htsj`) on a shared `books` library;
-first-run UI setup on both remains. Back to the line above.
+first-run UI setup on both remains. **Detour 2026-10-21, done:** Actual
+Budget (`7yzv`) at `budget.gw.mesh.internal`, Vaultwarden posture;
+server password + first budget remain. Back to the line above.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for

@@ -4,7 +4,17 @@
      Backward-looking. Resets each session. -->
 
 ## Last session
-2026-10-20: **Audiobookshelf + Chaptarr in `media`** (`htsj`, `2eff6fa`).
+2026-10-21: **Actual Budget** (`7yzv`, `194eefc`) at
+`budget.gw.mesh.internal` — `k8s/apps/actual`, the Vaultwarden
+posture copied: one 2Gi Longhorn volume (`server-files/` +
+`user-files/`), `26.10.0-alpine` by digest run as uid 1000 (the image
+ships no USER) with a read-only root fs, admins gate on the Ingress,
+Actual's own server password as the second gate, https name because
+the web app needs a secure context (ADR-0033). Gatus row + Homepage
+tile. Verified live: `/health` UP through the gateway,
+`/account/needs-bootstrap` says not bootstrapped yet.
+
+Previous session (2026-10-20): **Audiobookshelf + Chaptarr in `media`** (`htsj`, `2eff6fa`).
 A `books` RWX volume on `longhorn-bulk` (200Gi, `storage/pvcs.yaml`)
 holds `audiobooks/` and `ebooks/`; `k8s/apps/chaptarr` (Readarr fork,
 `0.9.965` by digest, port 8789, uid 1000, one root init chowns the
@@ -18,10 +28,12 @@ NZBgeek (3030/7000/7020), and registers in Prowlarr as a **Readarr**
 app (Prowlarr has no Chaptarr type, Prowlarr#2772). Verified live: both
 200 through the gateway, clients/indexer/pairing present.
 
-Previous session (2026-10-17): Home Assistant + the gateway WebSocket
-fix (`o8wd`).
-
 ## Loose threads
+
+- **Actual first run:** open `https://budget.gw.mesh.internal`, set
+  the server password, create or import a budget; then close `7yzv`.
+  OpenID against the SIWE bridge (`ACTUAL_LOGIN_METHOD=openid`) is the
+  path if the household ever needs per-person accounts; not wired.
 
 - **Chaptarr first run in the UI:** root folders `/books/audiobooks`
   and `/books/ebooks` (per-format profile object, not scriptable before
@@ -47,6 +59,7 @@ fix (`o8wd`).
 
 ## Suggested next steps
 
+- Actual: set the server password, import the first budget.
 - Do the two first-run setups above, drop one audiobook in, confirm
   Chaptarr import → ABS scan end to end; then close `htsj`.
 - Add indexers to Prowlarr so the pairing carries something.
