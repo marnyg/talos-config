@@ -45,6 +45,9 @@ data:
         SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
         NIX_SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
         FORGEJO_SVC: http://forgejo.forgejo.svc:3000
+        # A git auth failure must fail the step, not wait for a
+        # terminal that never comes (run #1 hung on exactly that).
+        GIT_TERMINAL_PROMPT: "0"
     cache:
       enabled: false
     host:

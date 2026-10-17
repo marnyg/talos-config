@@ -25,6 +25,13 @@
 # fetches the repo itself: `git+$FORGEJO_SVC/<owner>/<repo>?rev=` is
 # the in-cluster Service (config.yaml), not GITHUB_SERVER_URL, which
 # is the mesh name no pod resolves. shortRev survives (image tags).
+# The fetch authenticates with the run's own token (read on this repo,
+# gone when the run ends) through a credential helper given by env and
+# scoped to the Forgejo Service URL (no other host ever sees it) —
+# nix's git fetcher runs `git fetch`, which reads GIT_CONFIG_*; nothing
+# lands in /root/.gitconfig, shared by every run. Without it the fetch
+# depends on the `mirrors` org being public to anonymous readers,
+# which it is not (forgejo/bootstrap.md step 3).
 name: nix-cache
 on:
   push:
@@ -37,6 +44,12 @@ jobs:
     runs-on: nix
     steps:
       - name: build and push to attic
+        env:
+          RUN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_TERMINAL_PROMPT: "0"
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: credential.http://forgejo.forgejo.svc:3000.helper
+          GIT_CONFIG_VALUE_0: '!f() { echo username=forgejo-actions; echo "password=$RUN_TOKEN"; }; f'
         run: |
           set -u
           self="git+$FORGEJO_SVC/$GITHUB_REPOSITORY?ref=$GITHUB_REF_NAME&rev=$GITHUB_SHA"

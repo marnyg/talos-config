@@ -55,8 +55,12 @@ secrets controller has unsealed them (ArgoCD polls ~3 min).
 `.forgejo/workflows/nix-cache.yml` lives in this repo on GitHub
 (decision 4la8: GitHub is the source of truth); Forgejo runs it from
 the pull-mirror `mirrors/talos-config`. A mirror sync is a push event,
-so the workflow fires within `mirror_interval` of a push to main.
-Public: the mirror of a public repo, readable past the mesh gate.
+so the workflow fires within `mirror_interval` of a push to main (the
+initial import fires nothing — `POST …/mirror-sync` or "Run workflow"
+for a first run). `private: false`, but the repo is only as visible as
+its org, and `mirrors` is not public (forgejo/bootstrap.md step 3), so
+anonymous reads 404; the workflow fetches with the run's own token and
+does not care.
 
 ```sh
 read -rs ADMIN_PW   # kubectl -n forgejo get secret forgejo-sysadmin -o jsonpath='{.data.password}' | base64 -d
