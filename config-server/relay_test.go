@@ -10,10 +10,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // upgradeEcho is a stand-in for the relay's /relay handler: it accepts an
@@ -148,7 +151,7 @@ func TestRelayRoutesAbsentWithoutRelay(t *testing.T) {
 	s := newTestServer(t)
 	ts := httptest.NewServer(s.mux())
 	defer ts.Close()
-	for _, p := range relayPaths {
+	for _, p := range append(slices.Clone(relayPaths), relayAccessPath) {
 		if code, _ := get(t, ts.Client(), ts.URL+p); code != http.StatusNotFound {
 			t.Errorf("%s without --relay-bin: got %d, want 404", p, code)
 		}
@@ -156,12 +159,13 @@ func TestRelayRoutesAbsentWithoutRelay(t *testing.T) {
 }
 
 func TestRelayConfigShape(t *testing.T) {
-	cfg := relayConfig(4321)
+	cfg := relayConfig(4321, relayHook{})
 	for _, want := range []string{
 		`http_bind_addr = "127.0.0.1:4321"`,  // loopback only: the hub is the entrypoint
 		`enable_quic_addr_discovery = false`, // ADR-0022: no QAD without a relay-owned cert
 		`enable_metrics = false`,
 		`enable_relay = true`,
+		`access = "everyone"`, // no hook ⇒ today's behaviour
 	} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("relay.toml missing %q:\n%s", want, cfg)
@@ -169,6 +173,151 @@ func TestRelayConfigShape(t *testing.T) {
 	}
 	if strings.Contains(cfg, "[tls]") || strings.Contains(cfg, "tls") {
 		t.Errorf("relay.toml must not configure TLS (fly terminates it):\n%s", cfg)
+	}
+}
+
+// TestRelayConfigShapeGated: with a hook the TOML selects iroh-relay's
+// http access (5gz) — the url, and nothing of the bearer, which rides
+// the child's environment instead.
+func TestRelayConfigShapeGated(t *testing.T) {
+	h := testRelayHook(func(cert.ActorID) (bool, string) { return true, "x" })
+	cfg := relayConfig(4321, h)
+	for _, want := range []string{
+		`http_bind_addr = "127.0.0.1:4321"`,
+		"\n[access.http]\nurl = \"http://127.0.0.1:8080/relay/access\"\n",
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("relay.toml missing %q:\n%s", want, cfg)
+		}
+	}
+	for _, no := range []string{`access = "everyone"`, "bearer", h.Token} {
+		if strings.Contains(cfg, no) {
+			t.Errorf("relay.toml must not contain %q:\n%s", no, cfg)
+		}
+	}
+	// The table must come last: TOML keys after a [table] header belong
+	// to that table, and enable_relay inside [access.http] is a parse
+	// error that would keep the child from starting.
+	if i, j := strings.Index(cfg, "[access.http]"), strings.LastIndex(cfg, "\nenable_"); i < j {
+		t.Errorf("top-level keys after [access.http]:\n%s", cfg)
+	}
+}
+
+// testRelayHook is a fully specified hook with a fixed token.
+func testRelayHook(admit func(cert.ActorID) (bool, string)) relayHook {
+	return relayHook{
+		URL:   "http://127.0.0.1:8080" + relayAccessPath,
+		Token: strings.Repeat("ab", 32),
+		Admit: admit,
+	}
+}
+
+// accessPost speaks the hook contract the way iroh-relay 1.1.0 does:
+// POST with X-Iroh-NodeId and an optional bearer.
+func accessPost(t *testing.T, c *http.Client, url, bearer, endpointID string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	if endpointID != "" {
+		req.Header.Set("X-Iroh-NodeId", endpointID)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, strings.TrimSpace(string(b))
+}
+
+// TestRelayAccessHook: the hub-side half of the contract. 401 without
+// the bearer (the public surface is not a membership oracle), then
+// exactly "true"/200 or "false"/403 from Admit, with the status line
+// reflecting the mode and the counts.
+func TestRelayAccessHook(t *testing.T) {
+	mode := "open (cold)"
+	admit := func(id cert.ActorID) (bool, string) {
+		if strings.HasPrefix(mode, "open") {
+			return true, mode
+		}
+		return id == testMemberID, mode
+	}
+	rs := &relaySupervisor{hook: testRelayHook(admit), deniedSeen: map[cert.ActorID]struct{}{}}
+	s := newTestServer(t)
+	s.relay = rs
+	hub := httptest.NewServer(s.mux())
+	defer hub.Close()
+	u := hub.URL + relayAccessPath
+	hexID := func(id cert.ActorID) string { return strings.TrimPrefix(string(id), "ed:") }
+
+	if line, _ := rs.statusLine(); !strings.Contains(line, "access: hook wired, no connects yet") {
+		t.Fatalf("status before any connect: %q", line)
+	}
+	// Auth first: no bearer, wrong bearer, GET.
+	if code, _ := accessPost(t, hub.Client(), u, "", hexID(testMemberID)); code != http.StatusUnauthorized {
+		t.Fatalf("no bearer: %d", code)
+	}
+	if code, _ := accessPost(t, hub.Client(), u, strings.Repeat("cd", 32), hexID(testMemberID)); code != http.StatusUnauthorized {
+		t.Fatalf("wrong bearer: %d", code)
+	}
+	if code, _ := get(t, hub.Client(), u); code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET: %d", code)
+	}
+	tok := rs.hook.Token
+	// Cold: everyone.
+	if code, body := accessPost(t, hub.Client(), u, tok, hexID(testStranger)); code != http.StatusOK || body != "true" {
+		t.Fatalf("cold stranger: %d %q", code, body)
+	}
+	// Gated: member yes (uppercase hex too — iroh prints lowercase, but
+	// the id is the key, not its spelling), hub self decided by Admit,
+	// stranger no, garbage no.
+	mode = "gated (1 members)"
+	if code, body := accessPost(t, hub.Client(), u, tok, hexID(testMemberID)); code != http.StatusOK || body != "true" {
+		t.Fatalf("member: %d %q", code, body)
+	}
+	if code, body := accessPost(t, hub.Client(), u, tok, strings.ToUpper(hexID(testMemberID))); code != http.StatusOK || body != "true" {
+		t.Fatalf("member, uppercase: %d %q", code, body)
+	}
+	if code, body := accessPost(t, hub.Client(), u, tok, hexID(testStranger)); code != http.StatusForbidden || body != "false" {
+		t.Fatalf("stranger: %d %q", code, body)
+	}
+	for _, bad := range []string{"", "zz", "ed:" + hexID(testMemberID)} {
+		if code, body := accessPost(t, hub.Client(), u, tok, bad); code != http.StatusForbidden || body != "false" {
+			t.Fatalf("bad id %q: %d %q", bad, code, body)
+		}
+	}
+	line, _ := rs.statusLine()
+	if !strings.Contains(line, "access: gated (1 members), 3 admitted / 1 denied") {
+		t.Fatalf("status: %q", line)
+	}
+}
+
+// TestRelayAccessHookLoopbackOnly: off loopback the route does not
+// exist (404), bearer or not — fly's proxy never sees a membership
+// oracle on the public hostname (invariant 5).
+func TestRelayAccessHookLoopbackOnly(t *testing.T) {
+	rs := &relaySupervisor{hook: testRelayHook(func(cert.ActorID) (bool, string) { return true, "open" }), deniedSeen: map[cert.ActorID]struct{}{}}
+	req := httptest.NewRequest(http.MethodPost, relayAccessPath, nil)
+	req.RemoteAddr = "203.0.113.9:4444"
+	req.Header.Set("Authorization", "Bearer "+rs.hook.Token)
+	req.Header.Set("X-Iroh-NodeId", strings.TrimPrefix(string(testMemberID), "ed:"))
+	rec := httptest.NewRecorder()
+	rs.handleRelayAccess(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("off-loopback: %d", rec.Code)
+	}
+	for _, addr := range []string{"127.0.0.1:5", "[::1]:5", "127.9.9.9:5"} {
+		req.RemoteAddr = addr
+		rec = httptest.NewRecorder()
+		rs.handleRelayAccess(rec, req)
+		if rec.Code != http.StatusOK || rec.Body.String() != "true" {
+			t.Fatalf("%s: %d %q", addr, rec.Code, rec.Body.String())
+		}
 	}
 }
 
@@ -203,7 +352,23 @@ func freePort(t *testing.T) int {
 // the two probes through the hub mux: the shape fly sees.
 func TestRelayChild(t *testing.T) {
 	bin := relayBinary(t)
-	rs, err := newRelaySupervisor(bin, freePort(t))
+	for _, gated := range []bool{false, true} {
+		t.Run(map[bool]string{false: "everyone", true: "hooked"}[gated], func(t *testing.T) {
+			var hook relayHook
+			if gated {
+				// The hook's URL is irrelevant here: no iroh client connects,
+				// so the child never POSTs. What this proves is that the
+				// `[access.http]` TOML and the bearer env are accepted by
+				// the real binary and it still comes up.
+				hook = testRelayHook(func(cert.ActorID) (bool, string) { return true, "open" })
+			}
+			testRelayChild(t, bin, hook)
+		})
+	}
+}
+
+func testRelayChild(t *testing.T, bin string, hook relayHook) {
+	rs, err := newRelaySupervisor(bin, freePort(t), hook)
 	if err != nil {
 		t.Fatal(err)
 	}

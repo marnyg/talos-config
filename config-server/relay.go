@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // relayPaths are the three routes the iroh relay protocol needs on the
@@ -26,21 +31,78 @@ import (
 // the hub's single entrypoint, not a second web surface (invariant 5).
 var relayPaths = []string{"/relay", "/ping", "/generate_204"}
 
+// relayAccessPath is the hub-served access hook the relay child POSTs
+// to on every client connect (talos-config-5gz). It is a loopback
+// contract between two processes of one machine, not a web route:
+// register mounts it beside relayPaths, handleRelayAccess answers 404
+// to anything not from loopback and 401 without the per-process
+// bearer, so the public surface never becomes a membership oracle
+// (invariant 5).
+const relayAccessPath = "/relay/access"
+
+// relayEndpointHeader carries the connecting client's EndpointId. The
+// iroh-relay 1.1.0 doc comment calls it X-Iroh-Endpoint-Id; the code
+// (and the binary's strings) say X-Iroh-NodeId — the code wins.
+const relayEndpointHeader = "X-Iroh-NodeId"
+
+// relayTokenEnv is how the bearer reaches the child: iroh-relay reads
+// IROH_RELAY_HTTP_BEARER_TOKEN over `[access.http].bearer_token`, so
+// the token never touches the config file.
+const relayTokenEnv = "IROH_RELAY_HTTP_BEARER_TOKEN"
+
+// relayHook is the membership gate behind the relay (talos-config-5gz,
+// ruled 2026-10-17): iroh-relay's HTTP access hook, served by the hub
+// itself. The zero value means no gate — `access = "everyone"`, today's
+// behaviour — for tests and for a hub without an identity plane.
+//
+// Admit answers one connect: ok, plus the mode /status shows
+// ("open (cold)", "gated (N members)"). The relay is not a facet and
+// no grant reaches the hook (ruled 2026-09-18): admission is a
+// transport courtesy decided from the hub's safe-to-lose beat cache
+// and the git blocklist, never an authorization — a member refused
+// here has lost a path, not a capability.
+type relayHook struct {
+	URL   string
+	Token string
+	Admit func(id cert.ActorID) (ok bool, mode string)
+}
+
+// enabled is true when the hook is fully specified; a partial hook is
+// a programming error and is treated as absent rather than half-wired.
+func (h relayHook) enabled() bool {
+	return h.URL != "" && h.Token != "" && h.Admit != nil
+}
+
+// newRelayToken mints the per-process bearer: 32 random bytes, hex.
+func newRelayToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("relay: token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
 // relayConfig renders the relay's TOML. Plain HTTP on loopback: fly
 // terminates TLS on 443 and forwards to the hub's :8080, which proxies
 // to this port — the relay never owns a certificate. QUIC address
 // discovery stays off (needs a relay-owned cert on UDP 7842 and only
 // serves remote hole-punching, which ADR-0006 gave up). Metrics off:
 // nothing scrapes them and they would be a fourth path to reason about.
-// access = everyone until the membership gate lands (5gz: HTTP-POST
-// access hook with X-Iroh-Endpoint-Id).
-func relayConfig(port int) string {
-	return fmt.Sprintf(`enable_relay = true
+//
+// Access: `[access.http]` pointing back at the hub's hook when one is
+// given (5gz; serde's externally tagged, lowercase AccessConfig enum ⇒
+// the `http` table), else everyone. The bearer is deliberately absent
+// from the file (relayTokenEnv).
+func relayConfig(port int, hook relayHook) string {
+	cfg := fmt.Sprintf(`enable_relay = true
 http_bind_addr = "127.0.0.1:%d"
 enable_quic_addr_discovery = false
 enable_metrics = false
-access = "everyone"
 `, port)
+	if !hook.enabled() {
+		return cfg + "access = \"everyone\"\n"
+	}
+	return cfg + fmt.Sprintf("\n[access.http]\nurl = %q\n", hook.URL)
 }
 
 // relaySupervisor runs the iroh-relay binary as a child of the hub
@@ -62,6 +124,7 @@ type relaySupervisor struct {
 	dir  string // tmpfs dir holding relay.toml (deleted on Close)
 
 	proxy *httputil.ReverseProxy
+	hook  relayHook
 
 	mu       sync.Mutex
 	running  bool
@@ -70,12 +133,19 @@ type relaySupervisor struct {
 	lastExit time.Time
 	cancel   context.CancelFunc
 	done     chan struct{}
+
+	// Access-hook bookkeeping for /status: decisions since start, the
+	// mode Admit last reported, and the ids already logged as denied
+	// (one line per id per process — a refused stranger retries forever).
+	admitted, denied int
+	mode             string
+	deniedSeen       map[cert.ActorID]struct{}
 }
 
 // newRelaySupervisor prepares (but does not start) a supervisor. The
 // config file (no secrets in it) is written under the OS temp dir and
-// removed by Close.
-func newRelaySupervisor(bin string, port int) (*relaySupervisor, error) {
+// removed by Close. A zero hook leaves the relay open to everyone.
+func newRelaySupervisor(bin string, port int, hook relayHook) (*relaySupervisor, error) {
 	if bin == "" {
 		return nil, errors.New("relay: empty binary path")
 	}
@@ -89,12 +159,12 @@ func newRelaySupervisor(bin string, port int) (*relaySupervisor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("relay: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "relay.toml"), []byte(relayConfig(port)), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(cfgDir, "relay.toml"), []byte(relayConfig(port, hook)), 0o600); err != nil {
 		os.RemoveAll(cfgDir)
 		return nil, fmt.Errorf("relay: %w", err)
 	}
 	target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", fmt.Sprint(port))}
-	r := &relaySupervisor{bin: bin, port: port, dir: cfgDir, done: make(chan struct{})}
+	r := &relaySupervisor{bin: bin, port: port, dir: cfgDir, hook: hook, done: make(chan struct{}), deniedSeen: map[cert.ActorID]struct{}{}}
 	r.proxy = newRelayProxy(target, r.errorHandler)
 	return r, nil
 }
@@ -134,11 +204,90 @@ func (r *relaySupervisor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.proxy.ServeHTTP(w, req)
 }
 
-// register wires the relay routes onto mux.
+// register wires the relay routes onto mux, plus the access hook when
+// the relay is gated.
 func (r *relaySupervisor) register(mux *http.ServeMux) {
 	for _, p := range relayPaths {
 		mux.Handle(p, r)
 	}
+	if r.hook.enabled() {
+		mux.HandleFunc("POST "+relayAccessPath, r.handleRelayAccess)
+	}
+}
+
+// handleRelayAccess is the hook the child calls per connect (5gz).
+// Contract (iroh-relay 1.1.0 AccessConfig::Http): grant ⇔ 200 with
+// body exactly "true"; anything else denies. 404 off loopback and 401
+// without the bearer keep it from being a public membership oracle.
+func (r *relaySupervisor) handleRelayAccess(w http.ResponseWriter, req *http.Request) {
+	if !isLoopback(req.RemoteAddr) {
+		http.NotFound(w, req)
+		return
+	}
+	if !r.bearerOK(req.Header.Get("Authorization")) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="relay"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id, err := relayEndpointID(req.Header.Get(relayEndpointHeader))
+	if err != nil {
+		log.Printf("relay access: %v", err)
+		http.Error(w, "false", http.StatusForbidden)
+		return
+	}
+	ok, mode := r.hook.Admit(id)
+	r.mu.Lock()
+	r.mode = mode
+	if ok {
+		r.admitted++
+	} else {
+		r.denied++
+	}
+	_, seen := r.deniedSeen[id]
+	if !ok && !seen && len(r.deniedSeen) < 1024 { // bounded: a scanner must not grow the hub
+		r.deniedSeen[id] = struct{}{}
+	}
+	r.mu.Unlock()
+	if !ok {
+		if !seen {
+			log.Printf("relay access: denied %s (%s)", id, mode)
+		}
+		http.Error(w, "false", http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	_, _ = io.WriteString(w, "true")
+}
+
+// bearerOK compares the Authorization header against the per-process
+// token in constant time.
+func (r *relaySupervisor) bearerOK(authz string) bool {
+	const prefix = "Bearer "
+	if len(authz) <= len(prefix) || !strings.EqualFold(authz[:len(prefix)], prefix) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(strings.TrimSpace(authz[len(prefix):])), []byte(r.hook.Token)) == 1
+}
+
+// relayEndpointID maps the hook header to the repo's actor id. iroh's
+// EndpointId Display is the full 32-byte key as lowercase hex, and
+// "ed:" + that hex is the same key's actor id (iroh-transport/nodeid.go).
+func relayEndpointID(hdr string) (cert.ActorID, error) {
+	id := cert.ActorID("ed:" + strings.ToLower(strings.TrimSpace(hdr)))
+	if err := id.Validate(); err != nil {
+		return "", fmt.Errorf("bad %s %q: %w", relayEndpointHeader, hdr, err)
+	}
+	return id, nil
+}
+
+// isLoopback reports whether a RemoteAddr is 127.0.0.0/8 or ::1.
+func isLoopback(remote string) bool {
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		host = remote
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Start launches the child and the supervision loop. It returns once
@@ -186,6 +335,10 @@ func (r *relaySupervisor) loop(ctx context.Context) {
 func (r *relaySupervisor) runOnce(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, r.bin, "--config-path", filepath.Join(r.dir, "relay.toml"))
 	cmd.Env = append(os.Environ(), "RUST_LOG="+relayLogLevel(), "NO_COLOR=1")
+	if r.hook.enabled() {
+		// The bearer rides the environment, not relay.toml (5gz).
+		cmd.Env = append(cmd.Env, relayTokenEnv+"="+r.hook.Token)
+	}
 	// The relay logs to stderr via tracing; stdout is quiet.
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
@@ -283,18 +436,35 @@ func (r *relaySupervisor) Close() {
 	os.RemoveAll(r.dir)
 }
 
-// statusLine is the /status row: state, restarts, last error.
+// statusLine is the /status row: state, restarts, last error, and the
+// access mode (5gz): "everyone" without a hook; with one, the mode
+// Admit last reported ("open (cold)" / "gated (N members)") plus the
+// admitted/denied counts since start.
 func (r *relaySupervisor) statusLine() (line string, warn bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	switch {
 	case r.running && r.starts == 1:
-		return fmt.Sprintf("up — iroh-relay child on loopback :%d, proxied at /relay (plain HTTP behind fly TLS, QAD off)", r.port), false
+		return fmt.Sprintf("up — iroh-relay child on loopback :%d, proxied at /relay (plain HTTP behind fly TLS, QAD off)%s", r.port, r.accessLine()), false
 	case r.running:
-		return fmt.Sprintf("up — iroh-relay child on loopback :%d (restarted %d×, last exit %s: %v)", r.port, r.starts-1, ago(time.Now(), r.lastExit), r.lastErr), true
+		return fmt.Sprintf("up — iroh-relay child on loopback :%d (restarted %d×, last exit %s: %v)%s", r.port, r.starts-1, ago(time.Now(), r.lastExit), r.lastErr, r.accessLine()), true
 	case r.starts == 0:
-		return "starting", true
+		return "starting" + r.accessLine(), true
 	default:
-		return fmt.Sprintf("DOWN — iroh-relay exited %s: %v (restarting)", ago(time.Now(), r.lastExit), r.lastErr), true
+		return fmt.Sprintf("DOWN — iroh-relay exited %s: %v (restarting)%s", ago(time.Now(), r.lastExit), r.lastErr, r.accessLine()), true
 	}
+}
+
+// accessLine is the " · access: …" suffix. Caller holds r.mu. The
+// mode is whatever Admit said on the last connect; before the first
+// one the hook is wired but has not been asked.
+func (r *relaySupervisor) accessLine() string {
+	if !r.hook.enabled() {
+		return " · access: everyone"
+	}
+	mode := r.mode
+	if mode == "" {
+		mode = "hook wired, no connects yet"
+	}
+	return fmt.Sprintf(" · access: %s, %d admitted / %d denied", mode, r.admitted, r.denied)
 }

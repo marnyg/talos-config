@@ -362,7 +362,21 @@ func main() {
 		// component: it starts with the process and runs sealed or not, so
 		// the identity plane's remote paths survive a redeploy's seal
 		// window.
-		rs, err := newRelaySupervisor(*relayBin, *relayPort)
+		//
+		// With an identity plane the child consults the hub's access hook
+		// on every connect (talos-config-5gz): loopback URL, per-process
+		// bearer via the child's environment, admission from the beat
+		// cache + blocklist once warm, open while cold (relayadmit.go).
+		var (
+			hook relayHook
+			err  error
+		)
+		if hub != nil {
+			if hook, err = relayHookFor(hub, *port, s.started); err != nil {
+				log.Fatalf("relay: %v", err)
+			}
+		}
+		rs, err := newRelaySupervisor(*relayBin, *relayPort, hook)
 		if err != nil {
 			log.Fatalf("relay: %v", err)
 		}
