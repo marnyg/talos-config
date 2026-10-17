@@ -61,9 +61,13 @@ spec:
 ---
 # The book library (2026-10-20): audiobooks/ and ebooks/ under one
 # volume, so Chaptarr (writer: imports and renames) and Audiobookshelf
-# (reader: scans and streams) share a single share-manager. Same tier
-# and disposability argument as tv/movies. Roots are chowned to 1000
-# by chaptarr's init container, the way transmission does /downloads.
+# (reader: scans and streams) share a single share-manager, and
+# Libation (k8s/apps/libation) fills audible/ from the Audible account.
+# Same tier and disposability argument as tv/movies — the Audible side
+# doubly so, it re-liberates from the account. Roots are chowned to
+# 1000 by chaptarr's init container, the way transmission does
+# /downloads. 200Gi → 500Gi on 2026-10-20, the day Libation's first
+# scan counted 427 books at ~0.3–0.6 GB each.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -75,4 +79,4 @@ spec:
   storageClassName: longhorn-bulk
   resources:
     requests:
-      storage: 200Gi
+      storage: 500Gi
