@@ -22,9 +22,12 @@
 //     cheap rejects — decode, envelope signature, to.target == me, and
 //     an unstamped envelope to a facet whose every consent demands
 //     postage (see refusesUnstamped) — and enqueue into a BOUNDED
-//     mailbox. When the mailbox is full the
-//     invocation is dropped (invariant 12: at-most-once, best-effort;
-//     the sender retries). They never touch actor state.
+//     mailbox. Decode and signature failures close the stream
+//     unanswered (7w5: a signed reply to an unauthenticated stranger
+//     is a free signing oracle); the rejects after the signature
+//     verifies reply. When the mailbox is full the invocation is
+//     dropped (invariant 12: at-most-once, best-effort; the sender
+//     retries). They never touch actor state.
 //  2. ONE goroutine (the mailbox loop) dequeues and does everything
 //     stateful, in order: effective now = Mark.Now(local), seq
 //     high-water mark, location record, VerifyChain with the receiver's
@@ -48,10 +51,11 @@
 //
 // # Errors are replies
 //
-// Every decoded envelope gets exactly one Reply whose payload is a
-// Status {code, msg, body}; transport-level closes are reserved for
-// undecodable bytes and mailbox drops. The requester sees a remote
-// rejection as *RemoteError from Send.
+// Every envelope whose signature verifies gets exactly one Reply whose
+// payload is a Status {code, msg, body}; transport-level closes are
+// reserved for undecodable bytes, envelopes whose signature does not
+// verify, and mailbox drops. The requester sees a remote rejection as
+// *RemoteError from Send.
 //
 // # Verbs and postage (M3, ADR-0007)
 //
@@ -374,7 +378,7 @@ func (a *Actor) Now() int64 { return a.now() }
 // Status codes carried in every Reply payload.
 const (
 	StatusOK           = "ok"
-	StatusBadSig       = "bad-sig"       // envelope sig does not verify
+	StatusBadSig       = "bad-sig"       // envelope sig does not verify (serve no longer emits it: bad-sig closes the stream, 7w5)
 	StatusWrongTarget  = "wrong-target"  // to.target is not this actor
 	StatusReplay       = "replay"        // seq at or below high-water mark
 	StatusBadLoc       = "bad-loc"       // piggybacked loc invalid (fail closed)
@@ -386,7 +390,9 @@ const (
 )
 
 // Status is the reply payload envelope: the protocol's one way to say
-// "no" (errors are replies, never transport closes).
+// "no" (errors are replies, never transport closes — except for an
+// envelope that cannot be decoded or whose signature does not verify,
+// which is closed unanswered; see serve).
 type Status struct {
 	Code string `json:"code"`
 	Msg  string `json:"msg,omitempty"`
@@ -497,7 +503,10 @@ func (a *Actor) serve(ctx context.Context, s Stream, peer cert.ActorID) {
 		return // undecodable: nothing to bind a reply to
 	}
 	if err := envelope.VerifySig(env); err != nil {
-		a.replyStatus(ctx, s, env, Status{Code: StatusBadSig, Msg: err.Error()})
+		// 7w5: no reply. A signed reject to an unauthenticated stranger
+		// is a free signing oracle and a cost asymmetry (cheap garbage
+		// in, Ed25519 sign out) — the inverse of postage. Close like
+		// undecodable bytes; the Signer is never touched.
 		return
 	}
 	if env.To.Target != a.ID() {
@@ -523,7 +532,8 @@ func (a *Actor) serve(ctx context.Context, s Stream, peer cert.ActorID) {
 }
 
 // replyStatus signs and sends a status reply from a transport goroutine
-// (cheap rejects). Signing touches no loop-owned state.
+// (cheap rejects after the envelope's own signature verified). Signing
+// touches no loop-owned state.
 func (a *Actor) replyStatus(ctx context.Context, s Stream, env envelope.Envelope, st Status) {
 	wire, err := a.signReply(env, st)
 	if err != nil {
