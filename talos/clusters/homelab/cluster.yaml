@@ -120,16 +120,32 @@ cluster:
                   # cmd-params is consumed as env — pods only see it on restart.
                   kubectl -n argocd rollout restart deployment argocd-server
 
-                  # The root Application (app of apps). It syncs ONLY
-                  # k8s/clusters/homelab: the ApplicationSet there emits one
-                  # Application per k8s/apps/<name>, plus the AppProjects.
+                  # The root Application (app of apps, ADR-0040). It syncs
+                  # ONLY k8s/clusters/homelab: the ApplicationSet there emits
+                  # one Application per k8s/apps/<name>, plus the AppProjects.
                   # The root refers to project `platform`, so that project
-                  # must exist before the root does — applied here from the
-                  # same file git carries, and adopted by the root on its
-                  # first sync.
-                  kubectl apply -f https://raw.githubusercontent.com/marnyg/talos-config/main/k8s/clusters/homelab/appproject-platform.yaml
-
+                  # must exist before the root does. Inlined (not fetched
+                  # from a git URL): this Job already arrives from the signed
+                  # git tip, and a fetch of `main` would be the one piece of
+                  # a branch reinstall that ignored the branch. The spec is
+                  # a copy of k8s/clusters/homelab/appproject-platform.yaml;
+                  # ArgoCD adopts the object on the root's first sync and
+                  # the git copy wins from then on.
                   kubectl apply -f - <<'EOF'
+                  apiVersion: argoproj.io/v1alpha1
+                  kind: AppProject
+                  metadata:
+                    name: platform
+                    namespace: argocd
+                  spec:
+                    sourceRepos: ["*"]
+                    destinations:
+                      - server: "*"
+                        namespace: "*"
+                    clusterResourceWhitelist:
+                      - group: "*"
+                        kind: "*"
+                  ---
                   apiVersion: argoproj.io/v1alpha1
                   kind: Application
                   metadata:

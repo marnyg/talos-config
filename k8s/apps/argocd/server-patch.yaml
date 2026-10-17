@@ -24,6 +24,17 @@
 # (ServerSideApply=true) and owns only the fields declared here.
 # Validate=false because a partial Deployment fails client-side schema
 # validation.
+#
+# Ruling (2026-10-22, closes talos-config-p0ar): every argocd resource
+# is server-side managed — created by the installer Job with
+# `--server-side`, patched here with the per-resource SSA annotation —
+# so none carries a `last-applied-configuration` annotation. A bare
+# client-side `kubectl apply` against them would adopt fields it does
+# not own and fight both managers; use `kubectl apply --server-side`
+# (as the installer does) or edit git. The app-level alternative
+# (ServerSideApply=true on the whole Application) is no longer
+# repo-wide since ADR-0040 and can be flipped on `platform-argocd`
+# alone if a third partial ever needs it.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

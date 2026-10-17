@@ -126,7 +126,13 @@ signer)`, `siweoidc` `/authz` + `Client.Token`, bridge flags
 
 - oauth2-proxy, its SealedSecret and `hostAliases` go; the required
   group per app is one Ingress annotation in git; `media` becomes
-  grantable per app.
+  grantable per app. _(Amended 2026-10-21, `9235085`/`332b463`: the
+  gate is now ingress-nginx's `global-auth-url` — every Ingress is
+  gated unless it opts out with `enable-global-auth: "false"`; the
+  per-Ingress `auth-url` annotations went. Default flipped from
+  open-unless-annotated to gated-unless-opted-out. Authoritative
+  description: `k8s/apps/ingress-nginx/application.yaml` and
+  `k8s/apps/media/ingress.yaml`.)_
 - Gated-class revocation drops from a 7-day cookie to the token's
   60 s plus the connection bound (1 h).
 - `5kh` (groups hardcoded `["admins"]`) landed first (`9d3b1bb`), so a
