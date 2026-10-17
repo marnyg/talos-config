@@ -837,7 +837,7 @@ data:
         },
         {
           "type": "stat",
-          "title": "/var used (images, ephemeral)",
+          "title": "/var used",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"

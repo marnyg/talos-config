@@ -194,7 +194,7 @@ panels += [
     stat("Scheduled", frac("longhorn_node_storage_scheduled_bytes", NODE), "percentunit", 0, Y + 4, 3, decimals=0, thresholds=pct_warn),
     stat("Used", frac("longhorn_node_storage_usage_bytes", NODE), "percentunit", 3, Y + 4, 3, decimals=0, thresholds=pct_warn),
     stat("Volumes attached", f'count(longhorn_volume_state{{{NODE},state="attached"}} == 1) or vector(0)', "none", 0, Y + 7, 3),
-    stat("/var used (images, ephemeral)", VAR_USED, "percentunit", 3, Y + 7, 3, decimals=0, thresholds=pct_warn),
+    stat("/var used", VAR_USED, "percentunit", 3, Y + 7, 3, decimals=0, thresholds=pct_warn),
     bars("Scheduled — replica volume size / disk capacity", "longhorn_volume_capacity_bytes", 6, Y + 1, 9, 9),
     bars("Used — replica actual size / disk capacity", "longhorn_volume_actual_size_bytes", 15, Y + 1, 9, 9),
 ]
