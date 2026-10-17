@@ -53,6 +53,15 @@ let
       : "''${ATTIC_ENDPOINT:=http://attic.nix-cache.svc.cluster.local/}"
       : "''${RUNNER_NAME:=''${HOSTNAME:-runner}}"
 
+      # The dirs a job writes, made here rather than shipped: copyToRoot
+      # keeps the store's 555 modes, and with every capability dropped
+      # (deployment.yaml) root is only the owner — no CAP_DAC_OVERRIDE
+      # to write a read-only dir it owns. `/` is 755, so creating them
+      # works. (nix2container `perms` refuses dirs shared across
+      # copyToRoot entries, e.g. /etc.)
+      mkdir -p "$HOME" /data /workspace
+      mkdir -p /tmp && chmod 1777 /tmp
+
       # The image's closure into nix's db (see header). Idempotent.
       nix-store --load-db < /nix-support/registration
 
@@ -67,7 +76,7 @@ let
       EOF
       umask 022
 
-      mkdir -p /data && cd /data
+      cd /data
       forgejo-runner create-runner-file --instance "$FORGEJO_URL" \
         --secret "$RUNNER_SECRET" --name "$RUNNER_NAME"
       echo "runner: $RUNNER_NAME → $FORGEJO_URL; attic → $ATTIC_ENDPOINT"
@@ -100,7 +109,7 @@ let
   };
   registration = pkgs.closureInfo { rootPaths = [ env entrypoint pkgs.cacert ]; };
   root = pkgs.runCommand "forgejo-runner-root" { } ''
-    mkdir -p $out/usr/local/bin $out/etc/nix $out/nix-support $out/root $out/tmp $out/data $out/workspace
+    mkdir -p $out/usr/local/bin $out/etc/nix $out/nix-support
     ln -s ${entrypoint}/bin/runner-entrypoint $out/usr/local/bin/runner-entrypoint
     cp ${registration}/registration $out/nix-support/registration
     echo 'root:x:0:0:root:/root:/bin/bash' > $out/etc/passwd
@@ -145,6 +154,5 @@ nix2container.buildImage {
       "USER=root"
     ];
     User = "0:0";
-    WorkingDir = "/data";
   };
 }
