@@ -330,3 +330,34 @@ func TestNameMapCarriesPiggybackedLocations(t *testing.T) {
 		t.Fatalf("expired location still shipped: %+v", got)
 	}
 }
+
+// ---- 5. one liveness rule --------------------------------------------------
+
+// TestNameEntryLive pins the rule Resolve and NamesJSON share
+// (talos-config-6tgj): live iff a reach-me-at is present and neither it
+// nor the member cert has expired at now. Expiry is exclusive: exp == now
+// is dead.
+func TestNameEntryLive(t *testing.T) {
+	const now int64 = 1_000
+	loc := func(exp int64) *cert.Cert { return &cert.Cert{Exp: exp} }
+	cases := []struct {
+		name string
+		e    NameEntry
+		want bool
+	}{
+		{"both unexpired", NameEntry{Member: cert.Cert{Exp: now + 1}, Location: loc(now + 1)}, true},
+		{"no location", NameEntry{Member: cert.Cert{Exp: now + 1}}, false},
+		{"location expired", NameEntry{Member: cert.Cert{Exp: now + 1}, Location: loc(now - 1)}, false},
+		{"location expires now", NameEntry{Member: cert.Cert{Exp: now + 1}, Location: loc(now)}, false},
+		{"member expired", NameEntry{Member: cert.Cert{Exp: now - 1}, Location: loc(now + 1)}, false},
+		{"member expires now", NameEntry{Member: cert.Cert{Exp: now}, Location: loc(now + 1)}, false},
+		{"both expired", NameEntry{Member: cert.Cert{Exp: now - 1}, Location: loc(now - 1)}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.e.Live(now); got != tc.want {
+				t.Fatalf("Live(%d) = %v, want %v", now, got, tc.want)
+			}
+		})
+	}
+}

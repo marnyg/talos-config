@@ -40,6 +40,16 @@ type NameEntry struct {
 	Location *cert.Cert
 }
 
+// Live is the one liveness rule for a name-map entry, shared by
+// nodeagent.Agent.Resolve and mobile.NamesJSON (talos-config-6tgj: it
+// had been written twice): the entry is dialable at now when it carries
+// a reach-me-at and neither that nor the member cert has expired. The
+// caller supplies its own clock; this is a filter, never an
+// authorization check (this file's header).
+func (e NameEntry) Live(now int64) bool {
+	return e.Location != nil && e.Location.Exp > now && e.Member.Exp > now
+}
+
 // witness records a verified member cert as its NodeId's current
 // binding. A newer cert (by iat) for the same key replaces an older;
 // an older one arriving late (a member beating with a stale kit at a

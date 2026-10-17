@@ -75,10 +75,9 @@ func (a *Agent) Resolve(name string) ([]issuer.NameEntry, error) {
 	}
 	var out []issuer.NameEntry
 	for _, e := range issuer.Lookup(b.NameMap, name) {
-		if e.Location == nil || e.Location.Exp <= now || e.Member.Exp <= now {
-			continue
+		if e.Live(now) {
+			out = append(out, e)
 		}
-		out = append(out, e)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownName, name)
