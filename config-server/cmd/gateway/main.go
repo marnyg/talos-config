@@ -14,7 +14,8 @@
 // (nodeagent.EnrollDevice): the approve URL and user code go to the
 // log; the Owner signs on /status; the pod polls and redeems. A denied
 // flow exits (k8s restarts it with backoff — a fresh code in the log);
-// an expired one starts over; a sealed hub is polled flat.
+// an expired one starts over after a growing gap (30 s doubling to
+// 10 min, backoff.go); a sealed hub is polled flat.
 package main
 
 import (
@@ -114,15 +115,23 @@ func main() {
 }
 
 // enrollHeadless runs device flows until one is signed: an expired flow
-// (nobody at /status within its TTL) is restarted with a fresh code;
-// denied and sealed are returned for Run to act on.
+// (nobody at /status within its TTL) is restarted with a fresh code
+// after a bounded, growing gap (talos-config-2nqw: it used to restart
+// at once, forever); denied and sealed are returned for Run to act on.
+// Any outcome but expiry leaves the loop, so the gap only ever grows
+// across consecutive unattended flows.
 func enrollHeadless(ctx context.Context, hub string, node cert.ActorID, name, group string, logger *log.Logger) (issuer.Kit, error) {
+	var backoff flowBackoff
 	for {
 		kit, err := nodeagent.EnrollDevice(ctx, nil, hub, node, name, group, func(f nodeagent.DeviceFlow) {
 			logger.Printf("ENROLL: sign at %s  (user code %s, %s to act; NodeId %s)", f.ApproveURL, f.UserCode, (time.Duration(f.ExpiresIn) * time.Second).String(), node)
 		})
 		if errors.Is(err, nodeagent.ErrEnrollExpired) {
-			logger.Printf("enroll: %v; starting a fresh flow", err)
+			wait := backoff.next()
+			logger.Printf("enroll: %v; next flow in %s", err, wait)
+			if err := sleepCtx(ctx, wait); err != nil {
+				return issuer.Kit{}, fmt.Errorf("device flow: %w", err)
+			}
 			continue
 		}
 		if err != nil {
