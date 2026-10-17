@@ -3,13 +3,20 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -361,6 +368,13 @@ func TestRelayChild(t *testing.T) {
 				// `[access.http]` TOML and the bearer env are accepted by
 				// the real binary and it still comes up.
 				hook = testRelayHook(func(cert.ActorID) (bool, string) { return true, "open" })
+				// With [access.http] the relay builds a reqwest client at
+				// startup, which panics (exit 101) when the host has no CA
+				// bundle — the nix sandbox has none (first hub image build
+				// after 5gz, 2026-10-17). fly's image ships cacert
+				// (fly/image.nix); here a throwaway self-signed PEM via
+				// SSL_CERT_FILE satisfies "at least one root loaded".
+				t.Setenv("SSL_CERT_FILE", testCABundle(t))
 			}
 			testRelayChild(t, bin, hook)
 		})
@@ -398,4 +412,32 @@ func testRelayChild(t *testing.T, bin string, hook relayHook) {
 	if code == http.StatusNotFound || code == http.StatusServiceUnavailable {
 		t.Fatalf("/relay did not reach the child: %d", code)
 	}
+}
+
+// testCABundle writes one self-signed certificate as a PEM file and
+// returns its path (see TestRelayChild/hooked).
+func testCABundle(t *testing.T) string {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "relay-test-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
