@@ -32,7 +32,20 @@ const relayColdWindow = 5 * time.Minute
 // transport courtesy from a safe-to-lose cache (ADR-0019), never an
 // authorization: losing the cache degrades to "open", never to a
 // wrong grant.
+//
+// Gate off by default (2026-10-17, the day it went live): the
+// sovereign-actor plane — sap-provisioner, sap-lighthouse, the laptop
+// parent and every child, which homes where its parent is homed
+// (actors/cmd/child) — holds protocol keys, not member certs, and the
+// hub is relay-only by construction (ADR-0022), so a warm gate cut
+// the plane off at the first reconnect (`The relay denied our
+// authentication`). Until the protocol has an admission story for
+// those actors (spike talos-config-5gz's successor), Admit computes
+// the verdict and admits anyway; the mode on /status says `observing`
+// when the last connect was a non-member the gate would have refused.
+// Set gate to enforce.
 type relayAdmitter struct {
+	gate    bool                  // enforce the warm verdict; false ⇒ observe only
 	self    cert.ActorID          // the hub's own endpoint, always admitted
 	members func() []cert.ActorID // witnessed, off-blocklist member ids
 	serving func() bool           // issuer.Serving() == nil
@@ -71,11 +84,13 @@ func (a *relayAdmitter) Admit(id cert.ActorID) (bool, string) {
 	if len(members) == 0 {
 		return true, "open (cold: no witnessed members)"
 	}
-	mode := fmt.Sprintf("gated (%d members)", len(members))
 	if id == a.self || slices.Contains(members, id) {
-		return true, mode
+		return true, fmt.Sprintf("gated (%d members)", len(members))
 	}
-	return false, mode
+	if a.gate {
+		return false, fmt.Sprintf("gated (%d members)", len(members))
+	}
+	return true, fmt.Sprintf("observing (%d members; non-member admitted)", len(members))
 }
 
 // relayHookFor builds the supervisor's hook for a hub listening on

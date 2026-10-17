@@ -17,6 +17,7 @@ const (
 // TestRelayAdmitColdWindow: the rule from the 2026-10-17 ruling (5gz).
 // Open while any cold condition holds — <5 min since start, hub not
 // serving, nobody witnessed — then gated on self + witnessed members.
+// The gate is enforced here; the default (gate off) is TestRelayAdmitObserve.
 func TestRelayAdmitColdWindow(t *testing.T) {
 	start := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
@@ -40,6 +41,7 @@ func TestRelayAdmitColdWindow(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			a := &relayAdmitter{
+				gate:    true,
 				self:    testHubID,
 				members: func() []cert.ActorID { return tc.members },
 				serving: func() bool { return tc.serving },
@@ -51,6 +53,33 @@ func TestRelayAdmitColdWindow(t *testing.T) {
 				t.Fatalf("Admit(%s) = %v %q, want %v %q…", tc.id, ok, mode, tc.wantOK, tc.wantMode)
 			}
 		})
+	}
+}
+
+// TestRelayAdmitObserve: with the gate off (the default since the
+// sovereign-actor plane was locked out, 2026-10-17) a warm hub admits a
+// non-member too, and says so in the mode; members and the hub itself
+// still read as gated.
+func TestRelayAdmitObserve(t *testing.T) {
+	start := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	a := &relayAdmitter{
+		self:    testHubID,
+		members: func() []cert.ActorID { return []cert.ActorID{testMemberID} },
+		serving: func() bool { return true },
+		started: start,
+		now:     func() time.Time { return start.Add(time.Hour) },
+	}
+	if ok, mode := a.Admit(testStranger); !ok || !strings.HasPrefix(mode, "observing (1 members") {
+		t.Fatalf("gate off, stranger: %v %q", ok, mode)
+	}
+	if ok, mode := a.Admit(testMemberID); !ok || mode != "gated (1 members)" {
+		t.Fatalf("gate off, member: %v %q", ok, mode)
+	}
+	if ok, mode := a.Admit(testHubID); !ok || mode != "gated (1 members)" {
+		t.Fatalf("gate off, hub: %v %q", ok, mode)
+	}
+	if ok, _ := a.Admit(""); !ok {
+		t.Fatal("gate off, empty id refused")
 	}
 }
 
