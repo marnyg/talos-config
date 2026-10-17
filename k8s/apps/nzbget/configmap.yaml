@@ -60,3 +60,8 @@ data:
     Category1.DestDir=
     Category2.Name=Movies
     Category2.DestDir=
+    # Chaptarr's two (chaptarr/configmap.yaml).
+    Category3.Name=Audiobooks
+    Category3.DestDir=
+    Category4.Name=Ebooks
+    Category4.DestDir=

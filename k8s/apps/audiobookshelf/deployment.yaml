@@ -1,0 +1,132 @@
+# Audiobookshelf (github.com/advplyr/audiobookshelf): the audiobook and
+# ebook player — Jellyfin for the `books` library Chaptarr fills
+# (storage/pvcs.yaml). Web UI plus the Android/iOS apps, which are
+# pointed at http://audiobookshelf.gw.mesh.internal like the Bitwarden
+# clients at Vaultwarden: the device's identity stream carries the
+# request, the gateway signs the X-Mesh-Token, and the admins group gate
+# on the Ingress (media/ingress.yaml) lets it through with no cookie or
+# login page. Underneath, ABS keeps its own users (listening progress,
+# bookmarks are per user) — the Vaultwarden posture, not Jellyfin's:
+# gated reachability, app-local accounts. Its native OIDC against the
+# SIWE bridge (ABS does PKCE; the bridge has no client secrets) and an
+# ungated Ingress for household devices are the follow-up if anyone
+# but admins ever listens.
+#
+# One volume for /config (sqlite: users, libraries, progress) and
+# /metadata (covers, cached item metadata, backups, streams scratch):
+# both app state, both irreplaceable-ish, 2-replica longhorn per
+# ADR-0011. The library itself is read-write: ABS writes into the
+# library folder only when asked to (uploads, "store metadata with
+# item"), as the same uid Chaptarr imports with.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audiobookshelf
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audiobookshelf
+  namespace: media
+spec:
+  replicas: 1
+  # RWO volume + sqlite: no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: audiobookshelf
+  template:
+    metadata:
+      labels:
+        app: audiobookshelf
+    spec:
+      # Never on nas1, the node pinned to host this library's NFS servers
+      # (storageclass.yaml shareManagerNodeSelector): a client on the
+      # server's node hangs the node's shutdown (2026-10-05, m1au). See
+      # radarr/deployment.yaml for the full story.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values: [nas1]
+      # 1000 like the rest of the media stack, so the library files
+      # Chaptarr writes are ours too. The image has no USER; tini + node
+      # run fine unprivileged once PORT is above 1024.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: audiobookshelf
+          # Pinned by digest; the 2.37.1 tag (latest release) resolved
+          # on 2026-10-20.
+          image: ghcr.io/advplyr/audiobookshelf:2.37.1@sha256:581d68b2a6fc7ebf58d81c878a9f387cbbc0d88ac9d37b298b9cee10168af85b
+          env:
+            # The image defaults to :80, which 1000 cannot bind. 13378 is
+            # the port the project's own docs use.
+            - name: PORT
+              value: "13378"
+            - name: CONFIG_PATH
+              value: /config
+            - name: METADATA_PATH
+              value: /metadata
+            - name: TZ
+              value: Europe/Oslo
+          ports:
+            - containerPort: 13378
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: state
+              mountPath: /config
+              subPath: config
+            - name: state
+              mountPath: /metadata
+              subPath: metadata
+            - name: books
+              mountPath: /books
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 13378
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: audiobookshelf
+        - name: books
+          persistentVolumeClaim:
+            claimName: books
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audiobookshelf
+  namespace: media
+spec:
+  selector:
+    app: audiobookshelf
+  ports:
+    - port: 13378
+      targetPort: 13378

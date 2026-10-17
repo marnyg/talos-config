@@ -1,0 +1,178 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaptarr-configurator
+  namespace: media
+data:
+  # Same shape as radarr's configure.sh, minus what Chaptarr lacks or
+  # does differently:
+  # - no Allowed Hosts: Chaptarr's HostConfig has no allowedHosts field
+  #   (openapi.json), so no DNS-rebinding guard to set and no restart.
+  # - no Jackett entries: Prowlarr pushes the torrent indexers in; only
+  #   NZBgeek is added directly, as sonarr/radarr do.
+  # - no root folders: Chaptarr's root folder is a per-format object
+  #   (folderType, audiobook/ebook quality + metadata profile ids,
+  #   monitor options) whose profile ids exist only after first start.
+  #   Add them in the UI: /books/audiobooks and /books/ebooks, with
+  #   "write Audiobookshelf metadata" on so ABS picks up the match.
+  # Download clients carry both categories Chaptarr's settings expose
+  # (audiobookCategory / ebookCategory); nzbget declares the same two
+  # names (nzbget/configmap.yaml), transmission makes a subdirectory per
+  # category. Both land under /downloads/completed/<Category>, the same
+  # path in every pod, so no remote path mappings.
+  configure.sh: |
+    #!/bin/sh
+    set -e
+
+    CHAPTARR_URL="http://localhost:8789"
+    # NZBGEEK_API_KEY, PROWLARR_API_KEY come from the env (sealed secrets).
+
+    echo "Waiting for Chaptarr to start..."
+    until curl -sf "$CHAPTARR_URL/ping" > /dev/null 2>&1; do
+      sleep 5
+    done
+
+    # Wait for config.xml to have an API key
+    while [ ! -f /config/config.xml ] || ! grep -q '<ApiKey>' /config/config.xml; do
+      sleep 2
+    done
+
+    API_KEY=$(sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml)
+    echo "Chaptarr API key: $API_KEY"
+    AUTH="X-Api-Key: $API_KEY"
+
+    # Wait for dependency services
+    echo "Waiting for NZBget..."
+    until curl -sf "http://nzbget:6789" > /dev/null 2>&1; do sleep 5; done
+
+    echo "Waiting for Transmission..."
+    until curl -sf "http://transmission:9091/transmission/web/" > /dev/null 2>&1; do sleep 5; done
+
+    # Add NZBget download client
+    existing=$(curl -sf -H "$AUTH" "$CHAPTARR_URL/api/v1/downloadclient")
+    if ! echo "$existing" | grep -q "NZBget"; then
+      echo "Adding NZBget download client..."
+      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enable": true,
+        "protocol": "usenet",
+        "priority": 1,
+        "name": "NZBget",
+        "implementation": "Nzbget",
+        "configContract": "NzbgetSettings",
+        "fields": [
+          {"name": "host", "value": "nzbget"},
+          {"name": "port", "value": 6789},
+          {"name": "username", "value": ""},
+          {"name": "password", "value": ""},
+          {"name": "audiobookCategory", "value": "Audiobooks"},
+          {"name": "ebookCategory", "value": "Ebooks"},
+          {"name": "useSsl", "value": false}
+        ]
+      }' "$CHAPTARR_URL/api/v1/downloadclient" || echo "WARN: NZBget client failed"
+    fi
+
+    # Add Transmission download client
+    if ! echo "$existing" | grep -q "Transmission"; then
+      echo "Adding Transmission download client..."
+      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enable": true,
+        "protocol": "torrent",
+        "priority": 1,
+        "name": "Transmission",
+        "implementation": "Transmission",
+        "configContract": "TransmissionSettings",
+        "fields": [
+          {"name": "host", "value": "transmission"},
+          {"name": "port", "value": 9091},
+          {"name": "audiobookCategory", "value": "Audiobooks"},
+          {"name": "ebookCategory", "value": "Ebooks"},
+          {"name": "useSsl", "value": false}
+        ]
+      }' "$CHAPTARR_URL/api/v1/downloadclient" || echo "WARN: Transmission client failed"
+    fi
+
+    # NZBgeek indexer (Newznab/usenet), book categories: 3030 audiobooks,
+    # 7000 books, 7020 ebooks. Owned like sonarr's: PUT existing, POST
+    # missing, so a rotated key propagates.
+    if [ -n "$NZBGEEK_API_KEY" ]; then
+      existing=$(curl -sf -H "$AUTH" "$CHAPTARR_URL/api/v1/indexer")
+      name="NZBgeek"
+      body='{
+        "enableRss": true,
+        "enableAutomaticSearch": true,
+        "enableInteractiveSearch": true,
+        "protocol": "usenet",
+        "priority": 10,
+        "name": "'"$name"'",
+        "implementation": "Newznab",
+        "configContract": "NewznabSettings",
+        "fields": [
+          {"name": "baseUrl", "value": "https://api.nzbgeek.info"},
+          {"name": "apiPath", "value": "/api"},
+          {"name": "apiKey", "value": "'"$NZBGEEK_API_KEY"'"},
+          {"name": "categories", "value": [3030, 7000, 7020]}
+        ]
+      }'
+      eid=$(printf '%s\n' "$existing" | awk -v n="$name" \
+        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+      if [ -n "$eid" ]; then
+        echo "Refreshing $name indexer (id $eid)..."
+        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+          -d "${body%\}}, \"id\": $eid}" "$CHAPTARR_URL/api/v1/indexer/$eid" || echo "WARN: $name refresh failed"
+      else
+        echo "Adding $name indexer..."
+        curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$body" "$CHAPTARR_URL/api/v1/indexer" || echo "WARN: $name indexer failed"
+      fi
+    fi
+
+    # Register with Prowlarr as an application; see sonarr/configmap.yaml
+    # for the reasoning (the pairing is driven from this side because
+    # only this pod knows Chaptarr's key). Type Readarr: Chaptarr serves
+    # Readarr's v1 API and Prowlarr has no Chaptarr type (Prowlarr#2772).
+    # Categories are Prowlarr's Readarr defaults (books + audiobooks).
+    if [ -n "$PROWLARR_API_KEY" ]; then
+      PROWLARR_URL="http://prowlarr:9696"
+      PAUTH="X-Api-Key: $PROWLARR_API_KEY"
+      name="Chaptarr"
+      body='{
+        "name": "'"$name"'",
+        "syncLevel": "fullSync",
+        "implementation": "Readarr",
+        "configContract": "ReadarrSettings",
+        "fields": [
+          {"name": "prowlarrUrl", "value": "'"$PROWLARR_URL"'"},
+          {"name": "baseUrl", "value": "http://chaptarr:8789"},
+          {"name": "apiKey", "value": "'"$API_KEY"'"},
+          {"name": "syncCategories", "value": [3030, 7000, 7010, 7020, 7030, 7040, 7050, 7060]}
+        ],
+        "tags": []
+      }'
+      n=0
+      until apps=$(curl -sf -H "$PAUTH" "$PROWLARR_URL/api/v1/applications"); do
+        n=$((n + 1))
+        if [ "$n" -ge 18 ]; then echo "WARN: Prowlarr unreachable, pairing skipped"; break; fi
+        sleep 10
+      done
+      if [ "$n" -lt 18 ]; then
+        eid=$(printf '%s\n' "$apps" | awk -v n="$name" \
+          '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+        if [ -n "$eid" ]; then
+          echo "Refreshing Prowlarr application $name (id $eid)..."
+          curl -sf -o /dev/null -X PUT -H "$PAUTH" -H "Content-Type: application/json" \
+            -d "${body%\}}, \"id\": $eid}" "$PROWLARR_URL/api/v1/applications/$eid" || echo "WARN: Prowlarr $name refresh failed"
+        else
+          echo "Registering with Prowlarr as $name..."
+          n=0
+          until curl -sf -o /dev/null -X POST -H "$PAUTH" -H "Content-Type: application/json" \
+            -d "$body" "$PROWLARR_URL/api/v1/applications"; do
+            n=$((n + 1))
+            if [ "$n" -ge 18 ]; then echo "WARN: Prowlarr $name pairing failed"; break; fi
+            sleep 10
+          done
+        fi
+      fi
+    fi
+
+    echo "Chaptarr configuration complete!"
+    sleep infinity

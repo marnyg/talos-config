@@ -174,6 +174,54 @@ spec:
                 port:
                   number: 9696
 ---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chaptarr
+  namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: chaptarr.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: chaptarr
+                port:
+                  number: 8789
+---
+# Audiobookshelf is gated like Vaultwarden, not ungated like Jellyfin:
+# admins-only reachability, its own accounts underneath (see
+# audiobookshelf/deployment.yaml). The apps work through the gate since
+# it decides on the gateway's token, not a cookie. proxy-body-size 0:
+# the web UI uploads whole audiobooks.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: audiobookshelf
+  namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: audiobookshelf.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: audiobookshelf
+                port:
+                  number: 13378
+---
 # Seerr is ungated like Jellyfin, not like the *arr apps: its users are
 # household members signing in with their Jellyfin account (seerr
 # authenticates against jellyfin server-side), who have no wallet.

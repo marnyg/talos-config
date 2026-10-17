@@ -58,3 +58,21 @@ spec:
   resources:
     requests:
       storage: 200Gi
+---
+# The book library (2026-10-20): audiobooks/ and ebooks/ under one
+# volume, so Chaptarr (writer: imports and renames) and Audiobookshelf
+# (reader: scans and streams) share a single share-manager. Same tier
+# and disposability argument as tv/movies. Roots are chowned to 1000
+# by chaptarr's init container, the way transmission does /downloads.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: books
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: longhorn-bulk
+  resources:
+    requests:
+      storage: 200Gi

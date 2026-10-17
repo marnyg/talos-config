@@ -1,0 +1,201 @@
+# Chaptarr (github.com/Chaptarr/chaptarr): the Readarr fork that manages
+# audiobooks and ebooks in one instance — the books counterpart of
+# sonarr/radarr. It owns the `books` library volume (storage/pvcs.yaml):
+# grabs through nzbget/transmission into /downloads, imports and renames
+# into /books/{audiobooks,ebooks}, where Audiobookshelf
+# (k8s/apps/audiobookshelf) picks them up. Indexers come from Prowlarr
+# (paired by the configurator, as a "Readarr" application: Prowlarr has
+# no Chaptarr type yet, Prowlarr#2772, and Chaptarr speaks Readarr's v1
+# API) plus NZBgeek directly, like the other *arrs.
+#
+# App state (chaptarr.db) on the default longhorn class, RWO 2
+# replicas, per ADR-0011.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chaptarr-config
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chaptarr
+  namespace: media
+spec:
+  replicas: 1
+  # RWO /config: no rolling update (Multi-Attach), see radarr.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: chaptarr
+  template:
+    metadata:
+      labels:
+        app: chaptarr
+    spec:
+      # Never on nas1, the node pinned to host this library's NFS servers
+      # (storageclass.yaml shareManagerNodeSelector): a client on the
+      # server's node hangs the node's shutdown (2026-10-05, m1au). See
+      # radarr/deployment.yaml for the full story.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values: [nas1]
+      # Runs as 1000 like the rest of the media stack. The image's
+      # entrypoint only does its PUID/PGID chown dance when it is root;
+      # as a non-root user it checks /config is writable and execs —
+      # fsGroup makes the fresh ext4 /config volume writable. The one
+      # root step is the `library` init below.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: library
+          # The books volume is RWX (NFS from the share-manager), where
+          # fsGroup does not reach: a fresh ext4 root is root:root. One
+          # root chown of the library roots, the way transmission's init
+          # does /downloads; a no-op on every later start.
+          # Helper pin: one tag across k8s/apps (rg 'image: busybox').
+          image: busybox:1.38
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              mkdir -p /books/audiobooks /books/ebooks
+              chown 1000:1000 /books /books/audiobooks /books/ebooks
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "DAC_OVERRIDE", "FOWNER"]
+          volumeMounts:
+            - name: books
+              mountPath: /books
+        - name: config
+          image: busybox:1.38
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              # Seed only on a fresh volume: Chaptarr owns config.xml after
+              # that. External auth: the ingress group gate is the login
+              # (media/ingress.yaml), same as sonarr/radarr.
+              [ -f /config/config.xml ] && exit 0
+              cat > /config/config.xml << 'XMLEOF'
+              <Config>
+                <Port>8789</Port>
+                <BindAddress>*</BindAddress>
+                <AuthenticationMethod>External</AuthenticationMethod>
+                <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
+              </Config>
+              XMLEOF
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      containers:
+        - name: chaptarr
+          # Pinned by digest; the 0.9.965 tag (== latest) resolved on
+          # 2026-10-20. Beta software per its README — the library it
+          # points at is re-downloadable (ADR-0011), the db is on
+          # 2-replica Longhorn, so the data-loss caveat is priced in.
+          image: docker.io/chaptarr/chaptarr:0.9.965@sha256:bb00d67cbe1485d1cd61ef178362a29b42aa08f86b290841aab4b115ad2647a6
+          env:
+            # No passwd entry for 1000 in the image; .NET wants a
+            # writable HOME for its per-user bits.
+            - name: HOME
+              value: /config
+            - name: TZ
+              value: Europe/Oslo
+          ports:
+            - containerPort: 8789
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: books
+              mountPath: /books
+            - name: downloads
+              mountPath: /downloads
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8789
+            initialDelaySeconds: 20
+            periodSeconds: 10
+        - name: configurator
+          # Helper pin: one tag across k8s/apps (rg 'image: curlimages/curl').
+          image: curlimages/curl:8.22.0
+          command: ["/bin/sh", "/scripts/configure.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: NZBGEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nzbgeek
+                  key: apiKey
+            # Prowlarr pairing (configure.sh); optional, see sonarr.
+            - name: PROWLARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: prowlarr
+                  key: apiKey
+                  optional: true
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: chaptarr-config
+        - name: scripts
+          configMap:
+            name: chaptarr-configurator
+        - name: books
+          persistentVolumeClaim:
+            claimName: books
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: downloads
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chaptarr
+  namespace: media
+spec:
+  selector:
+    app: chaptarr
+  ports:
+    - port: 8789
+      targetPort: 8789
