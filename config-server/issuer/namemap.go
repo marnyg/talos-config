@@ -8,7 +8,9 @@ package issuer
 //     (talos/machines/<mac>/meta.yaml, the approver-set device name);
 //     keys are minted on members (ADR-0015) and the hub keeps no
 //     registry of who holds what (invariant 1: the grant is the record).
-//     What the Issuer does see is every member cert presented at
+//     What the Issuer does see is every member cert it signs at Mint
+//     (since 5gz: a minted member is known before its first beat, so
+//     the relay gate lets that beat through) and every one presented at
 //     #bundle — hubkey-signed {aud: NodeId, cav.name, cav.groups},
 //     verified by verifyMember — and that cert IS the proof of the
 //     binding. The map ships those certs as-is: the receiver resolves
@@ -21,7 +23,9 @@ package issuer
 // The cache is safe-to-lose (ADR-0019): it fills as members beat and
 // dies with the process. Losing it degrades to "name unknown", never
 // to a wrong answer — a stale cert cannot be forged into the map, only
-// omitted from it. A dialing convenience, never an authorization input.
+// omitted from it. A dialing convenience, never an authorization input
+// — the relay access hook (relayadmit.go) reads it as a transport
+// courtesy, failing open while cold, and no grant ever rides on it.
 
 import (
 	"cmp"
