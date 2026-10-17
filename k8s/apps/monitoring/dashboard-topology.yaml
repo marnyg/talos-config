@@ -1,0 +1,833 @@
+# Grafana "Cluster / Topology": the Nomad topology view for this
+# cluster. One row per node (repeated over $node); per node the running
+# pod count, role, allocatable memory/CPU, and two stacked bars — Memory
+# and CPU — where each segment is one pod's requests / node allocatable.
+# Hover a segment for the pod. $highlight (namespaces, multi) paints the
+# matching pods blue, the rest green, Pending pods yellow: Nomad's
+# "where do this job's allocations live" without the lines. Pods that
+# declare no requests are invisible in the bars by construction; that
+# is a fact about the pod, not the panel.
+#
+# The sidecar (kube-prometheus-stack.yaml) picks up any ConfigMap
+# labelled grafana_dashboard=1 in any namespace and files it under the
+# grafana_folder annotation; this is the first dashboard in git and
+# establishes the convention the chart comment promised.
+#
+# The JSON is generated — edit dashboard-topology.py next to this file
+# and re-run `python3 dashboard-topology.py` (that is what regenerates
+# this whole YAML); the Grafana UI is for trying things, not for saving
+# (the provider has allowUiUpdates=false, so edits there do not stick).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-topology
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Cluster
+data:
+  topology.json: |
+    {
+      "uid": "cluster-topology",
+      "title": "Cluster / Topology",
+      "tags": [
+        "cluster",
+        "topology"
+      ],
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 0,
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "label": "Data source",
+            "current": {
+              "text": "Prometheus",
+              "value": "prometheus"
+            },
+            "hide": 0
+          },
+          {
+            "name": "node",
+            "type": "query",
+            "label": "Node",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "query": {
+              "query": "label_values(kube_node_info, node)",
+              "refId": "nodes"
+            },
+            "definition": "label_values(kube_node_info, node)",
+            "refresh": 2,
+            "sort": 1,
+            "multi": true,
+            "includeAll": true,
+            "current": {
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          },
+          {
+            "name": "highlight",
+            "type": "query",
+            "label": "Highlight namespace",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "query": {
+              "query": "label_values(kube_pod_info, namespace)",
+              "refId": "ns"
+            },
+            "definition": "label_values(kube_pod_info, namespace)",
+            "refresh": 2,
+            "sort": 1,
+            "multi": true,
+            "includeAll": true,
+            "allValue": "__none__",
+            "current": {
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          }
+        ]
+      },
+      "links": [
+        {
+          "title": "Nodes Overview",
+          "type": "link",
+          "url": "/d/058020e04168bfdea0c52269cb699df2/",
+          "icon": "dashboard"
+        },
+        {
+          "title": "Compute Resources / Cluster",
+          "type": "link",
+          "url": "/d/efa86fd1d0c121a26444b636a3f509a8/",
+          "icon": "dashboard"
+        }
+      ],
+      "panels": [
+        {
+          "type": "row",
+          "title": "Cluster",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 1
+          },
+          "panels": [],
+          "id": 1
+        },
+        {
+          "type": "stat",
+          "title": "Nodes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "count(kube_node_info)",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 2
+        },
+        {
+          "type": "stat",
+          "title": "Running pods",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 3,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "count(kube_pod_info{node!=\"\"} * on (namespace,pod) group_left() max by (namespace,pod) (kube_pod_status_phase{phase=\"Running\"} == 1))",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 3
+        },
+        {
+          "type": "stat",
+          "title": "Memory reserved",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(sum by (namespace,pod) (kube_pod_container_resource_requests{resource=\"memory\",node!=\"\"}) * on (namespace,pod) group_left() max by (namespace,pod) (kube_pod_status_phase{phase=\"Running\"} == 1)) / sum(kube_node_status_allocatable{resource=\"memory\",node!=\"\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              },
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "id": 4
+        },
+        {
+          "type": "stat",
+          "title": "CPU reserved",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 9,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(sum by (namespace,pod) (kube_pod_container_resource_requests{resource=\"cpu\",node!=\"\"}) * on (namespace,pod) group_left() max by (namespace,pod) (kube_pod_status_phase{phase=\"Running\"} == 1)) / sum(kube_node_status_allocatable{resource=\"cpu\",node!=\"\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              },
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "id": 5
+        },
+        {
+          "type": "stat",
+          "title": "Memory allocatable",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(kube_node_status_allocatable{resource=\"memory\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 6
+        },
+        {
+          "type": "stat",
+          "title": "CPU allocatable",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 15,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(kube_node_status_allocatable{resource=\"cpu\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "suffix: cores",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              },
+              "decimals": 1
+            },
+            "overrides": []
+          },
+          "id": 7
+        },
+        {
+          "type": "text",
+          "title": "Legend",
+          "gridPos": {
+            "x": 18,
+            "y": 1,
+            "w": 6,
+            "h": 3
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "🟩 running &nbsp; 🟦 in **$highlight** &nbsp; 🟨 pending  \nSegments: pod `requests / allocatable`"
+          },
+          "id": 8
+        },
+        {
+          "type": "row",
+          "title": "$node",
+          "repeat": "node",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 24,
+            "h": 1
+          },
+          "panels": [],
+          "id": 9
+        },
+        {
+          "type": "stat",
+          "title": "Running pods",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 5,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "count(kube_pod_info{node=\"$node\"} * on (namespace,pod) group_left() max by (namespace,pod) (kube_pod_status_phase{phase=\"Running\"} == 1))",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "links": [
+            {
+              "title": "Compute Resources / Node (Pods)",
+              "url": "/d/200ac8fdbfbb74b39aff88118e4d1c2c/?var-node=${node}&${__url_time_range}"
+            }
+          ],
+          "id": 10
+        },
+        {
+          "type": "stat",
+          "title": "Role",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 3,
+            "y": 5,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "max by (role) (kube_node_role{node=\"$node\"}) or label_replace(absent(kube_node_role{node=\"$node\"}), \"role\", \"worker\", \"\", \"\")",
+              "instant": true,
+              "range": false,
+              "legendFormat": "{{role}}"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "name",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 11
+        },
+        {
+          "type": "stat",
+          "title": "Memory allocatable",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 8,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "max(kube_node_status_allocatable{resource=\"memory\",node=\"$node\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 12
+        },
+        {
+          "type": "stat",
+          "title": "CPU allocatable",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 3,
+            "y": 8,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "max(kube_node_status_allocatable{resource=\"cpu\",node=\"$node\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "suffix: cores",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              },
+              "decimals": 2
+            },
+            "overrides": []
+          },
+          "id": 13
+        },
+        {
+          "type": "barchart",
+          "title": "Reserved (requests / allocatable) — one segment per pod",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 5,
+            "w": 18,
+            "h": 6
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "label_replace(label_replace(label_join(sum by (node,namespace,pod,resource) (kube_pod_container_resource_requests{resource=~\"cpu|memory\",node=\"$node\",namespace!~\"$highlight\"}) * on (namespace,pod) group_left() max by (namespace,pod) (kube_pod_status_phase{phase=\"Running\"} == 1) / on (node,resource) group_left() max by (node,resource) (kube_node_status_allocatable{resource=~\"cpu|memory\"}), \"alloc\", \"/\", \"namespace\", \"pod\"), \"res\", \"Memory\", \"resource\", \"memory\"), \"res\", \"CPU\", \"resource\", \"cpu\")\n or\nlabel_replace(label_replace(label_replace(label_join(sum by (node,namespace,pod,resource) (kube_pod_container_resource_requests{resource=~\"cpu|memory\",node=\"$node\",namespace=~\"$highlight\"}) * on (namespace,pod) group_left() max by (namespace,pod) (kube_pod_status_phase{phase=\"Running\"} == 1) / on (node,resource) group_left() max by (node,resource) (kube_node_status_allocatable{resource=~\"cpu|memory\"}), \"alloc\", \"/\", \"namespace\", \"pod\"), \"alloc\", \"★ $1\", \"alloc\", \"(.*)\"), \"res\", \"Memory\", \"resource\", \"memory\"), \"res\", \"CPU\", \"resource\", \"cpu\")\n or\nlabel_replace(label_replace(label_replace(label_join(sum by (node,namespace,pod,resource) (kube_pod_container_resource_requests{resource=~\"cpu|memory\",node=\"$node\"}) * on (namespace,pod) group_left() max by (namespace,pod) (kube_pod_status_phase{phase=\"Pending\"} == 1) / on (node,resource) group_left() max by (node,resource) (kube_node_status_allocatable{resource=~\"cpu|memory\"}), \"alloc\", \"/\", \"namespace\", \"pod\"), \"alloc\", \"⏳ $1\", \"alloc\", \"(.*)\"), \"res\", \"Memory\", \"resource\", \"memory\"), \"res\", \"CPU\", \"resource\", \"cpu\")",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "groupingToMatrix",
+              "options": {
+                "columnField": "alloc",
+                "rowField": "res",
+                "valueField": "Value",
+                "emptyValue": "zero"
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "sort": [
+                  {
+                    "field": "res\\alloc",
+                    "desc": true
+                  }
+                ]
+              }
+            }
+          ],
+          "options": {
+            "orientation": "horizontal",
+            "stacking": "normal",
+            "xField": "res\\alloc",
+            "showValue": "never",
+            "barWidth": 0.85,
+            "groupWidth": 0.7,
+            "barRadius": 0,
+            "fullHighlight": false,
+            "xTickLabelRotation": 0,
+            "xTickLabelSpacing": 0,
+            "legend": {
+              "showLegend": false,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "decimals": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "green"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 60,
+                "gradientMode": "none",
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^★ .*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^⏳ .*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "yellow"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 14
+        }
+      ]
+    }
