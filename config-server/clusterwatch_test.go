@@ -208,6 +208,50 @@ func TestGitopsStepGatesOnBootstrap(t *testing.T) {
 	}
 }
 
+// TestClusterWatchDialFailureMarksStorage: a kube-api dial failure is
+// a failure of the whole poll, so the storage row carries the error
+// beside its last good counts rather than staying silently green
+// (talos-config-63u5).
+func TestClusterWatchDialFailureMarksStorage(t *testing.T) {
+	b := newBootstrapper(t.TempDir(), testHubManager(t, nil))
+	if err := os.MkdirAll(filepath.Join(b.root, "machines", "aa-bb"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.root, "machines", "aa-bb", "meta.yaml"), []byte("config: cp.yaml\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g := newClusterWatcher(b.root, b)
+	g.dial = func(context.Context, string, string, time.Duration) (facetClient, error) {
+		return nil, errMemberUnknown
+	}
+	// A previous poll read the volumes fine.
+	g.setStorage(storageSnapshot{Total: 3}, nil)
+	b.setSnap(func(s *bootSnapshot) { s.State = etcdRunning.String(); s.Target = "aa:bb"; s.Name = "cp1" })
+
+	g.step(t.Context())
+
+	if snap := g.status(); !strings.Contains(snap.Err, "dial cp1/kube-api") {
+		t.Fatalf("gitops Err = %q, want the dial failure", snap.Err)
+	}
+	st := g.storageStatus()
+	if !strings.Contains(st.Err, "dial cp1/kube-api") {
+		t.Fatalf("storage Err = %q, want the dial failure", st.Err)
+	}
+	if st.Total != 3 {
+		t.Fatalf("storage Total = %d, want the last good read kept", st.Total)
+	}
+	if line, warn := st.line(); !warn || !strings.Contains(line, "dial cp1/kube-api") {
+		t.Fatalf("storage line = %q warn=%v", line, warn)
+	}
+
+	// The control plane disappearing from git is the same story.
+	b.setSnap(func(s *bootSnapshot) { s.Target = "cc:dd"; s.Name = "cp2" })
+	g.step(t.Context())
+	if st := g.storageStatus(); !strings.Contains(st.Err, "cc:dd not declared") {
+		t.Fatalf("storage Err = %q, want the undeclared control plane", st.Err)
+	}
+}
+
 // TestGitopsLine pins the two ages the row exists for.
 func TestGitopsLine(t *testing.T) {
 	now := time.Date(2026, 9, 29, 20, 0, 0, 0, time.UTC)
