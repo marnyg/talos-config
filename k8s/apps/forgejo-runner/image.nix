@@ -38,6 +38,11 @@
 # secret's first 16 hex chars, so the same secret is the same runner
 # on every start and Forgejo keeps one row, bootstrap.md step 1), then
 # daemon on /etc/forgejo-runner/config.yml (config.yaml).
+# Both credential files — /root/.config/attic/config.toml and
+# /data/.runner — are written mode 600 onto memory-backed emptyDirs
+# (deployment.yaml): invariant 8, plaintext only in memory; and 600
+# because builds run as nixbld users who must not read the runner's
+# token and re-register as it.
 #
 #   RUNNER_SECRET   40 hex chars, the one registered in Forgejo
 #   RUNNER_NAME     the runner's name there; default the pod's hostname
@@ -80,11 +85,12 @@ let
       endpoint = "$ATTIC_ENDPOINT"
       token = "$ATTIC_TOKEN"
       EOF
-      umask 022
 
       cd /data
       forgejo-runner create-runner-file --instance "$FORGEJO_URL" \
         --secret "$RUNNER_SECRET" --name "$RUNNER_NAME"
+      chmod 600 .runner
+      umask 022
       echo "runner: $RUNNER_NAME → $FORGEJO_URL; attic → $ATTIC_ENDPOINT"
       exec forgejo-runner daemon --config /etc/forgejo-runner/config.yml
     '';
