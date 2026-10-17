@@ -22,10 +22,33 @@
   function num(v) { v = String(v || '').trim().replace(',', '.'); if (v === '') return null; var f = parseFloat(v); return isNaN(f) ? null : f; }
   function secs(v) { v = String(v || '').trim(); if (v === '') return null; var p = v.split(':').map(Number); if (p.some(isNaN)) return null; return p.length === 1 ? p[0] : p.length === 2 ? p[0] * 60 + p[1] : p[0] * 3600 + p[1] * 60 + p[2]; }
 
+  // ---- weight units ----
+  // Storage and the /api/sets contract are kg; `unit` is display only
+  // (the `weight_unit` setting, surfaced as #log[data-unit]).
+  var LB_PER_KG = 2.2046226218;
+  function round1(v) { return Math.round(v * 10) / 10; }
+  function toDisplay(kg, unit) { return kg == null ? null : unit === 'lb' ? round1(kg * LB_PER_KG) : kg; }
+  function toKg(v, unit) { return v == null ? null : unit === 'lb' ? Math.round(v / LB_PER_KG * 100) / 100 : v; }
+  // plateSplit: per-side plates for `targetKg` on `barKg`, greedy over
+  // `plates` (kg, any order). Returns { sides: [{plate, n}], rest } where
+  // rest is the per-side kg the plate set cannot make (0 when exact).
+  function plateSplit(targetKg, barKg, plates) {
+    var side = (targetKg - barKg) / 2, out = [];
+    if (!(side > 0)) return { sides: out, rest: side < 0 ? side : 0 };
+    plates.slice().sort(function (a, b) { return b - a; }).forEach(function (p) {
+      if (!(p > 0)) return;
+      var n = Math.floor((side + 1e-9) / p); if (n > 0) { out.push({ plate: p, n: n }); side = Math.round((side - n * p) * 1000) / 1000; }
+    });
+    return { sides: out, rest: side };
+  }
+  window.Workouts = { plateSplit: plateSplit, toKg: toKg, toDisplay: toDisplay };
+
   // ---- active workout ----
   var log = document.getElementById('log');
   if (log) {
     var restDefault = +log.dataset.rest || 120;
+    var unit = log.dataset.unit === 'lb' ? 'lb' : 'kg';
+    var plates = (log.dataset.plates || '25,20,15,10,5,2.5,1.25').split(',').map(num).filter(function (p) { return p != null; });
     var restEl = document.getElementById('rest'), restLeft = document.getElementById('rest-left'), restEnd = 0, restTimer = null;
     var ding = null;
     try { ding = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
@@ -47,7 +70,11 @@
     function rowData(tr) {
       var g = function (n) { var i = tr.querySelector('[name=' + n + ']'); return i ? i.value : null; };
       var dist = num(g('distance'));
-      return { kind: tr.dataset.kind || 'normal', weight: num(g('weight')), reps: num(g('reps')) == null ? null : Math.round(num(g('reps'))), distance: dist == null ? null : dist * 1000, duration: secs(g('duration')), completed: tr.classList.contains('done') };
+      // An untouched weight input still carries the exact stored kg in
+      // data-kg; once edited, the typed display value is converted.
+      var wi = tr.querySelector('[name=weight]');
+      var weight = !wi ? null : wi.dataset.kg != null ? num(wi.dataset.kg) : toKg(num(wi.value), unit);
+      return { kind: tr.dataset.kind || 'normal', weight: weight, reps: num(g('reps')) == null ? null : Math.round(num(g('reps'))), distance: dist == null ? null : dist * 1000, duration: secs(g('duration')), completed: tr.classList.contains('done') };
     }
     var pending = {};
     function save(tr, immediate) {
@@ -55,7 +82,7 @@
       var run = function () { api('POST', '/api/sets/' + tr.dataset.id, rowData(tr)).catch(function () { tr.classList.add('unsaved'); }); };
       if (immediate) run(); else pending[tr.dataset.id] = setTimeout(run, 500);
     }
-    log.addEventListener('input', function (e) { var tr = e.target.closest('tr.set'); if (tr) save(tr); });
+    log.addEventListener('input', function (e) { if (e.target.name === 'weight') delete e.target.dataset.kg; var tr = e.target.closest('tr.set'); if (tr) save(tr); });
     log.addEventListener('change', function (e) { var tr = e.target.closest('tr.set'); if (tr) save(tr, true); });
     // Enter moves to the next input
     log.addEventListener('keydown', function (e) {
@@ -63,10 +90,11 @@
       e.preventDefault(); var all = Array.prototype.slice.call(log.querySelectorAll('tr.set input')); var n = all[all.indexOf(e.target) + 1]; if (n) n.focus(); else e.target.blur();
     });
 
-    var kindDialog = document.getElementById('kind-dialog'), kindRow = null;
+    var kindDialog = document.getElementById('kind-dialog'), kindRow = null, kindPlates = document.getElementById('kind-plates');
     kindDialog.addEventListener('click', function (e) {
       var k = e.target.closest('[data-kind]'); if (!k || !kindRow) return;
       kindDialog.close();
+      if (k.dataset.kind === 'plates') { openPlates(kindRow); return; }
       if (k.dataset.kind === 'delete') {
         var tr = kindRow, tbody = tr.parentNode;
         api('DELETE', '/api/sets/' + tr.dataset.id).then(function () { tr.remove(); renumber(tbody); });
@@ -82,13 +110,33 @@
       tr.className = 'set kind-normal'; tr.dataset.id = s.id; tr.dataset.kind = 'normal';
       tr.querySelector('.prev').textContent = '-';
       var set = function (n, v) { var i = tr.querySelector('[name=' + n + ']'); if (i) i.value = v == null ? '' : v; };
-      set('weight', s.weight); set('reps', s.reps); set('distance', s.distance == null ? null : s.distance / 1000); set('duration', s.duration == null ? null : fmt(s.duration));
+      set('weight', toDisplay(s.weight, unit)); var wi = tr.querySelector('[name=weight]'); if (wi) wi.dataset.kg = s.weight == null ? '' : s.weight;
+      set('reps', s.reps); set('distance', s.distance == null ? null : s.distance / 1000); set('duration', s.duration == null ? null : fmt(s.duration));
       return tr;
     }
 
+    // ---- plate calculator (per side, greedy over the `plates` setting) ----
+    var plateDialog = document.getElementById('plate-dialog'), plateTarget = document.getElementById('plate-target'), plateBar = document.getElementById('plate-bar'), plateList = document.getElementById('plate-list'), plateNote = document.getElementById('plate-note');
+    function renderPlates() {
+      var target = toKg(num(plateTarget.value), unit), bar = +plateBar.value;
+      plateList.innerHTML = ''; plateNote.textContent = '';
+      if (target == null) return;
+      var r = plateSplit(target, bar, plates);
+      if (target < bar) { plateNote.textContent = 'Lighter than the bar.'; return; }
+      r.sides.forEach(function (s) { var li = document.createElement('li'); li.innerHTML = '<b>' + s.n + ' ×</b> ' + toDisplay(s.plate, unit) + ' ' + unit; plateList.appendChild(li); });
+      if (!r.sides.length) plateNote.textContent = 'Empty bar.';
+      if (r.rest > 0) plateNote.textContent = toDisplay(r.rest * 2, unit) + ' ' + unit + ' short — no plate small enough.';
+    }
+    function openPlates(tr) {
+      var wi = tr.querySelector('[name=weight]'); if (!wi) return;
+      plateTarget.value = wi.value; renderPlates(); plateDialog.showModal();
+    }
+    plateTarget.addEventListener('input', renderPlates);
+    plateBar.addEventListener('change', renderPlates);
+
     log.addEventListener('click', function (e) {
       var t = e.target;
-      if (t.closest('.kind')) { kindRow = t.closest('tr.set'); kindDialog.showModal(); return; }
+      if (t.closest('.kind')) { kindRow = t.closest('tr.set'); kindPlates.hidden = !kindRow.closest('.slot').dataset.plates; kindDialog.showModal(); return; }
       if (t.closest('.check')) {
         var tr = t.closest('tr.set'); var slot = tr.closest('.slot');
         tr.classList.toggle('done'); save(tr, true);

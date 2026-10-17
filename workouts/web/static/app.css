@@ -103,6 +103,14 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 dialog button { display: block; width: 100%; margin: 6px 0; text-align: left; }
 dialog button b { display: inline-block; width: 1.6em; }
 #picker { width: min(96vw, 600px); height: 85vh; }
+
+/* plate calculator */
+.plate-inputs { gap: 10px; align-items: flex-end; }
+.plate-inputs label { flex: 1; font-size: .8rem; color: var(--muted); }
+.plate-inputs input, .plate-inputs select { width: 100%; margin-top: 4px; }
+.plates { list-style: none; margin: 12px 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.plates li { background: var(--accent); color: #fff; border-radius: 999px; padding: 6px 12px; font-variant-numeric: tabular-nums; }
+.plates li b { font-weight: 700; margin-right: 2px; }
 #picker .item { cursor: pointer; }
 
 /* template editor */

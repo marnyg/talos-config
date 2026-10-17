@@ -34,13 +34,13 @@
 <section>
   <h2>Personal records</h2>
   <table class="plain">
-    <tr><td>Estimated 1RM</td><td class="right">{{if $r.Est1RM}}{{int $r.Est1RM.Value}} kg{{else}}-{{end}}</td></tr>
-    <tr><td>Max volume</td><td class="right">{{if $r.MaxVolume}}{{num $r.MaxVolume.Value}} kg{{else}}-{{end}}</td></tr>
-    <tr><td>Max weight</td><td class="right">{{if $r.MaxWeight}}{{num $r.MaxWeight.Value}} kg{{else}}-{{end}}</td></tr>
+    <tr><td>Estimated 1RM</td><td class="right">{{if $r.Est1RM}}{{wti $r.Est1RM.Value}} {{wunit}}{{else}}-{{end}}</td></tr>
+    <tr><td>Max volume</td><td class="right">{{if $r.MaxVolume}}{{wtf $r.MaxVolume.Value}} {{wunit}}{{else}}-{{end}}</td></tr>
+    <tr><td>Max weight</td><td class="right">{{if $r.MaxWeight}}{{wtf $r.MaxWeight.Value}} {{wunit}}{{else}}-{{end}}</td></tr>
   </table>
   <table class="plain"><tr><th>REPS</th><th>BEST PERFORMANCE</th><th class="right">ESTIMATED</th></tr>
   {{range $n := seq 12}}{{$b := index $r.RepMax $n}}
-    <tr><td>{{$n}}</td><td>{{if $b}}{{num $b.WeightKg}} kg (×{{$b.Reps}})<br><span class="muted small">{{day $b.At}}</span>{{else}}-{{end}}</td><td class="right">{{if $r.Est1RM}}{{int ($r.EstimateAtReps $n)}} kg{{else}}-{{end}}</td></tr>
+    <tr><td>{{$n}}</td><td>{{if $b}}{{wtf $b.WeightKg}} {{wunit}} (×{{$b.Reps}})<br><span class="muted small">{{day $b.At}}</span>{{else}}-{{end}}</td><td class="right">{{if $r.Est1RM}}{{wti ($r.EstimateAtReps $n)}} {{wunit}}{{else}}-{{end}}</td></tr>
   {{end}}
   </table>
 </section>

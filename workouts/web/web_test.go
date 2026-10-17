@@ -154,3 +154,60 @@ func TestPagesAndLiveWorkout(t *testing.T) {
 	get(t, c, u+tr["redirect"], "Legs", "2 × Bench Press")
 	get(t, c, u+"/", "Legs")
 }
+
+// TestWeightUnitLb flips weight_unit to lb and checks /log, history and
+// the exercise page render converted values while storage stays kg.
+func TestWeightUnitLb(t *testing.T) {
+	srv, s := newApp(t)
+	c := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	u := srv.URL
+
+	post(t, c, u+"/settings", "weight_unit=lb&plates=20,10,5,2.5")
+	post(t, c, u+"/workouts/start", "template=t1")
+	get(t, c, u+"/log", "<th>LB</th>", `value="132.3"`, `data-kg="60"`, "132.3 lb × 8", `data-unit="lb"`, `data-plates="20,10,5,2.5"`, `step="2.5"`, `id="plate-dialog"`, "44.1 lb")
+	get(t, c, u+"/history", " lb")
+	get(t, c, u+"/exercises/bench?s=records", "164 lb", "132.3 lb (×8)")
+	post(t, c, u+"/log/cancel", "")
+
+	// stored value is still kg
+	tpl, _ := s.GetTemplate(context.Background(), "t1")
+	if *tpl.Exercises[0].Sets[0].WeightKg != 60 {
+		t.Fatalf("storage drifted: %v", *tpl.Exercises[0].Sets[0].WeightKg)
+	}
+
+	// unset / blank plates fall back to the default list; kg is the default unit
+	post(t, c, u+"/settings", "weight_unit=kg&plates=+")
+	post(t, c, u+"/workouts/start", "template=t1")
+	get(t, c, u+"/log", "<th>KG</th>", `value="60"`, `data-unit="kg"`, `data-plates="25,20,15,10,5,2.5,1.25"`, `step="0.5"`)
+}
+
+func TestWeightUnitFormat(t *testing.T) {
+	f := 60.0
+	cases := []struct {
+		u        weightUnit
+		kg       float64
+		want     string
+		wantInt  int
+		wantStep string
+	}{
+		{unitKg, 60, "60", 60, "0.5"},
+		{unitKg, 62.5, "62.5", 63, "0.5"},
+		{unitLb, 60, "132.3", 132, "2.5"},
+		{unitLb, 100, "220.5", 221, "2.5"},
+		{unitLb, 2.5, "5.5", 6, "2.5"},
+	}
+	for _, c := range cases {
+		if got := c.u.fmt(c.kg); got != c.want {
+			t.Errorf("%s fmt(%v) = %q, want %q", c.u, c.kg, got, c.want)
+		}
+		if got := c.u.fmtInt(c.kg); got != c.wantInt {
+			t.Errorf("%s fmtInt(%v) = %d, want %d", c.u, c.kg, got, c.wantInt)
+		}
+		if got := c.u.step(); got != c.wantStep {
+			t.Errorf("%s step() = %q", c.u, got)
+		}
+	}
+	if unitLb.fmtPtr(nil) != "-" || unitLb.fmtPtr(&f) != "132.3" {
+		t.Errorf("fmtPtr: %q %q", unitLb.fmtPtr(nil), unitLb.fmtPtr(&f))
+	}
+}

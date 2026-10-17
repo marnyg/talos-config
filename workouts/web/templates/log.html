@@ -5,14 +5,14 @@
   <span class="grow"></span>
   <form method="post" action="/log/finish" id="finish-form"><input type="hidden" name="update_template" id="update_template" value="0"><button class="btn primary" id="finish-btn" data-template="{{if $w.TemplateID}}1{{end}}">FINISH</button></form>
 </header>
-<section id="log" data-rest="{{.Data.RestDef}}">
+<section id="log" data-rest="{{.Data.RestDef}}" data-unit="{{.Data.Unit}}" data-plates="{{.Data.Plates}}">
   <details class="meta">
     <summary><h1>{{$w.Name}}</h1><span class="muted small timer" data-since="{{$w.StartedAt.Unix}}"></span>{{if $w.Notes}}<p class="small">{{$w.Notes}}</p>{{end}}</summary>
     <form method="post" action="/log/meta"><input name="name" value="{{$w.Name}}"><textarea name="notes" rows="2" placeholder="Workout notes">{{$w.Notes}}</textarea><button>Save</button></form>
   </details>
   {{range $we := $w.Exercises}}
   {{$e := $we.Exercise}}
-  <article class="slot" data-id="{{$we.ID}}" data-rest="{{if $we.RestS}}{{$we.RestS}}{{end}}">
+  <article class="slot" data-id="{{$we.ID}}" data-rest="{{if $we.RestS}}{{$we.RestS}}{{end}}"{{if plateCalc $e}} data-plates="1"{{end}}>
     <div class="row">
       <a class="ex-name" href="/exercises/{{$e.ID}}">{{$e.Name}}</a><span class="grow"></span>
       <details class="menu"><summary class="btn">⋯</summary>
@@ -36,8 +36,8 @@
       {{$p := index $prev $we.ID}}
       <tr class="set {{if $s.Completed}}done{{end}} kind-{{$s.Kind}}" data-id="{{$s.ID}}" data-kind="{{$s.Kind}}">
         <td><button class="kind">{{if setKind $s.Kind}}{{setKind $s.Kind}}{{else}}{{add $i 1}}{{end}}</button></td>
-        <td class="prev muted">{{if lt $i (len $p)}}{{$ps := index $p $i}}{{if $ps.WeightKg}}{{kg $ps.WeightKg}} kg{{end}}{{if $ps.Reps}} × {{derefi $ps.Reps}}{{end}}{{if $ps.DistanceM}}{{num (div1000 $ps.DistanceM)}} km{{end}}{{if $ps.DurationS}} {{secs $ps.DurationS}}{{end}}{{else}}-{{end}}</td>
-        {{if $e.HasWeight}}<td><input type="number" inputmode="decimal" step="0.5" name="weight" value="{{if $s.WeightKg}}{{kg $s.WeightKg}}{{end}}"></td>{{end}}
+        <td class="prev muted">{{if lt $i (len $p)}}{{$ps := index $p $i}}{{if $ps.WeightKg}}{{wt $ps.WeightKg}} {{wunit}}{{end}}{{if $ps.Reps}} × {{derefi $ps.Reps}}{{end}}{{if $ps.DistanceM}}{{num (div1000 $ps.DistanceM)}} km{{end}}{{if $ps.DurationS}} {{secs $ps.DurationS}}{{end}}{{else}}-{{end}}</td>
+        {{if $e.HasWeight}}<td><input type="number" inputmode="decimal" step="{{wstep}}" name="weight" data-kg="{{if $s.WeightKg}}{{kg $s.WeightKg}}{{end}}" value="{{if $s.WeightKg}}{{wt $s.WeightKg}}{{end}}"></td>{{end}}
         {{if $e.HasCell "REPS"}}<td><input type="number" inputmode="numeric" name="reps" value="{{if $s.Reps}}{{derefi $s.Reps}}{{end}}"></td>{{end}}
         {{if $e.HasCell "DISTANCE"}}<td><input type="number" inputmode="decimal" step="0.01" name="distance" value="{{if $s.DistanceM}}{{num (div1000 $s.DistanceM)}}{{end}}"></td>{{end}}
         {{if $e.HasCell "DURATION"}}<td><input type="text" inputmode="numeric" name="duration" placeholder="m:ss" value="{{if $s.DurationS}}{{secs $s.DurationS}}{{end}}"></td>{{end}}
@@ -58,5 +58,14 @@
 <div class="rest" id="rest" hidden><span id="rest-left">2:00</span><button id="rest-minus">−30</button><button id="rest-plus">+30</button><button id="rest-skip">Skip</button></div>
 <dialog id="kind-dialog"><h2>Set type</h2>
   <button data-kind="warmup"><b>W</b> Warm up</button><button data-kind="drop"><b>D</b> Drop set</button><button data-kind="failure"><b>F</b> Failure</button><button data-kind="normal">Normal</button>
+  <button data-kind="plates" id="kind-plates" hidden>⚖ Plate calculator</button>
   <button data-kind="delete" class="danger">Delete set</button><button onclick="this.closest('dialog').close()">Close</button></dialog>
+<dialog id="plate-dialog"><h2>Plates per side</h2>
+  <div class="row plate-inputs">
+    <label>Weight ({{wunit}}) <input type="number" inputmode="decimal" step="{{wstep}}" id="plate-target"></label>
+    <label>Bar <select id="plate-bar"><option value="20">{{wtf 20.0}} {{wunit}}</option><option value="15">{{wtf 15.0}} {{wunit}}</option><option value="10">{{wtf 10.0}} {{wunit}}</option></select></label>
+  </div>
+  <ul id="plate-list" class="plates"></ul>
+  <p id="plate-note" class="muted small"></p>
+  <button onclick="this.closest('dialog').close()">Close</button></dialog>
 {{end}}

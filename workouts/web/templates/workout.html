@@ -11,7 +11,7 @@
     <table class="plain">{{range $i, $s := .Sets}}<tr><td class="num">{{if setKind $s.Kind}}{{setKind $s.Kind}}{{else}}{{add $i 1}}{{end}}</td><td>{{template "setline" $s}}</td><td class="right">{{if $s.Est1RM}}{{int $s.Est1RM}}{{end}}</td></tr>{{end}}</table>
   </div>
   {{end}}
-  <div class="stats"><span>⏱ {{dur $w.Duration}}</span><span>🏋 {{num $w.Volume}} kg</span><span>🏆 {{.Data.PRs}} PRs</span></div>
+  <div class="stats"><span>⏱ {{dur $w.Duration}}</span><span>🏋 {{wtf $w.Volume}} {{wunit}}</span><span>🏆 {{.Data.PRs}} PRs</span></div>
   <form method="post" action="/workouts/start"><input type="hidden" name="name" value="{{$w.Name}}">{{if $w.TemplateID}}<input type="hidden" name="template" value="{{deref2 $w.TemplateID}}">{{end}}<button class="primary wide">PERFORM AGAIN</button></form>
   <form method="post" action="/workouts/{{$w.ID}}/delete" onsubmit="return confirm('Delete this workout?')"><button class="wide danger">Delete workout</button></form>
 </section>

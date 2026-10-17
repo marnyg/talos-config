@@ -32,7 +32,7 @@
 </body>
 </html>
 
-{{define "setline"}}{{if .WeightKg}}{{kg .WeightKg}} kg{{end}}{{if .Reps}}{{if .WeightKg}} × {{end}}{{derefi .Reps}}{{if not .WeightKg}} reps{{end}}{{end}}{{if .DistanceM}}{{num (div1000 .DistanceM)}} km{{end}}{{if .DurationS}} {{secs .DurationS}}{{end}}{{if .RPE}} <span class="muted">@{{num (deref .RPE)}}</span>{{end}}{{end}}
+{{define "setline"}}{{if .WeightKg}}{{wt .WeightKg}} {{wunit}}{{end}}{{if .Reps}}{{if .WeightKg}} × {{end}}{{derefi .Reps}}{{if not .WeightKg}} reps{{end}}{{end}}{{if .DistanceM}}{{num (div1000 .DistanceM)}} km{{end}}{{if .DurationS}} {{secs .DurationS}}{{end}}{{if .RPE}} <span class="muted">@{{num (deref .RPE)}}</span>{{end}}{{end}}
 {{define "exercise-filter"}}
 <form class="filter" method="get">
   <input type="search" name="q" value="{{.Filter.Query}}" placeholder="Search" autocomplete="off">
