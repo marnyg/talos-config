@@ -4,41 +4,40 @@
      Backward-looking. Resets each session. -->
 
 ## Last session
-2026-10-21: **Actual Budget** (`7yzv`, `194eefc`) at
-`budget.gw.mesh.internal` — `k8s/apps/actual`, the Vaultwarden
-posture copied: one 2Gi Longhorn volume (`server-files/` +
-`user-files/`), `26.10.0-alpine` by digest run as uid 1000 (the image
-ships no USER) with a read-only root fs, admins gate on the Ingress,
-Actual's own server password as the second gate, https name because
-the web app needs a secure context (ADR-0033). Gatus row + Homepage
-tile. Verified live: `/health` UP through the gateway,
-owner set the server password the same day; `7yzv` closed.
+2026-10-17: **CI on the cluster feeds the Nix cache** (`0m50`, closed;
+ADR-0039 Proposed). `k8s/apps/forgejo-runner`: one host-mode
+forgejo-runner (`cluster-nix`, image `b60f951`, PSS baseline, nixbld
+build users, credentials on memory emptyDirs) runs
+`.forgejo/workflows/nix-cache.yml` from the pull-mirror
+`mirrors/talos-config` on each push, nightly and on dispatch. It builds
+every x86_64-linux package of this flake and the desktop, laptop and
+wsl toplevels of `marnyg/nixos`, then pushes them to Attic. Verified:
+run #9 green; config-server and all three `nixos-system-*` HIT from the
+Mac over the mesh. Getting there took nine runs and five fixes (run
+token for the private mirror, honest store registration, build users,
+attic endpoint pin, attic chunking off). Each is in `git log` and the
+image.nix/attic-config comments. Also: attic memory limit 2Gi, runner
+ns warn/audit baseline, invariant 8 enforced on the runner (`7828ce2`).
 
-Same session: **the admins gate became ingress-nginx's
-`global-auth-url`** (`9235085`, `332b463`) — every Ingress is gated
-unless it opts out with `enable-global-auth: "false"` (argocd,
-jellyfin, seerr, siwe-oidc do, each with a comment saying why); the
-19 per-Ingress `auth-url` annotations went. Default flipped from
-open-unless-annotated to gated-unless-opted-out; verified identical
-401/open split from inside the controller and 200 through the
-gateway. `notes.md` lost 8 stale entries (p0relay scratch, herdr
-recipes the swarm skills own, superseded timings).
-
-Previous session (2026-10-20): **Audiobookshelf + Chaptarr in `media`** (`htsj`, `2eff6fa`).
-A `books` RWX volume on `longhorn-bulk` (200Gi, `storage/pvcs.yaml`)
-holds `audiobooks/` and `ebooks/`; `k8s/apps/chaptarr` (Readarr fork,
-`0.9.965` by digest, port 8789, uid 1000, one root init chowns the
-library roots like transmission's) writes it, `k8s/apps/audiobookshelf`
-(`2.37.1` by digest, `PORT=13378`, one 10Gi volume with `config/` +
-`metadata/` subPaths) reads it. Both `*.gw.mesh.internal` behind the
-admins gate; ABS keeps its own accounts (Vaultwarden posture, not
-Jellyfin's OIDC). Chaptarr's configurator adds NZBget + Transmission
-(categories `Audiobooks`/`Ebooks`, now declared in nzbget's conf),
-NZBgeek (3030/7000/7020), and registers in Prowlarr as a **Readarr**
-app (Prowlarr has no Chaptarr type, Prowlarr#2772). Verified live: both
-200 through the gateway, clients/indexer/pairing present.
+Parallel session, same worktree (its dates read 2026-10-20/21): **Actual
+Budget** (`7yzv`) at `budget.gw.mesh.internal` (Vaultwarden posture,
+verified live); **the admins gate became ingress-nginx's
+`global-auth-url`**: gated unless an Ingress opts out with
+`enable-global-auth: "false"` (argocd, jellyfin, seerr, siwe-oidc);
+**Audiobookshelf + Chaptarr** in `media` (`htsj`) on a shared `books`
+volume, both 200 through the gateway.
 
 ## Loose threads
+
+- ADR-0039 is **Proposed**: the owner accepts it, or not.
+- `3leu` (debt): the sandbox agent's Forgejo token header still sits
+  on a disk-backed emptyDir (invariant 8, same fix as the runner).
+- `1ova` (debt): one unhealthy wave-0 resource holds the whole `apps`
+  sync op (vms/ waves). Bit again today; terminate recipe in notes.md.
+- The runner image builds on the laptop path (`build.sh`, box via
+  `HUB_BUILDER`); CI caches it but doesn't push to ghcr.
+- Darwin outputs (the Mac) are still built by no one. The Mac needs the
+  nix.conf from `nix-cache/bootstrap.md` §3 to use the cache at all.
 
 - Actual: OpenID against the SIWE bridge (`ACTUAL_LOGIN_METHOD=openid`)
   is the path if the household ever needs per-person accounts; not
@@ -73,6 +72,9 @@ app (Prowlarr has no Chaptarr type, Prowlarr#2772). Verified live: both
 
 ## Suggested next steps
 
+- Accept (or amend) ADR-0039; point the NixOS box's and the Mac's
+  nix.conf at the cache (`nix-cache/bootstrap.md` §3) and watch a
+  `nixos-rebuild` substitute instead of build.
 - Do the two first-run setups above, drop one audiobook in, confirm
   Chaptarr import → ABS scan end to end; then close `htsj`.
 - Add indexers to Prowlarr so the pairing carries something.

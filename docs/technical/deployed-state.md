@@ -167,6 +167,22 @@ history and, where the numbers still matter, in ADR-0006 and
   `kube-api` every 5 min and warns on a reconcile > 20 min old or a
   sync op Running > 30 min (`config-server/clusterwatch.go`). The 09-29
   hang (op waiting on the ghost gateway pod) ended with the w1 taint.
+  Hit again 2026-10-17 by a never-healthy forgejo-runner Deployment:
+  one unhealthy wave-0 resource anywhere holds the whole op
+  (`1ova`); terminate recipe in notes.md 2026-09-29.
+- **Nix caches + CI** _(verified 2026-10-17; ADR-0039, `kyiy`,
+  `0m50`)_: ns `nix-cache` holds a pull-through `nixos-mirror`
+  (hostPort 5000 on nas1, `cache.lan` once the router has the record) and Attic
+  at `cache.gw.mesh.internal/main` (public, key
+  `main:XkJGH65OA/NHub3CozVJL7mIt7uTfqLAVgNoQbUIcHw=`, chunking off,
+  Service ClusterIP pinned `10.103.91.1`). ns `forgejo-runner`: one
+  host-mode runner `cluster-nix` on w1 (image `b60f951`, PSS baseline,
+  nixbld build users, credentials on memory emptyDirs) runs
+  `.forgejo/workflows/nix-cache.yml` from the pull-mirror
+  `mirrors/talos-config` (10 min) on push, nightly 03:00 and
+  dispatch. Attic holds every x86_64-linux package of this flake and
+  the desktop/laptop/wsl toplevels of `marnyg/nixos` (HIT from the Mac,
+  run #9). Cold run on a fresh pod about 1.5 h; warm about 1 min.
 - Provenance of the image line: 2026-09-15 cp1 first booted an
   imager build (`p0agent` 0.0.3, scratch relay); 2026-09-16 it became
   the declared image (ADR-0023); 2026-09-19/20 w1 followed and both

@@ -198,7 +198,7 @@
   day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
   `verification/quint/{authorize,runway,approval}.qnt` record the
   trace). When the glossary and a model disagree, check the model's
-  header first — it says which ruling applied.
+  header first — it says which ruling applied. <!-- stale? -->
 - 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed and
   partly built** (2026-09-17: Issuer listens in-process, Enroll →
   `#mint-device`, relay child, `/.well-known`; 2026-09-18: `#bundle`
@@ -206,7 +206,7 @@
   Provisioner-as-actor is not). Decision `itb` (hub
   HTTP over a stream facet) is revised by `mdv`: `/hosts` and `/policy`
   will not exist over the mesh — don't build them; the beat is
-  `#renew` + `#bundle`.
+  `#renew` + `#bundle`. <!-- stale? -->
 - 2026-09-18 — **Touching `protocol/*.go` stales TWO `vendorHash`es**
   (`config-server/nix`, `iroh-transport/nix`) and a cached FOD hides
   it — `nix build` then fails with an "undefined: actor.X" that looks
@@ -222,7 +222,7 @@
   `depends: - service: cri`**, or `talosctl upgrade`/`reboot` hangs at
   `teardownLifecycle` ("luks2-EPHEMERAL … still in use"). Symptom:
   `talosctl services` shows `ext-nebula`/`ext-iscsid` Finished and the
-  offender still Running; `talosctl service ext-<x> stop` unblocks it.
+  offender still Running; `talosctl service ext-<x> stop` unblocks it. <!-- stale? -->
 
 - 2026-09-16 — **P0.2 scratch on the NixOS box was torn down at the
   gate** (same day): `p0agent-standin`, `~/p0-jf/`, the `/data/p0test`
@@ -238,7 +238,7 @@
   `NIXPKGS_ALLOW_UNFREE=1 nix-shell --impure iroh-go/android-p0/shell.nix
   --run 'IROH_FFI_ANDROID_LIB=/tmp/android-ffi-result/lib ./build-aar.sh
   && gradle --no-daemon assembleDebug'` (`/tmp/android-ffi-result` is a
-  nix GC root only as long as nobody runs `nix-collect-garbage`).
+  nix GC root only as long as nobody runs `nix-collect-garbage`). <!-- stale? -->
 - 2026-09-16 — **Phone testing = `adb`, from the Mac**: `nix shell
   nixpkgs#android-tools`; the Sony XQ-BQ52 only enumerates adb after
   USB debugging is on *and* the cable is re-plugged. The Files-app
@@ -247,7 +247,7 @@
   p0mesh **evicts Tailscale** on the phone (one VpnService). The
   Jellyfin *app* is required for Direct Play (Firefox has no MKV
   demuxer and buffers forever while pulling the raw stream). Server
-  side: `curl /Sessions` with an API token shows `PlayMethod`.
+  side: `curl /Sessions` with an API token shows `PlayMethod`. <!-- stale? -->
 - 2026-09-16 — **Outside the home LAN every iroh path is the fly relay**
   (QAD off ⇒ no WAN punch attempted): ~50–75 Mbps to a phone. Do not
   read a throughput number taken from outside as a design result;
@@ -255,7 +255,7 @@
   `*ip:10.0.0.x` every 5 s while bytes move. At home the same setup
   went `*ip` within 5 s and held 97 Mbps avg (2026-09-16).
 
-## Hub / mesh (as running)
+## Hub / mesh (as running) <!-- stale? -->
 
 - 2026-09-17 — **The production hub relays iroh** at
   `https://marnyg-talos-config.fly.dev` (`/relay`, `/ping`,
@@ -413,7 +413,7 @@
   Accept with p≈2⁻¹⁵; all 7 seeded mutants survived until a
   boundary-biased generator (valid scenario + ≤2 injected faults)
   was added. Always mutation-test a new model before trusting `[ok]`.
-  Also: never `powerset()` a 25-element set in a generator.
+  Also: never `powerset()` a 25-element set in a generator. <!-- stale? -->
 - 2026-09-06 — **`iroh-go/` builds are slow cold and need the UA
   backport.** crates.io returns 403 to the generic User-Agent the
   flake's 2026-01 nixpkgs `fetchCargoVendor` sends; `iroh-go/nix/
@@ -422,12 +422,12 @@
   upstream fix. Cold on an M-series: iroh-ffi 7–10 min, iroh-relay
   8 min, uniffi-bindgen-go ~45 min; warm `nix build .#iroh-go-smoke`
   44 s. Hand-run `go build` in `iroh-go/` needs
-  `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`.
+  `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`. <!-- stale? -->
 - 2026-09-06 — `nix flake check --impure` is the canonical full check
   and is green since `81u` (18 YAML files yamlfmt'd, 0 semantic
   diffs). `--impure` is required by devenv, see the `flake.nix` header.
   yamlfmt quirk: a flow mapping that is the last sequence item before a
-  comment gets a trailing `,}` — valid YAML, all parsers agree, ugly.
+  comment gets a trailing `,}` — valid YAML, all parsers agree, ugly. <!-- stale? -->
 - 2026-09-06 — **rapid at the default 100 checks is too shallow for
   pair-faults.** In `protocol/cert` the m14 mutant (group rule as set
   overlap) died in only ~6 % of runs at 100 checks; the killing pair is
@@ -444,7 +444,7 @@
   open issues". Check `bd dolt show` says `Database: talos_config`.
   `export.auto` is `false`. Session-close check: `git ls-remote origin
   refs/dolt/data` must move after `bd dolt push`. Q-threads that are
-  `blocks`-chained need `--force` to close with a reason.
+  `blocks`-chained need `--force` to close with a reason. <!-- stale? -->
 - 2026-09-20 — **Three `bd` traps found while grooming, all silent.**
   (a) `bd ready --exclude-type` is a **no-op** in `1.0.3 (dev)` — it
   is accepted without error and filters nothing, for `epic` and `bug`
@@ -464,11 +464,11 @@
 
 - 2026-09-12 — **Upstream iroh's `.cargo/config.toml` pins
   `-fuse-ld=lld` for x86_64-linux** — the `iroh-relay` derivation
-  `rm`s it in `postPatch`; keep that when bumping iroh.
+  `rm`s it in `postPatch`; keep that when bumping iroh. <!-- stale? -->
 - 2026-09-13 — **`git pull --rebase` destroys merge commits.** The
   repo's default rebase flattened all six `merge swarm/*` commits of
   the M2 swarm (content intact, SHAs in bead notes gone). Either
-  `git pull --rebase=merges`, or `git fetch` + inspect before merging.
+  `git pull --rebase=merges`, or `git fetch` + inspect before merging. <!-- stale? -->
 - 2026-09-13 — `nix flake check --impure` now includes
   `.#iroh-transport` (runs the iroh handshake suite, ~25 s warm).
   Hand-run `go test` in `iroh-transport/` needs both
@@ -476,7 +476,7 @@
   and `IROH_RELAY_BIN=$(nix build .#iroh-relay --print-out-paths)/bin/iroh-relay`
   (relay test skips without the latter). `.#iroh-transport-static`
   exists only on Linux; no Linux builder is configured on the Mac —
-  the CI `static` job is the only place the musl link runs.
+  the CI `static` job is the only place the musl link runs. <!-- stale? -->
 - 2026-09-18 — **The next hub deploy asks for two signatures at
   `/status`** (decision `ce8`): the master message as before, plus
   the hubkey speak-as proposal. The proposal is per wallet and names
@@ -1164,3 +1164,34 @@
   is still booting (it validates live); the configurators retry POST
   but not PUT. A failed `Refreshing Prowlarr application` after a pod
   roll is usually that — rerun by deleting the pod.
+
+- 2026-10-17 — **Two sessions shared this worktree**; a parallel
+  session's commits (`6ac688a`, `20b49db`, homeassistant messages)
+  swept up the forgejo-runner files staged here. Commit with explicit
+  paths (`git commit -m … -- <paths>`), never `git add -A`, while
+  another session may be committing.
+- 2026-10-17 — **Reading Forgejo Actions logs**: the web log routes
+  reject basic auth, and the mirror repo 404s to anonymous callers
+  (the `mirrors` org is not public). Finished logs are at
+  `/var/lib/gitea/actions_log/mirrors/talos-config/<nn>/<task>.log.zst`
+  in the forgejo pod. The task id is not the run number:
+  `ls -t …/*/*.log.zst | head -1`. While a run is live, read
+  `/proc/*/cmdline` in the runner pod (no `ps` in the image).
+- 2026-10-17 — **Runner lifecycle**: the nix store lives in the runner
+  pod's overlay, so runs on the same pod are warm (about 1 min). A
+  ConfigMap change needs `rollout restart deploy/forgejo-runner`, and
+  that kills any run in flight: Forgejo leaves it "running" until the
+  zombie reaper. Start a fresh one with
+  `POST /repos/mirrors/talos-config/actions/workflows/nix-cache.yml/dispatches {"ref":"main"}`
+  (sysadmin). The mirror's first import fires no push event; force a
+  sync with `POST …/mirror-sync`. Attic's ConfigMap isn't hashed into
+  its pod either: `rollout restart deploy/attic`.
+- 2026-10-17 — **Docker on mar@nixos**: container DNS lookups take
+  exactly 5 s (one of the parallel A/AAAA replies gets lost), which
+  matches nix's old connect-timeout. Use `--dns-opt single-request`;
+  kube-dns doesn't have the problem. Smoke tests there must use the
+  pod's caps (`--cap-drop ALL --cap-add …`): the default-caps smoke
+  test missed two runner bugs.
+- 2026-10-17 — New ghcr packages default to **private**, and only the
+  browser can change that (Danger Zone; you must type the package name
+  to confirm). A node pull gets 401 until then.

@@ -30,7 +30,10 @@ discovery question (`b311`) remains. **Detour 2026-10-20, done:**
 Audiobookshelf + Chaptarr (`htsj`) on a shared `books` library;
 first-run UI setup on both remains. **Detour 2026-10-21, done:** Actual
 Budget (`7yzv`) at `budget.gw.mesh.internal`, Vaultwarden posture;
-server password + first budget remain. Back to the line above.
+server password + first budget remain. **Detour 2026-10-17, done:**
+CI on the cluster (`0m50`, ADR-0039 Proposed): a Forgejo runner feeds
+Attic with this flake and the NixOS systems; pointing the machines'
+nix.conf at it remains. Back to the line above.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for
