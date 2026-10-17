@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/config-server/fakeip"
+	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/meshtls"
 	"github.com/marnyg/talos-config/config-server/meshtun"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
@@ -289,6 +290,8 @@ func (t *Tunnel) StatusJSON() string {
 // NamesJSON is the plane as this member sees it — the last name map,
 // one row per name: [{"name","kind","node","online"}], sorted by name.
 // Replaces the v2 app's /hosts list. Empty before the first beat.
+// One pass over the map groups the live entries per name, then KindOf
+// runs once per distinct name (talos-config-fr9d: was Resolve per name).
 func (t *Tunnel) NamesJSON() string {
 	type row struct {
 		Name   string `json:"name"`
@@ -300,19 +303,32 @@ func (t *Tunnel) NamesJSON() string {
 	b := t.agent.Bundle()
 	if b != nil {
 		now := time.Now().Unix()
-		byName := map[string]bool{}
+		type group struct {
+			first issuer.NameEntry // first entry seen: its Aud is the row's node
+			live  []issuer.NameEntry
+		}
+		var order []string
+		byName := map[string]*group{}
 		for _, e := range b.NameMap {
 			n := e.Member.Cav.Name
-			if byName[n] {
-				continue
+			g, ok := byName[n]
+			if !ok {
+				g = &group{first: e}
+				byName[n] = g
+				order = append(order, n)
 			}
-			byName[n] = true
-			entries, _ := t.agent.Resolve(n)
+			if liveEntry(e, now) {
+				g.live = append(g.live, e)
+			}
+		}
+		for _, n := range order {
+			g := byName[n]
+			first := g.first
 			rows = append(rows, row{
 				Name:   n,
-				Kind:   string(nodeagent.KindOf(n, entries)),
-				Node:   e.Member.Aud,
-				Online: len(entries) > 0 && e.Location != nil && e.Location.Exp > now,
+				Kind:   string(nodeagent.KindOf(n, g.live)),
+				Node:   first.Member.Aud,
+				Online: len(g.live) > 0 && first.Location != nil && first.Location.Exp > now,
 			})
 		}
 	}
@@ -320,6 +336,12 @@ func (t *Tunnel) NamesJSON() string {
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
 	out, _ := json.Marshal(rows)
 	return string(out)
+}
+
+// liveEntry mirrors Agent.Resolve's liveness rule: a reach-me-at is
+// present and neither it nor the member cert has expired at now.
+func liveEntry(e issuer.NameEntry, now int64) bool {
+	return e.Location != nil && e.Location.Exp > now && e.Member.Exp > now
 }
 
 // tlsLabel names the device in its root's subject: the member name
