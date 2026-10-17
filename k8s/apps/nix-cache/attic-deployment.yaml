@@ -84,6 +84,29 @@ spec:
               readOnly: true
             - name: data
               mountPath: /data
+          # TCP, not HTTP: attic's binary-cache routes live under
+          # /<cache>/ and there is no unauthenticated health path at the
+          # root, so a GET would 404 and fail the probe.
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            # 2Gi: the CI runner's first full push (0m50) peaked near 1Gi
+            # of working set, mostly page cache. (Until 2026-10-17 this block
+            # sat after `gate`'s keys and YAML gave it to gate: atticd ran
+            # unlimited and unprobed.)
+            limits:
+              memory: 2Gi
         - name: gate
           image: nginxinc/nginx-unprivileged:1.27-alpine
           # The image's nginx user; the pod-level 1000 is atticd's and
@@ -118,28 +141,6 @@ spec:
               memory: 32Mi
             limits:
               memory: 128Mi
-          # TCP, not HTTP: attic's binary-cache routes live under
-          # /<cache>/ and there is no unauthenticated health path at the
-          # root, so a GET would 404 and fail the probe.
-          readinessProbe:
-            tcpSocket:
-              port: 8080
-            initialDelaySeconds: 3
-            periodSeconds: 10
-          livenessProbe:
-            tcpSocket:
-              port: 8080
-            initialDelaySeconds: 15
-            periodSeconds: 30
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            # 2Gi: the CI runner's first full push (0m50) held atticd's
-            # working set at the old 1Gi limit for the whole upload —
-            # mostly page cache, but no headroom left.
-            limits:
-              memory: 2Gi
       volumes:
         - name: config
           configMap:
