@@ -62,11 +62,12 @@ func TestNameMapWitnessesMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Minting is not witnessing: a kit handed out but never used is not
-	// in the map. The first beat's map holds exactly its caller.
+	// Minting witnesses (talos-config-5gz): a freshly minted member is
+	// in the map before its first beat, so the relay gate admits it for
+	// that beat. The first beat's map holds all three, none located.
 	b := bundleAt(t, iss, tv.Member)
-	if got := names(b.NameMap); !slices.Equal(got, []string{"tv"}) {
-		t.Fatalf("first beat map = %v, want [tv]", got)
+	if got := names(b.NameMap); !slices.Equal(got, []string{"cp1", "laptop", "tv"}) {
+		t.Fatalf("first beat map = %v, want [cp1 laptop tv]", got)
 	}
 	if b.NameMap[0].Location != nil {
 		t.Fatalf("no envelope carried a location, yet map has one: %+v", b.NameMap[0].Location)
