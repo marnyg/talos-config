@@ -9,7 +9,9 @@
 #
 # What is built, all x86_64-linux:
 #   - every package of this flake (`nix eval` lists them; devenv's
-#     shell artifacts skipped) and the dev shell;
+#     shell artifacts skipped). Not the dev shell: devenv's module
+#     asserts on the working directory, which pure flake eval hides
+#     (needs --impure + a checkout); its inputs are nixpkgs anyway;
 #   - the owner's NixOS systems from github:marnyg/nixos (desktop,
 #     laptop, wsl — the darwin ones cannot build here). That flake
 #     pins this repo as an input; it builds whatever rev its lock
@@ -60,7 +62,6 @@ jobs:
                      | jq -r '.[] | select(startswith("devenv-") or startswith("container-") | not)'); do
             targets+=("$self#packages.x86_64-linux.$p")
           done
-          targets+=("$self#devShells.x86_64-linux.default")
           for h in desktop laptop wsl; do
             targets+=("$nixos#nixosConfigurations.$h.config.system.build.toplevel")
           done
@@ -81,9 +82,16 @@ jobs:
           done
 
           if [ "${#paths[@]}" -gt 0 ]; then
+            # Retried: what already landed is skipped on the next try, so
+            # a dropped request costs one retry, not the run.
             echo "::group::attic push ${#paths[@]} paths"
-            attic push ci:main "${paths[@]}"
+            pushed=false
+            for try in 1 2 3; do
+              if attic push --jobs 2 ci:main "${paths[@]}"; then pushed=true; break; fi
+              echo "attic push failed (try $try)"; sleep 10
+            done
             echo "::endgroup::"
+            $pushed || failed+=("attic push")
           fi
 
           if [ "${#failed[@]}" -gt 0 ]; then

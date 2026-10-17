@@ -21,7 +21,14 @@
 # mesh name, which is also the substituter URL. Pods push/pull through
 # the Service instead (bootstrap.md).
 #
-# Chunking defaults from upstream's template; zstd. Retention is per
+# Chunking OFF (nar-size-threshold = 0): one chunk per NAR. Upstream's
+# 64 KiB chunks made every chunk its own sqlite write + fsync, and on
+# longhorn-bulk (nas1's SATA tier, across the LAN) that capped uploads
+# near 1.5 MB/s and starved the pool — the CI runner's first full push
+# died on "Connection pool timed out" after one request waited 478 s
+# (talos-config-0m50, 2026-10-17). What chunking buys is dedup across
+# NARs, measured there at 1.6%. Existing chunked NARs stay readable.
+# zstd. Retention is per
 # cache (`attic cache configure --retention-period`), the GC loop here
 # only runs it; without a retention period nothing is ever deleted.
 apiVersion: v1
@@ -44,7 +51,7 @@ data:
     path = "/data/storage"
 
     [chunking]
-    nar-size-threshold = 65536
+    nar-size-threshold = 0
     min-size = 16384
     avg-size = 65536
     max-size = 262144
