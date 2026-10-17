@@ -94,6 +94,9 @@ tr.kind-drop button.kind { color: var(--accent); }
 tr.kind-failure button.kind { color: var(--danger); }
 button.check { width: 44px; padding: 8px 0; }
 tr.set.done button.check { background: var(--ok); border-color: var(--ok); color: #fff; }
+/* offline writes: queued in the service worker (unsaved) / refused by the server (rejected) */
+tr.set.unsaved td:first-child, .slot.unsaved { box-shadow: inset 3px 0 0 var(--warm); }
+tr.set.rejected td:first-child, .slot.rejected { box-shadow: inset 3px 0 0 var(--danger); }
 .add-set { padding: 8px; margin: 6px 0 0; }
 .rest { position: fixed; left: 0; right: 0; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px; z-index: 9; }
 .rest span { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 4ch; }

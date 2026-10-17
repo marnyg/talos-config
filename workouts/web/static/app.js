@@ -76,10 +76,43 @@
       var weight = !wi ? null : wi.dataset.kg != null ? num(wi.dataset.kg) : toKg(num(wi.value), unit);
       return { kind: tr.dataset.kind || 'normal', weight: weight, reps: num(g('reps')) == null ? null : Math.round(num(g('reps'))), distance: dist == null ? null : dist * 1000, duration: secs(g('duration')), completed: tr.classList.contains('done') };
     }
+    // ---- offline writes ----
+    // sw.js answers 202 {queued:true} when a write had to be parked in
+    // IndexedDB; the row/slot shows `.unsaved` until the SW replays it
+    // and posts {type:'saved'|'rejected', url}. Background Sync is a
+    // bonus (no Safari); the SW also drains on `online` and on the next
+    // successful fetch.
+    var sw = navigator.serviceWorker;
+    function requestSync() {
+      if (!sw || !sw.ready) return;
+      sw.ready.then(function (reg) { if (reg.sync) return reg.sync.register('writes'); }).catch(function () {});
+    }
+    // mark(el, r): reflect a write's outcome on el; r is the api() result
+    // (queued or not) or undefined for a hard failure.
+    function mark(el, r) {
+      el.classList.remove('rejected');
+      if (r && r.queued) { el.classList.add('unsaved'); requestSync(); } else if (r) el.classList.remove('unsaved'); else el.classList.add('unsaved');
+    }
+    function targetOf(url) {
+      var m = /^\/api\/(sets|exercise-slots)\/([^/]+)$/.exec(url || ''); if (!m) return null;
+      return log.querySelector(m[1] === 'sets' ? 'tr.set[data-id="' + m[2] + '"]' : '.slot[data-id="' + m[2] + '"]');
+    }
+    if (sw) {
+      sw.addEventListener('message', function (e) {
+        var d = e.data || {}; var el = targetOf(d.url); if (!el) return;
+        if (d.type === 'saved') { el.classList.remove('unsaved'); el.classList.remove('rejected'); }
+        else if (d.type === 'rejected') { el.classList.remove('unsaved'); el.classList.add('rejected'); }
+      });
+      window.addEventListener('online', function () { if (sw.controller) sw.controller.postMessage({ type: 'flush' }); });
+    }
+    function slotSave(slot, body) {
+      api('POST', '/api/exercise-slots/' + slot.dataset.id, body).then(function (r) { mark(slot, r); }, function () { mark(slot); });
+    }
+
     var pending = {};
     function save(tr, immediate) {
       clearTimeout(pending[tr.dataset.id]);
-      var run = function () { api('POST', '/api/sets/' + tr.dataset.id, rowData(tr)).catch(function () { tr.classList.add('unsaved'); }); };
+      var run = function () { delete pending[tr.dataset.id]; api('POST', '/api/sets/' + tr.dataset.id, rowData(tr)).then(function (r) { mark(tr, r); }, function () { mark(tr); }); };
       if (immediate) run(); else pending[tr.dataset.id] = setTimeout(run, 500);
     }
     log.addEventListener('input', function (e) { if (e.target.name === 'weight') delete e.target.dataset.kg; var tr = e.target.closest('tr.set'); if (tr) save(tr); });
@@ -145,7 +178,8 @@
       }
       if (t.closest('.add-set')) {
         var slot2 = t.closest('.slot'); var tbody = slot2.querySelector('tbody');
-        api('POST', '/api/exercise-slots/' + slot2.dataset.id + '/sets').then(function (s) { var tr = setRow(s, slot2); if (tr) { tbody.appendChild(tr); renumber(tbody); } });
+        // Add-set needs the server-issued id, so it is online-only.
+        api('POST', '/api/exercise-slots/' + slot2.dataset.id + '/sets').then(function (s) { var tr = setRow(s, slot2); if (tr) { tbody.appendChild(tr); renumber(tbody); } }).catch(function () { alert('Could not add a set — you seem to be offline. Try again when connected.'); });
         return;
       }
       var act = t.closest('[data-act]');
@@ -154,13 +188,13 @@
         if (act.dataset.act === 'note') { var n = slot3.querySelector('.note'); n.hidden = false; n.focus(); }
         if (act.dataset.act === 'rest') {
           var v = prompt('Rest timer for this exercise (seconds, empty = default)', slot3.dataset.rest || '');
-          if (v === null) return; slot3.dataset.rest = v; api('POST', '/api/exercise-slots/' + slot3.dataset.id, { note: slot3.querySelector('.note').value, rest: v === '' ? null : +v }); act.textContent = 'Rest timer (' + (v === '' ? 'default' : fmt(+v)) + ')';
+          if (v === null) return; slot3.dataset.rest = v; slotSave(slot3, { note: slot3.querySelector('.note').value, rest: v === '' ? null : +v }); act.textContent = 'Rest timer (' + (v === '' ? 'default' : fmt(+v)) + ')';
         }
         if (act.dataset.act === 'remove' && confirm('Remove exercise and its sets?')) api('DELETE', '/api/exercise-slots/' + slot3.dataset.id).then(function () { slot3.remove(); });
       }
     });
     log.addEventListener('change', function (e) {
-      if (e.target.matches('.note')) { var slot = e.target.closest('.slot'); api('POST', '/api/exercise-slots/' + slot.dataset.id, { note: e.target.value, rest: slot.dataset.rest ? +slot.dataset.rest : null }); }
+      if (e.target.matches('.note')) { var slot = e.target.closest('.slot'); slotSave(slot, { note: e.target.value, rest: slot.dataset.rest ? +slot.dataset.rest : null }); }
     });
 
     var finishBtn = document.getElementById('finish-btn');
