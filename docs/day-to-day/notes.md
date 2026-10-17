@@ -1209,3 +1209,12 @@
   or it is dropped for good and YAML ignored). Edit the store before HA
   starts (the init container does), never YAML.
 
+- 2026-10-20 — **An *arr download-client POST validates the category
+  against the running nzbget**, not the ConfigMap (`Category does not
+  exist`): nzbget's conf is rendered at pod start, so a new category
+  needs `kubectl rollout restart deploy/nzbget -n media` before the
+  consuming configurator runs. Cost one chaptarr pod restart.
+- 2026-10-20 — Prowlarr's application PUT fails while the target *arr
+  is still booting (it validates live); the configurators retry POST
+  but not PUT. A failed `Refreshing Prowlarr application` after a pod
+  roll is usually that — rerun by deleting the pod.
