@@ -12,6 +12,6 @@
   <table class="plain"><tr><th>Sets</th><th class="right">Best set</th></tr>
   {{range .Exercises}}<tr><td>{{len .Sets}} × {{.Exercise.Name}}</td><td class="right">{{with bestSet .Sets}}{{template "setline" .}}{{end}}</td></tr>{{end}}
   </table>
-  <div class="stats"><span>⏱ {{dur .Duration}}</span><span>🏋 {{num .Volume}} kg</span><span>🏆 {{.PRs}} PRs</span></div>
+  <div class="stats"><span>⏱ {{dur .Duration}}</span><span>🏋 {{wtf .Volume}} {{wunit}}</span><span>🏆 {{.PRs}} PRs</span></div>
 </a>
 {{end}}

@@ -35,8 +35,11 @@ type Handler struct {
 	s     *store.Store
 	media string
 	loc   *time.Location
-	tpl   map[string]*template.Template
-	mux   *http.ServeMux
+	// tpl is keyed by display weight unit, then page name: the unit
+	// reaches templates as closures in the FuncMap, so each unit gets its
+	// own parse (templates are immutable once executed).
+	tpl map[weightUnit]map[string]*template.Template
+	mux *http.ServeMux
 }
 
 // New builds the handler. media is the directory of exercise media.
@@ -52,8 +55,25 @@ func New(s *store.Store, media string, loc *time.Location) (*Handler, error) {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.ServeHTTP(w, r) }
 
 func (h *Handler) parseTemplates() error {
+	h.tpl = map[weightUnit]map[string]*template.Template{}
+	for _, u := range []weightUnit{unitKg, unitLb} {
+		m, err := h.parseTemplatesFor(u)
+		if err != nil {
+			return err
+		}
+		h.tpl[u] = m
+	}
+	return nil
+}
+
+func (h *Handler) parseTemplatesFor(u weightUnit) (map[string]*template.Template, error) {
 	funcs := template.FuncMap{
 		"kg":      fmtKg,
+		"wt":      u.fmtPtr,
+		"wtf":     u.fmt,
+		"wti":     u.fmtInt,
+		"wunit":   func() string { return string(u) },
+		"wstep":   u.step,
 		"num":     fmtNum,
 		"int":     func(f float64) int { return int(math.Round(f)) },
 		"dur":     fmtDur,
@@ -101,19 +121,25 @@ func (h *Handler) parseTemplates() error {
 		"metrics": func() any { return store.Metrics },
 		"today":   func() string { return time.Now().In(h.loc).Format("2006-01-02") },
 		"weightLabel": func(e store.Exercise) string {
+			label := strings.ToUpper(string(u))
 			if e.HasCell(store.CellAssistedBodyweight) {
-				return "-KG"
+				return "-" + label
 			}
 			if e.HasCell(store.CellWeightedBodyweight) {
-				return "+KG"
+				return "+" + label
 			}
-			return "KG"
+			return label
+		},
+		// plateCalc: the plate calculator applies to plain loaded weight
+		// only; bodyweight flavours record assistance/added load, not a bar.
+		"plateCalc": func(e store.Exercise) bool {
+			return e.HasWeight() && !e.HasCell(store.CellAssistedBodyweight) && !e.HasCell(store.CellWeightedBodyweight)
 		},
 	}
-	h.tpl = map[string]*template.Template{}
+	tpl := map[string]*template.Template{}
 	pages, err := fs.Glob(templateFS, "templates/*.html")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, p := range pages {
 		name := path.Base(p)
@@ -122,11 +148,11 @@ func (h *Handler) parseTemplates() error {
 		}
 		t, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", p)
 		if err != nil {
-			return fmt.Errorf("%s: %w", p, err)
+			return nil, fmt.Errorf("%s: %w", p, err)
 		}
-		h.tpl[name] = t
+		tpl[name] = t
 	}
-	return nil
+	return tpl, nil
 }
 
 type page struct {
@@ -150,7 +176,7 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, name string, p 
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	if err := h.tpl[name].ExecuteTemplate(w, "layout.html", p); err != nil {
+	if err := h.tpl[h.weightUnit(r.Context())][name].ExecuteTemplate(w, "layout.html", p); err != nil {
 		log.Printf("render %s: %v", name, err)
 	}
 }
@@ -261,7 +287,13 @@ type logData struct {
 	Workout  store.Workout
 	Previous map[string][]store.Set // by workout_exercise id
 	RestDef  int
+	Unit     weightUnit
+	Plates   string // comma-separated kg, for the plate calculator
 }
+
+// defaultPlates is the per-side plate set the calculator assumes when the
+// `plates` setting is unset.
+const defaultPlates = "25,20,15,10,5,2.5,1.25"
 
 func (h *Handler) logWorkout(w http.ResponseWriter, r *http.Request) {
 	cur, err := h.s.CurrentWorkout(r.Context())
@@ -283,7 +315,25 @@ func (h *Handler) logWorkout(w http.ResponseWriter, r *http.Request) {
 		prev[we.ID] = p
 	}
 	h.render(w, r, "log.html", page{Title: cur.Name, Tab: "workout", Current: &cur, NoBanner: true,
-		Data: logData{Workout: cur, Previous: prev, RestDef: h.settingInt(r.Context(), "rest_s", 120)}})
+		Data: logData{Workout: cur, Previous: prev, RestDef: h.settingInt(r.Context(), "rest_s", 120),
+			Unit: h.weightUnit(r.Context()), Plates: h.plates(r.Context())}})
+}
+
+// plates returns the `plates` setting normalised (trimmed, numeric,
+// descending) or defaultPlates when unset/unparseable.
+func (h *Handler) plates(ctx context.Context) string {
+	v, _ := h.s.Setting(ctx, "plates")
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		p = strings.TrimSpace(p)
+		if f, err := strconv.ParseFloat(p, 64); err == nil && f > 0 {
+			out = append(out, fmtNum(f))
+		}
+	}
+	if len(out) == 0 {
+		return defaultPlates
+	}
+	return strings.Join(out, ",")
 }
 
 func (h *Handler) settingInt(ctx context.Context, key string, def int) int {
@@ -903,6 +953,54 @@ func (h *Handler) apiSlotDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- template helpers ----
+
+// weightUnit is the display unit for weights. Storage is always kg
+// (domain-model invariant 5); the unit only affects formatting and
+// the /log input, whose JS converts back before POSTing.
+type weightUnit string
+
+const (
+	unitKg weightUnit = "kg"
+	unitLb weightUnit = "lb"
+
+	lbPerKg = 2.2046226218
+)
+
+// weightUnit reads the `weight_unit` setting; kg unless it is exactly "lb".
+func (h *Handler) weightUnit(ctx context.Context) weightUnit {
+	if v, _ := h.s.Setting(ctx, "weight_unit"); v == string(unitLb) {
+		return unitLb
+	}
+	return unitKg
+}
+
+// display converts a stored kg value into the unit. lb is rounded to one
+// decimal; kg is returned untouched so stored values render verbatim.
+func (u weightUnit) display(kg float64) float64 {
+	if u == unitLb {
+		return math.Round(kg*lbPerKg*10) / 10
+	}
+	return kg
+}
+
+func (u weightUnit) fmt(kg float64) string { return fmtNum(u.display(kg)) }
+
+func (u weightUnit) fmtInt(kg float64) int { return int(math.Round(u.display(kg))) }
+
+func (u weightUnit) fmtPtr(kg *float64) string {
+	if kg == nil {
+		return "-"
+	}
+	return u.fmt(*kg)
+}
+
+// step is the weight input's increment: the smallest common plate pair.
+func (u weightUnit) step() string {
+	if u == unitLb {
+		return "2.5"
+	}
+	return "0.5"
+}
 
 func fmtNum(f float64) string {
 	if f == math.Trunc(f) {
