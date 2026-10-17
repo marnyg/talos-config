@@ -69,15 +69,17 @@ spec:
           # The books volume is RWX (NFS from the share-manager), where
           # fsGroup does not reach: a fresh ext4 root is root:root. One
           # root chown of the library roots, the way transmission's init
-          # does /downloads; a no-op on every later start.
+          # does /downloads; a no-op on every later start. `audible/` is
+          # Libation's (k8s/apps/libation), created here because kubelet
+          # would otherwise create the subPath dir root-owned.
           # Helper pin: one tag across k8s/apps (rg 'image: busybox').
           image: busybox:1.38
           command: ["sh", "-c"]
           args:
             - |
               set -e
-              mkdir -p /books/audiobooks /books/ebooks
-              chown 1000:1000 /books /books/audiobooks /books/ebooks
+              mkdir -p /books/audiobooks /books/ebooks /books/audible
+              chown 1000:1000 /books /books/audiobooks /books/ebooks /books/audible
           securityContext:
             runAsNonRoot: false
             runAsUser: 0

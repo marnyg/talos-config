@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: libation-settings
+  namespace: media
+data:
+  # Libation's Settings.json, minus the two keys the image overrides
+  # (Books ← LIBATION_BOOKS_DIR, InProgress ← /tmp). Anything not
+  # listed is Libation's default. Templates: Author/[Series/]Title [id]
+  # is the layout Audiobookshelf's scanner reads author and series from
+  # without metadata files; the [<id>] suffix (Audible ASIN) is what
+  # Libation itself keys on to recognise a book already on disk.
+  # One m4b per book (no chapter split), lossless, Audible's own
+  # branding intro/outro stripped, cover saved beside it. No podcast
+  # episodes: they are what makes a scan crawl and the library is books.
+  Settings.json: |
+    {
+      "FolderTemplate": "<first author>/<if series-><series>/<-if series><title short> [<id>]",
+      "FileTemplate": "<title> [<id>]",
+      "SplitFilesByChapter": false,
+      "DecryptToLossy": false,
+      "StripAudibleBrandAudio": true,
+      "AllowLibationFixup": true,
+      "RetainAaxFile": false,
+      "CreateCueSheet": false,
+      "DownloadCoverArt": true,
+      "DownloadClipsBookmarks": false,
+      "ImportEpisodes": false,
+      "DownloadEpisodes": false,
+      "AutoScan": false,
+      "BetaOptIn": false,
+      "Serilog": {
+        "MinimumLevel": "Information",
+        "WriteTo": [
+          {
+            "Name": "Console",
+            "Args": {
+              "outputTemplate": "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}"
+            }
+          }
+        ],
+        "Using": ["Dinah.Core", "Serilog.Exceptions"],
+        "Enrich": ["WithCaller", "WithExceptionDetails"]
+      }
+    }

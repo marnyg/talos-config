@@ -1,0 +1,150 @@
+# Libation (github.com/rmcrackan/Libation): pulls the owner's Audible
+# library into /books/audible, decrypted to plain chaptered m4b, where
+# Audiobookshelf (k8s/apps/audiobookshelf) serves it. A nightly
+# CronJob, not a long-running pod: the image's one-shot mode
+# (SLEEP_TIME=-1) scans the account, liberates whatever the DB on /db
+# does not already list as liberated, and exits — so every run is a
+# no-op until Audible has something new. Idempotent by the DB, not by
+# filenames; lose the DB and the next run re-downloads the library
+# into the same paths (overwriting), which is why /db is a Longhorn
+# volume and not an emptyDir.
+#
+# Its own folder beside Chaptarr's `audiobooks/` on the shared `books`
+# volume (storage/pvcs.yaml): Chaptarr imports and renames under its
+# root folder by its own scheme; two writers in one tree would fight.
+# ABS takes /books/audible as a second folder of the audiobook library.
+#
+# Credential: Libation's AccountsSettings.json — the Audible *device
+# registration* (refresh token + device keys) that `login-external`
+# minted once from a browser sign-in the owner did themselves
+# (bootstrap.md). Sealed in git like nzbgeek's key; the password never
+# left the browser. Each run refreshes the short access token from it
+# in memory; the mounted copy is read-only, nothing is written back.
+# A re-login (revoked device, locale change) is a new sealed file.
+#
+# Runs as 1000 (the image's own 1001 overridden) so the files land as
+# the library's owner, the uid ABS and Chaptarr read and write with.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: libation-db
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: libation
+  namespace: media
+spec:
+  schedule: "0 4 * * *"
+  timeZone: Europe/Oslo
+  # One run at a time (the DB is RWO and sqlite), and a run that misses
+  # its slot (node down) just waits for the next night.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # A whole-library first run can take hours; a nightly delta,
+      # minutes. Cap at 12 h so a wedged download cannot straddle into
+      # the next slot. No retries: the next night is the retry.
+      activeDeadlineSeconds: 43200
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: libation
+        spec:
+          restartPolicy: Never
+          # Never on nas1, the node pinned to host this library's NFS
+          # servers (storageclass.yaml shareManagerNodeSelector): a
+          # client on the server's node hangs the node's shutdown
+          # (2026-10-05, m1au). See radarr/deployment.yaml.
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values: [nas1]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: libation
+              # Pinned by digest; the 14.2.2 tag (== latest) resolved on
+              # 2026-10-20.
+              image: docker.io/rmcrackan/libation:14.2.2@sha256:fe188ac3c4ce63cc305971c76e648748341427e16bcf884011da8a384fd3908c
+              env:
+                - name: SLEEP_TIME
+                  value: "-1"
+                - name: LIBATION_BOOKS_DIR
+                  value: /data
+                - name: LIBATION_CONFIG_DIR
+                  value: /config
+                - name: LIBATION_DB_DIR
+                  value: /db
+                # No passwd entry for 1000 in the image; .NET wants a
+                # writable HOME.
+                - name: HOME
+                  value: /tmp
+                - name: TZ
+                  value: Europe/Oslo
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                # The entrypoint copies /config/* into /config-internal
+                # (the LibationFiles dir) at start, so the sources can
+                # be read-only and the working copy ephemeral.
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: internal
+                  mountPath: /config-internal
+                - name: db
+                  mountPath: /db
+                - name: books
+                  mountPath: /data
+                  subPath: audible
+                # InProgress (the encrypted .aax and the decrypt
+                # scratch) is forced to /tmp by the image; a whole book
+                # sits here, so an emptyDir rather than the root fs.
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+          volumes:
+            - name: config
+              projected:
+                sources:
+                  - secret:
+                      name: libation
+                  - configMap:
+                      name: libation-settings
+            - name: internal
+              emptyDir: {}
+            - name: tmp
+              emptyDir:
+                sizeLimit: 8Gi
+            - name: db
+              persistentVolumeClaim:
+                claimName: libation-db
+            - name: books
+              persistentVolumeClaim:
+                claimName: books
