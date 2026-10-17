@@ -51,7 +51,8 @@
 # `nix flake update nixpkgs-pi` bumps pi alone.
 #
 # Root filesystem is read-only in the pod; /workspace (HOME, cwd) and
-# /tmp are emptyDirs. /etc/passwd names uid 65534 so tmux, git and node
+# /tmp are emptyDirs; /run/agent is a memory-backed one (agent.yaml)
+# holding the curl header file, the only place the token is a file. /etc/passwd names uid 65534 so tmux, git and node
 # can resolve the user; SHELL is bash for tmux's default-shell.
 # x86_64-linux only; from a laptop:
 #
@@ -89,13 +90,17 @@ let
         umask 077
         # The token stays off every argv: git asks the helper (ps shows
         # the helper's literal text; its own shell expands the variable),
-        # curl reads the header from a file. Both under HOME, outside
-        # the clone, gone with the pod.
+        # curl reads the header from a file. The helper's config is under
+        # HOME, outside the clone; the header file is not — HOME is the
+        # disk-backed workspace emptyDir, and plaintext secrets live only
+        # in memory (invariant 8, 3leu), so it goes on the `medium:
+        # Memory` emptyDir agent.yaml mounts at /run/agent. Both gone
+        # with the pod.
         git config --global user.name "$FORGEJO_USER"
         git config --global user.email "$FORGEJO_USER@mesh.internal"
         # shellcheck disable=SC2016  # the helper's shell expands these, not ours
         git config --global credential.helper '!f() { echo "username=$FORGEJO_USER"; echo "password=$FORGEJO_TOKEN"; }; f'
-        hdr=$HOME/.forgejo-header
+        hdr=/run/agent/forgejo-header
         printf 'Authorization: token %s\n' "$FORGEJO_TOKEN" >"$hdr"
         umask 022
         workdir=$HOME/''${repo##*/}

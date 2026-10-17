@@ -99,6 +99,8 @@ spec:
                   mountPath: /workspace
                 - name: tmp
                   mountPath: /tmp
+                - name: run-agent
+                  mountPath: /run/agent
               resources:
                 requests:
                   cpu: 250m
@@ -117,3 +119,11 @@ spec:
             - name: tmp
               emptyDir:
                 sizeLimit: 512Mi
+            # The entrypoint's curl header file carries FORGEJO_TOKEN in
+            # plaintext; workspace and tmp are disk-backed, and plaintext
+            # secrets exist only in memory (invariant 8, 3leu) — so it
+            # gets its own tmpfs, as forgejo-runner's do (7828ce2).
+            - name: run-agent
+              emptyDir:
+                medium: Memory
+                sizeLimit: 1Mi
