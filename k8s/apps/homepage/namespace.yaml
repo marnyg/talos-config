@@ -1,0 +1,8 @@
+# `homepage`: the dashboard (gethomepage.dev) — one page of links to
+# every service exposed through the gateway, with pod status next to
+# each. Only Homepage lives here. Inherits the cluster-wide PSS
+# restricted default; the image is a Node server owned by uid 1000.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: homepage

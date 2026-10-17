@@ -10,6 +10,15 @@ metadata:
   namespace: workouts
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    # Dashboard tile; https because the PWA install needs it (ADR-0033).
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Workouts
+    gethomepage.dev/group: Apps
+    gethomepage.dev/icon: mdi-dumbbell
+    gethomepage.dev/description: training log
+    gethomepage.dev/href: https://workouts.gw.mesh.internal
+    gethomepage.dev/pod-selector: app=workouts
+    gethomepage.dev/weight: "30"
 spec:
   ingressClassName: nginx
   rules:

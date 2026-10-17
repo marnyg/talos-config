@@ -1,0 +1,84 @@
+# Homepage's whole configuration. The service list is NOT here: it is
+# discovered from Ingress annotations (`gethomepage.dev/enabled: "true"`
+# plus name/group/icon/description/pod-selector) on the Ingress of
+# each app, so "exposing a service = adding an Ingress" (media/
+# ingress.yaml) extends to "and it appears on the dashboard" with the
+# declaration next to the app. Nothing to keep in sync in two places —
+# the alternative, a hand-written services.yaml like gatus/config.yaml,
+# was rejected for exactly that. `gethomepage.dev/href` is set only
+# where the browser must use https (ADR-0033 consumers: vault,
+# workouts, grafana); otherwise the href is the Ingress host.
+#
+# Every file Homepage knows about must exist here: a missing one makes
+# it copy a skeleton into /app/config, which is this read-only mount.
+# Homepage re-reads the files on change (kubelet propagates the
+# ConfigMap within ~1 min of the sync), no restart needed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homepage
+  namespace: homepage
+data:
+  settings.yaml: |
+    title: mesh
+    description: Services on the cluster
+    base: http://dash.gw.mesh.internal
+    headerStyle: clean
+    theme: dark
+    color: slate
+    hideVersion: true
+    # Nothing phones out: no update check, no external search box.
+    disableUpdateCheck: true
+    statusStyle: dot
+    # Tabs/columns per group; groups are named in the Ingress
+    # annotations. Order here is display order.
+    layout:
+      Platform:
+        style: row
+        columns: 4
+      Apps:
+        style: row
+        columns: 4
+      Media:
+        style: row
+        columns: 4
+      Downloads:
+        style: row
+        columns: 4
+
+  kubernetes.yaml: |
+    # In-cluster ServiceAccount (rbac.yaml); Ingress discovery only.
+    mode: cluster
+    ingress: true
+
+  widgets.yaml: |
+    - kubernetes:
+        cluster:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+          label: cluster
+        nodes:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+    - datetime:
+        text_size: xl
+        format:
+          dateStyle: long
+          timeStyle: short
+
+  bookmarks.yaml: |
+    - Elsewhere:
+        - Hub:
+            - abbr: HUB
+              href: https://marnyg-talos-config.fly.dev/
+              description: the one public entrypoint (invariant 5)
+
+  # No static services (see the header) and no Docker socket.
+  services.yaml: |
+    []
+  docker.yaml: |
+    {}

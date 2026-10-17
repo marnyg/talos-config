@@ -9,6 +9,16 @@ kind: Ingress
 metadata:
   name: argocd-server
   namespace: argocd
+  annotations:
+    # Dashboard tile (k8s/apps/homepage/config.yaml explains); the
+    # ingress name matches argocd-server's app.kubernetes.io/name, so
+    # no pod-selector.
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: ArgoCD
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: argo-cd.png
+    gethomepage.dev/description: gitops — what the cluster runs
+    gethomepage.dev/weight: "10"
 spec:
   ingressClassName: nginx
   rules:

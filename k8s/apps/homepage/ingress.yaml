@@ -1,0 +1,36 @@
+# dash.gw.mesh.internal, behind the group gate like Gatus (k8s/apps/
+# media/ingress.yaml explains the mechanism). Admins only: the page is
+# read-only but it enumerates every service in the cluster, and the
+# status API behind it (/api/kubernetes/*) reads pod state. Widening
+# it to another group is a change to the group= query here — but the
+# tiles would still link to admins-gated services.
+#
+# Homepage lists itself too (the annotations below), so the dashboard
+# tile exists for the pod status dot, not the link.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homepage
+  namespace: homepage
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Dashboard
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: homepage.png
+    gethomepage.dev/description: this page
+    gethomepage.dev/pod-selector: app=homepage
+    gethomepage.dev/weight: "90"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: dash.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homepage
+                port:
+                  number: 3000

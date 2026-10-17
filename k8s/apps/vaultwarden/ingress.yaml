@@ -17,6 +17,15 @@ metadata:
   namespace: vaultwarden
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    # Dashboard tile; https because DOMAIN is (deployment.yaml).
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Vaultwarden
+    gethomepage.dev/group: Apps
+    gethomepage.dev/icon: vaultwarden.png
+    gethomepage.dev/description: passwords
+    gethomepage.dev/href: https://vault.gw.mesh.internal
+    gethomepage.dev/pod-selector: app=vaultwarden
+    gethomepage.dev/weight: "10"
     # Attachments and Sends (Vaultwarden caps each at 500 MiB by
     # default; the clients at 100 MiB).
     nginx.ingress.kubernetes.io/proxy-body-size: 128m

@@ -1,0 +1,41 @@
+# Read-only view of the cluster for service discovery and status.
+# Homepage lists Ingresses (the ones annotated gethomepage.dev/*, see
+# config.yaml), looks up the pods behind each to colour the status dot,
+# and reads metrics.k8s.io (k8s/apps/monitoring/metrics-server.yaml)
+# for the cluster/node CPU + memory widget. Nothing here can write.
+#
+# No traefik.io or gateway.networking.k8s.io rules: those discovery
+# modes are off in kubernetes.yaml and neither CRD exists here.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: homepage
+  namespace: homepage
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: homepage
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, pods, nodes]
+    verbs: [get, list]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list]
+  - apiGroups: [metrics.k8s.io]
+    resources: [nodes, pods]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: homepage
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: homepage
+subjects:
+  - kind: ServiceAccount
+    name: homepage
+    namespace: homepage

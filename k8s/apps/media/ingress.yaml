@@ -29,6 +29,15 @@ kind: Ingress
 metadata:
   name: jellyfin
   namespace: media
+  annotations:
+    # Dashboard tile (k8s/apps/homepage/config.yaml explains).
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Jellyfin
+    gethomepage.dev/group: Media
+    gethomepage.dev/icon: jellyfin.png
+    gethomepage.dev/description: movies, shows, music
+    gethomepage.dev/pod-selector: app=jellyfin
+    gethomepage.dev/weight: "10"
 spec:
   ingressClassName: nginx
   rules:
@@ -50,6 +59,13 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Sonarr
+    gethomepage.dev/group: Downloads
+    gethomepage.dev/icon: sonarr.png
+    gethomepage.dev/description: shows
+    gethomepage.dev/pod-selector: app=sonarr
+    gethomepage.dev/weight: "10"
 spec:
   ingressClassName: nginx
   rules:
@@ -71,6 +87,13 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Radarr
+    gethomepage.dev/group: Downloads
+    gethomepage.dev/icon: radarr.png
+    gethomepage.dev/description: movies
+    gethomepage.dev/pod-selector: app=radarr
+    gethomepage.dev/weight: "20"
 spec:
   ingressClassName: nginx
   rules:
@@ -92,6 +115,13 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: NZBGet
+    gethomepage.dev/group: Downloads
+    gethomepage.dev/icon: nzbget.png
+    gethomepage.dev/description: usenet client
+    gethomepage.dev/pod-selector: app=nzbget
+    gethomepage.dev/weight: "60"
 spec:
   ingressClassName: nginx
   rules:
@@ -113,6 +143,13 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Transmission
+    gethomepage.dev/group: Downloads
+    gethomepage.dev/icon: transmission.png
+    gethomepage.dev/description: torrent client
+    gethomepage.dev/pod-selector: app=transmission
+    gethomepage.dev/weight: "70"
 spec:
   ingressClassName: nginx
   rules:
@@ -139,6 +176,13 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Jackett
+    gethomepage.dev/group: Downloads
+    gethomepage.dev/icon: jackett.png
+    gethomepage.dev/description: torrent indexers
+    gethomepage.dev/pod-selector: app=jackett
+    gethomepage.dev/weight: "50"
 spec:
   ingressClassName: nginx
   rules:
@@ -160,6 +204,13 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Prowlarr
+    gethomepage.dev/group: Downloads
+    gethomepage.dev/icon: prowlarr.png
+    gethomepage.dev/description: indexer manager
+    gethomepage.dev/pod-selector: app=prowlarr
+    gethomepage.dev/weight: "40"
 spec:
   ingressClassName: nginx
   rules:
@@ -181,6 +232,14 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Chaptarr
+    gethomepage.dev/group: Downloads
+    # Readarr fork; no icon of its own in dashboard-icons.
+    gethomepage.dev/icon: readarr.png
+    gethomepage.dev/description: books
+    gethomepage.dev/pod-selector: app=chaptarr
+    gethomepage.dev/weight: "30"
 spec:
   ingressClassName: nginx
   rules:
@@ -207,6 +266,13 @@ metadata:
   namespace: media
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Audiobookshelf
+    gethomepage.dev/group: Media
+    gethomepage.dev/icon: audiobookshelf.png
+    gethomepage.dev/description: audiobooks, ebooks
+    gethomepage.dev/pod-selector: app=audiobookshelf
+    gethomepage.dev/weight: "30"
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
 spec:
   ingressClassName: nginx
@@ -230,6 +296,14 @@ kind: Ingress
 metadata:
   name: seerr
   namespace: media
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Seerr
+    gethomepage.dev/group: Media
+    gethomepage.dev/icon: jellyseerr.png
+    gethomepage.dev/description: requests
+    gethomepage.dev/pod-selector: app=seerr
+    gethomepage.dev/weight: "20"
 spec:
   ingressClassName: nginx
   rules:

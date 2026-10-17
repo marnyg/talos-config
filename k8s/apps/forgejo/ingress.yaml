@@ -18,6 +18,13 @@ metadata:
   namespace: forgejo
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Forgejo
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: forgejo.png
+    gethomepage.dev/description: git, mirrors, actions
+    gethomepage.dev/pod-selector: app=forgejo
+    gethomepage.dev/weight: "20"
     # Git pushes (agent result branches, mirror syncs) go well past
     # nginx's 1 MiB default.
     nginx.ingress.kubernetes.io/proxy-body-size: 512m

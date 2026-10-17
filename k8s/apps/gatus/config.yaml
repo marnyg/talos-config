@@ -80,6 +80,15 @@ data:
         url: http://nixos-mirror.nix-cache.svc/nix-cache-info
         interval: 60s
         conditions: ["[STATUS] == 200"]
+      # Homepage 400s any Host it was not told about
+      # (HOMEPAGE_ALLOWED_HOSTS in homepage/deployment.yaml).
+      - name: homepage
+        group: platform
+        url: http://homepage.homepage.svc:3000/api/healthcheck
+        headers:
+          Host: dash.gw.mesh.internal
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
 
       # --- apps -------------------------------------------------------
       - name: vaultwarden

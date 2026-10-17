@@ -19,6 +19,16 @@ metadata:
   namespace: monitoring
   annotations:
     nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+    # Dashboard tile; https because root_url is (ADR-0033). The chart
+    # labels pods app.kubernetes.io/name=grafana = the ingress name,
+    # so no pod-selector.
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Grafana
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: grafana.png
+    gethomepage.dev/description: metrics, logs
+    gethomepage.dev/href: https://grafana.gw.mesh.internal
+    gethomepage.dev/weight: "40"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
