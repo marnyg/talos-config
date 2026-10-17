@@ -1,0 +1,128 @@
+# Actual Budget: the sync server + web app (the budget itself is a
+# local-first sqlite file in each client; the server stores the
+# encrypted-or-not file and the sync messages between clients). One
+# Longhorn volume (ADR-0029) holds `server-files/` (account.sqlite:
+# the server password hash, sessions, file registry) and `user-files/`
+# (one budget blob per budget). All of it is data plane (invariant 2's
+# exception): nothing the control plane depends on lives here. Losing
+# the volume loses the sync history; every client keeps the full
+# budget and can re-upload it — `bsj` (backup target) covers it like
+# Vaultwarden and Forgejo.
+#
+# HTTPS: the web app needs a secure context (Web Crypto for the
+# optional end-to-end budget encryption, the service worker), so the
+# name is https like Vaultwarden's. The wire is still plain HTTP from
+# the gateway inward (ADR-0009 pattern) — TLS terminates on the device
+# itself (ADR-0033, meshtls), and the gateway + ingress-nginx forward
+# X-Forwarded-Proto: https. A device without the mesh root installed
+# gets a browser warning; the fix is on the device, not here.
+#
+# Identity: Actual has one server password (ACTUAL_LOGIN_METHOD
+# password, the default), set on first visit — the Vaultwarden posture:
+# the SIWE bridge gates reachability on the Ingress (group admins,
+# ingress.yaml), the server password gates the budgets. Actual can do
+# OpenID (ACTUAL_LOGIN_METHOD=openid against the SIWE bridge) if it
+# ever needs per-person accounts; not wired.
+#
+# Non-root: the image ships no USER and would run as root; it is the
+# node:alpine base, so uid 1000 (`node`) with fsGroup on the volume.
+# The server writes only under ACTUAL_DATA_DIR, so the root fs is
+# read-only; /tmp is an emptyDir for node/tini.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: actual
+  namespace: actual
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: actual
+  namespace: actual
+spec:
+  replicas: 1
+  # RWO volume + sqlite: no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: actual
+  template:
+    metadata:
+      labels:
+        app: actual
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: actual
+          # Alpine variant; pinned by digest, the 26.10.0-alpine tag
+          # (== latest-alpine) resolved on 2026-10-21.
+          image: ghcr.io/actualbudget/actual:26.10.0-alpine@sha256:67b1b5e9584e3e143b4f5c41e52b4506ed9cdd1072392d5ab5369f2d4fd0bffd
+          env:
+            - name: ACTUAL_PORT
+              value: "5006"
+            - name: ACTUAL_DATA_DIR
+              value: /data
+            - name: ACTUAL_LOGIN_METHOD
+              value: password
+            # Budget file uploads (plain / encrypted / import); the
+            # Ingress body cap in ingress.yaml sits above these.
+            - name: ACTUAL_UPLOAD_FILE_SYNC_SIZE_LIMIT_MB
+              value: "50"
+            - name: ACTUAL_UPLOAD_SYNC_ENCRYPTED_FILE_SYNC_SIZE_LIMIT_MB
+              value: "50"
+            - name: ACTUAL_UPLOAD_FILE_SIZE_LIMIT_MB
+              value: "50"
+          ports:
+            - containerPort: 5006
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5006
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: actual
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: actual
+  namespace: actual
+spec:
+  selector:
+    app: actual
+  ports:
+    - port: 5006
+      targetPort: 5006

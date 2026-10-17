@@ -96,6 +96,11 @@ data:
         url: http://vaultwarden.vaultwarden.svc:8080/alive
         interval: 60s
         conditions: ["[STATUS] == 200"]
+      - name: actual
+        group: apps
+        url: http://actual.actual.svc:5006/health
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
       - name: homeassistant
         group: apps
         url: http://homeassistant.homeassistant.svc:8123/manifest.json

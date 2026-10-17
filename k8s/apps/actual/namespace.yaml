@@ -1,0 +1,6 @@
+# `actual`: the self-hosted Actual Budget sync server. Only Actual
+# lives here. Inherits the cluster-wide PSS restricted default.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: actual
