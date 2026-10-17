@@ -76,7 +76,7 @@ let
       #     already-realised path; run alone against a cold store it
       #     aborts ("outputs ... are not valid, so checking is not
       #     possible") rather than checking anything.
-      vendorHash = "sha256-D72qBnimWY3UQXbskRx0oMV3xrlnI0Oeup7o2zU/V8w=";
+      vendorHash = "sha256-Be4VHrBOqRyLcBvjFJRfFJApaqSpb3e8LmIV/qgMcW8=";
       tags = [ "iroh" ];
       env.CGO_ENABLED = 1;
       env.CGO_LDFLAGS = irohGo'.cgoLdflags;
