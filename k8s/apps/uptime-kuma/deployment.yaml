@@ -1,0 +1,126 @@
+# Uptime Kuma: synthetic checks from the outside in — "does the
+# service answer?" by HTTP/TCP/ping/DNS on a schedule, with a history
+# and notifications. It is the black-box half of monitoring; the
+# white-box half (what the service says about itself: metrics, logs)
+# is kube-prometheus-stack + Loki under k8s/apps/monitoring (epic
+# xhk3). Both are data-plane tenants (invariant 2's exception).
+#
+# State: one Longhorn volume (ADR-0029) holds the sqlite database —
+# monitors, heartbeat history, notification settings, the admin
+# account. Nothing the control plane depends on lives here; losing the
+# volume loses the monitor list and history, re-created by hand. `bsj`
+# (backup target) covers it like Vaultwarden.
+#
+# Targets: pods cannot resolve *.mesh.internal (Talos host DNS serves
+# no /etc/hosts to kube-dns; siderolabs/talos #9822/#13141), so an
+# in-cluster monitor points at the Service DNS name
+# (http://vaultwarden.vaultwarden.svc:8080/alive, ...), not the gw
+# name a browser uses. That also keeps the check off the gateway and
+# the group gate, which would answer 401 to a caller with no mesh
+# token anyway. Public internet targets work as-is (cluster egress).
+#
+# Image: the `-slim-rootless` variant — slim drops Chromium (no "real
+# browser" monitor type; every other type stays), rootless sets USER
+# node (uid 1000) so the pod fits the restricted PSS default. DB choice
+# on first run is sqlite (the setup page asks; MariaDB is the other
+# option and is not wanted here). The admin account is created on the
+# same first-run page — behind the admins gate (ingress.yaml), so only
+# an admin device can ever reach that page.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uptime-kuma
+  namespace: uptime-kuma
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: uptime-kuma
+  namespace: uptime-kuma
+spec:
+  replicas: 1
+  # RWO volume + sqlite: no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: uptime-kuma
+  template:
+    metadata:
+      labels:
+        app: uptime-kuma
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: uptime-kuma
+          # Pinned by digest; the 2.5.6-slim-rootless tag resolved on
+          # 2026-10-21.
+          image: docker.io/louislam/uptime-kuma:2.5.6-slim-rootless@sha256:6eb4e96a7cbdb8a5d6779aa26dce2cb97dcea65b486856b9b2280f73a1d0adf4
+          env:
+            - name: UPTIME_KUMA_PORT
+              value: "3001"
+            - name: DATA_DIR
+              value: /app/data/
+            # node/sqlite scratch; /tmp is an emptyDir because the
+            # root fs is read-only.
+            - name: TMPDIR
+              value: /tmp
+          ports:
+            - containerPort: 3001
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3001
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3001
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: uptime-kuma
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: uptime-kuma
+  namespace: uptime-kuma
+spec:
+  selector:
+    app: uptime-kuma
+  ports:
+    - port: 3001
+      targetPort: 3001
