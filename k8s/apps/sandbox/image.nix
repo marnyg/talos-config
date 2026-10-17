@@ -269,9 +269,10 @@ nix2container.buildImage {
   tag = self.shortRev or self.dirtyShortRev or "dev";
   copyToRoot = [ pkgs.cacert root scratch env ];
   # Writable by uid 65534 when no volume covers them (a child pod).
+  # The regex sees the STORE path (…-sandbox-agent-scratch/tmp), not
+  # the path in the image.
   perms = [
-    { path = scratch; regex = "^/workspace$"; mode = "1777"; }
-    { path = scratch; regex = "^/tmp$"; mode = "1777"; }
+    { path = scratch; regex = "/(workspace|tmp)$"; mode = "1777"; }
   ];
   config = {
     Entrypoint = [ "/usr/local/bin/agent-entrypoint" ];
