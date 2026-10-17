@@ -1060,8 +1060,13 @@ provisioning or recovery path may depend on it.
   is built (`e6pu.2`, 2026-10-12: `actors/child` serves `#task`,
   `#steer`, `#abort`, drives pi through `actors/pirpc` and streams the
   run to the parent's `agent-events` facet — protocol glossary
-  **Chain-on-connect**, **Uploader**); the image that carries it and
-  the parent actor are not.
+  **Chain-on-connect**, **Uploader**) and **live under kata since
+  2026-10-17** (`e6pu`): the harness image carries the child beat
+  (`SAP_INTRO` set — the entrypoint execs `child`), the provisioner
+  puts every lease under RuntimeClass kata and dresses that image in
+  the `openrouter` secret by digest (its **outfit**, ADR-0037 — never
+  the intro); first live run: `spawn -prompt` from the laptop, 45
+  events, `child_settled`. The parent actor is not built.
 - **Session** _(designed 2026-10-11, epic `ivof`; child side built
   2026-10-12, parent not)_ — the record of one agent run as the
   **parent actor** keeps it: pi's event stream (the child beat runs pi
