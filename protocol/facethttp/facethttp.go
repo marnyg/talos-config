@@ -25,6 +25,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -48,7 +49,7 @@ func NewListener(facet string) *Listener {
 // attributed to identity. It reports false when the listener is closed
 // or ctx ends first; the caller still owns (and closes) rwc then.
 func (l *Listener) Push(ctx context.Context, rwc io.ReadWriteCloser, identity cert.Identity, peer cert.ActorID) bool {
-	c := &Conn{ReadWriteCloser: rwc, identity: identity, peer: peer, facet: l.facet}
+	c := newConn(rwc, identity, peer, l.facet)
 	select {
 	case l.conns <- c:
 		return true
@@ -79,19 +80,52 @@ func (l *Listener) Close() error {
 func (l *Listener) Addr() net.Addr { return Addr(l.facet) }
 
 // Conn adapts one admitted stream to net.Conn for http.Server.
-// Deadlines are accepted and ignored, so the server's ReadHeaderTimeout
-// (which is set through them) does NOT bite here: a QUIC stream has no
-// socket to arm, and arming a timer that Closes the stream would not
-// free the goroutine either — irohtransport.Raw.Close cannot interrupt
-// a Read blocked in the FFI (iroh-ffi serialises read/stop on one
-// lock). What bounds a stalled stream is the facet connection's
-// lifetime (gateway.DefaultConnMaxAge) or the peer going away
-// (talos-config-vh6e).
+//
+// Reads go through a pump: one goroutine reads the stream into a
+// bounded buffer and Read serves from it, so a read deadline can
+// interrupt Read without touching the stream. http.Server needs that
+// for one thing it cannot do otherwise — Hijack. The server keeps a
+// background Read in flight on every idle connection (to notice the
+// peer leaving), and Hijack aborts it with SetReadDeadline(past) and
+// waits for it to return; with deadlines ignored it waited for the
+// peer instead, so a 101 Switching Protocols (any WebSocket through
+// the gateway) sat unsent until the browser gave up (talos-config-o8wd).
+// The pump keeps the underlying Read running across the hijack; bytes
+// that land afterwards go to whoever reads next.
+//
+// A deadline cannot bound the stream itself: a QUIC stream has no
+// socket to arm, and irohtransport.Raw.Close cannot interrupt a Read
+// blocked in the FFI (iroh-ffi serialises read/stop on one lock). So
+// the server's ReadHeaderTimeout returns the Read to the server but
+// the pump goroutine stays until the peer goes away or the facet
+// connection's lifetime ends it (gateway.DefaultConnMaxAge;
+// talos-config-vh6e). Write deadlines are accepted and ignored: a
+// write is not interruptible either, and nothing in the server path
+// sets one.
 type Conn struct {
-	io.ReadWriteCloser
+	rwc      io.ReadWriteCloser
 	identity cert.Identity
 	peer     cert.ActorID
 	facet    string
+
+	mu       sync.Mutex
+	cond     *sync.Cond
+	buf      []byte      // delivered by the pump, not yet read
+	err      error       // the pump's terminal error, after buf drains
+	deadline time.Time   // read deadline; zero = none
+	timer    *time.Timer // wakes readers at deadline
+	closed   bool
+	pumping  bool
+}
+
+// pumpBuf bounds what the pump reads ahead of the consumer; past it
+// the pump waits, and QUIC flow control holds the peer.
+const pumpBuf = 256 << 10
+
+func newConn(rwc io.ReadWriteCloser, identity cert.Identity, peer cert.ActorID, facet string) *Conn {
+	c := &Conn{rwc: rwc, identity: identity, peer: peer, facet: facet}
+	c.cond = sync.NewCond(&c.mu)
+	return c
 }
 
 // Identity is the admitted caller's identity.
@@ -100,10 +134,127 @@ func (c *Conn) Identity() cert.Identity { return c.identity }
 // Peer is the caller's key (the QUIC peer).
 func (c *Conn) Peer() cert.ActorID { return c.peer }
 
-func (c *Conn) LocalAddr() net.Addr              { return Addr(c.facet) }
-func (c *Conn) RemoteAddr() net.Addr             { return Addr(string(c.peer)) }
-func (c *Conn) SetDeadline(time.Time) error      { return nil }
-func (c *Conn) SetReadDeadline(time.Time) error  { return nil }
+func (c *Conn) LocalAddr() net.Addr  { return Addr(c.facet) }
+func (c *Conn) RemoteAddr() net.Addr { return Addr(string(c.peer)) }
+
+// pump runs on its own goroutine, started by the first Read.
+func (c *Conn) pump() {
+	chunk := make([]byte, 32<<10)
+	for {
+		n, err := c.rwc.Read(chunk)
+		c.mu.Lock()
+		if n > 0 {
+			c.buf = append(c.buf, chunk[:n]...)
+		}
+		if err != nil {
+			c.err = err
+			c.cond.Broadcast()
+			c.mu.Unlock()
+			return
+		}
+		c.cond.Broadcast()
+		for len(c.buf) >= pumpBuf && !c.closed {
+			c.cond.Wait()
+		}
+		if c.closed {
+			c.mu.Unlock()
+			return
+		}
+		c.mu.Unlock()
+	}
+}
+
+// Read implements net.Conn. It returns buffered bytes first, then the
+// pump's error (io.EOF on the peer's FIN), os.ErrDeadlineExceeded past
+// the read deadline, net.ErrClosed after Close.
+func (c *Conn) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.pumping && !c.closed {
+		c.pumping = true
+		go c.pump()
+	}
+	for {
+		if len(c.buf) > 0 {
+			n := copy(p, c.buf)
+			c.buf = c.buf[n:]
+			if len(c.buf) == 0 {
+				c.buf = nil // let the pump's backing array go
+			}
+			c.cond.Broadcast() // the pump may be waiting on pumpBuf
+			return n, nil
+		}
+		if c.closed {
+			return 0, net.ErrClosed
+		}
+		if c.err != nil {
+			return 0, c.err
+		}
+		if !c.deadline.IsZero() && !time.Now().Before(c.deadline) {
+			return 0, os.ErrDeadlineExceeded
+		}
+		c.cond.Wait()
+	}
+}
+
+// Write implements net.Conn: straight to the stream.
+func (c *Conn) Write(p []byte) (int, error) { return c.rwc.Write(p) }
+
+// Close closes the stream and wakes every Read with net.ErrClosed.
+// The send side is ended in order first (FIN) when the stream can,
+// so a response written just before Close reaches the peer: closing
+// an iroh stream with its send side open resets it, and a reset
+// discards what is still in flight. The server closes right after
+// the handler on a Connection: close request — and used to get away
+// with it only because abortPendingRead blocked until the peer had
+// read everything.
+func (c *Conn) Close() error {
+	c.mu.Lock()
+	c.closed = true
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	c.cond.Broadcast()
+	c.mu.Unlock()
+	if cw, ok := c.rwc.(interface{ CloseWrite() error }); ok {
+		_ = cw.CloseWrite()
+	}
+	return c.rwc.Close()
+}
+
+// SetDeadline sets the read deadline (write deadlines are ignored).
+func (c *Conn) SetDeadline(t time.Time) error { return c.SetReadDeadline(t) }
+
+// SetReadDeadline implements net.Conn: a Read in flight or started
+// later returns os.ErrDeadlineExceeded once t has passed; a zero t
+// clears it. The stream itself is untouched (see Conn).
+func (c *Conn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.deadline = t
+	if c.timer != nil {
+		c.timer.Stop()
+		c.timer = nil
+	}
+	if t.IsZero() {
+		return nil
+	}
+	if d := time.Until(t); d > 0 {
+		c.timer = time.AfterFunc(d, func() {
+			c.mu.Lock()
+			c.cond.Broadcast()
+			c.mu.Unlock()
+		})
+		return nil
+	}
+	c.cond.Broadcast()
+	return nil
+}
+
+// SetWriteDeadline is accepted and ignored (see Conn).
 func (c *Conn) SetWriteDeadline(time.Time) error { return nil }
 
 // Dialed adapts one stream the CALLER opened on a stream facet to
