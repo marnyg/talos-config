@@ -62,7 +62,6 @@ metadata:
   name: sonarr
   namespace: media
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Sonarr
     gethomepage.dev/group: Downloads
@@ -90,7 +89,6 @@ metadata:
   name: radarr
   namespace: media
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Radarr
     gethomepage.dev/group: Downloads
@@ -118,7 +116,6 @@ metadata:
   name: nzbget
   namespace: media
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: NZBGet
     gethomepage.dev/group: Downloads
@@ -146,7 +143,6 @@ metadata:
   name: transmission
   namespace: media
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Transmission
     gethomepage.dev/group: Downloads
@@ -179,7 +175,6 @@ metadata:
   name: jackett
   namespace: media
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Jackett
     gethomepage.dev/group: Downloads
@@ -207,7 +202,6 @@ metadata:
   name: prowlarr
   namespace: media
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Prowlarr
     gethomepage.dev/group: Downloads
@@ -235,7 +229,6 @@ metadata:
   name: chaptarr
   namespace: media
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Chaptarr
     gethomepage.dev/group: Downloads
@@ -269,7 +262,6 @@ metadata:
   name: audiobookshelf
   namespace: media
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Audiobookshelf
     gethomepage.dev/group: Media

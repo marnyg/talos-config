@@ -19,7 +19,6 @@ metadata:
   name: attic
   namespace: nix-cache
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Attic
     gethomepage.dev/group: Platform

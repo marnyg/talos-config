@@ -17,7 +17,6 @@ metadata:
   name: forgejo
   namespace: forgejo
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Forgejo
     gethomepage.dev/group: Platform

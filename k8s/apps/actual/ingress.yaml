@@ -14,7 +14,6 @@ metadata:
   name: actual
   namespace: actual
   annotations:
-    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
     # Dashboard tile; https because the app needs a secure context
     # (deployment.yaml).
     gethomepage.dev/enabled: "true"
