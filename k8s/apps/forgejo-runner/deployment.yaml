@@ -22,6 +22,7 @@
 # no Ingress: nothing dials it.
 #
 # Secrets, both sealed beside this file with
+# (and written out only onto the two memory-backed emptyDirs below)
 # `kubeseal --cert talos/clusters/homelab/sealed-secrets.crt`:
 #   forgejo-runner  RUNNER_SECRET — 40 hex chars; the same value is
 #                   registered in Forgejo (bootstrap.md step 1)
@@ -64,7 +65,7 @@ spec:
       containers:
         - name: runner
           # k8s/apps/forgejo-runner/build.sh prints the tag@digest to pin here.
-          image: ghcr.io/marnyg/forgejo-runner:488afb3@sha256:db649ca1fa3687a29e6a0635789f034bff843ed9301e1bfe3f624c82621de06c
+          image: ghcr.io/marnyg/forgejo-runner:b60f951@sha256:c0f1f2270875dd8977e101a15a996d0a35badc711c14b78c4eb6353c3eb34005
           env:
             - name: RUNNER_NAME
               value: cluster-nix
@@ -96,6 +97,14 @@ spec:
             - name: config
               mountPath: /etc/forgejo-runner
               readOnly: true
+            # Credentials in memory only (invariant 8): the entrypoint
+            # writes the attic client config under /root/.config and
+            # the runner's registration (.runner, its token) in /data,
+            # both mode 600. Everything else stays on the overlay.
+            - name: run-secrets
+              mountPath: /data
+            - name: home-config
+              mountPath: /root/.config
           resources:
             requests:
               cpu: "2"
@@ -108,3 +117,11 @@ spec:
         - name: config
           configMap:
             name: forgejo-runner
+        - name: run-secrets
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: home-config
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
