@@ -94,9 +94,15 @@ type hubManager struct {
 	}
 
 	// publicURL is the HTTPS base members and nodes reach this hub at
-	// (--iroh-relay: one hostname carries HTTPS and the relay, ADR-0022).
+	// (enrollment, /.well-known): --public-url, defaulting to --iroh-relay
+	// since on fly one hostname carries HTTPS and the relay (ADR-0022).
 	// "" ⇒ no identity plane: served configs carry no agent document.
 	publicURL string
+	// relayURL is the iroh home relay members and nodes are told to dial
+	// the hub's endpoint through (--iroh-relay). Kept apart from
+	// publicURL so the two hostnames can diverge (talos-config-53q);
+	// "" ⇒ same as publicURL (agentPatch).
+	relayURL string
 	// bootSeen is the volatile single-use guard for boot tokens
 	// (nodeenroll.go); safe to lose.
 	bootSeen boottoken.Seen

@@ -63,10 +63,13 @@ func postEnroll(t *testing.T, s *server, node cert.ActorID, token string) *httpt
 
 // TestNodeBootEnroll is ADR-0015 end to end on the hub: a served config
 // carries a token instead of a key; the token buys exactly one member
-// cert for a NodeId the hub never saw before, named by git.
+// cert for a NodeId the hub never saw before, named by git. The hub's
+// HTTPS base and its relay are distinct hostnames here, so the served
+// agent config must carry each in its own field (talos-config-53q).
 func TestNodeBootEnroll(t *testing.T) {
 	m := testHubManager(t, []string{wellKnownAddr})
 	m.publicURL = "https://hub.example"
+	m.relayURL = "https://relay.example"
 	s := &server{root: m.root, store: deviceflow.NewStore(), sessions: newSessionStore(), hub: m, adminAddrs: m.adminAddrs}
 	_, nodePriv, _ := ed25519.GenerateKey(rand.Reader)
 	node := cert.NewEdSigner(nodePriv).ActorID()
@@ -85,7 +88,7 @@ func TestNodeBootEnroll(t *testing.T) {
 		t.Fatalf("/config: %d %s", rec.Code, rec.Body.String())
 	}
 	cfg := agentConfigFrom(t, rec.Body.String())
-	if cfg.Hub != m.publicURL || cfg.Relay != m.publicURL || !strings.HasPrefix(cfg.Token, "bt1.") {
+	if cfg.Hub != m.publicURL || cfg.Relay != m.relayURL || !strings.HasPrefix(cfg.Token, "bt1.") {
 		t.Fatalf("agent config: %+v", cfg)
 	}
 	if mac, err := boottoken.Verify(m.current(), cfg.Token, time.Now()); err != nil || mac != "aa:bb:cc:dd:ee:ff" {
@@ -157,6 +160,26 @@ func TestNodeBootEnroll(t *testing.T) {
 	s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/config?mac=aa-bb-cc-dd-ee-ff", nil))
 	if agentConfigFrom(t, rec.Body.String()).Token == cfg.Token {
 		t.Fatal("two serves, one token")
+	}
+}
+
+// With no separate relayURL (fly's default: --public-url unset, one
+// hostname for HTTPS and the relay) the served Relay is the publicURL —
+// never "" (talos-config-53q).
+func TestAgentRelayDefaultsToPublicURL(t *testing.T) {
+	m := testHubManager(t, []string{wellKnownAddr})
+	m.publicURL = "https://hub.example"
+	s := &server{root: m.root, store: deviceflow.NewStore(), hub: m, adminAddrs: m.adminAddrs}
+	if err := m.unsealWithSignature(unsealSig(t)); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	s.mux().ServeHTTP(rec, httptest.NewRequest("GET", "/config?mac=aa-bb-cc-dd-ee-ff", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/config: %d %s", rec.Code, rec.Body.String())
+	}
+	if cfg := agentConfigFrom(t, rec.Body.String()); cfg.Hub != m.publicURL || cfg.Relay != m.publicURL {
+		t.Fatalf("agent config: %+v", cfg)
 	}
 }
 

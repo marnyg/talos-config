@@ -277,6 +277,7 @@ func main() {
 		relayBin    = flag.String("relay-bin", "", "path to the iroh-relay binary; runs it as a child on loopback and proxies /relay, /ping, /generate_204 (empty = no iroh relay)")
 		relayPort   = flag.Int("relay-port", 3340, "loopback port the iroh-relay child binds (only reachable through the hub's proxy)")
 		irohRelay   = flag.String("iroh-relay", "", "public relay URL members dial the hub's iroh endpoint through (e.g. https://host); makes this process a HUB (sealed until an admin wallet signs at /status): the hubkey is bound on iroh, homed on the relay child when --relay-bin is set (needs a -tags iroh build)")
+		publicURL   = flag.String("public-url", "", "HTTPS base URL members and nodes reach this hub at (enrollment, /.well-known); default: --iroh-relay, since on fly one hostname carries both the web surface and the relay (ADR-0022, talos-config-53q)")
 		irohBind    = flag.String("iroh-bind", "0.0.0.0:0", "UDP socket the hub's iroh endpoint binds (relay-only on fly: nothing reaches it directly)")
 		gitRemote   = flag.String("git-remote", "", "git URL to serve talos/ from (the verified tip of --git-ref replaces the tree under --root, which must be a symlink; empty = serve --root as is)")
 		gitRef      = flag.String("git-ref", "main", "branch whose signed tip is served (overridable from /status until restart)")
@@ -326,6 +327,10 @@ func main() {
 			log.Fatalf("hub: %v", err)
 		}
 		hub.publicURL = *irohRelay
+		if *publicURL != "" {
+			hub.publicURL = *publicURL
+		}
+		hub.relayURL = *irohRelay
 		log.Printf("hub identity %s on iroh, advertised at %s", hub.issuer.Fingerprint(), hub.endpoints())
 
 		// Dev/testing escape hatch: the master env auto-unseals — but
