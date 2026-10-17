@@ -232,7 +232,7 @@ func (r *relaySupervisor) handleRelayAccess(w http.ResponseWriter, req *http.Req
 	id, err := relayEndpointID(req.Header.Get(relayEndpointHeader))
 	if err != nil {
 		log.Printf("relay access: %v", err)
-		http.Error(w, "false", http.StatusForbidden)
+		relayDeny(w)
 		return
 	}
 	ok, mode := r.hook.Admit(id)
@@ -252,11 +252,21 @@ func (r *relaySupervisor) handleRelayAccess(w http.ResponseWriter, req *http.Req
 		if !seen {
 			log.Printf("relay access: denied %s (%s)", id, mode)
 		}
-		http.Error(w, "false", http.StatusForbidden)
+		relayDeny(w)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	_, _ = io.WriteString(w, "true")
+}
+
+// relayDeny answers the hook's "no": 403 with the bare body "false",
+// the mirror of the "true" branch (http.Error would append a newline;
+// harmless to the relay, which admits only on 200 "true", but one
+// shape is easier to assert on).
+func relayDeny(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = io.WriteString(w, "false")
 }
 
 // bearerOK compares the Authorization header against the per-process

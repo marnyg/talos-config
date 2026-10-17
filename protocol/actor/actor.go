@@ -636,7 +636,9 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 
 	now := a.now()
 	consents, speakAs := a.authority()
-	res, err := envelope.Verify(env, envelope.Receiver{
+	// serve verified the signature before enqueueing (7w5), so the
+	// loop skips that step rather than paying it twice.
+	res, err := envelope.VerifyAuthenticated(env, envelope.Receiver{
 		ID:       a.ID(),
 		Consents: consents,
 		SpeakAs:  speakAs,
@@ -672,10 +674,10 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 	return Status{Code: StatusOK, Body: body}
 }
 
-// rejectStatus maps an envelope.Verify failure to the reply Status.
-// envelope.ErrSig has no case on purpose (2004): serve already ran
-// VerifySig and closed the stream on failure (7w5), so Verify's own
-// VerifySig re-run cannot fail here; an ErrSig reaching this switch
+// rejectStatus maps an envelope.VerifyAuthenticated failure to the
+// reply Status. envelope.ErrSig has no case on purpose (2004): serve
+// already ran VerifySig and closed the stream on failure (7w5), and the
+// loop verifies without repeating it; an ErrSig reaching this switch
 // would be a programming error and falls to the generic reject.
 func rejectStatus(err error) Status {
 	code := StatusRejected

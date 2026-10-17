@@ -232,6 +232,53 @@ func (s *server) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 
 // mux wires all routes. Shared between main and the HTTP tests so the
 // two can never drift.
+// startRelay runs the iroh home relay child (ADR-0022) beside the hub
+// and returns its supervisor. hub nil ⇒ no access hook (access =
+// everyone); otherwise the hook is built from the hub's own port and
+// the process start time (relayadmit.go). Extracted from main (the
+// block had grown hook build + supervisor + signal handler).
+func startRelay(bin string, relayPort, hubPort int, hub *hubManager, started time.Time) *relaySupervisor {
+	// The iroh home relay (Mesh v3, ADR-0022) is a keyless transport
+	// component: it starts with the process and runs sealed or not, so
+	// the identity plane's remote paths survive a redeploy's seal
+	// window.
+	//
+	// With an identity plane the child consults the hub's access hook
+	// on every connect (talos-config-5gz): loopback URL, per-process
+	// bearer via the child's environment, admission from the beat
+	// cache + blocklist once warm, open while cold (relayadmit.go).
+	var (
+		hook relayHook
+		err  error
+	)
+	if hub != nil {
+		if hook, err = relayHookFor(hub, hubPort, started); err != nil {
+			log.Fatalf("relay: %v", err)
+		}
+	}
+	rs, err := newRelaySupervisor(bin, relayPort, hook)
+	if err != nil {
+		log.Fatalf("relay: %v", err)
+	}
+	if err := rs.Start(context.Background()); err != nil {
+		// Not fatal: the supervisor keeps retrying, and config/KMS/
+		// unseal do not depend on the relay. /status shows it DOWN.
+		log.Printf("relay: %v (supervisor keeps retrying)", err)
+	}
+	// The child must not outlive the hub: on SIGTERM/SIGINT (fly stop,
+	// ^C locally) stop it before exiting. Nothing else here needs a
+	// graceful shutdown — every other surface is stateless.
+	go func() {
+		sigc := make(chan os.Signal, 1)
+		signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
+		sig := <-sigc
+		log.Printf("%v: stopping relay child", sig)
+		rs.Close()
+		os.Exit(0)
+	}()
+	return rs
+}
+
 func (s *server) mux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /config", s.handleConfig)
@@ -358,45 +405,7 @@ func main() {
 	}
 
 	if *relayBin != "" {
-		// The iroh home relay (Mesh v3, ADR-0022) is a keyless transport
-		// component: it starts with the process and runs sealed or not, so
-		// the identity plane's remote paths survive a redeploy's seal
-		// window.
-		//
-		// With an identity plane the child consults the hub's access hook
-		// on every connect (talos-config-5gz): loopback URL, per-process
-		// bearer via the child's environment, admission from the beat
-		// cache + blocklist once warm, open while cold (relayadmit.go).
-		var (
-			hook relayHook
-			err  error
-		)
-		if hub != nil {
-			if hook, err = relayHookFor(hub, *port, s.started); err != nil {
-				log.Fatalf("relay: %v", err)
-			}
-		}
-		rs, err := newRelaySupervisor(*relayBin, *relayPort, hook)
-		if err != nil {
-			log.Fatalf("relay: %v", err)
-		}
-		if err := rs.Start(context.Background()); err != nil {
-			// Not fatal: the supervisor keeps retrying, and config/KMS/
-			// unseal do not depend on the relay. /status shows it DOWN.
-			log.Printf("relay: %v (supervisor keeps retrying)", err)
-		}
-		s.relay = rs
-		// The child must not outlive the hub: on SIGTERM/SIGINT (fly stop,
-		// ^C locally) stop it before exiting. Nothing else here needs a
-		// graceful shutdown — every other surface is stateless.
-		go func() {
-			sigc := make(chan os.Signal, 1)
-			signal.Notify(sigc, syscall.SIGTERM, syscall.SIGINT)
-			sig := <-sigc
-			log.Printf("%v: stopping relay child", sig)
-			rs.Close()
-			os.Exit(0)
-		}()
+		s.relay = startRelay(*relayBin, *relayPort, *port, hub, s.started)
 	}
 
 	if hub != nil {

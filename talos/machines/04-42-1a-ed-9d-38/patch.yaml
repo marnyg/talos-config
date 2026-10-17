@@ -1,0 +1,101 @@
+# Pin the hostname. Talos' generated names are NOT stable across a
+# reinstall (cp1 came back as talos-wu6-eib having been talos-ezw-edv),
+# so without this every wipe leaves a NotReady Node object behind.
+machine:
+  network:
+    hostname: w2
+    # Declared LAN address (invariant 7), git-derived, not leased. The
+    # box was on another LAN (192.168.2.0/24) when inventoried and is
+    # being moved to the router, so unlike w1/nas1 there was no lease
+    # on this MAC to adopt — .77 continues the .68/.71/.74 spacing.
+    # No router DHCP exclusion on purpose (decision talos-config-ebis).
+    #
+    # Selected by MAC, never by interface name. This is the onboard
+    # RTL8125 — the only wired PCI NIC, and the directory MAC. The USB
+    # FE dongle the box was reached through under Windows must not be
+    # plugged in (hardware/asus-tuf-b550-pro.yaml says why).
+    interfaces:
+      - deviceSelector:
+          hardwareAddr: 04:42:1a:ed:9d:38
+        dhcp: false
+        addresses:
+          - 10.0.0.77/24
+        routes:
+          - network: 0.0.0.0/0
+            gateway: 10.0.0.1
+    nameservers:
+      - 10.0.0.1
+  # Longhorn disks declared here (k8s/apps/longhorn:
+  # createDefaultDiskLabeledNodes=true fails closed). "config" + the
+  # annotation, as on w1/nas1: both disks are whole NVMes, so both carry
+  # the `nvme` tag and serve the default `longhorn` class's fast tier.
+  # A fresh node has no Longhorn Node CR yet, so — unlike nas1 — the
+  # annotation is what registers them, not just what a reinstall
+  # reproduces.
+  nodeLabels:
+    node.longhorn.io/create-default-disk: "config"
+  nodeAnnotations:
+    node.longhorn.io/default-disks-config: '[{"path":"/var/mnt/longhorn","allowScheduling":true,"tags":["nvme"]},{"path":"/var/mnt/longhorn-1","allowScheduling":true,"tags":["nvme"]}]'
+  kubelet:
+    # Longhorn's data paths, bind-mounted into the kubelet container
+    # with `rshared` propagation (ADR-0011; w1's patch has the full
+    # reasoning). One entry per user volume below; the source must
+    # exist as the mount or kubelet fails to start.
+    extraMounts:
+      - destination: /var/mnt/longhorn
+        type: bind
+        source: /var/mnt/longhorn
+        options:
+          - bind
+          - rshared
+          - rw
+      - destination: /var/mnt/longhorn-1
+        type: bind
+        source: /var/mnt/longhorn-1
+        options:
+          - bind
+          - rshared
+          - rw
+---
+# No EPHEMERAL cap: the system disk (Kingston NV1, 932GiB) carries no
+# Longhorn volume, so EPHEMERAL takes the whole drive. It holds images,
+# logs, pod scratch and (this being the GPU node) emptyDir model
+# caches — nothing durable; durable data is on the two volumes below.
+#
+# Longhorn disk 1 (mounts at /var/mnt/longhorn): the Corsair MP600 PRO,
+# 932GiB PCIe4 — the fastest drive in the fleet, hence the default
+# path's name. A whole disk, not a partition: the first node where
+# Sidero's "separate disk from the install disk" holds. Selected by
+# model (exact; the three NVMes have distinct models, see the hardware
+# layer for the measured list) — verify the Linux spelling with
+# `talosctl get disks` if provisioning refuses. minSize is only the
+# floor below which Talos refuses.
+#
+# UNENCRYPTED, matching cp1/w1/nas1's Longhorn volumes and inheriting
+# the same open decision (talos-config-9io): the hub only derives keys
+# for systemDiskEncryption today.
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: longhorn
+provisioning:
+  diskSelector:
+    match: disk.transport == "nvme" && disk.model == "Corsair MP600 PRO"
+  minSize: 800GiB
+  grow: true
+filesystem:
+  type: xfs
+---
+# Longhorn disk 2 (mounts at /var/mnt/longhorn-1): the Corsair Force
+# MP510, 894GiB PCIe3 TLC. Same posture as above; the second `nvme`
+# disk on this node. Longhorn places replicas across NODES, not disks,
+# so two disks here are capacity, not redundancy.
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: longhorn-1
+provisioning:
+  diskSelector:
+    match: disk.transport == "nvme" && disk.model == "Force MP510"
+  minSize: 800GiB
+  grow: true
+filesystem:
+  type: xfs

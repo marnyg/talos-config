@@ -1,0 +1,69 @@
+# Komplett-built desktop on an ASUS TUF GAMING B550-PRO (AMI BIOS 2803,
+# 2022-04-27; SMBIOS says "Komplett / KomplettPC / SKU 1337", board
+# serial 211194083400012). Ryzen 5 5600X (6c/12t), 48GiB, RTX 3070.
+# Everything here was read off the box over ssh WHILE IT STILL RAN
+# WINDOWS (2026-10-17, spike talos-config-dsuj) — the first node whose
+# hardware was inspectable before the install, so unlike w1/nas1 the
+# numbers below are measured, not guessed. The Linux-side strings
+# (model as `talosctl get disks` prints it) are still unverified; see
+# the disk note.
+#
+# Firmware prerequisites before the first boot (one-time, in the BIOS):
+# - Secure Boot OFF. It was ON under Windows. Our installer is an
+#   imager build with a third-party extension (ADR-0023), so there is
+#   no Microsoft-signed shim path; Talos' SecureBoot mode needs a UKI
+#   signed with our own keys enrolled in the firmware, which the fleet
+#   does not do. cp1/w1/nas1 all run with it off.
+# - SVM + IOMMU stay ON (they were: DeviceGuard reported DMA protection
+#   available) — needed for kata (ADR-0035) and the GPU passthrough the
+#   spike is about.
+# - Boot order: the onboard NIC's PXE entry ("UEFI:Network Device"
+#   exists) or the USB installer ahead of the NVMes; the Windows Boot
+#   Manager entry goes away with the disk.
+#
+# NIC: ONE wired PCI NIC, Realtek RTL8125 2.5GbE (10ec:8125, r8169 in
+# the Talos kernel), MAC 04:42:1a:ed:9d:38 — the machine directory's
+# name. Under Windows the box was reached through a Realtek USB FE
+# dongle (32:0b:b1:6c:f9:23 — locally-administered bit set, i.e. a
+# driver-generated address; Linux r8152 randomises those per boot).
+# That dongle must NOT be plugged in at boot: Talos would report ${mac}
+# from whichever interface enumerates first, and a random MAC fetches
+# a config that does not exist (nas1's :a8/:a9 trap, from the other
+# side). Wi-Fi (Intel AX210) is undriven and irrelevant.
+#
+# GPU passthrough is deliberately NOT configured here yet (spike dsuj):
+# the IDs it will need are 10de:2488 (RTX 3070) + 10de:228b (its HDA
+# function); binding them to vfio-pci is kernel.modules + extraKernelArgs
+# on this layer plus the KubeVirt permittedHostDevices — a separate
+# commit once the node is in.
+machine:
+  install:
+    # THREE NVMes, so `type: nvme` (nas1's selector) is ambiguous and the
+    # base template's /dev/sda default is forbidden anyway. Pin by model
+    # — exact, no glob, so a fourth drive can never widen the match:
+    #   KINGSTON SNVS1000G   932GiB  Kingston NV1, PCIe3 DRAM-less  → Talos
+    #   Corsair MP600 PRO    932GiB  PCIe4                          → Longhorn (patch.yaml)
+    #   Force MP510          894GiB  PCIe3 TLC                      → Longhorn (patch.yaml)
+    # The weakest drive takes the OS: STATE + EPHEMERAL hold nothing
+    # durable (images, logs, scratch), and this is the first node where
+    # Longhorn's "separate disk from the install disk" recommendation
+    # can actually be met — both Corsairs are Longhorn's outright, so
+    # there is no EPHEMERAL cap and no u-longhorn on the system disk.
+    #
+    # Model strings are the NVMe Identify model as Windows printed it;
+    # Talos prints the same field (`/sys/block/<dev>/device/model`,
+    # trailing spaces trimmed). If the first boot sits in maintenance
+    # mode with "no disk matched", `talosctl get disks` from a plain
+    # Talos ISO is the way to read the exact spelling — do that BEFORE
+    # the hub flow, which exposes no apid. /dev/nvmeXn1 numbering is
+    # enumeration order across three controllers (Kingston 2646:500f,
+    # two Phison 1987:5012/5018) and is not assumed anywhere.
+    diskSelector:
+      model: KINGSTON SNVS1000G
+    # The fleet image — stock Talos + iscsi-tools + util-linux-tools
+    # (Longhorn, ADR-0011) + kata + our p0agent extension (the node's
+    # mesh identity). hardware/minipc.yaml has the full account; keep
+    # tag AND digest in step with minipc.yaml, alienware-x15.yaml and
+    # terramaster-f4-425-plus.yaml — one fleet image, change all four
+    # together.
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata@sha256:6e8e77cb8c2234c2d648923da376606b96137feaf323f92db9be6239fe2341c0

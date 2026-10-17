@@ -580,6 +580,15 @@ func Verify(e Envelope, r Receiver, now int64) (Result, error) {
 	if err := VerifySig(e); err != nil {
 		return Result{}, err
 	}
+	return VerifyAuthenticated(e, r, now)
+}
+
+// VerifyAuthenticated is Verify minus step 1: for a caller that has
+// already run VerifySig on e (an actor's transport goroutine does, and
+// closes the stream on failure — 7w5), so the mailbox loop does not
+// pay a second Ed25519 verify per envelope. Never call it on an
+// envelope whose signature has not been checked.
+func VerifyAuthenticated(e Envelope, r Receiver, now int64) (Result, error) {
 	if e.To.Target != r.ID {
 		return Result{}, fmt.Errorf("%w: %s", ErrWrongTarget, e.To.Target)
 	}

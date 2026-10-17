@@ -1,0 +1,28 @@
+# Mesh name: w2.mesh.internal — the member cert's name, apid's
+# certSAN, resolved by the name map on the tun. Also the hostname
+# (patch.yaml pins it), so it is apid's -n target and cert SAN as-is.
+#
+# Role: the former Windows gaming PC (spike talos-config-dsuj) — the
+# GPU node (RTX 3070) and, with two NVMes given to Longhorn, the second
+# fast-tier replica host. A WORKER for now: the spike's second
+# control-plane question is open (two etcd members have a worse
+# failure mode than one — quorum is 2 of 2), so this declares nothing
+# about control plane until that is decided. Promoting it later is a
+# reinstall with config: base/controlplane.yaml.
+name: w2
+# SMBIOS UUID, read off the running Windows install over ssh
+# (2026-10-17, Win32_ComputerSystemProduct) BEFORE the first boot — the
+# durable KMS unseal allowlist entry, declared up front so the node
+# never depends on the session-scoped grace window. Per-unit, not an
+# OEM placeholder (its tail is the onboard NIC's MAC, the usual AMI
+# derivation), so the binding is as strong as cp1/w1's.
+uuid: 60d8741a-5e28-1c4d-70b5-04421aed9d38
+diskEncryption: true
+config: base/worker.yaml
+# No sealed-secrets.yaml: that patch provisions the controller's key
+# pair via an inlineManifest, which is a control-plane concern.
+patches:
+  - clusters/homelab/time.yaml
+  - clusters/homelab/worker-cluster.yaml
+  - clusters/homelab/worker-secrets.yaml
+  - hardware/asus-tuf-b550-pro.yaml
