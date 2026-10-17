@@ -56,7 +56,14 @@ func (m *hubManager) agentPatch(master []byte, mac string, mach machines.Machine
 	if err != nil {
 		return "", err
 	}
-	doc, err := nodeagent.Patch(nodeagent.Config{Hub: m.publicURL, Relay: m.publicURL, Token: token})
+	// relayURL falls back to publicURL: the default deployment (fly) homes
+	// the relay on the HTTPS hostname, and tests building a hubManager by
+	// hand set only publicURL — an empty Relay on the wire would be a trap.
+	relay := m.relayURL
+	if relay == "" {
+		relay = m.publicURL
+	}
+	doc, err := nodeagent.Patch(nodeagent.Config{Hub: m.publicURL, Relay: relay, Token: token})
 	if err != nil {
 		return "", err
 	}

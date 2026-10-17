@@ -37,10 +37,12 @@ fi
 # starts SEALED — no key material at rest; an admin unseals at runtime
 # by signing the master message and the speak-as proposal at /status
 # (wallet). Unset = a plain config server: no identity plane, no KMS,
-# no auto-bootstrap.
+# no auto-bootstrap. PUBLIC_URL (optional) splits the HTTPS base nodes
+# enroll at from the relay hostname; unset, both are IROH_RELAY_URL
+# (one hostname on fly, ADR-0022; talos-config-53q).
 HUB_ARGS=""
 if [ -n "${IROH_RELAY_URL:-}" ]; then
-    HUB_ARGS="--iroh-relay $IROH_RELAY_URL --auto-bootstrap ${KMS_ADVERTISE:+--kms-advertise $KMS_ADVERTISE}"
+    HUB_ARGS="--iroh-relay $IROH_RELAY_URL --auto-bootstrap ${KMS_ADVERTISE:+--kms-advertise $KMS_ADVERTISE} ${PUBLIC_URL:+--public-url $PUBLIC_URL}"
 fi
 
 # shellcheck disable=SC2086
