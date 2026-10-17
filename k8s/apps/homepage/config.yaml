@@ -82,3 +82,9 @@ data:
     []
   docker.yaml: |
     {}
+
+  # Homepage treats these as required and copies them from its
+  # skeleton into /app/config when missing — an EROFS crash-loop on
+  # a read-only ConfigMap mount (2026-10-22). Shipped empty instead.
+  custom.css: ""
+  custom.js: ""
