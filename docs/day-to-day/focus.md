@@ -7,11 +7,14 @@
 (`ivof.1`), `agent-run.sh -r/-b` (`ivof.2`), driver RuntimeClass +
 outfit (`e6pu.1`), and 2026-10-12 the child as an agent (`e6pu.2`:
 `protocol/facethttp`, `actors/pirpc`, `#task`/`#steer`/`#abort` with
-the `agent-events` uploader, `spawn -prompt` as the stand-in parent).
-Next: ship the child in the `sandbox-agent` image and run the live
-acceptance; then the parent actor itself (SQLite+FTS5 store,
+the `agent-events` uploader, `spawn -prompt` as the stand-in parent), and 2026-10-17 the child
+shipped in the `sandbox-agent` image and passed the live acceptance
+under kata (provisioner `-runtime-class`/`-outfit`, `e6pu`).
+Next: the parent actor itself (SQLite+FTS5 store,
 list/watch/steer/search UI behind the person gate); `e6pu.3` (git
-half in the child). Epic `ivof`. **Detour landed 2026-10-13:** root
+half in the child). Epic `ivof`. **Side effect:** the relay gate
+(`5gz`) is observe-only until sovereign actors have an admission
+story (spike `qx5c`). **Detour landed 2026-10-13:** root
 rotation (protocol ADR-0010, spike `aja2`; ADR-0011, `d0o0` wires
 pins into every receiver) — model + code built, trivial pins
 everywhere; the durable `talos/` copy of pins/rotations is the open

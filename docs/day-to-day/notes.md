@@ -193,13 +193,13 @@
   2026-09-20: both nodes run 0.1.4, so a redeploy is one `MinRebeat`
   from being noticed.
 
-- 2026-09-05 — **The Quint models are the sharper spec for
+- 2026-09-05 — **The Quint models are the sharper spec for <!-- stale? -->
   ADR-0015/0017.** Five doc sentences were refuted and ruled the same
   day (decisions `h3c zqw dvf syw 6o1`; FINDING blocks in
   `verification/quint/{authorize,runway,approval}.qnt` record the
   trace). When the glossary and a model disagree, check the model's
   header first — it says which ruling applied. <!-- stale? -->
-- 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed and
+- 2026-09-16 — **ADR-0024 (hub actors cut by key) is Proposed and <!-- stale? -->
   partly built** (2026-09-17: Issuer listens in-process, Enroll →
   `#mint-device`, relay child, `/.well-known`; 2026-09-18: `#bundle`
   and the iroh endpoint `e8d`; 2026-09-19: the name map — only
@@ -218,13 +218,13 @@
 
 ## Mesh v3 spike infra (scratch)
 
-- 2026-09-15 — **Any Talos extension that mounts under `/var` needs
+- 2026-09-15 — **Any Talos extension that mounts under `/var` needs <!-- stale? -->
   `depends: - service: cri`**, or `talosctl upgrade`/`reboot` hangs at
   `teardownLifecycle` ("luks2-EPHEMERAL … still in use"). Symptom:
   `talosctl services` shows `ext-nebula`/`ext-iscsid` Finished and the
   offender still Running; `talosctl service ext-<x> stop` unblocks it. <!-- stale? -->
 
-- 2026-09-16 — **P0.2 scratch on the NixOS box was torn down at the
+- 2026-09-16 — **P0.2 scratch on the NixOS box was torn down at the <!-- stale? -->
   gate** (same day): `p0agent-standin`, `~/p0-jf/`, the `/data/p0test`
   compose bind, the "P0 Test" library are gone; `jellyfin` was
   recreated from the restored compose. Still true about the box: the
@@ -239,7 +239,7 @@
   --run 'IROH_FFI_ANDROID_LIB=/tmp/android-ffi-result/lib ./build-aar.sh
   && gradle --no-daemon assembleDebug'` (`/tmp/android-ffi-result` is a
   nix GC root only as long as nobody runs `nix-collect-garbage`). <!-- stale? -->
-- 2026-09-16 — **Phone testing = `adb`, from the Mac**: `nix shell
+- 2026-09-16 — **Phone testing = `adb`, from the Mac**: `nix shell <!-- stale? -->
   nixpkgs#android-tools`; the Sony XQ-BQ52 only enumerates adb after
   USB debugging is on *and* the cable is re-plugged. The Files-app
   installer fails silently ("The app wasn't installed") on the debug
@@ -248,7 +248,7 @@
   Jellyfin *app* is required for Direct Play (Firefox has no MKV
   demuxer and buffers forever while pulling the raw stream). Server
   side: `curl /Sessions` with an API token shows `PlayMethod`. <!-- stale? -->
-- 2026-09-16 — **Outside the home LAN every iroh path is the fly relay**
+- 2026-09-16 — **Outside the home LAN every iroh path is the fly relay** <!-- stale? -->
   (QAD off ⇒ no WAN punch attempted): ~50–75 Mbps to a phone. Do not
   read a throughput number taken from outside as a design result;
   `p0agent serve`'s journal prints `paths=[*relay:…]` vs
@@ -257,7 +257,7 @@
 
 ## Hub / mesh (as running) <!-- stale? -->
 
-- 2026-09-17 — **The production hub relays iroh** at
+- 2026-09-17 — **The production hub relays iroh** at <!-- stale? -->
   `https://marnyg-talos-config.fly.dev` (`/relay`, `/ping`,
   `/generate_204` proxied to an `iroh-relay` child; `/status` has an
   "iroh relay" row; child logs are prefixed `relay|`, level via
@@ -270,7 +270,7 @@
   … Connection did not reach established state within timeout` at
   ~1.7/min steady — loopback peers, i.e. the hub's own proxy/health
   probes, not members. Compare against that rate before chasing it.
-- 2026-09-17 — **Deploy footguns found the hard way:** the Docker
+- 2026-09-17 — **Deploy footguns found the hard way:** the Docker <!-- stale? -->
   context is the *working tree*, not git — a gitignored
   `talos/extensions/*/_out` (145 MB) shipped into the image and
   overflowed `/dev/shm` at entrypoint `cp` (crash loop, "No space left
@@ -408,13 +408,13 @@
   deploys. The devshell's quint is 0.30.0 (flake pin) vs 0.32.0 on
   current nixpkgs — models run on both; `verification/quint/
   _apalache-out/` is gitignored scratch.
-- 2026-09-05 — **Quint laws over many nondet dimensions hold
+- 2026-09-05 — **Quint laws over many nondet dimensions hold <!-- stale? -->
   vacuously.** `authorize.qnt` with ~40 independent `oneOf`s reached
   Accept with p≈2⁻¹⁵; all 7 seeded mutants survived until a
   boundary-biased generator (valid scenario + ≤2 injected faults)
   was added. Always mutation-test a new model before trusting `[ok]`.
   Also: never `powerset()` a 25-element set in a generator. <!-- stale? -->
-- 2026-09-06 — **`iroh-go/` builds are slow cold and need the UA
+- 2026-09-06 — **`iroh-go/` builds are slow cold and need the UA <!-- stale? -->
   backport.** crates.io returns 403 to the generic User-Agent the
   flake's 2026-01 nixpkgs `fetchCargoVendor` sends; `iroh-go/nix/
   default.nix` overrides two lines of the vendor script (fixed-output,
@@ -423,12 +423,12 @@
   8 min, uniffi-bindgen-go ~45 min; warm `nix build .#iroh-go-smoke`
   44 s. Hand-run `go build` in `iroh-go/` needs
   `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`. <!-- stale? -->
-- 2026-09-06 — `nix flake check --impure` is the canonical full check
+- 2026-09-06 — `nix flake check --impure` is the canonical full check <!-- stale? -->
   and is green since `81u` (18 YAML files yamlfmt'd, 0 semantic
   diffs). `--impure` is required by devenv, see the `flake.nix` header.
   yamlfmt quirk: a flow mapping that is the last sequence item before a
   comment gets a trailing `,}` — valid YAML, all parsers agree, ugly. <!-- stale? -->
-- 2026-09-06 — **rapid at the default 100 checks is too shallow for
+- 2026-09-06 — **rapid at the default 100 checks is too shallow for <!-- stale? -->
   pair-faults.** In `protocol/cert` the m14 mutant (group rule as set
   overlap) died in only ~6 % of runs at 100 checks; the killing pair is
   ~0.06 % of samples. `TestFaultPairSweep` enumerates the model's fault
@@ -462,14 +462,14 @@
 
 ## CI / orchestration
 
-- 2026-09-12 — **Upstream iroh's `.cargo/config.toml` pins
+- 2026-09-12 — **Upstream iroh's `.cargo/config.toml` pins <!-- stale? -->
   `-fuse-ld=lld` for x86_64-linux** — the `iroh-relay` derivation
   `rm`s it in `postPatch`; keep that when bumping iroh. <!-- stale? -->
-- 2026-09-13 — **`git pull --rebase` destroys merge commits.** The
+- 2026-09-13 — **`git pull --rebase` destroys merge commits.** The <!-- stale? -->
   repo's default rebase flattened all six `merge swarm/*` commits of
   the M2 swarm (content intact, SHAs in bead notes gone). Either
   `git pull --rebase=merges`, or `git fetch` + inspect before merging. <!-- stale? -->
-- 2026-09-13 — `nix flake check --impure` now includes
+- 2026-09-13 — `nix flake check --impure` now includes <!-- stale? -->
   `.#iroh-transport` (runs the iroh handshake suite, ~25 s warm).
   Hand-run `go test` in `iroh-transport/` needs both
   `CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"`
@@ -1215,10 +1215,32 @@
   the hub runs the relay with a hook (a dev box, a future Talos
   extension), the environment must carry CA roots or the child
   crash-loops and `/status` shows the relay DOWN.
-- 2026-10-17 — **The relay gate is live.** First ~5 min after a hub
-  start (and any sealed/nag window) it is open; then only the hub's id
-  and witnessed members are admitted. A member whose cert fell out of
-  the name map but who still holds a valid kit is refused until it
-  re-mints — new failure mode vs the old access=everyone. Watch the
-  `/status` relay line's admitted/denied and `fly logs` for
-  `relay access: denied` / `bad X-Iroh-NodeId`.
+- 2026-10-17 — **The relay gate is wired but observe-only** (same
+  evening, `82d496c`): the first warm gate denied `sap-provisioner` at
+  its reconnect — the sovereign-actor plane (provisioner, lighthouse,
+  laptop parent, every child) holds protocol keys, not member certs,
+  and there is no other relay (ADR-0022). `relayAdmitter.gate=false`
+  admits everyone past the cold window; the `/status` relay line says
+  `observing (N members; non-member admitted)` after such a connect and
+  `gated (N members)` after a member's. The old failure mode (a member
+  off the name map refused until it re-mints) is parked with the gate;
+  spike `qx5c` decides how actors get admitted before it is enforced.
+  A hub deploy re-seals it: sign at `/status` afterwards.
+- 2026-10-17 — **nix2container `perms` regexes see the STORE path**
+  (`/nix/store/…-sandbox-agent-scratch/tmp`), not the image path:
+  `^/tmp$` matches nothing, silently. And a `perms` entry refuses a
+  tree that shares a directory with another `copyToRoot` entry (`/etc`
+  via `cacert`), so writable dirs get their own derivation
+  (`k8s/apps/sandbox/image.nix` `scratch`). Verify on the box:
+  `docker run --rm --entrypoint /bin/sh <image> -c 'ls -ld /tmp'`.
+- 2026-10-17 — **Agent-child acceptance recipe** (e6pu, passed): build
+  `nix build .#actors-bin -o /tmp/actors-bin` on the Mac, then
+  `spawn -state ~/.sap-parent -lighthouse ed:5cad808a… -provisioner-id
+  ed:9c3ae5ec… -image ghcr.io/marnyg/sandbox-agent@sha256:<digest>
+  -window 4m -kit-ttl 6m -session-dir DIR -prompt "…"`; the digest
+  must equal the provisioner's `-outfit` key or the child boots with
+  no `OPENROUTER_API_KEY`. Birth takes ~110 s: the image pull (every
+  new tag re-pulls ~450 MB on this cluster) — the default `-window 3m`
+  is marginal on a cold node. Events print as `event <child> <json>`;
+  the run ends at `child_settled`. The parent exits when the lease
+  lapses (`-renewals`), a few minutes after the task.

@@ -3,83 +3,59 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
-## Last session
-**Wave 2** (five workers, all merged, beads noted, not closed):
-`2004` rejectStatus drops the dead `ErrSig` case; `63u5` every pre-read
-failure in `clusterwatch.step` marks the storage row too; `2nqw` gateway
-`enrollHeadless` backs off 30 s→10 min between expired device flows
-(`cmd/gateway/backoff.go`, + a `main_stub.go` so the package vets
-untagged); `6tgj` `issuer.NameEntry.Live` shared by `Resolve` and
-`NamesJSON` (`Online = len(live)>0`, `Node` = first live entry);
-**`5gz` relay membership gate**: the iroh-relay child uses `[access.http]`
-→ `POST /relay/access` on the hub (loopback-only, per-process bearer via
-`IROH_RELAY_HTTP_BEARER_TOKEN`), admitting the hub's own id + witnessed
-non-blocklisted members, **failing open while cold** (<5 min since start,
-issuer not serving incl. the nag window, or no witnessed members);
-`Mint` now witnesses so a fresh member's first beat crosses the gate;
-mode + counters on the `/status` relay line (`relayadmit.go`).
-Real-binary `TestRelayChild` passes with the hook (`IROH_RELAY_BIN`).
-**Deployed 2026-10-17 (second attempt: the nix sandbox's missing CA bundle
-made the hooked relay child panic in the image's test phase — see notes.md)**;
-hub unsealed. Also landed: `runRelayChild()` out of `main`, `relayDeny`,
-`envelope.VerifyAuthenticated` (the loop no longer repeats `serve`'s verify).
-First live check: a member reconnect
-after 5 min, watch the relay line's admitted/denied and the log for
-`relay access: bad X-Iroh-NodeId` (header value assumed = iroh-base
-`PublicKey` Display = lowercase hex; confirmed in iroh-base v1.1.0 source).
+## Last session (2026-10-17, evening)
 
-**Wave 1**: swarm of seven over the ready queue (one wave, file-disjoint; reports
-under `/tmp/swarm/<name>.md`, beads noted, **none closed**):
+**The agent child is live under kata** (`e6pu`, ADR-0037's "ship the
+child in the image"): `k8s/apps/sandbox/image.nix` now carries
+`/usr/local/bin/child` (from `actors.static`); with `SAP_INTRO` set the
+entrypoint execs it (`SAP_PI_ARGS=--provider,openrouter,--model,…`,
+workspace = HOME), everything else in the entrypoint is the plain
+agent-run path as before. `/workspace` and `/tmp` are 1777 in the
+image because a driver-started Job has no volumes. `sap-provisioner`
+runs `c882727` with `-runtime-class=kata` and
+`-outfit <sandbox-agent digest>=openrouter`; `openrouter` is resealed
+for ns `sap` (`k8s/apps/sap-provisioner/openrouter.sealed.yaml`).
+**Acceptance passed** from the Mac (`spawn -prompt`): `#lookup` →
+`#spawn` → born in ~110 s (image pull dominates) → `#ping` → `#task` →
+45 events up `agent-events` → `child_settled settled`, session JSONL
+9 KB in `-session-dir`. Recipe in notes.md.
 
-- `3leu` — sandbox-agent's Forgejo header file moved onto a
-  `medium: Memory` emptyDir at `/run/agent` (invariant 8). **Image not
-  rebuilt**: `HUB_BUILDER=mar@nixos k8s/apps/sandbox/build.sh`, pin the
-  digest in `agent.yaml`.
-- `2c2x` — the hub's gitops row also lists the `platform-<name>`
-  children: `— N children`, worst Running op, stalest / never
-  reconciled, first off-state child; list failure keeps the root read.
-- `53q` — `--public-url` (defaults to `--iroh-relay`);
-  `hubManager.relayURL` beside `publicURL`; node configs carry
-  `Hub`/`Relay` separately; `fly/entrypoint.sh` honours `PUBLIC_URL`.
-- `4ps` — `irohup -device`: device-flow enrollment for headless
-  hosts (one flow per run; denied/expired/sealed are fatal).
-- `7w5` — protocol: an envelope whose signature fails now closes the
-  stream unanswered (no signing oracle); `bad-sig` is no longer on
-  the wire from `serve`.
-- `fr9d` — `mobile.NamesJSON` is one pass over the name map.
-- `d4p8` — the `wg0` flake assertion is a YAML-line regexp.
+**The 5gz relay gate is observe-only** (`82d496c`, hub deployed): the
+first provisioner reconnect after the gate went warm was denied —
+provisioner, lighthouse, laptop parent and every child hold protocol
+keys, not member certs, and the hub is relay-only (ADR-0022), so the
+whole sovereign-actor plane was locked out. `relayAdmitter.gate=false`
+computes the verdict and admits anyway; `/status` says `observing (N
+members; non-member admitted)` after such a connect. Spike `qx5c`
+owns the real answer. **The hub is SEALED since that deploy** — sign
+the two proposals at `/status`.
 
-Gates: `go test ./...` in protocol + config-server, the tagged
-`scripts/test-iroh.sh config-server` (19 pkgs green), oscheck for
-`mobile` and `cmd/irohup`. Push runs the vendorHash dance (protocol/
-changed).
-
-Before that (2026-10-22 in the previous handoff's chronology): ArgoCD
-became an app of apps (`pe8m`, ADR-0040 Accepted); CI feeds the Nix
-cache (`0m50`, ADR-0039); Actual, Audiobookshelf + Chaptarr, the
-admins gate as `global-auth-url`.
+Earlier in the session: 14 stale in-progress beads closed
+(observability, workouts, pins, ssh, ABS, Attic); `3bt9` filed for the
+nix.conf remainder. Wave 2 (relay gate etc.) is in the previous
+handoff's chronology, now absorbed.
 
 ## Loose threads
 
-- Same session, after the swarm: the seven beads + `pymm` closed;
-  sandbox image `1146941` pushed and pinned; **hub deployed and
-  unsealed** (53q/2c2x/7w5 live); `4xw7` done (iroh-go/{mobile,
-  android-p0} deleted); `5gz` ruled fail-open-while-cold (note on the
-  bead, still P3); `fh2y` closed by decision `24uf`. Debt filed:
-  `2004` (rejectStatus ErrSig→unauthorized), `63u5` (storage row on
-  dial failure), `2nqw` (enrollHeadless backoff).
-- Not filed: a shared liveness helper for `Resolve`/`NamesJSON`;
-  `NamesJSON.Online` mis-reports a re-keyed name (first entry expired);
-  `image.nix` writes `.agent-report`/`.agent-log` on the disk workspace.
-- **Adding a workload needs a line in `k8s/clusters/homelab/cluster.yaml`**
-  as well as the directory (ApplicationSet list generator).
-- Chaptarr/ABS first-run UI setup, Prowlarr indexers, Actual server
-  password — unchanged from the previous handoff.
-- `thz2`, `m6xc`, `d0o0.*` / `e6pu.2.*` awaiting close; the Mac's
-  nix.conf (`nix-cache/bootstrap.md` §3).
+- `d0o0` stays in progress: the durable `talos/pins/<address>.json`
+  copy is its remaining scope.
+- The outfit is keyed on the sandbox-agent **digest**: every rebuild of
+  that image means re-pinning `-outfit` in the provisioner Deployment
+  as well as `agent.yaml` (two places, by hand).
+- `agent.yaml`'s own `envFrom: forgejo-agent` is still the interim; the
+  driver does not outfit `forgejo-agent` yet (nothing uses it until
+  `e6pu.3`, the git half).
+- Birth cost is the image pull (~450 MB, ~110 s on this cluster; a
+  second tag of the same layers pulled again). `-window 4m` covers it;
+  the 3 m default does not on a cold node.
+- Another session landed `7f7bf69` (iroh-transport relay without QAD,
+  `p5g`) and `72db3f9` (workouts plates) meanwhile — not covered here.
 
 ## Suggested next steps
 
-- Watch the new gitops row on `/status` (children) over a day; a
-  sandbox-agent run to confirm `/run/agent` under kata.
-- Back to `ivof` (sandbox-agent live acceptance, the parent actor).
+- Sign the hub's proposals (sealed since the `82d496c` deploy).
+- Close `e6pu` if the acceptance is the bar; then the parent actor
+  (SQLite+FTS5 store, list/watch/steer UI behind the person gate) —
+  `cmd/spawn -prompt` is the stand-in to replace.
+- `qx5c`: decide how sovereign actors get admitted to the relay before
+  the gate is enforced again.
