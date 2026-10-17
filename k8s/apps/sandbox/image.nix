@@ -219,7 +219,7 @@ let
     '';
   };
   root = pkgs.runCommand "sandbox-agent-root" { } ''
-    mkdir -p $out/usr/local/bin $out/etc $out/workspace $out/tmp
+    mkdir -p $out/usr/local/bin $out/etc
     ln -s ${entrypoint}/bin/agent-entrypoint $out/usr/local/bin/agent-entrypoint
     ln -s ${actors}/bin/child $out/usr/local/bin/child
     echo 'nobody:x:65534:65534:nobody:/workspace:/bin/bash' > $out/etc/passwd
@@ -231,6 +231,11 @@ let
     set -g default-terminal "tmux-256color"
     set -g history-limit 50000
     EOF
+  '';
+  # Their own copyToRoot entry: nix2container's perms refuse a tree
+  # that shares a directory (/etc) with another entry.
+  scratch = pkgs.runCommand "sandbox-agent-scratch" { } ''
+    mkdir -p $out/workspace $out/tmp
   '';
   # /bin and /share/terminfo: what pi's tools and the agent's own
   # commands expect to find (bash provides /bin/sh; ncurses the
@@ -262,11 +267,11 @@ in
 nix2container.buildImage {
   name = "ghcr.io/marnyg/sandbox-agent";
   tag = self.shortRev or self.dirtyShortRev or "dev";
-  copyToRoot = [ pkgs.cacert root env ];
+  copyToRoot = [ pkgs.cacert root scratch env ];
   # Writable by uid 65534 when no volume covers them (a child pod).
   perms = [
-    { path = root; regex = "^/workspace$"; mode = "1777"; }
-    { path = root; regex = "^/tmp$"; mode = "1777"; }
+    { path = scratch; regex = "^/workspace$"; mode = "1777"; }
+    { path = scratch; regex = "^/tmp$"; mode = "1777"; }
   ];
   config = {
     Entrypoint = [ "/usr/local/bin/agent-entrypoint" ];
