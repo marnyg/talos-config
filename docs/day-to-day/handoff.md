@@ -47,11 +47,6 @@ gate became ingress-nginx's `global-auth-url` (opt out with
 - Actual: OpenID against the SIWE bridge (`ACTUAL_LOGIN_METHOD=openid`)
   is the path if the household ever needs per-person accounts; not
   wired.
-- ADR-0032 still says "one Ingress annotation per app" for the gate;
-  the mechanism is now the controller default (comments in
-  `k8s/apps/media/ingress.yaml` and `ingress-nginx/application.yaml`
-  are the authoritative description). An amendment line on the ADR
-  would close the gap.
 
 - **Chaptarr first run in the UI:** root folders `/books/audiobooks`
   and `/books/ebooks` (per-format profile object, not scriptable before
