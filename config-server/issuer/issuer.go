@@ -447,6 +447,11 @@ func (i *Issuer) Mint(node cert.ActorID, name string, groups []string) (Kit, err
 	if err != nil {
 		return Kit{}, fmt.Errorf("issuer: signing beat grant: %w", err)
 	}
-	i.witness(member)
+	// Except the hub's own self-minted cert (hubcaller.go HubMemberName):
+	// it is never presented at #bundle and must never enter the map
+	// (the relay gate admits the hub's id on its own).
+	if node != i.ID() {
+		i.witness(member)
+	}
 	return Kit{Member: member, BeatGrant: grant, SpeakAs: sa}, nil
 }
