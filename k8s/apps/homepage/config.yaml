@@ -80,14 +80,17 @@ data:
               href: https://marnyg-talos-config.fly.dev/
               description: the one public entrypoint (invariant 5)
 
-  # No static services (see the header) and no Docker socket.
+  # No static services (see the header), no Docker socket, no Proxmox.
   services.yaml: |
     []
   docker.yaml: |
     {}
+  proxmox.yaml: |
+    {}
 
-  # Homepage treats these as required and copies them from its
-  # skeleton into /app/config when missing — an EROFS crash-loop on
-  # a read-only ConfigMap mount (2026-10-22). Shipped empty instead.
+  # The keys above plus these two are the image's full /app/src/skeleton
+  # (v2.6.0). Homepage copies any missing one into /app/config — some
+  # lazily on first request, so a missing proxmox.yaml passed the
+  # readiness probe and crashed on page load (EROFS, 2026-10-22).
   custom.css: ""
   custom.js: ""
