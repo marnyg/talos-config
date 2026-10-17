@@ -87,7 +87,13 @@ and `http://attic.nix-cache.svc.cluster.local/main`.
 
 ## 4. Pushing what you build
 
-Nothing propagates on its own. Two ways, pick per machine:
+The cluster feeds itself: the CI runner (`k8s/apps/forgejo-runner`,
+`.forgejo/workflows/nix-cache.yml`) builds every x86_64-linux package
+of this flake and the NixOS systems of github:marnyg/nixos on each
+push to main and nightly, and pushes them here as `ci` (token minted
+per "Tokens" above). So an x86_64 machine that follows main rarely
+builds anything. Darwin outputs and anything local still need one of
+the two ways below, pick per machine:
 
 **post-build-hook** — nix runs it after every local build with
 `$OUT_PATHS`; precise (only things built here, never substituted

@@ -1,0 +1,17 @@
+# The runner's Attic token (bootstrap.md step 2): `atticadm make-token
+# --sub ci --validity 2y --pull main --push main`, minted 2026-10-17.
+# Pods push by Service name with their own token; the mesh gate is
+# for devices (nix-cache/attic-ingress.yaml). Rotate: step 2 again.
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: attic-ci
+  namespace: forgejo-runner
+spec:
+  encryptedData:
+    ATTIC_TOKEN: AgCfzDOXPjw3RccE0YFwk+2SQaJWP5yhjM2J3SfVW5R+WfO4/yleL4sth1n+KeQ1/UTEGHOep8r1Try57ZKAyvfSIhRZH6J2b3ZXTK4qEVt3jOOz9xpnLqvTJdFG8EyEbgHknt8LRa2Bk7VzuSj900KFRlLPXveQEjkJhsgjQ/cnelVEdshPej+g0cMi1qUnaobvXbUYTQMbsPenhuE6PRs7ZKPxl/WaTljqKLFzgAqf/yORUf6WioP/aNc27aUaVuRXvHl6X7lJjOmNfV7llfz1ShdlWye6nL95Epc+AwjQGnQ3nqe01f3/p2Ots5pwIYkJeSuFTd8Ll+qJRgnJV+p+wfV3XFGEby2+PVsSP19cr1xOdZZOiYQa5zHuCNXW9onqnayjGD0Oo1iMLDLfkLtufOI7pZR0hg5R2HpEUXlNpha+3f7qZAeIi+7pYJabYi6XrD/HqdL7GSAP19dhIXPr7ffUqbGnhJkZ/ipFLbUrDMk4JNqQXdJ09+KmR+r58YkFLbFHeil0H0w7YXB85KsFU1C9deNpT1LyLlGsvo1k7mDnt7X2ja9cXyzpe7UoPA9p9+1DKiD2CRh/adJjMSLhtKf27UTXaWp4xks3wVsZw+UMk/G8VksdC2BzQuxcPY2uQXTVregvZyK59xU1579Vr3aHWxi40FMBvShJd3ji2y02/Kyx/0G5ac2HSrmly+ZdJ1+ZC8hW2r0Gtd7FQl9/3csXS+timldtLJpthr7Ovds74ZtYMiot2Vn/HrVQ+nigoT+ef3g74MHvIeuXTIk3pu8hlRp3vvYGLX/lojzAq5RqBACTaqsgL2b9KC/dI92GX2OvsiBVJ55LkHH1a/9qGPkn5YOJ92FGi/dCjwEgBnVWyeS0BjvZq7+PFS00Yw3enQ0kgJmsrgy6481I/zPGZu5PPZSGAj80QLmMqEl12LW61+XP7fnpvAQuobTJQyNndXPoHTfvQwFro29X74Sasy2bexlEiuNOKljjkvD7mSaAwrQ3L4FpLGeZQ+ZBibeev3T0WpelAkmDQiqiD4uJWRTyY136Y9AWomf/FLoWcjSbxzELH/DH7VoUTdeH5Gg9pYCKxBBVd1EKIxZ/PtFKiv4VwOPA/mITEHVRFoLbeQFqYuxyqNqSjmAMSWLGFpNGM0xx76vTAHTc/BgP5uomp2WeKMXJ0InzBo4jwoXWcNST6SKhUl1RDQm1W0EMKqw8rcpqaHrHrhHYsb+bBdQZm7XOiLlQU7Tz/uAAwRcqR4NmA2dpXNGlCwIPpZ0b7Lo4ZUg5kGfZArBJTDbsmVHcuNljCM14hEJ+TeF1w5Vcq0Pb3U/v6TQ9oTN7MoVt5A3RX7Rsu/fXt03ro4YzWerhAqecgMZB3iTBbGVL6vvUhJSwtBx3iWV5XXUAh8CABSgS96ZQKJZvjmzWz1Vx1pd37vVDnN8mk0j0g4aVI+HGUceAUsLuTJfqEqGhFKrSm77xX0FlwO8AsCT5HsoiuuZbhIJR3bm5nJIYFWMvNAtjlnlxVUYfIeOemIK0sS83wlajLeqcTofhpgxpzDvq+Mwdm+B2BNLPSDcplhhC/QWTguPLcbMmm2jOs4ZQ/frOIaRIqQhJRfEH9VDMTneDA6HgG8omjqWBxYFqXgBBU9dJzMBoBaNdv60pVi1v8IRgFS1XDhfLI2alN1+OqjHddEK3mkIuifdrOMqvmdPvXnW72mY/37hfpdhOrr+3xK3EHkpQzCXJBZl+skBn+M5FbcsNl/GXZ+8IE0R/NtnvAQFsUWYz80cNFK+sghjP4w5R50pLQVwG8WOPbmNqaP6owxEqCNnCTFLn2+g9hjqMffou4qP/oV3jtxKLhjKSHcXErg==
+  template:
+    metadata:
+      name: attic-ci
+      namespace: forgejo-runner

@@ -112,13 +112,17 @@ let
     # cache.nixos.org itself last — the mirror answers from nas1, and
     # nas1 away is a slower run, not a failed one (connect-timeout,
     # fallback). The Attic key is `attic cache info main`.
+    # connect-timeout 10, not the laptops' 5: for curl the budget
+    # includes name resolution, and a resolver that loses one of the
+    # parallel A/AAAA replies costs exactly 5 s (seen under docker on
+    # the box, 2026-10-17; kube-dns is fine, this is margin).
     cat > $out/etc/nix/nix.conf <<'EOF'
     experimental-features = nix-command flakes
     sandbox = false
     build-users-group =
     substituters = http://nixos-mirror.nix-cache.svc.cluster.local http://attic.nix-cache.svc.cluster.local/main https://cache.nixos.org
     trusted-public-keys = main:XkJGH65OA/NHub3CozVJL7mIt7uTfqLAVgNoQbUIcHw= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-    connect-timeout = 5
+    connect-timeout = 10
     fallback = true
     max-jobs = auto
     cores = 0
