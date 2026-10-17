@@ -1,0 +1,26 @@
+# `forgejo-runner`: the cluster's CI worker — one Forgejo Actions
+# runner that builds nix and feeds Attic (talos-config-0m50; spike kyiy,
+# epic ivof). Only the runner lives here; Forgejo itself is in
+# `forgejo`, the caches in `nix-cache`.
+#
+# Labeled baseline, not the cluster-wide restricted default: the runner
+# is uid 0 inside its container. nix is single-user in the image (no
+# daemon, no nixbld group) and the image's /nix/store is root-owned,
+# so a non-root nix could neither write the store nor register the
+# image's own paths. Baseline still forbids hostNetwork, hostPath,
+# privileged and added capabilities — a CI job gets a container's view
+# of one node and nothing more. Not kata: a nix store over virtio-fs
+# crawls (5h0j), and what runs here is the owner-signed main of this
+# repo, not a stranger's prompt.
+#
+# What this buys and does not: builds run with `sandbox = false`
+# (no user namespaces without CAP_SYS_ADMIN), so a build can see the
+# network and the whole store. The outputs are signed by Attic on push
+# and trusted by every machine with `main:` in trusted-public-keys —
+# the same trust the laptop's own unsandboxed darwin builds already get.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: forgejo-runner
+  labels:
+    pod-security.kubernetes.io/enforce: baseline

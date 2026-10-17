@@ -1,0 +1,51 @@
+# forgejo-runner's config.yml (`forgejo-runner generate-config` is the
+# reference). The one label, `nix:host`, is the whole executor story:
+# a job that says `runs-on: nix` runs its steps as processes in the
+# runner's own container, as root, with this environment — no
+# container is spawned per job, so nothing here needs docker or
+# privilege. The cache server is off: it would listen on a port for
+# actions/cache, which host-mode shell steps never call.
+#
+# `envs` is what host-mode steps see on top of the job context; it is
+# set here rather than inherited because the executor does not promise
+# the daemon's environment to a step. FORGEJO_SVC is the clone URL
+# the workflow uses in place of GITHUB_SERVER_URL (the mesh name,
+# unresolvable from a pod). Secrets are NOT envs: the Attic token is
+# in /root/.config/attic/config.toml (image.nix), where `attic` reads
+# it as root.
+#
+# timeout 6h: the cold run builds iroh-ffi (Rust) and three NixOS
+# systems; a warm run is minutes. capacity 1: one build at a time on
+# one node's cores (nix's max-jobs = auto already parallelises
+# derivations within it).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: forgejo-runner
+  namespace: forgejo-runner
+data:
+  config.yml: |
+    log:
+      level: info
+    runner:
+      file: .runner
+      capacity: 1
+      timeout: 6h
+      shutdown_timeout: 30s
+      insecure: false
+      fetch_timeout: 5s
+      fetch_interval: 2s
+      report_interval: 1s
+      labels:
+        - "nix:host"
+      envs:
+        HOME: /root
+        USER: root
+        PATH: /usr/local/bin:/bin
+        SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
+        NIX_SSL_CERT_FILE: /etc/ssl/certs/ca-bundle.crt
+        FORGEJO_SVC: http://forgejo.forgejo.svc:3000
+    cache:
+      enabled: false
+    host:
+      workdir_parent: /workspace

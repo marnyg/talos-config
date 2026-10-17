@@ -1,0 +1,80 @@
+# Populate the cluster's Nix cache (talos-config-0m50; Attic at
+# cache.gw.mesh.internal, spike kyiy). Runs on the in-cluster runner
+# (k8s/apps/forgejo-runner, label `nix` = host mode: these steps are
+# processes in the runner's container, root, nix single-user, no
+# sandbox), which reaches this repo through Forgejo's pull-mirror
+# `mirrors/talos-config` — a mirror sync is a push event here, so a
+# push to GitHub's main lands in the cache within the mirror interval.
+# Nightly on top, for the nixos repo's drift and a missed sync.
+#
+# What is built, all x86_64-linux:
+#   - every package of this flake (`nix eval` lists them; devenv's
+#     shell artifacts skipped) and the dev shell;
+#   - the owner's NixOS systems from github:marnyg/nixos (desktop,
+#     laptop, wsl — the darwin ones cannot build here). That flake
+#     pins this repo as an input; it builds whatever rev its lock
+#     says, which is what `nixos-rebuild` on the box wants anyway.
+# Then one `attic push` of everything that built: Attic's upstream
+# filter skips paths signed by cache.nixos.org-1, so only our own
+# outputs land. Each target is built on its own so one failure (a
+# red test suite is a failure — config-server-bin's checkPhase is the
+# iroh-tagged suite, AGENTS.md) neither hides the others nor keeps
+# them out of the cache; the job is red at the end if any was.
+#
+# No `uses:` — host mode has no node for JavaScript actions, and nix
+# fetches the repo itself: `git+$FORGEJO_SVC/<owner>/<repo>?rev=` is
+# the in-cluster Service (config.yaml), not GITHUB_SERVER_URL, which
+# is the mesh name no pod resolves. shortRev survives (image tags).
+name: nix-cache
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: nix
+    steps:
+      - name: build and push to attic
+        run: |
+          set -u
+          self="git+$FORGEJO_SVC/$GITHUB_REPOSITORY?ref=$GITHUB_REF_NAME&rev=$GITHUB_SHA"
+          nixos=github:marnyg/nixos
+          echo "::group::targets"
+          targets=()
+          for p in $(nix eval --json "$self#packages.x86_64-linux" --apply builtins.attrNames \
+                     | jq -r '.[] | select(startswith("devenv-") or startswith("container-") | not)'); do
+            targets+=("$self#packages.x86_64-linux.$p")
+          done
+          targets+=("$self#devShells.x86_64-linux.default")
+          for h in desktop laptop wsl; do
+            targets+=("$nixos#nixosConfigurations.$h.config.system.build.toplevel")
+          done
+          printf '%s\n' "${targets[@]}"
+          echo "::endgroup::"
+
+          paths=()
+          failed=()
+          for t in "${targets[@]}"; do
+            echo "::group::nix build $t"
+            if out=$(nix build -L --no-link --print-out-paths "$t"); then
+              # shellcheck disable=SC2206  # one path per line, no spaces in store paths
+              paths+=($out)
+            else
+              failed+=("$t")
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ "${#paths[@]}" -gt 0 ]; then
+            echo "::group::attic push ${#paths[@]} paths"
+            attic push ci:main "${paths[@]}"
+            echo "::endgroup::"
+          fi
+
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "failed:"; printf '  %s\n' "${failed[@]}"
+            exit 1
+          fi
+          echo "ok: ${#paths[@]} roots pushed"

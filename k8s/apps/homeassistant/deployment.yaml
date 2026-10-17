@@ -9,13 +9,12 @@
 #
 # Reverse proxy: ingress-nginx forwards X-Forwarded-For on every
 # request, and Home Assistant answers 400 to a forwarded request unless
-# the proxy's address is listed in http.trusted_proxies. The init
-# container seeds a configuration.yaml with the pod CIDR
-# (talos/base/*.yaml podSubnets) on a fresh volume only — after first
-# start Home Assistant owns the file, as Sonarr owns config.xml. The
-# include files are touched for the same reason: HA creates them only
-# when it creates configuration.yaml itself, and an !include of a
-# missing file fails that component.
+# the proxy's address is listed in its http config's trusted_proxies.
+# That config lives in /config/.storage/http (not configuration.yaml —
+# see the init container), and the init container reconciles the two
+# proxy keys into it before every start. configuration.yaml itself is
+# HA's own default (it writes one on a fresh volume) and stays the
+# user's.
 #
 # Identity: Home Assistant authenticates itself (owner account from
 # onboarding, long-lived tokens for the companion app). The SIWE bridge
@@ -68,36 +67,55 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        - name: config
-          # Helper pin: one tag across k8s/apps (rg 'image: busybox').
-          image: busybox:1.38
-          command: ["sh", "-c"]
+        # Reverse-proxy trust lives in HA's http store, not YAML: since
+        # 2026.x an `http:` YAML block is migrated ONCE into
+        # .storage/http as a *pending* trial that must be promoted from
+        # the UI (ws http/config/promote) within 5 min or it is marked
+        # not_promoted, never applied again, and YAML is ignored for
+        # good. The first start here lost that race (the WebSocket the
+        # UI needs was the gateway bug o8wd) and came up with no
+        # trusted proxies. So the store is reconciled directly, before
+        # HA starts (HA flushes its copy on shutdown, so a live edit is
+        # overwritten): the two proxy keys are merged into `stable` on
+        # every start, a failed pending trial is dropped, and a fresh
+        # volume gets a store built from HA's own schema defaults —
+        # the HA image runs this, so the defaults match the pinned
+        # version. Everything else in the store stays the UI's.
+        - name: http-store
+          image: ghcr.io/home-assistant/home-assistant:2026.10.2@sha256:33afb0659d786213264c2211f8d91c5fe87461c56eba6a3a546eb05fc71e89f4
+          command: ["python3", "-c"]
           args:
             - |
-              set -e
-              [ -f /config/configuration.yaml ] && exit 0
-              cat > /config/configuration.yaml << 'YAMLEOF'
-              # Seeded by k8s/apps/homeassistant/deployment.yaml on first
-              # start; Home Assistant owns this file from then on.
-              default_config:
-
-              http:
-                use_x_forwarded_for: true
-                # ingress-nginx pods (talos podSubnets).
-                trusted_proxies:
-                  - 10.244.0.0/16
-
-              automation: !include automations.yaml
-              script: !include scripts.yaml
-              scene: !include scenes.yaml
-              YAMLEOF
-              for f in automations.yaml scripts.yaml scenes.yaml; do
-                [ -f "/config/$f" ] || echo '[]' > "/config/$f"
-              done
+              import json, os, datetime
+              from homeassistant.components.http.config import (
+                  HTTP_STORAGE_SCHEMA, STORAGE_VERSION, STORAGE_MINOR_VERSION)
+              # ingress-nginx pods (talos/base/*.yaml podSubnets).
+              want = {"use_x_forwarded_for": True, "trusted_proxies": ["10.244.0.0/16"]}
+              path = "/config/.storage/http"
+              if os.path.exists(path):
+                  doc = json.load(open(path))
+              else:
+                  stable = dict(HTTP_STORAGE_SCHEMA({}),
+                      created_at=datetime.datetime.now(datetime.UTC).isoformat(),
+                      error=None, error_message=None)
+                  doc = {"version": STORAGE_VERSION, "minor_version": STORAGE_MINOR_VERSION,
+                      "key": "http", "data": {"stable": stable, "pending": None,
+                      "yaml_migration_done": True}}
+              data = doc["data"]
+              changed = any(data["stable"].get(k) != v for k, v in want.items())
+              data["stable"].update(want)
+              if data.get("pending") and data["pending"].get("error"):
+                  data["pending"] = None  # a failed trial; HA never applies it
+                  changed = True
+              os.makedirs("/config/.storage", exist_ok=True)
+              tmp = path + ".tmp"
+              with open(tmp, "w") as f:
+                  json.dump(doc, f, indent=2)
+              os.chmod(tmp, 0o600)
+              os.replace(tmp, path)
+              print("http store:", "reconciled" if changed else "unchanged")
           securityContext:
             allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
           volumeMounts:
             - name: config
               mountPath: /config

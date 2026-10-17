@@ -1,0 +1,96 @@
+# The CI runner (talos-config-0m50): one Forgejo Actions runner that
+# builds this repo's flake and the owner's NixOS systems and pushes
+# the results to Attic, so no machine on the mesh builds what the
+# cluster already has. image.nix has the executor and nix story,
+# namespace.yaml the privilege story, bootstrap.md the once-only
+# registration, .forgejo/workflows/nix-cache.yml at the repo root the
+# job itself.
+#
+# One replica, no volume: the nix store is the container's overlay,
+# gone with the pod and re-warmed from the caches on the next run.
+# What that costs is ephemeral storage on the node — a cold build of
+# the flake plus three NixOS closures is tens of GB — so the pod
+# declares it (limit 120Gi; w1 has ~190 GB allocatable) and the kubelet
+# evicts it, not a neighbour, if a run overshoots. Pinned to w1 for
+# the same reason, and because its 16 cores are the build's.
+#
+# Reach: the runner long-polls Forgejo at forgejo.forgejo.svc (the
+# gateway's group gate is for devices; pods come by Service name, like
+# the agent pods), pushes to attic.nix-cache.svc with the sealed
+# `attic-ci` token (nix-cache/bootstrap.md "Tokens"), and fetches
+# flake inputs and github:marnyg/nixos from the internet. No Service,
+# no Ingress: nothing dials it.
+#
+# Secrets, both sealed beside this file with
+# `kubeseal --cert talos/clusters/homelab/sealed-secrets.crt`:
+#   forgejo-runner  RUNNER_SECRET — 40 hex chars; the same value is
+#                   registered in Forgejo (bootstrap.md step 1)
+#   attic-ci        ATTIC_TOKEN — `atticadm make-token --sub ci
+#                   --pull main --push main`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgejo-runner
+  namespace: forgejo-runner
+spec:
+  replicas: 1
+  # Two runners with one secret would be one runner to Forgejo; and a
+  # job in flight has nowhere to go anyway.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: forgejo-runner
+  template:
+    metadata:
+      labels:
+        app: forgejo-runner
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: w1
+      automountServiceAccountToken: false
+      # Root inside, nothing of the host: baseline forbids the rest.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: runner
+          # k8s/apps/forgejo-runner/build.sh prints the tag@digest to pin here.
+          image: ghcr.io/marnyg/forgejo-runner:dev
+          env:
+            - name: RUNNER_NAME
+              value: cluster-nix
+            - name: FORGEJO_URL
+              value: http://forgejo.forgejo.svc:3000
+            - name: ATTIC_ENDPOINT
+              value: http://attic.nix-cache.svc.cluster.local/
+            - name: RUNNER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-runner
+                  key: RUNNER_SECRET
+            - name: ATTIC_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: attic-ci
+                  key: ATTIC_TOKEN
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/forgejo-runner
+              readOnly: true
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+              ephemeral-storage: 40Gi
+            limits:
+              memory: 16Gi
+              ephemeral-storage: 120Gi
+      volumes:
+        - name: config
+          configMap:
+            name: forgejo-runner
