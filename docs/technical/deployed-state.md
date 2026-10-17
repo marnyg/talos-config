@@ -170,8 +170,10 @@ history and, where the numbers still matter, in ADR-0006 and
   plane (`k8s/apps/argocd/controller-patch.yaml`). The hub's `/status`
   **gitops** row reads the root app only over cp1's `kube-api` every
   5 min and warns on a reconcile > 20 min old or a sync op Running
-  > 30 min (`config-server/clusterwatch.go`) — a stuck child is not
-  seen (`2c2x`). Pre-AoA history: the 09-29 hang (op waiting on the
+  > 30 min (`config-server/clusterwatch.go`); since `2c2x` (in git,
+  not yet on fly) it also lists the namespace's Applications and
+  names the child with the oldest Running op / stalest or never
+  reconcile, at the same thresholds. Pre-AoA history: the 09-29 hang (op waiting on the
   ghost gateway pod) ended with the w1 taint; 2026-10-17 a
   never-healthy forgejo-runner held the whole tree (`1ova`, now moot).
 - **Nix caches + CI** _(verified 2026-10-17; ADR-0039, `kyiy`,

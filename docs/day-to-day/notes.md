@@ -827,6 +827,7 @@
   is a flake**: the served config embeds base64 cert material, and a
   random signature can contain the substring `wg0`. Seen once in a
   full tagged run, passes alone. Fix is a real assertion (bead).
+  _Fixed 2026-10-17 (`d4p8`): the check is a YAML-line regexp now._
 - 2026-09-29 — **An ArgoCD sync op can sit "Running" for hours** on
   "waiting for healthy state of <wave-0 resource>" when any later
   wave exists (`vms/` uses waves 1–2): the gateway's ghost pod on w1

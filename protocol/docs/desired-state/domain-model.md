@@ -822,8 +822,11 @@ whose deployment-free form differs from the talos wording. Source:
   `sovereign-actor/v1`). `protocol/` never imports a concrete
   transport. _(Built 2026-09-12, `0bc.2.5`/`.6`.)_
 - **Mailbox** — the actor's serial, bounded inbound queue. Transport
-  goroutines do only the pure cheap rejections (decode, `sig`,
-  `to.target == me`) and enqueue; **one** actor goroutine does `seq`,
+  goroutines do only the pure cheap rejections and enqueue: undecodable
+  bytes and a failed envelope `sig` **close the stream unanswered**
+  (no signed reply to a stranger — a free signing oracle otherwise;
+  `7w5`, 2026-10-17), `to.target == me` and the postage check reply
+  with a signed Status; **one** actor goroutine does `seq`,
   chain verification, `Mark.ObserveAll`, the handler and the Reply, so
   handler authors never lock. A full mailbox **drops** (invariant 12:
   at-most-once, sender retries). Depth is an unchosen number

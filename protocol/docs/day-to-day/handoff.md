@@ -5,7 +5,15 @@
 
 ## Last session
 
-2026-10-15 — **receiver-held pins wired into authorization (`d0o0`,
+2026-10-17 — `7w5` (swarm worker `f-actor-silent`, `744cc9f`):
+`Actor.serve` closes the stream unanswered on a failed envelope
+signature, like undecodable bytes; wrong-target/postage rejects still
+sign. The test asserts no Signer call. Domain-model Mailbox entry
+updated. Open: `rejectStatus` still maps `envelope.ErrSig → bad-sig`
+from the loop (really a chain-signature failure → `unauthorized`?);
+`fh2y` (drop the other pre-mailbox rejects too) unchanged.
+
+Before that, 2026-10-15 — **receiver-held pins wired into authorization (`d0o0`,
 ADR-0011 Proposed)**, swarm of three (`c5705eb` ADR, `0870a68`
 `authorize.qnt`, `3388cac` code), gates re-run by the orchestrator.
 
