@@ -1205,3 +1205,20 @@
   for the root no longer applies to workloads. The six Helm charts are
   still their own Applications (`longhorn`, `loki`, …) nested in
   `platform-<dir>`.
+- 2026-10-17 — **iroh-relay with `[access.http]` needs a CA bundle at
+  startup** (5gz): it builds a reqwest client before serving and panics
+  (exit 101, "No CA certificates were loaded from the system") when
+  none is found — even though our hook URL is plain-HTTP loopback. The
+  fly image ships `cacert` (`fly/image.nix`), so production is fine;
+  the nix sandbox has none, which is why `TestRelayChild/hooked`
+  points `SSL_CERT_FILE` at a throwaway self-signed PEM. Anywhere else
+  the hub runs the relay with a hook (a dev box, a future Talos
+  extension), the environment must carry CA roots or the child
+  crash-loops and `/status` shows the relay DOWN.
+- 2026-10-17 — **The relay gate is live.** First ~5 min after a hub
+  start (and any sealed/nag window) it is open; then only the hub's id
+  and witnessed members are admitted. A member whose cert fell out of
+  the name map but who still holds a valid kit is refused until it
+  re-mints — new failure mode vs the old access=everyone. Watch the
+  `/status` relay line's admitted/denied and `fly logs` for
+  `relay access: denied` / `bad X-Iroh-NodeId`.

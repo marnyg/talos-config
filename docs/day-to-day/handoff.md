@@ -19,7 +19,11 @@ issuer not serving incl. the nag window, or no witnessed members);
 `Mint` now witnesses so a fresh member's first beat crosses the gate;
 mode + counters on the `/status` relay line (`relayadmit.go`).
 Real-binary `TestRelayChild` passes with the hook (`IROH_RELAY_BIN`).
-**Not deployed yet** — first live check after deploy: a member reconnect
+**Deployed 2026-10-17 (second attempt: the nix sandbox's missing CA bundle
+made the hooked relay child panic in the image's test phase — see notes.md)**;
+hub unsealed. Also landed: `runRelayChild()` out of `main`, `relayDeny`,
+`envelope.VerifyAuthenticated` (the loop no longer repeats `serve`'s verify).
+First live check: a member reconnect
 after 5 min, watch the relay line's admitted/denied and the log for
 `relay access: bad X-Iroh-NodeId` (header value assumed = iroh-base
 `PublicKey` Display = lowercase hex; confirmed in iroh-base v1.1.0 source).
