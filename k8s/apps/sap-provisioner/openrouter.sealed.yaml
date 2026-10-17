@@ -1,0 +1,24 @@
+# The OpenRouter key for agent children the sap-provisioner starts
+# (ADR-0037 outfit: `-outfit <sandbox-agent digest>=openrouter` on the
+# Deployment renders it as envFrom on the child's container). The same
+# key as k8s/apps/sandbox/sealed-secret.yaml, resealed for this
+# namespace — a SealedSecret is bound to name+namespace. A data-plane
+# credential: it authorises spend at a vendor, never a user or member.
+#
+# Rotate with the `ai` copy: kubectl get secret -n ai openrouter -o json
+# | jq '.metadata = {name, namespace: "sap"}' | kubeseal --cert
+# talos/clusters/homelab/sealed-secrets.crt -o yaml
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: openrouter
+  namespace: sap
+spec:
+  encryptedData:
+    OPENROUTER_API_KEY: AgBfRX9mXsW0+NSzQfAae1Iv25ZeEY7TyjZ7QCvwc+bG3OE0fdn1Y6zmNFTt8qMjT6sXj7UySpZTxamx9OqKa9UWv59VFio5zpsPac/Du8irczpYC/RuZdnAT1fo4+3Ut/wpV3+uIdyimYAW6/87DjsR/ePZGFU97lwP1JQFHCDMCCb8BjX6QL9oJW3mrV/y2lh9iwnYzRRoJDZHlMW7Sg+TzYQ3hj2vwUiaIwGb7IjjraJcnvPYfg8IjreKgH+3wXkF6DFOPCkBcVc6FL1twrE2sQv8Eiq73p4PuvsYM2B2FikuOWg+VhfGq7bpPKQwt+g/fLF9ir5jXdqCXXuBxbuQ0iWa6Ah6vAfwoKjenkM1Rb4o78+CI0NP+7kiorPRmz6516q9IKqhHjceMB21t4gRjBh4Wc00tYKBa5xM/VauwiQyTati0vZMLXv098SkvIGmifEKbZsxUPDgG2ybvMb8ek6LbV8Iv+dP4I8YnTxqiPTbX+pWcerZ1S/NcI68aNWRE8UmE64E1RPZPBfVJllV5sV35qy31FRBBjEWLN6VCR6tT8+gz54QvR1ZPyCY2mRGd5D1Z7dqEDG+K6TkTezGBnOgyNwJzHugzvN5qHAVs/jdoNzQeR07Yg6kDieR4HDeSn/dn250YjpMaAPyeht8Ym8w66kBjKvjkmSNmD+baHFN7tNyRV/Ws4qJsAHSWSS8GnXA3QHHE42PXHFUgPt7eXSPDhRzWWchSPShWr6HYvjZhtHE9F//AFagUZUKvSIiWQpeeC3pIK+L2jBlkResOdLYWIaQTBXg
+  template:
+    metadata:
+      name: openrouter
+      namespace: sap
+    type: Opaque

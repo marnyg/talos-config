@@ -1,11 +1,22 @@
 # The agent harness image (talos-config-tj7c, ADR-0035's "null option"):
 # pi — the coding agent the owner already drives — plus the tools it
 # shells out to, as one non-root image a Job runs under RuntimeClass
-# kata. No protocol binary yet: this is an agent as a plain workload;
-# the child beat joins it in the agent-as-child follow-up.
+# kata — and, since e6pu, the protocol child beat (actors/cmd/child)
+# beside it, so the same image is also what a parent names in #spawn.
 #
-# Two modes, chosen by the entrypoint from the environment:
+# Three modes, chosen by the entrypoint from the environment:
 #
+#   SAP_INTRO set       child: the pod is a lease the sap-provisioner's
+#                       driver started (driver.ParamsEnv). The entrypoint
+#                       execs /usr/local/bin/child, which knocks on the
+#                       parent's #birth, beats, and serves #task/#steer/
+#                       #abort by running `pi --mode rpc` in /workspace
+#                       and streaming its records up the parent's
+#                       agent-events facet (actors/child). AGENT_MODEL
+#                       becomes SAP_PI_ARGS; OPENROUTER_API_KEY arrives
+#                       by the driver's outfit (ADR-0037), never the
+#                       intro. Nothing below this line applies: no
+#                       clone, no PR (that is e6pu.3), no tmux.
 #   AGENT_PROMPT set    batch: `pi -p` runs the prompt in /workspace and
 #                       exits; the transcript is the Job's log.
 #   AGENT_PROMPT unset  interactive: pi runs inside a detached tmux
@@ -50,20 +61,35 @@
 # package and bumping it drags every Go and Rust build along;
 # `nix flake update nixpkgs-pi` bumps pi alone.
 #
-# Root filesystem is read-only in the pod; /workspace (HOME, cwd) and
-# /tmp are emptyDirs; /run/agent is a memory-backed one (agent.yaml)
-# holding the curl header file, the only place the token is a file. /etc/passwd names uid 65534 so tmux, git and node
-# can resolve the user; SHELL is bash for tmux's default-shell.
+# Root filesystem is read-only in the agent.yaml pod; /workspace (HOME,
+# cwd) and /tmp are emptyDirs; /run/agent is a memory-backed one
+# (agent.yaml) holding the curl header file, the only place the token
+# is a file. A driver-started child pod has no volumes (storage on the
+# lease is 264f), so the image ships /workspace and /tmp mode 1777:
+# there the writes land in the container's own layer, which dies with
+# the pod like the emptyDir does. /etc/passwd names uid 65534 so tmux,
+# git and node can resolve the user; SHELL is bash for tmux's
+# default-shell.
 # x86_64-linux only; from a laptop:
 #
 #   k8s/apps/sandbox/build.sh   # HUB_BUILDER=mar@nixos: build, push ghcr.io/marnyg/sandbox-agent:<rev>
-{ pkgs, lib, self, nix2container, pi }:
+{ pkgs, lib, self, nix2container, pi, actors }:
 let
   entrypoint = pkgs.writeShellApplication {
     name = "agent-entrypoint";
     runtimeInputs = [ pi pkgs.tmux pkgs.coreutils pkgs.git pkgs.curl pkgs.jq ];
     text = ''
       export HOME=''${HOME:-/workspace}
+      # A lease: the child beat owns the process from here. pi's
+      # provider/model ride SAP_PI_ARGS (comma-separated, cmd/child);
+      # the workspace is HOME, as in the other modes.
+      if [ -n "''${SAP_INTRO:-}" ]; then
+        mkdir -p "$HOME"
+        cd "$HOME"
+        export SAP_PI_ARGS="''${SAP_PI_ARGS:---provider,openrouter,--model,''${AGENT_MODEL:-anthropic/claude-sonnet-4.6}}"
+        export SAP_WORKDIR="''${SAP_WORKDIR:-$HOME}"
+        exec /usr/local/bin/child
+      fi
       # tmux's socket under HOME, not /tmp: HOME is writable by
       # definition, /tmp's mode is the volume's business.
       export TMUX_TMPDIR=''${TMUX_TMPDIR:-$HOME/.tmux}
@@ -195,6 +221,7 @@ let
   root = pkgs.runCommand "sandbox-agent-root" { } ''
     mkdir -p $out/usr/local/bin $out/etc $out/workspace $out/tmp
     ln -s ${entrypoint}/bin/agent-entrypoint $out/usr/local/bin/agent-entrypoint
+    ln -s ${actors}/bin/child $out/usr/local/bin/child
     echo 'nobody:x:65534:65534:nobody:/workspace:/bin/bash' > $out/etc/passwd
     echo 'nobody:x:65534:' > $out/etc/group
     # docs/tmux.md in pi: extended keys so Shift/Ctrl+Enter reach pi.
@@ -236,6 +263,11 @@ nix2container.buildImage {
   name = "ghcr.io/marnyg/sandbox-agent";
   tag = self.shortRev or self.dirtyShortRev or "dev";
   copyToRoot = [ pkgs.cacert root env ];
+  # Writable by uid 65534 when no volume covers them (a child pod).
+  perms = [
+    { path = root; regex = "^/workspace$"; mode = "1777"; }
+    { path = root; regex = "^/tmp$"; mode = "1777"; }
+  ];
   config = {
     Entrypoint = [ "/usr/local/bin/agent-entrypoint" ];
     Env = [

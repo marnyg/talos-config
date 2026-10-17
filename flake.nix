@@ -456,6 +456,7 @@
               self = inputs.self;
               nix2container = inputs'.nix2container.packages.nix2container;
               pi = inputs'.nixpkgs-pi.legacyPackages.pi-coding-agent;
+              actors = actors.static;
             };
             # nix build .#forgejo-runner-image — the in-cluster CI runner
             # (k8s/apps/forgejo-runner/image.nix; driver: its build.sh).
