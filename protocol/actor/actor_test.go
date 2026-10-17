@@ -1342,3 +1342,36 @@ func TestRenewOwnConsentReinstalls(t *testing.T) {
 		t.Fatalf("renewing a non-consent changed Consents: %d → %d", len(before), len(after))
 	}
 }
+
+// rejectStatus maps envelope.Verify errors to reply codes. ErrSig is
+// deliberately absent (2004): serve closes the stream on a bad
+// signature before the mailbox loop runs (7w5), so a loop-side ErrSig
+// is unreachable and must not be dressed up as a bad-sig reply.
+func TestRejectStatusMapping(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"replay", fmt.Errorf("%w: seq=1", envelope.ErrReplay), StatusReplay},
+		{"bad-loc", fmt.Errorf("%w: x", envelope.ErrBadLoc), StatusBadLoc},
+		{"chain", fmt.Errorf("%w: x", envelope.ErrChain), StatusUnauthorized},
+		{"wrong-target", fmt.Errorf("%w: x", envelope.ErrWrongTarget), StatusWrongTarget},
+		{"sig falls to generic reject", fmt.Errorf("%w: x", envelope.ErrSig), StatusRejected},
+		{"unknown", errors.New("boom"), StatusRejected},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := rejectStatus(tc.err)
+			if st.Code != tc.want {
+				t.Fatalf("rejectStatus(%v) = %s, want %s", tc.err, st.Code, tc.want)
+			}
+			if st.Code == StatusBadSig {
+				t.Fatal("bad-sig must never be produced by the mailbox loop (2004)")
+			}
+			if st.Msg != tc.err.Error() {
+				t.Fatalf("Msg = %q, want %q", st.Msg, tc.err.Error())
+			}
+		})
+	}
+}

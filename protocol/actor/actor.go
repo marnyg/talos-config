@@ -672,6 +672,11 @@ func (a *Actor) process(ctx context.Context, in *inbound) Status {
 	return Status{Code: StatusOK, Body: body}
 }
 
+// rejectStatus maps an envelope.Verify failure to the reply Status.
+// envelope.ErrSig has no case on purpose (2004): serve already ran
+// VerifySig and closed the stream on failure (7w5), so Verify's own
+// VerifySig re-run cannot fail here; an ErrSig reaching this switch
+// would be a programming error and falls to the generic reject.
 func rejectStatus(err error) Status {
 	code := StatusRejected
 	switch {
@@ -681,8 +686,6 @@ func rejectStatus(err error) Status {
 		code = StatusBadLoc
 	case errors.Is(err, envelope.ErrChain):
 		code = StatusUnauthorized
-	case errors.Is(err, envelope.ErrSig):
-		code = StatusBadSig
 	case errors.Is(err, envelope.ErrWrongTarget):
 		code = StatusWrongTarget
 	}
