@@ -56,7 +56,7 @@ spec:
       containers:
         - name: runner
           # k8s/apps/forgejo-runner/build.sh prints the tag@digest to pin here.
-          image: ghcr.io/marnyg/forgejo-runner:dev
+          image: ghcr.io/marnyg/forgejo-runner:33a8d4b@sha256:c286a84cdb768cd76052ce30870105bccabf62b50d1c29ef54cd146c47c501d9
           env:
             - name: RUNNER_NAME
               value: cluster-nix
