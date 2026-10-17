@@ -1,0 +1,161 @@
+# Gatus's whole configuration: which endpoints to probe, how often,
+# what "up" means. Adding a monitor = adding an endpoint here, nothing
+# else; Gatus reloads the file when the mounted ConfigMap changes
+# (kubelet propagates within ~1 min of the sync).
+#
+# Targets are in-cluster Service DNS names, not the *.gw.mesh.internal
+# names a browser uses: pods cannot resolve those (Talos host DNS
+# serves no /etc/hosts to kube-dns; siderolabs/talos #9822/#13141),
+# and going through the gateway would also put the probe behind the
+# group gate, which answers 401 to a caller with no mesh token. So a
+# green row here means "the pod answers", not "the mesh path works" —
+# the mesh path is the hub's job to report (external group).
+#
+# Health paths were verified from inside the cluster on 2026-10-21;
+# where an app has no unauthenticated health path (nzbget,
+# transmission) the probe is the UI root, which they serve without
+# auth today.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gatus
+  namespace: gatus
+data:
+  config.yaml: |
+    web:
+      port: 8080
+    # Prometheus /metrics for kube-prometheus-stack (epic xhk3) — a
+    # ServiceMonitor is the only addition needed there.
+    metrics: true
+    # In-memory results: Gatus holds the last 100 results and 50 events
+    # per endpoint, which at 60 s is ~100 min of history, and loses them
+    # on restart. Deliberate — everything about this pod derives from
+    # git (invariant 2); a longer history would be `storage: {type:
+    # sqlite, path: /data/gatus.db}` on a Longhorn volume, data plane.
+    storage:
+      type: memory
+    ui:
+      title: status · mesh
+      header: Status
+      description: Black-box checks from inside the cluster; the hub row is the only probe that crosses the public internet.
+
+    endpoints:
+      # --- external: the one public surface (invariant 5) ---------------
+      # /sealed is the hub's own monitoring endpoint — 200 when the hub
+      # holds its secrets and a speak-as, 503 when sealed (hubseal.go).
+      # A sealed hub is the runway (6 d grants, 30 d membership) running
+      # out, so this is the row that matters most.
+      - name: hub (unsealed)
+        group: external
+        url: https://marnyg-talos-config.fly.dev/sealed
+        interval: 60s
+        conditions:
+          - "[STATUS] == 200"
+          - "[CERTIFICATE_EXPIRATION] > 168h"
+          - "[RESPONSE_TIME] < 2000"
+
+      # --- platform ---------------------------------------------------
+      - name: argocd
+        group: platform
+        url: http://argocd-server.argocd.svc/healthz
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: siwe-oidc (the gate)
+        group: platform
+        url: http://siwe-oidc.sso.svc/.well-known/openid-configuration
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: forgejo
+        group: platform
+        url: http://forgejo.forgejo.svc:3000/api/healthz
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: attic
+        group: platform
+        url: http://attic.nix-cache.svc/
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: nixos-mirror
+        group: platform
+        url: http://nixos-mirror.nix-cache.svc/nix-cache-info
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+
+      # --- apps -------------------------------------------------------
+      - name: vaultwarden
+        group: apps
+        url: http://vaultwarden.vaultwarden.svc:8080/alive
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: homeassistant
+        group: apps
+        url: http://homeassistant.homeassistant.svc:8123/manifest.json
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: workouts
+        group: apps
+        url: http://workouts.workouts.svc:8080/
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: sillytavern
+        group: apps
+        url: http://sillytavern.ai.svc:8000/
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: samba
+        group: apps
+        url: tcp://samba.files.svc:445
+        interval: 60s
+        conditions: ["[CONNECTED] == true"]
+
+      # --- media ------------------------------------------------------
+      - name: jellyfin
+        group: media
+        url: http://jellyfin.media.svc:8096/health
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: audiobookshelf
+        group: media
+        url: http://audiobookshelf.media.svc:13378/healthcheck
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: seerr
+        group: media
+        url: http://seerr.media.svc:5055/api/v1/status
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: sonarr
+        group: media
+        url: http://sonarr.media.svc:8989/ping
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: radarr
+        group: media
+        url: http://radarr.media.svc:7878/ping
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: chaptarr
+        group: media
+        url: http://chaptarr.media.svc:8789/ping
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: prowlarr
+        group: media
+        url: http://prowlarr.media.svc:9696/ping
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: jackett
+        group: media
+        url: http://jackett.media.svc:9117/health
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: nzbget
+        group: media
+        url: http://nzbget.media.svc:6789/
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+      - name: transmission
+        group: media
+        url: http://transmission.media.svc:9091/transmission/web/
+        interval: 60s
+        conditions: ["[STATUS] == 200"]

@@ -1,0 +1,92 @@
+# Gatus: synthetic checks from the outside in — "does the service
+# answer?" by HTTP/TCP/DNS on a schedule, with a status page. It is the
+# black-box half of monitoring; the white-box half (what the service
+# says about itself: metrics, logs) is kube-prometheus-stack + Loki
+# under k8s/apps/monitoring (epic xhk3).
+#
+# Chosen over Uptime Kuma (tried 2026-10-21, same day) because it is
+# declarative: the monitor list is config.yaml in this directory, the
+# pod is stateless and holds nothing git cannot recreate. Uptime Kuma
+# keeps monitors, notifications and its admin account in a sqlite
+# database edited only through its UI — data-plane state, allowed by
+# invariant 2's exception, but the wrong shape for a thing whose whole
+# content is "which services exist", which git already knows.
+#
+# No volume: results live in memory (config.yaml explains the
+# trade-off), config is a read-only ConfigMap mount. No alerting yet —
+# every Gatus alert provider needs a token or webhook URL, i.e. a
+# SealedSecret and a `$VAR` reference in config.yaml; add when a
+# channel is chosen.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gatus
+  namespace: gatus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gatus
+  template:
+    metadata:
+      labels:
+        app: gatus
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gatus
+          # Static binary on scratch. Pinned by digest; the v5.37.0 tag
+          # (latest release) resolved on 2026-10-21.
+          image: docker.io/twinproduction/gatus:v5.37.0@sha256:094eb186e55235db367e90e9d56140e5897b7044c41de23cde4cc18e6da1242e
+          env:
+            - name: GATUS_CONFIG_PATH
+              value: /config/config.yaml
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: gatus
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gatus
+  namespace: gatus
+spec:
+  selector:
+    app: gatus
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -1,0 +1,27 @@
+# status.gw.mesh.internal, behind the group gate like Vaultwarden and
+# the *arr apps (k8s/apps/media/ingress.yaml explains the mechanism).
+# Admins only for now: the page is read-only (there is nothing to edit
+# — config is git) but it enumerates every service in the cluster.
+# Widening it to another group is a change to the group= query here.
+#
+# Plain request/response (the page polls), so no WebSocket timeouts.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gatus
+  namespace: gatus
+  annotations:
+    nginx.ingress.kubernetes.io/auth-url: http://siwe-oidc.sso.svc.cluster.local/authz?group=admins
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: status.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gatus
+                port:
+                  number: 8080

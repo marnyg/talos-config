@@ -1,0 +1,8 @@
+# `gatus`: black-box service checks (is X answering?) driven entirely
+# by a config file in git. Only Gatus lives here. Inherits the
+# cluster-wide PSS restricted default — the image is a static binary
+# on scratch, happy as any uid.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatus

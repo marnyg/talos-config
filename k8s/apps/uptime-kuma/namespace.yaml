@@ -1,8 +1,0 @@
-# `uptime-kuma`: black-box service checks (is X answering?) with
-# notifications. Only Uptime Kuma lives here. Inherits the cluster-wide
-# PSS restricted default — the upstream `-rootless` image runs as the
-# `node` uid, so no baseline carve-out.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: uptime-kuma
