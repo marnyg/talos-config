@@ -6,7 +6,10 @@
 # tiles would still link to admins-gated services.
 #
 # Homepage lists itself too (the annotations below), so the dashboard
-# tile exists for the pod status dot, not the link.
+# tile exists for the pod status dot, not the link. The href is a
+# relative "/" rather than the Ingress host so it keeps whatever
+# scheme the device chose (ADR-0033) instead of linking http:// from
+# an https:// page.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -18,6 +21,7 @@ metadata:
     gethomepage.dev/group: Platform
     gethomepage.dev/icon: homepage.png
     gethomepage.dev/description: this page
+    gethomepage.dev/href: /
     gethomepage.dev/pod-selector: app=homepage
     gethomepage.dev/weight: "90"
 spec:

@@ -24,7 +24,7 @@ data:
     description: Services on the cluster
     # No `base`: it would pin a scheme into every /api fetch, and the
     # scheme is the device's choice (ADR-0033) — a browser on https
-    # got mixed-content blocks with base: http://... (2026-10-22).
+    # got mixed-content blocks with base: http://... (2026-10-17).
     # Relative URLs work under either.
     headerStyle: clean
     theme: dark
@@ -91,6 +91,6 @@ data:
   # The keys above plus these two are the image's full /app/src/skeleton
   # (v2.6.0). Homepage copies any missing one into /app/config — some
   # lazily on first request, so a missing proxmox.yaml passed the
-  # readiness probe and crashed on page load (EROFS, 2026-10-22).
+  # readiness probe and crashed on page load (EROFS, 2026-10-17).
   custom.css: ""
   custom.js: ""

@@ -15,7 +15,14 @@
 # The image runs its Node server as uid 1000 (the image's own owner of
 # /app); PUID/PGID stay unset so the entrypoint does no chown and just
 # execs. Root fs read-only: the only writes are its log file under
-# /app/config/logs (emptyDir mounted over the ConfigMap dir).
+# /app/config/logs (emptyDir mounted over the ConfigMap dir). Homepage
+# also wants to copy every file of its skeleton into /app/config when
+# missing, so the ConfigMap pre-seeds the full set (config.yaml).
+#
+# Readiness probes /api/services, not /api/healthcheck: healthcheck
+# answers before the config is touched, and some skeleton copies are
+# lazy (first /api/services call), so a pod with a bad config went
+# Ready and crashed on the first page load. Liveness stays cheap.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -42,7 +49,7 @@ spec:
       containers:
         - name: homepage
           # Pinned by digest; the v2.6.0 tag (latest release) resolved
-          # on 2026-10-22.
+          # on 2026-10-17.
           image: ghcr.io/gethomepage/homepage:v2.6.0@sha256:3e38fe788223cb46a3ce1f046ef11667b40f7707fdca0dcbfa3f86c5c42bf1e8
           env:
             # Host-header allow-list (400 otherwise). ingress-nginx
@@ -70,12 +77,13 @@ spec:
               mountPath: /tmp
           readinessProbe:
             httpGet:
-              path: /api/healthcheck
+              path: /api/services
               port: 3000
               httpHeaders:
                 - name: Host
                   value: dash.gw.mesh.internal
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /api/healthcheck
