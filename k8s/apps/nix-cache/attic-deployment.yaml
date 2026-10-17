@@ -157,6 +157,11 @@ metadata:
   name: attic
   namespace: nix-cache
 spec:
+  # Pinned, not allocated: the CI runner's hostAliases map
+  # cache.gw.mesh.internal here (forgejo-runner/deployment.yaml), since
+  # the attic client follows the advertised api-endpoint. Immutable;
+  # matches the existing allocation — see siwe-oidc's Service.
+  clusterIP: 10.103.91.1
   selector:
     app: attic
   ports:

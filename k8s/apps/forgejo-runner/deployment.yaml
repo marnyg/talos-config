@@ -48,6 +48,14 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/hostname: w1
+      # The attic client follows the server's advertised api-endpoint
+      # (nix-cache/attic-config.yaml: the mesh name), which pods cannot
+      # resolve — run #2's push died on it. Pinned to the attic
+      # Service's pinned ClusterIP, port 80 = atticd itself (the token
+      # is the runner's own), the way Forgejo pins auth.gw.
+      hostAliases:
+        - ip: 10.103.91.1
+          hostnames: [cache.gw.mesh.internal]
       automountServiceAccountToken: false
       # Root inside, nothing of the host: baseline forbids the rest.
       securityContext:
@@ -74,10 +82,16 @@ spec:
                 secretKeyRef:
                   name: attic-ci
                   key: ATTIC_TOKEN
+          # What nix as root needs to run builds as the nixbld users
+          # (image.nix): drop into them (SETUID, SETGID), hand them the
+          # build dir and take outputs back (CHOWN, FOWNER), clean up
+          # what they leave (DAC_OVERRIDE, KILL). All inside baseline's
+          # default set; nothing else is kept.
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+              add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, KILL]
           volumeMounts:
             - name: config
               mountPath: /etc/forgejo-runner

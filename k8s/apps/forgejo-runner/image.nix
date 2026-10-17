@@ -5,9 +5,14 @@
 # this container, which is the only executor that needs no privilege
 # (deployment.yaml; namespace.yaml has the PSS reasoning).
 #
-# nix here is single-user as root: no daemon, no nixbld group
-# (`build-users-group =`), `sandbox = false` (no user namespaces
-# without CAP_SYS_ADMIN). The store is the container's writable
+# nix here runs as root without a daemon, but builds run as the
+# `nixbld1..32` build users (`build-users-group = nixbld`), so a build
+# can write neither the store nor `/` — run #2 (2026-10-17) showed why
+# that matters beyond hygiene: as root, the first build that touched
+# $HOME created /homeless-shelter and nix refused every build after it.
+# Dropping into a build user needs SETUID/SETGID/CHOWN and friends,
+# which PSS baseline allows (deployment.yaml lists them).
+# `sandbox = false` still: no user namespaces without CAP_SYS_ADMIN. The store is the container's writable
 # overlay — nothing persists across pod restarts, by design: every
 # run is warmed from the substituters in /etc/nix/nix.conf (the LAN
 # mirror of cache.nixos.org and Attic itself, both by Service name),
@@ -21,7 +26,11 @@
 # `nix-store --load-db < /nix-support/registration` — closureInfo's
 # registration of exactly those paths. Without it nix would see them
 # as invalid and rewrite glibc under its own feet the first time a
-# build needed it.
+# build needed it. The registration covers the *tools'* closure, not
+# copyToRoot's entries: nix2container flattens those into `/` and does
+# not ship their own store paths, so registering cacert made nix
+# believe in a path that was not there and every fixed-output fetcher
+# failed on it (run #2).
 #
 # Entry: write Attic's client config from the sealed token (a file
 # under HOME, never argv), register with Forgejo from the sealed
@@ -54,11 +63,8 @@ let
       : "''${RUNNER_NAME:=''${HOSTNAME:-runner}}"
 
       # The dirs a job writes, made here rather than shipped: copyToRoot
-      # keeps the store's 555 modes, and with every capability dropped
-      # (deployment.yaml) root is only the owner — no CAP_DAC_OVERRIDE
-      # to write a read-only dir it owns. `/` is 755, so creating them
-      # works. (nix2container `perms` refuses dirs shared across
-      # copyToRoot entries, e.g. /etc.)
+      # keeps the store's 555 modes. (nix2container `perms` refuses dirs
+      # shared across copyToRoot entries, e.g. /etc.)
       mkdir -p "$HOME" /data /workspace
       mkdir -p /tmp && chmod 1777 /tmp
 
@@ -84,10 +90,7 @@ let
     '';
   };
   # /bin: what `run:` steps and nix's own fetchers expect to find.
-  env = pkgs.buildEnv {
-    name = "forgejo-runner-env";
-    pathsToLink = [ "/bin" ];
-    paths = with pkgs; [
+  tools = with pkgs; [
       bash
       coreutils
       findutils
@@ -106,14 +109,23 @@ let
       attic-client
       forgejo-runner
     ];
+  env = pkgs.buildEnv {
+    name = "forgejo-runner-env";
+    pathsToLink = [ "/bin" ];
+    paths = tools;
   };
-  registration = pkgs.closureInfo { rootPaths = [ env entrypoint pkgs.cacert ]; };
+  registration = pkgs.closureInfo { rootPaths = tools ++ [ entrypoint ]; };
+  # nixbld1..32: nix wants at least max-jobs build users (auto = cores).
+  buildUsers = lib.concatMapStrings (i:
+    "nixbld${toString i}:x:${toString (30000 + i)}:30000:nixbld ${toString i}:/var/empty:/bin/false\n"
+  ) (lib.range 1 32);
+  buildGroup = "nixbld:x:30000:" + lib.concatMapStringsSep "," (i: "nixbld${toString i}") (lib.range 1 32);
   root = pkgs.runCommand "forgejo-runner-root" { } ''
     mkdir -p $out/usr/local/bin $out/etc/nix $out/nix-support
     ln -s ${entrypoint}/bin/runner-entrypoint $out/usr/local/bin/runner-entrypoint
     cp ${registration}/registration $out/nix-support/registration
-    echo 'root:x:0:0:root:/root:/bin/bash' > $out/etc/passwd
-    echo 'root:x:0:' > $out/etc/group
+    printf 'root:x:0:0:root:/root:/bin/bash\n${buildUsers}' > $out/etc/passwd
+    printf 'root:x:0:\n${buildGroup}\n' > $out/etc/group
     # Substituters by Service name (pods cannot resolve the mesh
     # names; nix-cache/bootstrap.md §3): the LAN mirror of
     # cache.nixos.org (priority 40, forwarded from upstream), Attic's
@@ -128,7 +140,7 @@ let
     cat > $out/etc/nix/nix.conf <<'EOF'
     experimental-features = nix-command flakes
     sandbox = false
-    build-users-group =
+    build-users-group = nixbld
     substituters = http://nixos-mirror.nix-cache.svc.cluster.local http://attic.nix-cache.svc.cluster.local/main https://cache.nixos.org
     trusted-public-keys = main:XkJGH65OA/NHub3CozVJL7mIt7uTfqLAVgNoQbUIcHw= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
     connect-timeout = 10

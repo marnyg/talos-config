@@ -3,11 +3,10 @@
 # epic ivof). Only the runner lives here; Forgejo itself is in
 # `forgejo`, the caches in `nix-cache`.
 #
-# Labeled baseline, not the cluster-wide restricted default: the runner
-# is uid 0 inside its container. nix is single-user in the image (no
-# daemon, no nixbld group) and the image's /nix/store is root-owned,
-# so a non-root nix could neither write the store nor register the
-# image's own paths. Baseline still forbids hostNetwork, hostPath,
+# Labeled baseline, not the cluster-wide restricted default: nix runs
+# as uid 0 inside the container (no daemon; the image's /nix/store is
+# root-owned) and drops builds into nixbld build users, which takes a
+# handful of default capabilities (deployment.yaml). Baseline still forbids hostNetwork, hostPath,
 # privileged and added capabilities — a CI job gets a container's view
 # of one node and nothing more. Not kata: a nix store over virtio-fs
 # crawls (5h0j), and what runs here is the owner-signed main of this
