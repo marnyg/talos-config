@@ -1,0 +1,1196 @@
+# Grafana "Storage / Topology": the pod topology dashboard's twin for
+# disk. One row per node (repeated over $node); per node the Longhorn
+# replica count, capacity, scheduled/used fractions, attached volumes,
+# the /var filesystem (images, emptyDirs, ephemeral) — and two bar
+# panels, one bar per Longhorn disk on the node (nas1 has three: nvme +
+# bulk-1 + bulk-2), each segment one replica labelled namespace/pvc:
+#   Scheduled  volume size        / disk capacity  (what Longhorn booked)
+#   Used       volume actual size / disk capacity  (what is on the disk)
+# $highlight (pvc namespaces) paints matching replicas blue; stopped
+# replicas (a detached volume — normal) grey; rebuilding/error yellow.
+#
+# Replica placement is longhorn_replica_info{node,disk_path,volume};
+# sizes join on `volume` (longhorn_volume_*_bytes carry the ATTACHED
+# node, which is dropped — replicas live elsewhere). Disk capacity is
+# longhorn_disk_capacity_bytes{disk}, keyed by disk NAME, while
+# replica_info carries the disk PATH; the metrics never state the
+# mapping, so DISK_CAP below rewrites the name into the path by this
+# cluster's convention (nodes.longhorn.io spec.disks):
+#   default-disk-*  -> /var/mnt/longhorn      (longhorn/application.yaml)
+#   bulk-N          -> /var/mnt/longhorn-N    (nas1)
+# A disk named outside that convention shows up with no bar.
+#
+# Generated: edit dashboard-storage-topology.py next to this file and
+# re-run it; UI edits do not stick (provider allowUiUpdates=false).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-storage-topology
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Cluster
+data:
+  storage-topology.json: |
+    {
+      "uid": "storage-topology",
+      "title": "Storage / Topology",
+      "tags": [
+        "cluster",
+        "topology",
+        "longhorn"
+      ],
+      "timezone": "browser",
+      "editable": true,
+      "graphTooltip": 0,
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "label": "Data source",
+            "current": {
+              "text": "Prometheus",
+              "value": "prometheus"
+            },
+            "hide": 0
+          },
+          {
+            "name": "node",
+            "type": "query",
+            "label": "Node",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "query": {
+              "query": "label_values(longhorn_node_storage_capacity_bytes, node)",
+              "refId": "nodes"
+            },
+            "definition": "label_values(longhorn_node_storage_capacity_bytes, node)",
+            "refresh": 2,
+            "sort": 1,
+            "multi": true,
+            "includeAll": true,
+            "current": {
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          },
+          {
+            "name": "highlight",
+            "type": "query",
+            "label": "Highlight namespace",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${datasource}"
+            },
+            "query": {
+              "query": "label_values(longhorn_volume_capacity_bytes, pvc_namespace)",
+              "refId": "ns"
+            },
+            "definition": "label_values(longhorn_volume_capacity_bytes, pvc_namespace)",
+            "refresh": 2,
+            "sort": 1,
+            "multi": true,
+            "includeAll": true,
+            "allValue": "__none__",
+            "current": {
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            }
+          }
+        ]
+      },
+      "links": [
+        {
+          "title": "Cluster / Topology (pods)",
+          "type": "link",
+          "url": "/d/cluster-topology/",
+          "icon": "dashboard"
+        },
+        {
+          "title": "Longhorn UI",
+          "type": "link",
+          "url": "https://longhorn.gw.mesh.internal/",
+          "icon": "external link",
+          "targetBlank": true
+        }
+      ],
+      "panels": [
+        {
+          "type": "row",
+          "title": "Cluster",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 1
+          },
+          "panels": [],
+          "id": 1
+        },
+        {
+          "type": "stat",
+          "title": "Volumes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "count(longhorn_volume_capacity_bytes)",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 2
+        },
+        {
+          "type": "stat",
+          "title": "Replicas",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 3,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "count(longhorn_replica_info)",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 3
+        },
+        {
+          "type": "stat",
+          "title": "Scheduled",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(longhorn_node_storage_scheduled_bytes{node!=\"\"}) / sum(longhorn_node_storage_capacity_bytes{node!=\"\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "thresholds"
+              },
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.8
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "id": 4
+        },
+        {
+          "type": "stat",
+          "title": "Used",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 9,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(longhorn_node_storage_usage_bytes{node!=\"\"}) / sum(longhorn_node_storage_capacity_bytes{node!=\"\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "thresholds"
+              },
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.8
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "id": 5
+        },
+        {
+          "type": "stat",
+          "title": "Longhorn capacity",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(longhorn_node_storage_capacity_bytes)",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 6
+        },
+        {
+          "type": "stat",
+          "title": "Degraded / faulted",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 15,
+            "y": 1,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "count(longhorn_volume_robustness{state=~\"degraded|faulted\"} == 1) or vector(0)",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "id": 7
+        },
+        {
+          "type": "text",
+          "title": "Legend",
+          "gridPos": {
+            "x": 18,
+            "y": 1,
+            "w": 6,
+            "h": 3
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "🟩 running &nbsp; 🟦 in **$highlight** &nbsp; ⬜ stopped &nbsp; 🟨 rebuilding/error  \nSegments: replica `size / disk capacity`"
+          },
+          "id": 8
+        },
+        {
+          "type": "row",
+          "title": "$node",
+          "repeat": "node",
+          "collapsed": false,
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 24,
+            "h": 1
+          },
+          "panels": [],
+          "id": 9
+        },
+        {
+          "type": "stat",
+          "title": "Replicas",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 5,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "count(longhorn_replica_info{node=\"$node\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "links": [
+            {
+              "title": "Longhorn UI — node",
+              "url": "https://longhorn.gw.mesh.internal/#/node",
+              "targetBlank": true
+            }
+          ],
+          "id": 10
+        },
+        {
+          "type": "stat",
+          "title": "Longhorn capacity",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 3,
+            "y": 5,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(longhorn_node_storage_capacity_bytes{node=\"$node\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 11
+        },
+        {
+          "type": "stat",
+          "title": "Scheduled",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 8,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(longhorn_node_storage_scheduled_bytes{node=\"$node\"}) / sum(longhorn_node_storage_capacity_bytes{node=\"$node\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "thresholds"
+              },
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.8
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "id": 12
+        },
+        {
+          "type": "stat",
+          "title": "Used",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 3,
+            "y": 8,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(longhorn_node_storage_usage_bytes{node=\"$node\"}) / sum(longhorn_node_storage_capacity_bytes{node=\"$node\"})",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "thresholds"
+              },
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.8
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "id": 13
+        },
+        {
+          "type": "stat",
+          "title": "Volumes attached",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 11,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "count(longhorn_volume_state{node=\"$node\",state=\"attached\"} == 1) or vector(0)",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "id": 14
+        },
+        {
+          "type": "stat",
+          "title": "/var used (images, ephemeral)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 3,
+            "y": 11,
+            "w": 3,
+            "h": 3
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "1 - sum(node_filesystem_avail_bytes{mountpoint=\"/var\"} * on (instance) group_left(nodename) max by (instance,nodename) (node_uname_info{nodename=\"$node\"})) / sum(node_filesystem_size_bytes{mountpoint=\"/var\"} * on (instance) group_left(nodename) max by (instance,nodename) (node_uname_info{nodename=\"$node\"}))",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value",
+            "justifyMode": "center",
+            "orientation": "auto",
+            "wideLayout": true
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {
+                "mode": "thresholds"
+              },
+              "decimals": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 0.8
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.9
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "id": 15
+        },
+        {
+          "type": "barchart",
+          "title": "Scheduled — replica volume size / disk capacity",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 5,
+            "w": 9,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "label_join(sum by (node,disk_path,volume,pvc,pvc_namespace) ((max by (node,disk_path,replica,volume) (longhorn_replica_info{node=\"$node\"}) * on (node,replica) group_left() max by (node,replica) (longhorn_replica_state{node=\"$node\",state=\"running\"} == 1)) * on (volume) group_left(pvc,pvc_namespace) max by (volume,pvc,pvc_namespace) (longhorn_volume_capacity_bytes{pvc_namespace!~\"$highlight\"})) / on (node,disk_path) group_left() max by (node,disk_path) (label_replace(label_replace(longhorn_disk_capacity_bytes{node=\"$node\"}, \"disk_path\", \"/var/mnt/longhorn\", \"disk\", \"default-disk-.*\"), \"disk_path\", \"/var/mnt/longhorn-$1\", \"disk\", \"bulk-(.*)\")), \"alloc\", \"/\", \"pvc_namespace\", \"pvc\")\n or\nlabel_replace(label_join(sum by (node,disk_path,volume,pvc,pvc_namespace) ((max by (node,disk_path,replica,volume) (longhorn_replica_info{node=\"$node\"}) * on (node,replica) group_left() max by (node,replica) (longhorn_replica_state{node=\"$node\",state=\"running\"} == 1)) * on (volume) group_left(pvc,pvc_namespace) max by (volume,pvc,pvc_namespace) (longhorn_volume_capacity_bytes{pvc_namespace=~\"$highlight\"})) / on (node,disk_path) group_left() max by (node,disk_path) (label_replace(label_replace(longhorn_disk_capacity_bytes{node=\"$node\"}, \"disk_path\", \"/var/mnt/longhorn\", \"disk\", \"default-disk-.*\"), \"disk_path\", \"/var/mnt/longhorn-$1\", \"disk\", \"bulk-(.*)\")), \"alloc\", \"/\", \"pvc_namespace\", \"pvc\"), \"alloc\", \"★ $1\", \"alloc\", \"(.*)\")\n or\nlabel_replace(label_join(sum by (node,disk_path,volume,pvc,pvc_namespace) ((max by (node,disk_path,replica,volume) (longhorn_replica_info{node=\"$node\"}) * on (node,replica) group_left() max by (node,replica) (longhorn_replica_state{node=\"$node\",state=\"stopped\"} == 1)) * on (volume) group_left(pvc,pvc_namespace) max by (volume,pvc,pvc_namespace) (longhorn_volume_capacity_bytes{})) / on (node,disk_path) group_left() max by (node,disk_path) (label_replace(label_replace(longhorn_disk_capacity_bytes{node=\"$node\"}, \"disk_path\", \"/var/mnt/longhorn\", \"disk\", \"default-disk-.*\"), \"disk_path\", \"/var/mnt/longhorn-$1\", \"disk\", \"bulk-(.*)\")), \"alloc\", \"/\", \"pvc_namespace\", \"pvc\"), \"alloc\", \"⏸ $1\", \"alloc\", \"(.*)\")\n or\nlabel_replace(label_join(sum by (node,disk_path,volume,pvc,pvc_namespace) ((max by (node,disk_path,replica,volume) (longhorn_replica_info{node=\"$node\"}) * on (node,replica) group_left() max by (node,replica) (longhorn_replica_state{node=\"$node\",state!~\"running|stopped\"} == 1)) * on (volume) group_left(pvc,pvc_namespace) max by (volume,pvc,pvc_namespace) (longhorn_volume_capacity_bytes{})) / on (node,disk_path) group_left() max by (node,disk_path) (label_replace(label_replace(longhorn_disk_capacity_bytes{node=\"$node\"}, \"disk_path\", \"/var/mnt/longhorn\", \"disk\", \"default-disk-.*\"), \"disk_path\", \"/var/mnt/longhorn-$1\", \"disk\", \"bulk-(.*)\")), \"alloc\", \"/\", \"pvc_namespace\", \"pvc\"), \"alloc\", \"⏳ $1\", \"alloc\", \"(.*)\")",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "groupingToMatrix",
+              "options": {
+                "columnField": "alloc",
+                "rowField": "disk_path",
+                "valueField": "Value",
+                "emptyValue": "zero"
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "sort": [
+                  {
+                    "field": "disk_path\\alloc",
+                    "desc": false
+                  }
+                ]
+              }
+            }
+          ],
+          "options": {
+            "orientation": "horizontal",
+            "stacking": "normal",
+            "xField": "disk_path\\alloc",
+            "showValue": "never",
+            "barWidth": 0.85,
+            "groupWidth": 0.7,
+            "barRadius": 0,
+            "fullHighlight": false,
+            "xTickLabelRotation": 0,
+            "xTickLabelSpacing": 0,
+            "legend": {
+              "showLegend": false,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "decimals": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "green"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 60,
+                "gradientMode": "none",
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^★ .*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^⏸ .*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#888"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^⏳ .*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "yellow"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 16
+        },
+        {
+          "type": "barchart",
+          "title": "Used — replica actual size / disk capacity",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "gridPos": {
+            "x": 15,
+            "y": 5,
+            "w": 9,
+            "h": 9
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "label_join(sum by (node,disk_path,volume,pvc,pvc_namespace) ((max by (node,disk_path,replica,volume) (longhorn_replica_info{node=\"$node\"}) * on (node,replica) group_left() max by (node,replica) (longhorn_replica_state{node=\"$node\",state=\"running\"} == 1)) * on (volume) group_left(pvc,pvc_namespace) max by (volume,pvc,pvc_namespace) (longhorn_volume_actual_size_bytes{pvc_namespace!~\"$highlight\"})) / on (node,disk_path) group_left() max by (node,disk_path) (label_replace(label_replace(longhorn_disk_capacity_bytes{node=\"$node\"}, \"disk_path\", \"/var/mnt/longhorn\", \"disk\", \"default-disk-.*\"), \"disk_path\", \"/var/mnt/longhorn-$1\", \"disk\", \"bulk-(.*)\")), \"alloc\", \"/\", \"pvc_namespace\", \"pvc\")\n or\nlabel_replace(label_join(sum by (node,disk_path,volume,pvc,pvc_namespace) ((max by (node,disk_path,replica,volume) (longhorn_replica_info{node=\"$node\"}) * on (node,replica) group_left() max by (node,replica) (longhorn_replica_state{node=\"$node\",state=\"running\"} == 1)) * on (volume) group_left(pvc,pvc_namespace) max by (volume,pvc,pvc_namespace) (longhorn_volume_actual_size_bytes{pvc_namespace=~\"$highlight\"})) / on (node,disk_path) group_left() max by (node,disk_path) (label_replace(label_replace(longhorn_disk_capacity_bytes{node=\"$node\"}, \"disk_path\", \"/var/mnt/longhorn\", \"disk\", \"default-disk-.*\"), \"disk_path\", \"/var/mnt/longhorn-$1\", \"disk\", \"bulk-(.*)\")), \"alloc\", \"/\", \"pvc_namespace\", \"pvc\"), \"alloc\", \"★ $1\", \"alloc\", \"(.*)\")\n or\nlabel_replace(label_join(sum by (node,disk_path,volume,pvc,pvc_namespace) ((max by (node,disk_path,replica,volume) (longhorn_replica_info{node=\"$node\"}) * on (node,replica) group_left() max by (node,replica) (longhorn_replica_state{node=\"$node\",state=\"stopped\"} == 1)) * on (volume) group_left(pvc,pvc_namespace) max by (volume,pvc,pvc_namespace) (longhorn_volume_actual_size_bytes{})) / on (node,disk_path) group_left() max by (node,disk_path) (label_replace(label_replace(longhorn_disk_capacity_bytes{node=\"$node\"}, \"disk_path\", \"/var/mnt/longhorn\", \"disk\", \"default-disk-.*\"), \"disk_path\", \"/var/mnt/longhorn-$1\", \"disk\", \"bulk-(.*)\")), \"alloc\", \"/\", \"pvc_namespace\", \"pvc\"), \"alloc\", \"⏸ $1\", \"alloc\", \"(.*)\")\n or\nlabel_replace(label_join(sum by (node,disk_path,volume,pvc,pvc_namespace) ((max by (node,disk_path,replica,volume) (longhorn_replica_info{node=\"$node\"}) * on (node,replica) group_left() max by (node,replica) (longhorn_replica_state{node=\"$node\",state!~\"running|stopped\"} == 1)) * on (volume) group_left(pvc,pvc_namespace) max by (volume,pvc,pvc_namespace) (longhorn_volume_actual_size_bytes{})) / on (node,disk_path) group_left() max by (node,disk_path) (label_replace(label_replace(longhorn_disk_capacity_bytes{node=\"$node\"}, \"disk_path\", \"/var/mnt/longhorn\", \"disk\", \"default-disk-.*\"), \"disk_path\", \"/var/mnt/longhorn-$1\", \"disk\", \"bulk-(.*)\")), \"alloc\", \"/\", \"pvc_namespace\", \"pvc\"), \"alloc\", \"⏳ $1\", \"alloc\", \"(.*)\")",
+              "instant": true,
+              "range": false,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "groupingToMatrix",
+              "options": {
+                "columnField": "alloc",
+                "rowField": "disk_path",
+                "valueField": "Value",
+                "emptyValue": "zero"
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "sort": [
+                  {
+                    "field": "disk_path\\alloc",
+                    "desc": false
+                  }
+                ]
+              }
+            }
+          ],
+          "options": {
+            "orientation": "horizontal",
+            "stacking": "normal",
+            "xField": "disk_path\\alloc",
+            "showValue": "never",
+            "barWidth": 0.85,
+            "groupWidth": 0.7,
+            "barRadius": 0,
+            "fullHighlight": false,
+            "xTickLabelRotation": 0,
+            "xTickLabelSpacing": 0,
+            "legend": {
+              "showLegend": false,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "decimals": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "green"
+              },
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 60,
+                "gradientMode": "none",
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^★ .*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^⏸ .*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#888"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^⏳ .*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "yellow"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "id": 17
+        }
+      ]
+    }
