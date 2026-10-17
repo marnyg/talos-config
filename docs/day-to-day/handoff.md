@@ -37,19 +37,15 @@ admins gate as `global-auth-url`.
 
 ## Loose threads
 
-- **Hub image on fly is behind**: `53q`, `2c2x`, `7w5` and the earlier
-  `facethttp` pump all wait for `fly/deploy.sh`.
-- `pymm` names a test that no longer exists (`TestMeshHTTPOverOverlay`)
-  — close as already-fixed?
-- Decisions parked from the swarm prep: `4xw7` (does android-p0
-  survive), `5gz` (relay hook fail-open vs e8d), `fh2y` (drop
-  wrong-target/unstamped too?).
-- Follow-ups surfaced by workers (not filed): a shared liveness helper
-  for `Resolve`/`NamesJSON` (`issuer.NameEntry.Live`); `NamesJSON`'s
-  `Online` mis-reports a re-keyed name (first entry expired); `rejectStatus`
-  still maps `ErrSig → bad-sig` from the loop (really a chain failure);
-  `clusterwatch.step` dial failure leaves the storage row un-errored;
-  gateway's `enrollHeadless` retries expired flows with no backoff;
+- Same session, after the swarm: the seven beads + `pymm` closed;
+  sandbox image `1146941` pushed and pinned; **hub deployed and
+  unsealed** (53q/2c2x/7w5 live); `4xw7` done (iroh-go/{mobile,
+  android-p0} deleted); `5gz` ruled fail-open-while-cold (note on the
+  bead, still P3); `fh2y` closed by decision `24uf`. Debt filed:
+  `2004` (rejectStatus ErrSig→unauthorized), `63u5` (storage row on
+  dial failure), `2nqw` (enrollHeadless backoff).
+- Not filed: a shared liveness helper for `Resolve`/`NamesJSON`;
+  `NamesJSON.Online` mis-reports a re-keyed name (first entry expired);
   `image.nix` writes `.agent-report`/`.agent-log` on the disk workspace.
 - **Adding a workload needs a line in `k8s/clusters/homelab/cluster.yaml`**
   as well as the directory (ApplicationSet list generator).
@@ -60,8 +56,6 @@ admins gate as `global-auth-url`.
 
 ## Suggested next steps
 
-- Confirm-close the seven swarm beads (`bd show` each; reports in
-  `/tmp/swarm/`), rebuild+pin the sandbox image, `fly/deploy.sh`.
-- Decide the three parked questions above so a next swarm can take
-  `4xw7`/`5gz`/`fh2y`.
+- Watch the new gitops row on `/status` (children) over a day; a
+  sandbox-agent run to confirm `/run/agent` under kata.
 - Back to `ivof` (sandbox-agent live acceptance, the parent actor).
