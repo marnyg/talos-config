@@ -22,7 +22,10 @@ data:
   settings.yaml: |
     title: mesh
     description: Services on the cluster
-    base: http://dash.gw.mesh.internal
+    # No `base`: it would pin a scheme into every /api fetch, and the
+    # scheme is the device's choice (ADR-0033) — a browser on https
+    # got mixed-content blocks with base: http://... (2026-10-22).
+    # Relative URLs work under either.
     headerStyle: clean
     theme: dark
     color: slate
