@@ -24,8 +24,9 @@ phone). **Detour 2026-10-19, done:** Vaultwarden (`l5v8`) at
 `vault.gw.mesh.internal` — the first https-only consumer of ADR-0033
 beyond the PWA; first account + extension pairing remain. **Detour
 2026-10-17, done:** Home Assistant (`k8s/apps/homeassistant`) at
-`home.gw.mesh.internal`; first-start acceptance and the discovery
-question (`b311`) remain. Back to the line above.
+`home.gw.mesh.internal`, which surfaced and fixed the gateway's
+WebSocket bug (`o8wd`, `protocol/facethttp` read deadlines); the
+discovery question (`b311`) remains. Back to the line above.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for

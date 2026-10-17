@@ -4,74 +4,50 @@
      Backward-looking. Resets each session. -->
 
 ## Last session
-2026-10-20: **Prowlarr deployed beside Jackett** (commit `24d9052`):
-`k8s/apps/prowlarr/` in the radarr shape — Longhorn 2Gi, PSS
-restricted on 1000, `lscr.io/linuxserver/prowlarr:2.6.5`, API key
-sealed in git and seeded into `config.xml` on a fresh volume (the one
-departure from sonarr/radarr, whose keys are generated), Ingress
-`prowlarr.gw.mesh.internal` behind the admins gate. The sonarr/radarr
-configurators register themselves as Prowlarr applications
-(`POST /api/v1/applications`, PUT when present; `PROWLARR_API_KEY`
-optional) — pairing driven from the *arr side because only that pod
-knows its own key. **Accepted live**: both apps paired (fullSync),
-Prowlarr's only health item is "no indexers enabled". Jackett and its
-Torznab entries untouched; retirement is bead `6t21`.
+2026-10-17: **Home Assistant deployed, and the first WebSocket ever
+to complete through the gateway.** `k8s/apps/homeassistant/`
+(`17e576d`, `6ac688a`): Longhorn 10Gi, PSS baseline (s6 needs root),
+`home.gw.mesh.internal` behind the admins gate, image `2026.10.2` by
+digest. Onboarding stalled on `wss://…/api/websocket` and the dig
+found a protocol bug (`o8wd`, closed): `facethttp.Conn` ignored read
+deadlines, so `http.Server.Hijack` (what `ReverseProxy` does for a
+101) blocked in `abortPendingRead` until the *peer* closed — every
+WebSocket through the gateway (HA, Grafana live, Vaultwarden
+`/notifications/hub`) died at the browser's 20 s open timeout. Fix
+`109c6b5`: a read pump in `protocol/facethttp` serves `Read` from a
+bounded buffer under a deadline, and `Close` FINs the send side
+before closing (the iroh-tagged `TestNodeAgentEndToEnd` caught the
+reset-discards-response regression). Gateway image `109c6b5` is live
+(`d5c8a27`); verified `101` + `auth_required` end to end with curl.
+Second finding: HA 2026.x migrates an `http:` YAML block ONCE into
+`.storage/http` as a pending trial needing UI promotion within 5 min;
+the first start lost that race (no WebSocket) and HA reverted to no
+trusted proxies. The init container now runs the HA image and
+reconciles `use_x_forwarded_for`/`trusted_proxies` into the store's
+`stable` before every start (`6ac688a`).
 
-Previous session, 2026-10-17: **Home Assistant deployed** (commit `17e576d`):
-`k8s/apps/homeassistant/` — Longhorn 10Gi `/config`, image
-`2026.10.2` pinned by digest, Ingress `home.gw.mesh.internal` behind
-the admins gate with the 1 h nginx timeouts for `/api/websocket`.
-Two departures from the Vaultwarden shape: the namespace is PSS
-**baseline** (the official image is s6-overlay and `/init` must be
-root; non-root is unsupported upstream), and an init container seeds
-`configuration.yaml` once with `http.trusted_proxies: [10.244.0.0/16]`
-— without it HA 400s every request ingress-nginx forwards. ClusterIP
-only: no mDNS/SSDP discovery, no USB radios (bead `b311`). HA's own
-onboarding account is the second gate; no header auth in core.
-**Not yet accepted live** — pushed, ArgoCD syncs on its own; nobody
-has opened the onboarding page yet.
-
-Previous session (2026-10-16, docs say 10-19): Vaultwarden deployed
-(`l5v8`, `eb1ad52`) — Longhorn 2Gi, PSS-restricted on uid 65534,
-`DOMAIN=https://vault.gw.mesh.internal` (ADR-0033 secure context),
-admins gate, master password as the second gate; accepted from the
-Mac over https including the `/notifications/hub` WebSocket.
+Previous session (2026-10-16): Vaultwarden (`l5v8`, `eb1ad52`).
 
 ## Loose threads
-- Prowlarr has no indexers yet: add them in the UI (or do `6t21` and
-  seed from git). Until then its sync pushes nothing; the Jackett
-  entries in Sonarr/Radarr keep working. Adding the same trackers in
-  both means duplicate indexer rows in Sonarr/Radarr — fine, until
-  `6t21` removes the Jackett ones.
-- Home Assistant first-start acceptance: open
-  `https://home.gw.mesh.internal` from a mesh device, expect the
-  onboarding page (not a 400 — that would mean the trusted_proxies
-  seed did not take or the pod CIDR moved); then the companion app on
-  the Sony over the tunnel.
-- `b311`: discovery/USB for HA needs hostNetwork or a device mount on
-  a pinned node, which also puts :8123 on the LAN outside the gate.
 
-- Vaultwarden signups are off since `d13b5a1` (first account made,
-  `l5v8` closed); further users by invitation from inside the vault.
-- Vaultwarden's `rsa_key.pem` (its own JWT signing key) sits on the
-  Longhorn volume like Forgejo's `secret_key`; both are data plane but
-  are what `9io` (encrypt the user volume) is about.
-- Not yet tried: the Bitwarden extension on Firefox/Chrome (Mac) and
-  the Android app against a user-installed root — Android's
-  network-security config decides, not the mesh. Phone acceptance is
-  the open check.
-- Android APK `a2cbc76` is on the Sony only — not published to
-  `android-latest`; the TV has the old app (http still works there).
-- Mac auto-trust does not work under launchd (admin trust write needs a
-  session); the manual `add-trusted-cert` the log prints stays.
-- `--cookie-secure`/https OIDC issuer: deferred until every browser
-  client is on https (ADR-0033 consequences); nothing flipped.
-- From before, still open: `thz2` (ssh live run), `m6xc`, the workouts
-  `deployment.yaml` seeding recipe, the Strong password rotation,
-  `d0o0.*` / `e6pu.2.*` awaiting close, 9+ `<!-- stale? -->` notes.
+- HA onboarding: owner `mar` exists; the remaining steps (location,
+  analytics, integrations) and the companion app on the Sony are
+  untested. `b311` holds the discovery/USB question.
+- The hub image on fly still carries the pre-pump `facethttp`
+  (hub-http). Nothing there hijacks, so no urgency; the next
+  `fly/deploy.sh` picks it up. Same for irohup/nodeagent builds.
+- Vaultwarden live sync and Grafana live should now work; neither
+  re-tested after the gateway roll.
+- `facethttp.Conn` now honours `ReadHeaderTimeout` (10 s after the
+  first byte) for real; a pump goroutine still outlives a stream whose
+  peer vanishes (FFI read not interruptible, as before).
+- Vaultwarden dates in `k8s/apps/vaultwarden/deployment.yaml` say
+  2026-10-19; the commit is 2026-10-16.
+- From before: `thz2`, `m6xc`, `d0o0.*` / `e6pu.2.*` awaiting close,
+  9+ `<!-- stale? -->` notes.
 
 ## Suggested next steps
 
-- `android/build.sh --publish` on the box so the TV/other devices get
-  the https-capable app; test the Bitwarden Android app on the Sony.
+- Finish HA onboarding in the browser; pair the companion app.
+- Re-check Vaultwarden extension sync / Grafana live over the mesh.
 - Back to `ivof` (sandbox-agent live acceptance, the parent actor).

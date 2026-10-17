@@ -1201,3 +1201,11 @@
   with exit 60: curl (nix/homebrew build) reads its own CA bundle, not
   the keychain the mesh root was added to. `-k` for acceptance checks;
   the browsers trust it.
+- 2026-10-17 — `kubectl exec <pod> -- python3 - <<EOF` runs python on
+  an EMPTY stdin without `-i`; it exits 0 and nothing happens. Cost
+  one wrong conclusion ("HA overwrote my edit") this session.
+- 2026-10-17 — HA 2026.x `http:` YAML is a one-shot migration into
+  `/config/.storage/http` (pending trial, 5 min to promote from the UI
+  or it is dropped for good and YAML ignored). Edit the store before HA
+  starts (the init container does), never YAML.
+
