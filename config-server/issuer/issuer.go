@@ -396,6 +396,12 @@ type Kit struct {
 // the durable name and groups, plus the beat grant. groups must be
 // within the speak-as caveat: the hub can only put a member in a group
 // the wallet delegated.
+//
+// The minted member cert is witnessed into the name map right away
+// (talos-config-5gz): the relay gate admits witnessed members, and a
+// freshly enrolled remote member has to cross the relay to make the
+// first beat that would otherwise witness it. The entry has no
+// location until that beat, so it shows offline and Resolve skips it.
 func (i *Issuer) Mint(node cert.ActorID, name string, groups []string) (Kit, error) {
 	if err := i.Serving(); err != nil {
 		return Kit{}, err
@@ -441,5 +447,6 @@ func (i *Issuer) Mint(node cert.ActorID, name string, groups []string) (Kit, err
 	if err != nil {
 		return Kit{}, fmt.Errorf("issuer: signing beat grant: %w", err)
 	}
+	i.witness(member)
 	return Kit{Member: member, BeatGrant: grant, SpeakAs: sa}, nil
 }

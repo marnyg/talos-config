@@ -416,6 +416,45 @@ func TestMintRejectsBadInputs(t *testing.T) {
 	}
 }
 
+// TestMintWitnesses: a minted member is in the name map before its
+// first beat (talos-config-5gz), located nowhere; a failed Mint
+// witnesses nothing; a re-mint with a later iat replaces the entry.
+func TestMintWitnesses(t *testing.T) {
+	clk := newClock()
+	w := newWallet(t)
+	iss := newIssuer(t, clk, nil)
+	w.unseal(t, iss)
+	N := newNode(t).ActorID()
+
+	if got := iss.NameMap(); len(got) != 0 {
+		t.Fatalf("fresh issuer has a name map: %+v", got)
+	}
+	if _, err := iss.Mint(N, "n", []string{"not-a-group"}); err == nil {
+		t.Fatal("out-of-caveat mint succeeded")
+	}
+	if got := iss.NameMap(); len(got) != 0 {
+		t.Fatalf("a refused mint was witnessed: %+v", got)
+	}
+	kit, err := iss.Mint(N, "n", []string{"machines"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := iss.NameMap()
+	if len(got) != 1 || got[0].Member.Aud != string(N) || got[0].Member.Cav.Name != "n" || got[0].Location != nil {
+		t.Fatalf("map after mint = %+v, want the minted cert, unlocated", got)
+	}
+	if !slices.Equal(got[0].Member.Sig, kit.Member.Sig) {
+		t.Fatal("map entry is not the very cert in the kit")
+	}
+	clk.Advance(Day)
+	if _, err := iss.Mint(N, "n2", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := iss.NameMap(); len(got) != 1 || got[0].Member.Cav.Name != "n2" {
+		t.Fatalf("re-mint did not replace the entry: %+v", got)
+	}
+}
+
 func TestMintedKitFailsClosed(t *testing.T) {
 	clk := newClock()
 	w := newWallet(t)
