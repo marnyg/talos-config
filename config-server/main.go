@@ -232,12 +232,12 @@ func (s *server) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 
 // mux wires all routes. Shared between main and the HTTP tests so the
 // two can never drift.
-// startRelay runs the iroh home relay child (ADR-0022) beside the hub
+// runRelayChild runs the iroh home relay child (ADR-0022) beside the hub
 // and returns its supervisor. hub nil ⇒ no access hook (access =
 // everyone); otherwise the hook is built from the hub's own port and
 // the process start time (relayadmit.go). Extracted from main (the
 // block had grown hook build + supervisor + signal handler).
-func startRelay(bin string, relayPort, hubPort int, hub *hubManager, started time.Time) *relaySupervisor {
+func runRelayChild(bin string, relayPort, hubPort int, hub *hubManager, started time.Time) *relaySupervisor {
 	// The iroh home relay (Mesh v3, ADR-0022) is a keyless transport
 	// component: it starts with the process and runs sealed or not, so
 	// the identity plane's remote paths survive a redeploy's seal
@@ -405,7 +405,7 @@ func main() {
 	}
 
 	if *relayBin != "" {
-		s.relay = startRelay(*relayBin, *relayPort, *port, hub, s.started)
+		s.relay = runRelayChild(*relayBin, *relayPort, *port, hub, s.started)
 	}
 
 	if hub != nil {
