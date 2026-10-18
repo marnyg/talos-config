@@ -508,6 +508,57 @@ func (s *Spawner) kitTTL(spec Spec) int64 {
 	return s.window(spec)
 }
 
+// Adopted is one born child as a spawner restarted from durable state
+// re-learns it (Adopt) or reports it (Children): the id, the lease and
+// the deadline last asked of the provisioner.
+type Adopted struct {
+	ID    cert.ActorID
+	Lease Lease
+	Until int64
+}
+
+// Adopt puts children a previous process of this actor bore into the
+// born table (consumer-driven, protocol ADR-0005: the first long-lived
+// parent, talos-config-ivof). The born table is a cache — invariant 12,
+// actors restart from spec — and this is how the cache refills: the
+// owner keeps {id, lease, until} in its own store (Children on its
+// beat) and feeds it back here before Listen. Nothing is sent: the
+// child's next #renew proves it alive (actor.renewHandler verifies this
+// actor's own past signature, so it needs no table) and the decorator
+// #extends from the lease adopted here. A child already in the table
+// keeps the later deadline. Pass Until no earlier than the owner's
+// restart plus one renewal beat: a stored deadline that already passed
+// would be swept before the child could knock, though the lease may
+// well be alive — the provisioner's own Adopt grace is the same idea.
+func (s *Spawner) Adopt(children []Adopted) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range children {
+		if c.ID == "" || c.Lease.ID == "" {
+			continue
+		}
+		if have, ok := s.born[c.ID]; ok {
+			if c.Until > have.until {
+				have.until = c.Until
+			}
+			continue
+		}
+		s.born[c.ID] = &child{lease: c.Lease, until: c.Until}
+	}
+}
+
+// Children snapshots the born table: what Adopt would need to rebuild
+// it. Order is unspecified.
+func (s *Spawner) Children() []Adopted {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Adopted, 0, len(s.born))
+	for id, c := range s.born {
+		out = append(out, Adopted{ID: id, Lease: c.lease, Until: c.until})
+	}
+	return out
+}
+
 // Pending reports the number of spawns in the table (unborn, or born
 // and still inside their window).
 func (s *Spawner) Pending() int {

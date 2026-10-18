@@ -47,9 +47,13 @@ const (
 	// serves and the child dials once per task, chain-on-connect: the
 	// preamble carries the chain the Kit's Outfit granted at
 	// (parent, FacetAgentEvents). Over the admitted connection the
-	// child speaks HTTP: `POST /events/<task-id>` (application/x-ndjson,
-	// chunked, one pirpc record per line, `child_settled` last) and
-	// `PUT /session/<task-id>` (the session JSONL) once pi settled.
+	// child speaks HTTP: `POST /events/<task-id>?from=N` (application/
+	// x-ndjson, chunked, one pirpc record per line, `child_settled`
+	// last; N is the index of the first line sent, 0 on the first
+	// attempt), `GET /events/<task-id>` → `{"count": N}` to resume a
+	// broken upload from what the parent holds (the uploader re-dials
+	// until the run's tail is accepted), and `PUT /session/<task-id>`
+	// (the session JSONL) once pi settled.
 	FacetAgentEvents = "agent-events"
 )
 
@@ -505,17 +509,33 @@ func (ag *agent) execute(rctx context.Context, r *run, req TaskRequest, preamble
 }
 
 // uploader is the child's end of the agent-events facet for one task:
-// one http.Transport over the Dialer (one connection: the first dial
-// is made up front so a parent that cannot be reached fails the task
-// before pi starts), one long POST whose body is a pipe fed a line per
-// record, then one PUT with the session on the same connection.
+// one http.Transport over the Dialer (the first dial is made up front
+// so a parent that cannot be reached fails the task before pi starts),
+// a pump that keeps one long POST open and feeds it a line per record,
+// then one PUT with the session. The upload is RESUMABLE: a POST that
+// dies (the parent restarted, the connection dropped) is re-dialled
+// and resumed from the count the parent reports (`GET /events/<id>` →
+// {count}), with backoff, for as long as the run lives plus
+// uploadGrace — the parent's store is the record, and a run whose
+// tail never reached it is a run the parent would show "running"
+// forever (talos-config-ivof.6; the thread h5ao's dial-failure half).
+// Every line is kept in memory for the resend; a run's stream is
+// bounded by its deadline.
 type uploader struct {
-	id       string
-	tr       *http.Transport
-	pw       *io.PipeWriter
-	postDone chan error
-	upOK     atomic.Bool
+	id     string
+	tr     *http.Transport
+	log    *slog.Logger
+	mu     sync.Mutex
+	cond   *sync.Cond
+	lines  [][]byte // every record so far, LF-terminated
+	closed bool     // finish was called: the settled line is the last
+	done   chan struct{}
+	cancel context.CancelFunc
 }
+
+// uploadGrace bounds how long finish waits for the pump to flush the
+// tail (and retries the PUT) once the run is over.
+const uploadGrace = 20 * time.Second
 
 func (ag *agent) uploader(ctx context.Context, r *run, preamble []byte, hints []string) (*uploader, error) {
 	first, err := ag.o.Dial(ctx, ag.parent, hints, preamble)
@@ -541,31 +561,14 @@ func (ag *agent) uploader(ctx context.Context, r *run, preamble []byte, hints []
 		DisableKeepAlives: false,
 		MaxConnsPerHost:   1,
 	}
-	pr, pw := io.Pipe()
-	up := &uploader{id: r.id, tr: tr, pw: pw, postDone: make(chan error, 1)}
-	up.upOK.Store(true)
-	// The request's context is NOT the run's: the deadline ends the
-	// body cleanly through pw.Close, never by tearing the request down.
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, up.url("events"), pr)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/x-ndjson")
-	go func() {
-		resp, err := tr.RoundTrip(req)
-		if err == nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
-			if resp.StatusCode/100 != 2 {
-				err = fmt.Errorf("POST /events/%s: %s", r.id, resp.Status)
-			}
-		}
-		if err != nil {
-			up.upOK.Store(false)
-			pr.CloseWithError(err) // unblocks a writer
-		}
-		up.postDone <- err
-	}()
+	up := &uploader{id: r.id, tr: tr, log: ag.log.With("task", r.id), done: make(chan struct{})}
+	up.cond = sync.NewCond(&up.mu)
+	// The pump's context is NOT the run's: the deadline ends the body
+	// cleanly through finish, never by tearing the request down; close
+	// (after finish, or on a task that never got to finish) ends it.
+	pctx, cancel := context.WithCancel(context.Background())
+	up.cancel = cancel
+	go up.pump(pctx)
 	return up, nil
 }
 
@@ -573,50 +576,217 @@ func (up *uploader) url(kind string) string {
 	return "http://" + FacetAgentEvents + "/" + kind + "/" + up.id
 }
 
-// line writes one record (plus LF); a dead upload is logged once and
-// then ignored so pi keeps draining.
-func (up *uploader) line(raw []byte, log *slog.Logger) {
-	if !up.upOK.Load() {
-		return
-	}
+// line queues one record (plus LF) for the pump.
+func (up *uploader) line(raw []byte, _ *slog.Logger) {
 	buf := make([]byte, 0, len(raw)+1)
 	buf = append(buf, raw...)
 	buf = append(buf, '\n')
-	if _, err := up.pw.Write(buf); err != nil {
-		if up.upOK.CompareAndSwap(true, false) {
-			log.Warn("child: task: event upload ended early", "err", err)
+	up.mu.Lock()
+	if !up.closed {
+		up.lines = append(up.lines, buf)
+	}
+	up.mu.Unlock()
+	up.cond.Broadcast()
+}
+
+// pump keeps a POST open until every line (the settled one last) has
+// been accepted: each attempt after the first asks the parent how many
+// lines it holds and resumes from there.
+func (up *uploader) pump(ctx context.Context) {
+	defer close(up.done)
+	// Wake the cond when ctx ends so post can give up mid-wait.
+	go func() {
+		<-ctx.Done()
+		up.cond.Broadcast()
+	}()
+	backoff := time.Second
+	for attempt := 0; ctx.Err() == nil; attempt++ {
+		from := 0
+		if attempt > 0 {
+			n, err := up.count(ctx)
+			if err != nil {
+				up.log.Warn("child: task: events resume: count", "attempt", attempt, "err", err)
+				if !sleep(ctx, backoff) {
+					return
+				}
+				backoff = min(backoff*2, 10*time.Second)
+				continue
+			}
+			from = n
+			up.log.Info("child: task: events resume", "attempt", attempt, "from", from)
 		}
+		err := up.post(ctx, from)
+		if err == nil {
+			return
+		}
+		if ctx.Err() != nil {
+			up.log.Warn("child: task: events upload gave up", "err", err)
+			return
+		}
+		up.log.Warn("child: task: events POST ended early; will resume", "attempt", attempt, "err", err)
+		if !sleep(ctx, backoff) {
+			return
+		}
+		backoff = min(backoff*2, 10*time.Second)
 	}
 }
 
-// finish writes the last line, ends the POST, then PUTs the session.
+func sleep(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
+
+// count asks the parent how many of this task's lines it holds.
+func (up *uploader) count(ctx context.Context) (int, error) {
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, up.url("events"), nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := up.tr.RoundTrip(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return 0, fmt.Errorf("GET /events/%s: %s", up.id, resp.Status)
+	}
+	var body struct {
+		Count int `json:"count"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<10)).Decode(&body); err != nil {
+		return 0, err
+	}
+	up.mu.Lock()
+	have := len(up.lines)
+	up.mu.Unlock()
+	if body.Count < 0 || body.Count > have {
+		return 0, fmt.Errorf("GET /events/%s: count %d out of range", up.id, body.Count)
+	}
+	return body.Count, nil
+}
+
+// post is one POST attempt from line index from: nil once the body
+// ended cleanly after the last line (finish has been called) and the
+// parent answered 2xx; an error ends the attempt for pump to retry.
+func (up *uploader) post(ctx context.Context, from int) error {
+	pr, pw := io.Pipe()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, up.url("events")+"?from="+fmt.Sprint(from), pr)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-ndjson")
+	errc := make(chan error, 1)
+	go func() {
+		resp, err := up.tr.RoundTrip(req)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode/100 != 2 {
+				err = fmt.Errorf("POST /events/%s: %s", up.id, resp.Status)
+			}
+		}
+		if err != nil {
+			pr.CloseWithError(err) // unblocks a writer
+		}
+		errc <- err
+	}()
+	i := from
+	for {
+		up.mu.Lock()
+		for i >= len(up.lines) && !up.closed && ctx.Err() == nil {
+			up.cond.Wait()
+		}
+		if i < len(up.lines) {
+			buf := up.lines[i]
+			up.mu.Unlock()
+			if _, err := pw.Write(buf); err != nil {
+				return <-errc
+			}
+			i++
+			continue
+		}
+		closed := up.closed
+		up.mu.Unlock()
+		if !closed {
+			pw.CloseWithError(ctx.Err())
+			<-errc
+			return ctx.Err()
+		}
+		pw.Close()
+		return <-errc
+	}
+}
+
+// finish queues the last line, waits (uploadGrace at most) for the
+// pump to get everything accepted, then PUTs the session — retried on
+// its own, a fresh connection if the transport's died.
 func (up *uploader) finish(s Settled, session []byte, log *slog.Logger) {
 	if raw, err := json.Marshal(s); err == nil {
 		up.line(raw, log)
 	}
-	up.pw.Close()
-	if err := <-up.postDone; err != nil {
-		log.Warn("child: task: events POST", "err", err)
+	up.mu.Lock()
+	up.closed = true
+	up.mu.Unlock()
+	up.cond.Broadcast()
+	deadline := time.After(uploadGrace)
+	select {
+	case <-up.done:
+	case <-deadline:
+		log.Warn("child: task: events upload did not finish in time")
+		up.cancel()
+		<-up.done
 		return
 	}
 	if session == nil {
 		return
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPut, up.url("session"), bytes.NewReader(session))
+	backoff := time.Second
+	for attempt := 0; attempt < 4; attempt++ {
+		err := up.put(session)
+		if err == nil {
+			return
+		}
+		log.Warn("child: task: session PUT", "attempt", attempt, "err", err)
+		select {
+		case <-deadline:
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, 8*time.Second)
+	}
+}
+
+func (up *uploader) put(session []byte) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, up.url("session"), bytes.NewReader(session))
 	if err != nil {
-		return
+		return err
 	}
 	req.Header.Set("Content-Type", "application/x-ndjson")
 	resp, err := up.tr.RoundTrip(req)
 	if err != nil {
-		log.Warn("child: task: session PUT", "err", err)
-		return
+		return err
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		log.Warn("child: task: session PUT", "status", resp.Status)
+		return fmt.Errorf("PUT /session/%s: %s", up.id, resp.Status)
 	}
+	return nil
 }
 
-func (up *uploader) close() { up.tr.CloseIdleConnections() }
+// close ends the pump (a task that never reached finish) and the
+// transport's idle connection.
+func (up *uploader) close() {
+	up.cancel()
+	<-up.done
+	up.tr.CloseIdleConnections()
+}

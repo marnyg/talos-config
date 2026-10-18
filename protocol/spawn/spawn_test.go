@@ -790,3 +790,120 @@ func TestLeaseLapses(t *testing.T) {
 		t.Fatalf("driver kills %v, want one", kills)
 	}
 }
+
+// TestAdoptAfterRestart is the born table as a cache (invariant 12,
+// talos-config-ivof.4): a parent process dies after a birth, a new
+// process on the same key refills the table from what the old one
+// snapshotted (Children → Adopt) and the child's next #renew rides
+// out to #extend at the provisioner as if nothing happened — the
+// renew handler itself needs no table (it verifies the old process's
+// signature), the decorator needs the lease, and Adopt supplies it.
+// What Adopt does NOT supply is the consents the old process issued:
+// the envelope layer roots the child's chain in a.Consents before any
+// handler runs, so a durable-key parent persists Authority() beside
+// Children() and re-installs both (the grant is the record, root
+// invariant 1; losing them refuses, never grants — safe to lose).
+func TestAdoptAfterRestart(t *testing.T) {
+	w := actortest.New(t, t0)
+	s := w.Signer()
+	ep, err := w.Net.Bind(s.ActorID(), "parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := actor.New(s, ep)
+	p.Clock = w.Clock.Now
+	sp := spawn.New(p)
+	sp.Postage = postage.Require(8)
+	sp.Window = 10 * 60
+	drv := newFakeDriver(w, p.ID())
+	sp.Provisioner = drv.a.ID()
+	w.Start(drv.a)
+	// The first process: Listen under a ctx the test owns, so it can die.
+	ctx1, die := context.WithCancel(w.Ctx)
+	done := make(chan error, 1)
+	go func() { done <- p.Listen(ctx1) }()
+	if _, err := p.PublishLocation(actortest.LocationTTL); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.UpdateLocation(drv.a.ID(), drv.a.CurrentLocation()); err != nil {
+		t.Fatal(err)
+	}
+	pr, err := sp.Spawn(w.Ctx, spawn.Spec{Image: image})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := drv.wait(t)
+	if h.err != nil {
+		t.Fatal(h.err)
+	}
+	bctx, cancel := context.WithTimeout(w.Ctx, 5*time.Second)
+	b, err := pr.Wait(bctx)
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := sp.Children()
+	consents, _ := p.Authority()
+	if len(snap) != 1 || snap[0].ID != b.ID || snap[0].Lease != b.Lease || snap[0].Until != t0+sp.Window {
+		t.Fatalf("Children %+v, want the one born child with until %d", snap, t0+sp.Window)
+	}
+	renew := h.kit.Grants[0][0]
+
+	// The process dies; half the window passes.
+	die()
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	ep.Close()
+	w.Clock.Advance(sp.Window / 2)
+	now := w.Clock.Now()
+
+	// The second process: same key, same name, empty tables.
+	ep2, err := w.Net.Bind(s.ActorID(), "parent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2 := actor.New(s, ep2)
+	p2.Clock = w.Clock.Now
+	// A restarted process must not replay seqs its counterparties have
+	// seen (ADR-0006): the binaries seed from the clock (boot.Actor).
+	p2.SeqBase = w.Clock.Now
+	sp2 := spawn.New(p2)
+	sp2.Provisioner = drv.a.ID()
+	if _, _, ok := sp2.Child(b.ID); ok {
+		t.Fatal("test premise: a fresh spawner knows no child")
+	}
+	sp2.Adopt(snap)
+	p2.EditConsents(func(cs []cert.Cert) []cert.Cert { return append(cs, consents...) })
+	sp2.Adopt([]spawn.Adopted{{ID: b.ID, Lease: b.Lease, Until: now + 1}}) // older: ignored
+	sp2.Adopt([]spawn.Adopted{{ID: "", Lease: b.Lease, Until: now + 99}})  // junk: ignored
+	w.Start(p2)
+	if err := p2.UpdateLocation(drv.a.ID(), drv.a.CurrentLocation()); err != nil {
+		t.Fatal(err)
+	}
+	sp2.Sweep()
+	if _, until, ok := sp2.Child(b.ID); !ok || until != snap[0].Until {
+		t.Fatalf("adopted child: ok=%v until=%d, want %d", ok, until, snap[0].Until)
+	}
+
+	// The child's beat: #renew on the kit cert the OLD process signed.
+	w.Clock.Advance(5)
+	payload, _ := actor.EncodeRenewRequest([]cert.Cert{renew}, nil)
+	rep, err := h.a.Send(w.Ctx, p2.ID(), actor.FacetRenew, payload)
+	if err != nil {
+		t.Fatalf("child renew at the restarted parent: %v", err)
+	}
+	fresh, errs, err := actor.DecodeRenewResponse(rep.Payload)
+	if err != nil || errs[0] != nil {
+		t.Fatalf("renew result: %v %v", err, errs)
+	}
+	if l, _ := drv.p.Lease(b.Lease.ID); l.Until != fresh[0].Exp {
+		t.Fatalf("lease until %d after the restarted parent's renew, want fresh.exp %d", l.Until, fresh[0].Exp)
+	}
+	if ext, _ := drv.seen(); len(ext) != 1 || ext[0] != fresh[0].Exp {
+		t.Fatalf("driver extends %v, want [%d]", ext, fresh[0].Exp)
+	}
+	if _, until, _ := sp2.Child(b.ID); until != fresh[0].Exp {
+		t.Fatalf("born table until %d, want %d", until, fresh[0].Exp)
+	}
+}
