@@ -1,0 +1,79 @@
+{{template "head.html" .}}
+<header>
+  <h1><a href="/">agents</a> / tasks</h1>
+  <nav class="projects">
+    {{range .Projects}}<a href="/tasks?project={{.ID}}" {{if eq .ID $.Project.ID}}class="current"{{end}}>{{.Name}}</a>{{end}}
+  </nav>
+  <span class="me" title="{{.Me.Wallet}}">{{.Me.Username}}</span>
+  <form method="post" action="/logout"><button class="link">log out</button></form>
+</header>
+<main>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+
+<details class="new" {{if not .Projects}}open{{end}}>
+  <summary>new project</summary>
+  <form method="post" action="/projects">
+    <div class="row">
+      <input name="name" placeholder="name" required>
+      <input name="id" placeholder="id (default: from the name)">
+    </div>
+    <textarea name="goals" rows="4" placeholder="goals, one per line: id: what this project is for"></textarea>
+    <button type="submit">create</button>
+  </form>
+</details>
+
+{{if .Project.ID}}
+<section class="project">
+  <h2>{{.Project.Name}} <span class="muted mono">{{.Project.ID}} · flow {{.Project.Flow}} v{{.Project.FlowVersion}}</span></h2>
+  <details class="goals">
+    <summary>goals ({{len .Goals}})</summary>
+    <form method="post" action="/p/{{.Project.ID}}/goals">
+      <textarea name="goals" rows="5">{{range .Goals}}{{.ID}}: {{.Text}}
+{{end}}</textarea>
+      <button type="submit">save goals</button>
+    </form>
+  </details>
+
+  <details class="new" open>
+    <summary>new task</summary>
+    <form method="post" action="/tasks">
+      <input type="hidden" name="project" value="{{.Project.ID}}">
+      <input name="title" placeholder="title" required>
+      <textarea name="description" rows="3" placeholder="what and why, as much as you know"></textarea>
+      <div class="row">
+        <select name="goal"><option value="">goal (the framer picks one if unset)</option>{{range .Goals}}<option value="{{.ID}}">{{.ID}}: {{.Text}}</option>{{end}}</select>
+      </div>
+      <div class="row">
+        <input name="repo" placeholder="repo (owner/name on git.gw, optional)">
+        <input name="ref" placeholder="ref (default branch)">
+      </div>
+      <label><input type="checkbox" name="start" value="1" checked> start right away (skip {{.Flow.Initial}})</label>
+      <button type="submit">file</button>
+    </form>
+  </details>
+
+  <div class="board">
+  {{range $state := .States}}
+    {{$st := index $.Flow.States $state}}
+    <section class="column drv-{{$st.Driver}}">
+      <h3>{{$state}} <span class="badge {{$st.Driver}}">{{$st.Driver}}</span></h3>
+      {{if $st.Doc}}<p class="muted small">{{$st.Doc}}</p>{{end}}
+      <ul>
+      {{range index $.ByState $state}}
+        <li><a href="/t/{{.ID}}">{{.Title}}</a>
+          {{if .Repo}}<span class="mono small">{{.Repo}}</span>{{end}}
+          <span class="muted small">{{ago .Updated}}</span>
+          {{if .Session}}<span class="badge running">live</span>{{end}}
+          {{if .Retries}}<span class="badge failed">retry {{.Retries}}</span>{{end}}
+        </li>
+      {{else}}<li class="muted small">—</li>{{end}}
+      </ul>
+    </section>
+  {{end}}
+  </div>
+</section>
+{{else}}
+<p class="muted">no projects yet — make one above.</p>
+{{end}}
+</main>
+</body></html>

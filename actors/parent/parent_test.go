@@ -92,7 +92,7 @@ func fakeMain() {
 					continue
 				}
 				emit(`{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"hi"}}`)
-				emit(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"the zebra crossed"}]}}`)
+				emit(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":` + jsonString(fakeAnswer(cmd.Message)) + `}]}}`)
 				emit(`{"type":"turn_end"}`)
 				emit(`{"type":"agent_end","messages":[],"willRetry":false}`)
 				emit(`{"type":"agent_settled"}`)
@@ -118,6 +118,23 @@ func fakeMain() {
 	os.Exit(0)
 }
 
+// fakeAnswer is the fake's last word: "the zebra crossed", or — when
+// the prompt carries a `fake:to=<state>` or `fake:children=<state>`
+// marker (a test flow's persona) — that plus a transition block to the
+// state, the latter with two children.
+func fakeAnswer(prompt string) string {
+	const zebra = "the zebra crossed"
+	if i := strings.Index(prompt, "fake:to="); i >= 0 {
+		to := strings.Fields(prompt[i+len("fake:to="):])[0]
+		return zebra + "\n```transition\n{\"to\":\"" + to + "\",\"note\":\"fake moved on\",\"artifact\":{\"ok\":true},\"set\":{\"why\":\"because the fake said so\"}}\n```"
+	}
+	if i := strings.Index(prompt, "fake:children="); i >= 0 {
+		to := strings.Fields(prompt[i+len("fake:children="):])[0]
+		return zebra + "\n```transition\n{\"to\":\"" + to + "\",\"note\":\"split\",\"children\":[{\"title\":\"part a\"},{\"title\":\"part b\"}],\"followups\":[{\"title\":\"later\"}]}\n```"
+	}
+	return zebra
+}
+
 func jsonString(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
@@ -134,15 +151,16 @@ type rig struct {
 	clock  atomic.Int64
 	dir    string
 
-	signer cert.EdSigner
-	pa     *actor.Actor
-	sp     *spawn.Spawner
-	store  *parent.Store
-	p      *parent.Parent
-	ln     *facethttp.Listener
-	srv    *http.Server
-	pctx   context.Context
-	pstop  context.CancelFunc
+	signer  cert.EdSigner
+	pa      *actor.Actor
+	sp      *spawn.Spawner
+	store   *parent.Store
+	p       *parent.Parent
+	ln      *facethttp.Listener
+	srv     *http.Server
+	pctx    context.Context
+	pstop   context.CancelFunc
+	retries int
 
 	prov *actor.Actor
 	drv  *driver
@@ -195,7 +213,10 @@ func (d *driver) seen() (int, int) {
 	return len(d.exts), d.kills
 }
 
-func setup(t *testing.T, hang bool) *rig {
+func setup(t *testing.T, hang bool) *rig { return setupWith(t, hang, 0) }
+
+// setupWith is setup with the parent's Retries.
+func setupWith(t *testing.T, hang bool, retries int) *rig {
 	t.Helper()
 	t.Setenv("PARENT_FAKE_PI", "1")
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
@@ -205,7 +226,7 @@ func setup(t *testing.T, hang bool) *rig {
 		t.Setenv("PARENT_FAKE_HANG", "0")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &rig{t: t, ctx: ctx, cancel: cancel, net: actor.NewMemoryNetwork(), dir: t.TempDir()}
+	r := &rig{t: t, ctx: ctx, cancel: cancel, net: actor.NewMemoryNetwork(), dir: t.TempDir(), retries: retries}
 	t.Cleanup(cancel)
 	r.clock.Store(t0)
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -248,7 +269,7 @@ func (r *rig) up(t *testing.T) {
 	r.sp.Window = 10 * 60
 	r.sp.KitTTL = 20 * 60
 	r.sp.Provisioner = r.prov.ID()
-	r.p = parent.New(parent.Options{Actor: r.pa, Spawner: r.sp, Store: r.store, Image: image, Grace: 50 * time.Millisecond})
+	r.p = parent.New(parent.Options{Actor: r.pa, Spawner: r.sp, Store: r.store, Image: image, Grace: 50 * time.Millisecond, Retries: r.retries})
 	r.srv, r.ln = facethttp.Server(child.FacetAgentEvents, r.p.Handler())
 	go func() { _ = r.srv.Serve(r.ln) }()
 	r.pctx, r.pstop = context.WithCancel(r.ctx)
@@ -388,7 +409,7 @@ func TestSubmitRunsToSettled(t *testing.T) {
 	if got != want {
 		t.Fatalf("stream:\n got %s\nwant %s", got, want)
 	}
-	if x.Child == "" || x.Lease == "" || x.Task == "" || x.Events != len(evs) || x.Started == 0 || x.Settled == 0 {
+	if x.Child == "" || x.Lease == "" || x.Run == "" || x.Events != len(evs) || x.Started == 0 || x.Settled == 0 {
 		t.Fatalf("settled session %+v", x)
 	}
 	waitFor(t, "session file", func() bool { x, _ = r.store.Get(sess.ID); return x.File != "" })

@@ -72,19 +72,19 @@ func TestSessionLifecycle(t *testing.T) {
 	if x, err := s.ByChild("ed:child", false); err != nil || x.ID != "t1" {
 		t.Fatalf("settled session by child: %+v %v", x, err)
 	}
-	if err := s.SetTask("t1", "task-a"); err != nil {
+	if err := s.SetRun("t1", "task-a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetTask("t1", "task-a"); err != nil {
+	if err := s.SetRun("t1", "task-a"); err != nil {
 		t.Fatal("same task again refused")
 	}
-	if err := s.SetTask("t1", "task-b"); err == nil {
+	if err := s.SetRun("t1", "task-b"); err == nil {
 		t.Fatal("second task id accepted")
 	}
-	if x, err := s.ByTask("task-a"); err != nil || x.ID != "t1" {
+	if x, err := s.ByRun("task-a"); err != nil || x.ID != "t1" {
 		t.Fatalf("by task: %+v %v", x, err)
 	}
-	if _, err := s.ByTask(""); !errors.Is(err, ErrNotFound) {
+	if _, err := s.ByRun(""); !errors.Is(err, ErrNotFound) {
 		t.Fatal("empty task found something")
 	}
 	if _, err := s.Get("nope"); !errors.Is(err, ErrNotFound) {

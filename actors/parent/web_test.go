@@ -384,3 +384,100 @@ func TestWebEndToEnd(t *testing.T) {
 		t.Fatalf("after logout: %d", code)
 	}
 }
+
+// TestWebTasks: the task layer's API and pages behind the same gate —
+// a project with goals, a task filed and moved by its owner, the
+// task's view with its exits, and nothing of it for a stranger.
+func TestWebTasks(t *testing.T) {
+	r := setup(t, false)
+	r.listen(t)
+	is := newIssuer(t)
+	ui := r.web(t, is)
+	me := browser(t, is, ui, owner)
+	stranger := browser(t, is, ui, "0x3333333333333333333333333333333333333333")
+	admin := browser(t, is, ui, "0x4444444444444444444444444444444444444444|admins")
+
+	var flows []parent.Flow
+	if code := getJSON(t, me, ui.URL+"/api/flows", &flows); code != 200 || len(flows) != 1 || flows[0].ID != parent.DefaultFlowID {
+		t.Fatalf("flows: %d %+v", code, flows)
+	}
+	var pr parent.Project
+	if code := postJSON(t, me, ui.URL+"/api/projects", map[string]any{"name": "My Project", "goals": []parent.Goal{{ID: "g1", Text: "ship"}}}, &pr); code != 201 || pr.ID != "my-project" || pr.Owner != owner {
+		t.Fatalf("create project: %d %+v", code, pr)
+	}
+	pu := ui.URL + "/api/projects/" + pr.ID
+	if code := getJSON(t, stranger, pu, nil); code != 404 {
+		t.Fatalf("stranger project: %d", code)
+	}
+	var full struct {
+		parent.Project
+		Goals []parent.Goal `json:"goals"`
+	}
+	if code := getJSON(t, admin, pu, &full); code != 200 || len(full.Goals) != 1 {
+		t.Fatalf("admin project: %d %+v", code, full)
+	}
+
+	var tk parent.Task
+	if code := postJSON(t, me, ui.URL+"/api/tasks", map[string]any{"project": pr.ID, "title": "first", "goal": "g1", "why": "because"}, &tk); code != 201 || tk.State != "captured" {
+		t.Fatalf("create task: %d %+v", code, tk)
+	}
+	if code := postJSON(t, stranger, ui.URL+"/api/tasks", map[string]any{"project": pr.ID, "title": "no"}, nil); code != 404 {
+		t.Fatalf("stranger files: %d", code)
+	}
+	tu := ui.URL + "/api/tasks/" + tk.ID
+	var view struct {
+		parent.Task
+		Driver  string            `json:"driver"`
+		Next    []string          `json:"next"`
+		CanMove bool              `json:"can_move"`
+		Log     []parent.LogEntry `json:"log"`
+		Goal    string            `json:"goal_text"`
+	}
+	if code := getJSON(t, me, tu, &view); code != 200 || view.Driver != "human" || !view.CanMove || len(view.Next) != 2 || view.Goal != "ship" || len(view.Log) != 1 {
+		t.Fatalf("task view: %d %+v", code, view)
+	}
+	if code := getJSON(t, stranger, tu, nil); code != 404 {
+		t.Fatalf("stranger task: %d", code)
+	}
+	if code := postJSON(t, me, tu+"/transition", parent.Transition{To: "done"}, nil); code != 409 {
+		t.Fatalf("bad exit: %d", code)
+	}
+	if code := postJSON(t, me, tu+"/transition", parent.Transition{To: "rejected", Note: "not now"}, &tk); code != 200 || tk.State != "rejected" {
+		t.Fatalf("reject: %d %+v", code, tk)
+	}
+	var list []parent.Task
+	if code := getJSON(t, admin, ui.URL+"/api/tasks?project="+pr.ID, &list); code != 200 || len(list) != 1 {
+		t.Fatalf("admin tasks: %d %+v", code, list)
+	}
+	if getJSON(t, stranger, ui.URL+"/api/tasks", &list); len(list) != 0 {
+		t.Fatalf("stranger tasks: %+v", list)
+	}
+	// Pages render.
+	for _, u := range []string{"/tasks", "/tasks?project=" + pr.ID, "/t/" + tk.ID} {
+		resp, _ := me.Get(ui.URL + u)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 || !strings.Contains(string(body), "My Project") {
+			t.Fatalf("page %s: %d\n%s", u, resp.StatusCode, body)
+		}
+	}
+	if resp, _ := stranger.Get(ui.URL + "/t/" + tk.ID); resp.StatusCode != 404 {
+		t.Fatalf("stranger task page: %d", resp.StatusCode)
+	}
+	// The HTML form path files a task and starts it: the framer runs.
+	form := url.Values{"project": {pr.ID}, "title": {"from the form"}, "start": {"1"}}
+	req, _ := http.NewRequest(http.MethodPost, ui.URL+"/tasks", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", ui.URL)
+	me.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := me.Do(req)
+	if err != nil || resp.StatusCode != 303 || !strings.HasPrefix(resp.Header.Get("Location"), "/t/") {
+		t.Fatalf("form: %v %d %s", err, resp.StatusCode, resp.Header.Get("Location"))
+	}
+	id := strings.TrimPrefix(resp.Header.Get("Location"), "/t/")
+	x, err := r.store.Task(id)
+	if err != nil || x.State != "framed" {
+		t.Fatalf("form-filed task %+v %v", x, err)
+	}
+	waitFor(t, "framer session", func() bool { x, _ := r.store.Task(id); return x.Session != "" })
+}

@@ -16,8 +16,14 @@ actor** itself (`ivof.4`–`ivof.8`: `actors/parent` store + actor side +
 web, `cmd/parent`, `k8s/apps/sap-parent`; the child's upload became
 resumable on the way) — **live and confirmed** the same day, restart
 mid-run included.
-Next: `bsj` (backup) for real — the parent's store is the first state
-worth it; then real use decides what the UI lacks. Epic `ivof`. **Side effect:** the relay gate
+**2026-10-22: the task layer** (spike `y8m0`, ADR-0043 Proposed):
+tasks above sessions, a project's flow of persona-driven states
+(`agent|human|children`), one `transition` op, goals as the frame —
+built and tested, not deployed, not committed at the time of writing.
+Next: deploy it (PVC snapshot first: the schema migrates in place),
+run one real task through `framed`, then `bsj` (backup) — now
+blocking, since flows and goals are policy the store alone holds.
+Epic `ivof`. **Side effect:** the relay gate
 (`5gz`) is observe-only until sovereign actors have an admission
 story (spike `qx5c`). **Detour landed 2026-10-13:** root
 rotation (protocol ADR-0010, spike `aja2`; ADR-0011, `d0o0` wires
@@ -53,7 +59,8 @@ real work, and the first with a durable datastore of its own; it is
 the N=2 consumer the protocol needs. Budget stays the open gap until
 M5 (`0bc.5`).
 
-**Out of scope:** kagent/ax (decision `6d0u`); volumes on the lease
+**Out of scope:** migrating beads into the task layer (`hp79` first);
+per-project credentials; `tools[]` on `#task`; kagent/ax (decision `6d0u`); volumes on the lease
 (`264f`, until a spawned consumer); Forgejo deploy keys per child (the
 per-repo endgame); SSH to Forgejo; a terminal client of the parent's
 stream (after the web UI); NetworkPolicy for the sandbox; a second

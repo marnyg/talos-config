@@ -1261,3 +1261,13 @@
   `admins` device may publish to `alerts`, any pod may subscribe. The
   Android app must be on "instant delivery" (no Firebase upstream);
   if it refuses the meshtls user CA, subscribe at `http://ntfy.gw…`.
+- 2026-10-22 — **The parent's store migrates in place on first open of
+  the task-layer build**: `sessions.task` (the child's run id) is
+  renamed to `run` and a new `task` column added; `flows` seeds the
+  default flow. One-way. Snapshot the `sap-parent` PVC before rolling
+  the image while `bsj` is open. A fresh store gets both columns from
+  the schema and skips the ALTER.
+- 2026-10-22 — **A task's agent prompt is one `#task` prompt**: persona
+  text + frame + exit contract, rendered by `Flow.RenderPrompt`. To
+  read what a persona actually saw, open the session (`/s/<id>`) the
+  task's history links — the prompt is stored verbatim.

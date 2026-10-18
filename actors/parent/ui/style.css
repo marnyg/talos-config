@@ -48,3 +48,22 @@ details > summary { cursor: pointer; }
 .controls { position: sticky; bottom: 0; background: var(--bg); padding: .6rem 0; border-top: 1px solid var(--line); }
 .hit { outline: 2px solid var(--run); }
 .hits .snippet { color: var(--muted); }
+/* tasks */
+header nav.projects { display: flex; gap: .6rem; flex-wrap: wrap; flex: 1 1 auto; }
+header nav.projects a { color: var(--muted); text-decoration: none; }
+header nav.projects a.current { color: var(--fg); text-decoration: underline; }
+.small { font-size: .85em; }
+.badge.agent { color: var(--run); border-color: var(--run); }
+.badge.human { color: var(--ok); border-color: var(--ok); }
+.badge.children { color: var(--muted); }
+details.goals { margin: .5rem 0; }
+.board { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .6rem; margin-top: 1rem; }
+.column { border: 1px solid var(--line); border-radius: .4rem; padding: .4rem .6rem; }
+.column h3 { font-size: .95rem; margin: .2rem 0; }
+.column ul { list-style: none; padding: 0; margin: .3rem 0 0; }
+.column li { padding: .25rem 0; border-top: 1px solid var(--line); }
+.frame pre { white-space: pre-wrap; word-break: break-word; font: inherit; padding: .6rem .8rem; background: var(--user); border-radius: .5rem; }
+ol.log { padding-left: 1.2rem; }
+ol.log li { margin: .4rem 0; }
+ol.log p { margin: .2rem 0; }
+ol.log pre { white-space: pre-wrap; font-size: .85em; max-height: 20rem; overflow: auto; }

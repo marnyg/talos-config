@@ -1,0 +1,72 @@
+{{template "head.html" .}}
+<header>
+  <h1><a href="/">agents</a> / <a href="/tasks?project={{.T.Project.ID}}">{{.T.Project.Name}}</a> / <span class="mono">{{.T.ID}}</span></h1>
+  <span class="me" title="{{.Me.Wallet}}">{{.Me.Username}}</span>
+</header>
+<main>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+
+<section class="meta">
+  <span class="badge {{.T.Driver}}">{{.T.State}}</span>
+  {{if .T.Doc}}<span class="muted">{{.T.Doc}}</span>{{end}}
+  {{if .T.Repo}}<span class="mono">{{.T.Repo}}{{if .T.Ref}}@{{.T.Ref}}{{end}}</span>{{end}}
+  <span title="{{.T.Owner}}">by {{short .T.Owner}}</span>
+  <span>{{ago .T.Created}}</span>
+  {{if .T.Retries}}<span class="badge failed">retry {{.T.Retries}}</span>{{end}}
+  {{if .T.Session}}<a href="/s/{{.T.Session}}" class="badge running">live session</a>{{end}}
+</section>
+
+<section class="frame">
+  <h2>{{.T.Title}}</h2>
+  {{if .T.GoalText}}<p><b>Goal:</b> {{.T.GoalText}} <span class="muted mono">({{.T.Goal}})</span></p>{{else}}<p class="muted">not framed yet</p>{{end}}
+  {{if .T.Why}}<p><b>Because:</b> {{.T.Why}}</p>{{end}}
+  {{if .T.ParentT}}<p><b>Part of:</b> <a href="/t/{{.T.ParentT.ID}}">{{.T.ParentT.Title}}</a></p>{{end}}
+  {{if .T.Origin}}<p class="muted">follow-up of <a href="/t/{{.T.Origin}}" class="mono">{{.T.Origin}}</a></p>{{end}}
+  {{if .T.Description}}<pre>{{.T.Description}}</pre>{{end}}
+</section>
+
+{{if .T.CanMove}}
+<section class="controls">
+  <form method="post" action="/t/{{.T.ID}}/transition" class="row">
+    <select name="to" required>{{range .T.Next}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+    <input name="note" placeholder="note for the next step">
+    <button type="submit">move</button>
+  </form>
+</section>
+{{else if .T.Terminal}}
+<p class="muted">ended.</p>
+{{else if eq .T.Driver "children"}}
+<p class="muted">waiting for the children below.</p>
+{{else}}
+<p class="muted">an agent holds this state; abort its session to take over.</p>
+{{end}}
+
+{{if .T.Children}}
+<section>
+  <h3>children</h3>
+  <ul>{{range .T.Children}}<li><a href="/t/{{.ID}}">{{.Title}}</a> <span class="badge">{{.State}}</span>{{if .Repo}} <span class="mono small">{{.Repo}}</span>{{end}}</li>{{end}}</ul>
+</section>
+{{end}}
+
+<section>
+  <h3>history</h3>
+  <ol class="log">
+  {{range .T.Log}}
+    <li>
+      <span class="mono">{{if .From}}{{.From}} → {{end}}{{.To}}</span>
+      <span class="muted">by {{if .Session}}<a href="/s/{{.Session}}">{{short .By}}</a>{{else}}{{short .By}}{{end}} · {{ago .At}}</span>
+      {{if .Note}}<p>{{.Note}}</p>{{end}}
+      {{if .Artifact}}<details><summary>artifact</summary><pre>{{json .Artifact}}</pre></details>{{end}}
+    </li>
+  {{end}}
+  </ol>
+</section>
+
+{{if .T.Sessions}}
+<section>
+  <h3>sessions</h3>
+  <ul>{{range .T.Sessions}}<li><a href="/s/{{.ID}}" class="mono">{{.ID}}</a> <span class="badge {{.Status}}">{{.Status}}</span> <span class="muted">{{ago .Created}}</span>{{if .PR}} <a href="{{.PR}}">PR</a>{{end}}{{if .Reason}} <span class="muted">{{.Reason}}</span>{{end}}</li>{{end}}</ul>
+</section>
+{{end}}
+</main>
+</body></html>

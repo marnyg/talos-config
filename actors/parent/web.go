@@ -1,6 +1,7 @@
 package parent
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -43,6 +44,7 @@ func (w *Web) Handler() http.Handler {
 	w.tpl = template.Must(template.New("").Funcs(template.FuncMap{
 		"ago":   ago,
 		"short": shortWallet,
+		"json":  prettyJSON,
 	}).ParseFS(uiFS, "ui/*.html"))
 	static, _ := fs.Sub(uiFS, "ui")
 
@@ -83,6 +85,7 @@ func (w *Web) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/abort", w.api(w.withSession(RightSteer, w.apiAbort)))
 	mux.HandleFunc("POST /api/sessions/{id}/shares", w.api(w.withOwner(w.apiShare)))
 	mux.HandleFunc("DELETE /api/sessions/{id}/shares/{principal}", w.api(w.withOwner(w.apiUnshare)))
+	w.taskRoutes(mux)
 	return mux
 }
 
@@ -556,6 +559,14 @@ func ago(t int64) string {
 		return fmt.Sprintf("%dh ago", int(d.Hours()))
 	}
 	return time.Unix(t, 0).Format("2006-01-02")
+}
+
+func prettyJSON(raw json.RawMessage) string {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, raw, "", "  "); err != nil {
+		return string(raw)
+	}
+	return buf.String()
 }
 
 func shortWallet(s string) string {

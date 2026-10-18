@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,7 +38,11 @@ type Options struct {
 	// knock before its stale deadline sweeps it, and how long a settled
 	// child has to ship its session before its lease is killed; 0 ⇒ 2 min.
 	Grace time.Duration
-	Log   *slog.Logger
+	// Retries is how many more attempts a task's agent state gets after
+	// its first failed or empty-handed run before the task is parked for
+	// a person; 0 ⇒ two.
+	Retries int
+	Log     *slog.Logger
 }
 
 // Parent is the agent backend's actor side (ADR-0037): one actor that
@@ -49,25 +51,31 @@ type Options struct {
 // gate. Transport-free: the caller runs the actor's Listen and binds
 // the agent-events accept loop to Admit + Handler.
 type Parent struct {
-	a     *actor.Actor
-	sp    *spawn.Spawner
-	store *Store
-	image string
-	beat  time.Duration
-	grace time.Duration
-	log   *slog.Logger
+	a       *actor.Actor
+	sp      *spawn.Spawner
+	store   *Store
+	image   string
+	beat    time.Duration
+	grace   time.Duration
+	retries int
+	log     *slog.Logger
 
 	mu      sync.Mutex
 	retired map[cert.ActorID]time.Time // settled children awaiting Kill
+
+	tmu sync.Mutex // serialises task moves (engine.go)
 }
 
 // New builds the parent and installs its #renew gate: a child whose
 // session has ended is refused renewal, so a lease outlives its run
 // by at most the kit TTL even if Kill fails.
 func New(o Options) *Parent {
-	p := &Parent{a: o.Actor, sp: o.Spawner, store: o.Store, image: o.Image, beat: o.Beat, grace: o.Grace, log: o.Log, retired: make(map[cert.ActorID]time.Time)}
+	p := &Parent{a: o.Actor, sp: o.Spawner, store: o.Store, image: o.Image, beat: o.Beat, grace: o.Grace, retries: o.Retries, log: o.Log, retired: make(map[cert.ActorID]time.Time)}
 	if p.beat <= 0 {
 		p.beat = 30 * time.Second
+	}
+	if p.retries <= 0 {
+		p.retries = 2
 	}
 	if p.grace <= 0 {
 		p.grace = 2 * time.Minute
@@ -155,7 +163,9 @@ func (p *Parent) Beat(ctx context.Context) {
 	}
 	for _, id := range lost {
 		p.log.Info("parent: session lost: child lapsed", "session", id)
+		p.sessionEnded(ctx, id)
 	}
+	p.reconcileTasks(ctx)
 	// Retire: a born child with no live session is done; give it Grace
 	// from the moment we noticed (its session upload may be in flight),
 	// then #kill its lease.
@@ -207,18 +217,29 @@ func (p *Parent) kill(ctx context.Context, id cert.ActorID, why string) {
 // pending; its progress is its stream. Failures before the ack end it
 // failed with the reason.
 func (p *Parent) Submit(ctx context.Context, owner string, req child.TaskRequest) (Session, error) {
+	return p.submit(ctx, owner, req, "")
+}
+
+// submit is Submit with the task the session serves ("" for none):
+// bound before the run starts so the engine hears the session end.
+func (p *Parent) submit(ctx context.Context, owner string, req child.TaskRequest, task string) (Session, error) {
 	if req.Prompt == "" {
 		return Session{}, errors.New("parent: empty prompt")
 	}
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	id, err := newID()
+	if err != nil {
 		return Session{}, err
 	}
-	sess := Session{ID: hex.EncodeToString(b[:]), Owner: owner, Prompt: req.Prompt, Repo: req.Repo, Ref: req.Ref, Title: req.Title, Image: p.image}
+	sess := Session{ID: id, Owner: owner, Prompt: req.Prompt, Repo: req.Repo, Ref: req.Ref, Title: req.Title, Image: p.image}
 	if err := p.store.Create(sess); err != nil {
 		return Session{}, err
 	}
-	sess, err := p.store.Get(sess.ID)
+	if task != "" {
+		if err := p.store.Attach(task, sess.ID); err != nil {
+			return Session{}, err
+		}
+	}
+	sess, err = p.store.Get(sess.ID)
 	if err != nil {
 		return Session{}, err
 	}
@@ -240,6 +261,7 @@ func (p *Parent) run(ctx context.Context, sess Session, req child.TaskRequest) {
 		}
 		line, _ := json.Marshal(child.Settled{Type: child.TypeSettled, Status: StatusFailed, Reason: reason})
 		_, _ = p.store.Append(sess.ID, child.TypeSettled, "", line)
+		p.sessionEnded(ctx, sess.ID)
 	}
 	window := time.Duration(p.sp.Window) * time.Second
 	if window <= 0 {
@@ -291,10 +313,10 @@ func (p *Parent) run(ctx context.Context, sess Session, req child.TaskRequest) {
 		fail("#task ack", fmt.Errorf("%s", rep.Payload))
 		return
 	}
-	if err := p.store.SetTask(sess.ID, ack.Session); err != nil {
-		p.log.Warn("parent: task id", "session", sess.ID, "err", err)
+	if err := p.store.SetRun(sess.ID, ack.Session); err != nil {
+		p.log.Warn("parent: run id", "session", sess.ID, "err", err)
 	}
-	p.log.Info("parent: #task started", "session", sess.ID, "child", b.ID, "task", ack.Session)
+	p.log.Info("parent: #task started", "session", sess.ID, "child", b.ID, "run", ack.Session)
 }
 
 func (p *Parent) ping(ctx context.Context, id cert.ActorID) error {
@@ -378,6 +400,7 @@ func (p *Parent) lose(ctx context.Context, sess Session, from, reason string) er
 	}
 	p.log.Info("parent: session lost", "session", sess.ID, "child", sess.Child, "reason", reason, "by", from)
 	go p.kill(context.WithoutCancel(ctx), sess.Child, "session lost")
+	p.sessionEnded(context.WithoutCancel(ctx), sess.ID)
 	return nil
 }
 
@@ -469,7 +492,7 @@ func (p *Parent) Handler() http.Handler {
 			p.log.Warn("parent: events stream resumes past what is held", "session", sess.ID, "from", from, "have", have)
 			skip = 0
 		}
-		p.log.Info("parent: events stream open", "session", sess.ID, "child", peer, "task", sess.Task, "from", from, "skip", skip)
+		p.log.Info("parent: events stream open", "session", sess.ID, "child", peer, "run", sess.Run, "from", from, "skip", skip)
 		r := bufio.NewReader(req.Body)
 		n := 0
 		for {
@@ -511,22 +534,23 @@ func (p *Parent) Handler() http.Handler {
 	return mux
 }
 
-// sessionFor resolves the request's session: by the task id if known,
-// else the peer's live session (the stream can open before the #task
-// ack is read), recording the task id then. 403 on any mismatch.
+// sessionFor resolves the request's session: by the child's run id
+// if known, else the peer's live session (the stream can open before
+// the #task ack is read), recording the run id then. 403 on any
+// mismatch.
 func (p *Parent) sessionFor(w http.ResponseWriter, req *http.Request) (Session, cert.ActorID, bool) {
-	task := req.PathValue("task")
+	run := req.PathValue("task")
 	peer, ok := facethttp.PeerFrom(req.Context())
-	if !ok || !ValidID(task) {
+	if !ok || !ValidID(run) {
 		http.Error(w, "not a child", http.StatusForbidden)
 		return Session{}, "", false
 	}
-	sess, err := p.store.ByTask(task)
+	sess, err := p.store.ByRun(run)
 	if errors.Is(err, ErrNotFound) {
 		sess, err = p.store.ByChild(peer, true)
 		if err == nil {
-			err = p.store.SetTask(sess.ID, task)
-			sess.Task = task
+			err = p.store.SetRun(sess.ID, run)
+			sess.Run = run
 		}
 	}
 	if err != nil || sess.Child != peer {
@@ -567,4 +591,5 @@ func (p *Parent) ingest(id string, line []byte) {
 		return
 	}
 	p.log.Info("parent: session settled", "session", id, "status", status, "events", st.Events, "pr", st.PR)
+	p.sessionEnded(context.Background(), id)
 }

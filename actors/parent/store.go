@@ -71,9 +71,12 @@ type Session struct {
 	Status string       `json:"status"`
 	Child  cert.ActorID `json:"child,omitempty"`
 	Lease  string       `json:"lease,omitempty"`
-	// Task is the id the child minted for the run (#task's ack; the
+	// Run is the id the child minted for the run (#task's ack; the
 	// stream's path) — set when the ack lands or the stream opens,
 	// whichever is first.
+	Run string `json:"run,omitempty"`
+	// Task is the flow task this session serves (one attempt at an
+	// agent state), "" for a session submitted directly.
 	Task    string `json:"task,omitempty"`
 	Created int64  `json:"created"`
 	Started int64  `json:"started,omitempty"`
@@ -192,6 +195,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	status   TEXT NOT NULL,
 	child    TEXT NOT NULL DEFAULT '',
 	lease    TEXT NOT NULL DEFAULT '',
+	run      TEXT NOT NULL DEFAULT '',
 	task     TEXT NOT NULL DEFAULT '',
 	created  INTEGER NOT NULL,
 	started  INTEGER NOT NULL DEFAULT 0,
@@ -205,7 +209,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS sessions_owner ON sessions(owner, created DESC);
 CREATE INDEX IF NOT EXISTS sessions_child ON sessions(child);
-CREATE INDEX IF NOT EXISTS sessions_task ON sessions(task);
 CREATE TABLE IF NOT EXISTS events (
 	session  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
 	seq      INTEGER NOT NULL,
@@ -238,8 +241,16 @@ CREATE TABLE IF NOT EXISTS consents (
 `
 
 func (s *Store) migrate() error {
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	if err := s.migrateSessions(); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(taskSchema); err != nil {
+		return err
+	}
+	return s.PutFlow(DefaultFlow())
 }
 
 // ---- sessions ---------------------------------------------------------------
@@ -268,12 +279,12 @@ func (s *Store) Create(sess Session) error {
 	return err
 }
 
-const sessionCols = `id, owner, prompt, repo, ref, title, image, status, child, lease, task, created, started, settled, events, reason, branch, head, pr, file`
+const sessionCols = `id, owner, prompt, repo, ref, title, image, status, child, lease, run, task, created, started, settled, events, reason, branch, head, pr, file`
 
 func scanSession(r interface{ Scan(...any) error }) (Session, error) {
 	var x Session
 	var child string
-	err := r.Scan(&x.ID, &x.Owner, &x.Prompt, &x.Repo, &x.Ref, &x.Title, &x.Image, &x.Status, &child, &x.Lease, &x.Task,
+	err := r.Scan(&x.ID, &x.Owner, &x.Prompt, &x.Repo, &x.Ref, &x.Title, &x.Image, &x.Status, &child, &x.Lease, &x.Run, &x.Task,
 		&x.Created, &x.Started, &x.Settled, &x.Events, &x.Reason, &x.Branch, &x.Head, &x.PR, &x.File)
 	x.Child = cert.ActorID(child)
 	return x, err
@@ -304,32 +315,32 @@ func (s *Store) ByChild(child cert.ActorID, live bool) (Session, error) {
 	return x, err
 }
 
-// ByTask returns the session the child's task id names.
-func (s *Store) ByTask(task string) (Session, error) {
-	if task == "" {
+// ByRun returns the session the child's run id names.
+func (s *Store) ByRun(run string) (Session, error) {
+	if run == "" {
 		return Session{}, ErrNotFound
 	}
-	x, err := scanSession(s.db.QueryRow(`SELECT `+sessionCols+` FROM sessions WHERE task = ? LIMIT 1`, task))
+	x, err := scanSession(s.db.QueryRow(`SELECT `+sessionCols+` FROM sessions WHERE run = ? LIMIT 1`, run))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrNotFound
 	}
 	return x, err
 }
 
-// SetTask records the child's task id on the session (first writer
+// SetRun records the child's run id on the session (first writer
 // wins; a later different id is an error).
-func (s *Store) SetTask(id, task string) error {
+func (s *Store) SetRun(id, run string) error {
 	x, err := s.Get(id)
 	if err != nil {
 		return err
 	}
-	switch x.Task {
-	case task:
+	switch x.Run {
+	case run:
 		return nil
 	case "":
-		return s.exec1(`UPDATE sessions SET task = ? WHERE id = ? AND task = ''`, task, id)
+		return s.exec1(`UPDATE sessions SET run = ? WHERE id = ? AND run = ''`, run, id)
 	}
-	return fmt.Errorf("parent: session %s runs task %s, not %s", id, x.Task, task)
+	return fmt.Errorf("parent: session %s runs %s, not %s", id, x.Run, run)
 }
 
 // Started moves a pending session to running on the born child.
