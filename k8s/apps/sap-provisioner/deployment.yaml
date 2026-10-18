@@ -123,7 +123,7 @@ spec:
             - -runtime-class=kata
             # The agent child image (k8s/apps/sandbox/build.sh), by the
             # digest the parent names in #spawn (-image).
-            - -outfit=ghcr.io/marnyg/sandbox-agent@sha256:3d96168451a5758ecf87fa77e09b0d782915e508f7015ac1f7952f3d1280699a=openrouter,forgejo-agent
+            - -outfit=ghcr.io/marnyg/sandbox-agent@sha256:51840a569d8e1c7d050b4b1b6cc908bada17e040083791706d060ad084600455=openrouter,forgejo-agent
             # The laptop parent of the acceptance run (spawn -print-id).
             - -customer=ed:79547a961cf58b525d4a65c32dca8db46c5aa568526f56911433f7410dcd769b
             # The sap-lighthouse (k8s/apps/sap-lighthouse); this id is
