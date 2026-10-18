@@ -292,7 +292,11 @@ module authorize {
   pure val PIN_TRIVIAL2 = { id: OWNER2, root: OWNER2, dead: false }
   pure val PIN_ROTATED  = { id: OWNER1, root: OWNER1_NEW, dead: false }  // OWNER1 rotated to OWNER1_NEW
   pure val PIN_DEAD     = { id: OWNER1, root: OWNER1_NEW, dead: true }   // equivocation at R: OWNER1 is dead
-  pure val PIN1_DRAWS = Set(Set(), Set(PIN_TRIVIAL1), Set(PIN_ROTATED), Set(PIN_DEAD))
+  // `gen`'s draws. PIN_DEAD and a caller-carried PIN_ROTATED are NOT here:
+  // `genNear` reaches them through its FPinDead / FPinInBundleOnly faults
+  // (mutants p3, p4 die there); dropping them from `gen` halves its pin
+  // space and trims depth-2 verify a little (see check.sh's Depths).
+  pure val PIN1_DRAWS = Set(Set(), Set(PIN_TRIVIAL1), Set(PIN_ROTATED))
   pure val PIN2_DRAWS = Set(Set(), Set(PIN_TRIVIAL2))
   pure val PINS_TRIVIAL = Set(PIN_TRIVIAL1, PIN_TRIVIAL2)               // the hub's shape today
   pure def pinAdmits(p: Pin, k: int): bool = not(p.dead) and p.root == k   // rotation.qnt `admits`, on the view
@@ -1000,11 +1004,15 @@ module authorize {
     nondet hExp = EXPS.oneOf()
     nondet hForged = Bool.oneOf()
     nondet hCount = Set(0, 1).oneOf()
-    // the pins R holds: for OWNER1 none / trivial / rotated / dead, for
-    // OWNER2 none / trivial; and a "pin" the caller carries (must widen nothing)
+    // the pins R holds: for OWNER1 none / trivial / rotated, for OWNER2
+    // none / trivial. The dead pin and the caller-carried "pin" (which must
+    // widen nothing) are genNear's job (FPinDead, FPinInBundleOnly): each is
+    // a single boundary, not a dimension, and leaving them out of `gen`
+    // halves the pin space the depth-2 verify has to enumerate (xrfm;
+    // ~7% faster — the budget is the 6 min check.sh's Depths states).
     nondet pin1 = PIN1_DRAWS.oneOf()
     nondet pin2 = PIN2_DRAWS.oneOf()
-    nondet bpins = Set(Set(), Set(PIN_ROTATED)).oneOf()
+    val bpins: Set[Pin] = Set()
     nondet attI = Set(0, 1).oneOf()
     // one attenuation applied to g1 / chain link attI (or to every speak-as)
     nondet att = ATTS.oneOf()
