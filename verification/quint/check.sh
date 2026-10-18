@@ -54,14 +54,20 @@
 #
 # Depths: hub/approval verify at 12–15 steps; enroll's growing sets
 # verify at 8; authorize regenerates its whole scenario every step so
-# depth 2 is exhaustive (~333 s wall / 328 s solver for invAll with `res`
-# the PINNED receiver and the pin edge inside the laws, djdl — still OVER
-# the 5-minute budget; 349 s / 342 s with the bridge-law shape of d0o0,
-# 409 s before `resolve` lost its `if (pins == Set())` branch; the pre-pin
-# file measured 233 s wall / 184 s solver on the same machine, i.e. the
-# header's ~173 s was already optimistic. No single law is the hog: the
-# larger scenario (pins, bundlePins, OWNER1_NEW as a signer) and the pin
-# hop in every `authorize` encoding make every law a little slower.
+# depth 2 is exhaustive. Its budget is SIX minutes, not the five the
+# other models get: ~327 s wall / 322 s solver for invAll on an M4 Pro
+# (xrfm, 2026-10-21) after `gen` stopped drawing PIN_DEAD and a
+# caller-carried pin — both are single boundaries genNear's FPinDead /
+# FPinInBundleOnly faults already reach, and the mutants p3/p4 that guard
+# them still die (run tier) — down from 350 s / 338 s on the same machine
+# with the full draws, i.e. the model lever bought ~7%, not the 50 s
+# needed. History: ~333 s / 328 s with `res` the PINNED receiver and the
+# pin edge inside the laws, djdl; 349 s / 342 s with the bridge-law shape
+# of d0o0; 409 s before `resolve` lost its `if (pins == Set())` branch;
+# the pre-pin file measured 233 s wall / 184 s solver, i.e. the header's
+# ~173 s was already optimistic. No single law is the hog: the larger
+# scenario (pins, OWNER1_NEW as a signer) and the pin hop in every
+# `authorize` encoding make every law a little slower.
 # invTrivialPinsPreserveVerdicts, a biconditional over two full
 # `authorize` encodings with no concrete hypothesis, verifies on its own
 # line, ~61 s solver / ~73 s wall (~85 s / ~100 s under d0o0); ~173 s with the ADR-0004 wildcard
