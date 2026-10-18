@@ -164,38 +164,6 @@ spec:
                 port:
                   number: 9091
 ---
-# Jackett was the first service migrated to the identity plane (Mesh v3
-# P2.3, talos-config-359.9.3); the caller's device identity arrives
-# verified in X-Mesh-* and, signed, in X-Mesh-Token — the latter is
-# what the group gate decides on. Its nebula name jackett.cp1 is cut
-# (decision d3z3: a migrated consumer loses its nebula path).
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: jackett
-  namespace: media
-  annotations:
-    gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: Jackett
-    gethomepage.dev/group: Downloads
-    gethomepage.dev/icon: jackett.png
-    gethomepage.dev/description: torrent indexers
-    gethomepage.dev/pod-selector: app=jackett
-    gethomepage.dev/weight: "50"
-spec:
-  ingressClassName: nginx
-  rules:
-    - host: jackett.gw.mesh.internal
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: jackett
-                port:
-                  number: 9117
----
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

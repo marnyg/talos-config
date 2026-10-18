@@ -38,8 +38,8 @@ data:
     set -e
 
     SONARR_URL="http://localhost:8989"
-    # JACKETT_API_KEY, JACKETT_INDEXERS, NZBGEEK_API_KEY come from the env
-    # (jackett sealed secret, jackett-config, nzbgeek sealed secret).
+    # NZBGEEK_API_KEY and PROWLARR_API_KEY come from the env (nzbgeek and
+    # prowlarr sealed secrets).
 
     echo "Waiting for Sonarr to start..."
     until curl -sf "$SONARR_URL/ping" > /dev/null 2>&1; do
@@ -79,9 +79,6 @@ data:
 
     echo "Waiting for Transmission..."
     until curl -sf "http://transmission:9091/transmission/web/" > /dev/null 2>&1; do sleep 5; done
-
-    echo "Waiting for Jackett..."
-    until curl -sf "http://jackett:9117" > /dev/null 2>&1; do sleep 5; done
 
     # Add root folder /tv
     existing=$(curl -sf -H "$AUTH" "$SONARR_URL/api/v3/rootfolder")
@@ -131,67 +128,27 @@ data:
       }' "$SONARR_URL/api/v3/downloadclient" || echo "WARN: Transmission client failed"
     fi
 
-    # Jackett indexers (Torznab), one entry per Jackett indexer: Sonarr
-    # refuses Jackett's /all aggregate. The id list comes from jackett-config
-    # (JACKETT_INDEXERS) so Jackett and Sonarr agree on one set. The
-    # configurator owns these entries: an existing one is PUT back (so a
-    # rotated key in the jackett secret propagates into the persisted DB), a
-    # missing one is POSTed. Sonarr validates both with a live tvsearch,
-    # which needs categories and a Jackett that has finished enabling the
-    # indexer — so retry a while. The id is the last top-level key of each
-    # object in Sonarr's pretty-printed list; nested names sit deeper.
+    # Torrent indexers are not added here: Prowlarr (k8s/apps/prowlarr)
+    # holds them and pushes one entry per indexer into Sonarr through the
+    # application registered below. Jackett and its per-id Torznab loop
+    # retired 2026-10-21 (talos-config-6t21).
+    #
+    # NZBgeek indexer (Newznab/usenet), the one indexer this configurator
+    # still owns: an existing one is PUT back so the categories and a
+    # rotated key in the secret reach the persisted DB; a missing one is
+    # POSTed. The id is the last top-level key of each object in Sonarr's
+    # pretty-printed list; nested names sit deeper.
     #
     # Categories: Sonarr picks `categories` or `animeCategories` by the
     # series type. 5070 (TV/Anime) sits in both because some trackers
     # (IPTorrents) file anime only under their Anime category — a show
-    # left as `standard` type got zero IPT results while Jackett's own UI
-    # found them (2026-10-10). animeStandardFormatSearch makes anime-type
-    # searches also ask for SxxExx, which is how those trackers title
-    # releases; absolute-number-only queries miss them.
+    # left as `standard` type got zero IPT results while the indexer's
+    # own search found them (2026-10-10). animeStandardFormatSearch makes
+    # anime-type searches also ask for SxxExx, which is how those
+    # trackers title releases; absolute-number-only queries miss them.
+    # The Prowlarr application below carries the same three settings for
+    # the pushed torrent entries.
     existing=$(curl -sf -H "$AUTH" "$SONARR_URL/api/v3/indexer")
-    for id in $JACKETT_INDEXERS; do
-      name="Jackett ($id)"
-      body='{
-        "enableRss": true,
-        "enableAutomaticSearch": true,
-        "enableInteractiveSearch": true,
-        "protocol": "torrent",
-        "priority": 25,
-        "name": "'"$name"'",
-        "implementation": "Torznab",
-        "configContract": "TorznabSettings",
-        "fields": [
-          {"name": "baseUrl", "value": "http://jackett:9117/api/v2.0/indexers/'"$id"'/results/torznab/"},
-          {"name": "apiPath", "value": "/api"},
-          {"name": "apiKey", "value": "'"$JACKETT_API_KEY"'"},
-          {"name": "categories", "value": [5030, 5040, 5070]},
-          {"name": "animeCategories", "value": [5070]},
-          {"name": "animeStandardFormatSearch", "value": true},
-          {"name": "minimumSeeders", "value": 1}
-        ]
-      }'
-      eid=$(printf '%s\n' "$existing" | awk -v n="$name" \
-        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
-      if [ -n "$eid" ]; then
-        echo "Refreshing $name indexer (id $eid)..."
-        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
-          -d "${body%\}}, \"id\": $eid}" "$SONARR_URL/api/v3/indexer/$eid" || echo "WARN: $name refresh failed"
-        continue
-      fi
-      echo "Adding $name indexer..."
-      n=0
-      until curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
-        -d "$body" "$SONARR_URL/api/v3/indexer"; do
-        n=$((n + 1))
-        if [ "$n" -ge 18 ]; then echo "WARN: $name indexer failed"; break; fi
-        sleep 10
-      done
-    done
-
-    # NZBgeek indexer (Newznab/usenet). Same owner semantics as the Jackett
-    # entries above: an existing one is PUT back so the categories and a
-    # rotated key in the secret reach the persisted DB; a missing one is
-    # POSTed.
     if [ -n "$NZBGEEK_API_KEY" ]; then
       name="NZBgeek"
       body='{
@@ -233,6 +190,13 @@ data:
     # volume means a new key), POST a missing one. Prowlarr validates the
     # POST against Sonarr live, and its own allowed-hosts restart may be
     # in flight, so retry a while. Optional: no secret, no pairing.
+    #
+    # syncCategories / animeSyncCategories / syncAnimeStandardFormatSearch
+    # become `categories` / `animeCategories` / `animeStandardFormatSearch`
+    # on every indexer Prowlarr pushes — the anime finding of 2026-10-10
+    # (see the NZBgeek comment above) now lives here, since the Torznab
+    # entries that carried it were Jackett's. minimumSeeders comes from
+    # Prowlarr's app profile (Standard: 1), as before.
     if [ -n "$PROWLARR_API_KEY" ]; then
       PROWLARR_URL="http://prowlarr:9696"
       PAUTH="X-Api-Key: $PROWLARR_API_KEY"

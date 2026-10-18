@@ -32,8 +32,8 @@ data:
     set -e
 
     RADARR_URL="http://localhost:7878"
-    # JACKETT_API_KEY, JACKETT_INDEXERS, NZBGEEK_API_KEY come from the env
-    # (jackett sealed secret, jackett-config, nzbgeek sealed secret).
+    # NZBGEEK_API_KEY and PROWLARR_API_KEY come from the env (nzbgeek and
+    # prowlarr sealed secrets).
 
     echo "Waiting for Radarr to start..."
     until curl -sf "$RADARR_URL/ping" > /dev/null 2>&1; do
@@ -73,9 +73,6 @@ data:
 
     echo "Waiting for Transmission..."
     until curl -sf "http://transmission:9091/transmission/web/" > /dev/null 2>&1; do sleep 5; done
-
-    echo "Waiting for Jackett..."
-    until curl -sf "http://jackett:9117" > /dev/null 2>&1; do sleep 5; done
 
     # Add root folder /movies
     existing=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/rootfolder")
@@ -125,54 +122,13 @@ data:
       }' "$RADARR_URL/api/v3/downloadclient" || echo "WARN: Transmission client failed"
     fi
 
-    # Jackett indexers (Torznab), one entry per Jackett indexer: Radarr
-    # refuses Jackett's /all aggregate. The id list comes from jackett-config
-    # (JACKETT_INDEXERS) so Jackett and Radarr agree on one set. The
-    # configurator owns these entries: an existing one is PUT back (so a
-    # rotated key in the jackett secret propagates into the persisted DB), a
-    # missing one is POSTed. Radarr validates both with a live movie search,
-    # which needs categories and a Jackett that has finished enabling the
-    # indexer — so retry a while. The id is the last top-level key of each
-    # object in Radarr's pretty-printed list; nested names sit deeper.
-    existing=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/indexer")
-    for id in $JACKETT_INDEXERS; do
-      name="Jackett ($id)"
-      body='{
-        "enableRss": true,
-        "enableAutomaticSearch": true,
-        "enableInteractiveSearch": true,
-        "protocol": "torrent",
-        "priority": 25,
-        "name": "'"$name"'",
-        "implementation": "Torznab",
-        "configContract": "TorznabSettings",
-        "fields": [
-          {"name": "baseUrl", "value": "http://jackett:9117/api/v2.0/indexers/'"$id"'/results/torznab/"},
-          {"name": "apiPath", "value": "/api"},
-          {"name": "apiKey", "value": "'"$JACKETT_API_KEY"'"},
-          {"name": "categories", "value": [2000, 2010, 2020, 2030, 2040, 2045, 2050, 2060]},
-          {"name": "minimumSeeders", "value": 1}
-        ]
-      }'
-      eid=$(printf '%s\n' "$existing" | awk -v n="$name" \
-        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
-      if [ -n "$eid" ]; then
-        echo "Refreshing $name indexer (id $eid)..."
-        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
-          -d "${body%\}}, \"id\": $eid}" "$RADARR_URL/api/v3/indexer/$eid" || echo "WARN: $name refresh failed"
-        continue
-      fi
-      echo "Adding $name indexer..."
-      n=0
-      until curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
-        -d "$body" "$RADARR_URL/api/v3/indexer"; do
-        n=$((n + 1))
-        if [ "$n" -ge 18 ]; then echo "WARN: $name indexer failed"; break; fi
-        sleep 10
-      done
-    done
+    # Torrent indexers are not added here: Prowlarr (k8s/apps/prowlarr)
+    # holds them and pushes one entry per indexer into Radarr through the
+    # application registered below. Jackett and its per-id Torznab loop
+    # retired 2026-10-21 (talos-config-6t21).
 
     # Add NZBgeek indexer (Newznab/usenet)
+    existing=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/indexer")
     if [ -n "$NZBGEEK_API_KEY" ] && ! echo "$existing" | grep -q "NZBgeek"; then
       echo "Adding NZBgeek indexer..."
       curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
@@ -196,7 +152,10 @@ data:
 
     # Register with Prowlarr as an application; see sonarr/configmap.yaml
     # for the reasoning (the pairing is driven from this side because
-    # only this pod knows Radarr's key).
+    # only this pod knows Radarr's key). syncCategories become the
+    # `categories` of every indexer Prowlarr pushes (the movie set the
+    # Jackett Torznab entries carried until 2026-10-21); minimumSeeders
+    # comes from Prowlarr's app profile (Standard: 1), as before.
     if [ -n "$PROWLARR_API_KEY" ]; then
       PROWLARR_URL="http://prowlarr:9696"
       PAUTH="X-Api-Key: $PROWLARR_API_KEY"

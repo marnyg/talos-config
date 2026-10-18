@@ -132,16 +132,6 @@ spec:
                 secretKeyRef:
                   name: nzbgeek
                   key: apiKey
-            - name: JACKETT_INDEXERS
-              valueFrom:
-                configMapKeyRef:
-                  name: jackett-config
-                  key: indexers
-            - name: JACKETT_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: jackett
-                  key: apiKey
             # Prowlarr pairing (configure.sh); optional, see sonarr.
             - name: PROWLARR_API_KEY
               valueFrom:
