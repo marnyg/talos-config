@@ -1,5 +1,5 @@
 # KubeVirt deployment CR — virt-operator (operator.yaml) reads this and
-# rolls out virt-api / virt-controller / virt-handler. The runtime CRDs
+# rolls out virt-api / virt-controller / virt-exportproxy / virt-handler. The runtime CRDs
 # (VirtualMachine, VirtualMachineInstance, …) are created by the
 # operator, not vendored; the root app's SkipDryRunOnMissingResource
 # covers the window where this CR lands before its CRD.
