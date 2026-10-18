@@ -1,0 +1,37 @@
+# StorageProfile override for the default Longhorn class.
+#
+# CDI creates one StorageProfile per StorageClass (ownerRef: CDI) and
+# fills status from a hard-coded capability table. For
+# driver.longhorn.io that table is conservative — RWO/Block only,
+# cloneStrategy copy — and CDI's metric marks any default class that
+# lacks RWX *or* smart clone as degraded, which pages
+# CDIDefaultStorageClassDegraded (an OpenShift live-migration
+# expectation; operator_health_impact none). Longhorn supports both:
+#   - csi-clone: PVC dataSource of kind PVC through the CSI driver, so
+#     a DataVolume clone (a VM from a template disk) stops going through
+#     a copy pod;
+#   - RWX Filesystem via the share-manager (NFS). RWX Block would need
+#     `migratable: true` on the class, which this cluster does not set.
+# The spec is the documented override (CDI docs, "StorageProfile");
+# status stays CDI's. The first claimPropertySet is the one a
+# DataVolume gets when it names neither accessModes nor volumeMode —
+# kept at RWO/Block so the existing vms/ disks are unchanged.
+#
+# CRD arrives via cdi-operator after the CDI CR, hence the wave and
+# SkipDryRunOnMissingResource (see cluster.yaml).
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: longhorn
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  cloneStrategy: csi-clone
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Block
+    - accessModes: [ReadWriteMany]
+      volumeMode: Filesystem
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Filesystem
