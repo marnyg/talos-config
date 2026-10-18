@@ -56,7 +56,9 @@ const relayTokenEnv = "IROH_RELAY_HTTP_BEARER_TOKEN"
 // behaviour — for tests and for a hub without an identity plane.
 //
 // Admit answers one connect: ok, plus the mode /status shows
-// ("open (cold)", "gated (N members)"). The relay is not a facet and
+// ("open (cold)", "gated (N members)", or "observing (…)" when the
+// gate computes but does not enforce, see relayAdmitter.gate). The
+// relay is not a facet and
 // no grant reaches the hook (ruled 2026-09-18): admission is a
 // transport courtesy decided from the hub's safe-to-lose beat cache
 // and the git blocklist, never an authorization — a member refused
@@ -448,8 +450,9 @@ func (r *relaySupervisor) Close() {
 
 // statusLine is the /status row: state, restarts, last error, and the
 // access mode (5gz): "everyone" without a hook; with one, the mode
-// Admit last reported ("open (cold)" / "gated (N members)") plus the
-// admitted/denied counts since start.
+// Admit last reported ("open (cold)" / "gated (N members)" /
+// "observing (…)" for a non-enforcing gate) plus the admitted/denied
+// counts since start.
 func (r *relaySupervisor) statusLine() (line string, warn bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
