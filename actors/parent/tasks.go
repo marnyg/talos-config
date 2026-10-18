@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -122,7 +123,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS tasks_project ON tasks(project, updated DESC);
 CREATE INDEX IF NOT EXISTS tasks_parent ON tasks(parent);
 CREATE INDEX IF NOT EXISTS tasks_session ON tasks(session);
-CREATE INDEX IF NOT EXISTS tasks_state ON tasks(state);
+CREATE INDEX IF NOT EXISTS tasks_state ON tasks(flow, flow_version, state);
 CREATE TABLE IF NOT EXISTS task_log (
 	task       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
 	seq        INTEGER NOT NULL,
@@ -373,18 +374,44 @@ func (s *Store) Goals(project string) ([]Goal, error) {
 
 // ---- tasks ------------------------------------------------------------------
 
+// Filed is a task to insert with a transition (Move) or on its own
+// (InsertTask): the task, who filed it, and the note on its first
+// log line.
+type Filed struct {
+	Task Task
+	By   string
+	Note string
+}
+
 // InsertTask records a task in its given state, with its first log
 // line ("" → state by `by`). Flow and FlowVersion default to the
 // project's.
 func (s *Store) InsertTask(t Task, by, note string) (Task, error) {
-	if !ValidID(t.ID) || t.Project == "" || t.Owner == "" || strings.TrimSpace(t.Title) == "" || t.State == "" {
-		return t, errors.New("parent: task needs id, project, owner, title and state")
-	}
-	p, err := s.Project(t.Project)
+	tx, err := s.db.Begin()
 	if err != nil {
 		return t, err
 	}
+	defer tx.Rollback()
+	t, err = s.insertTask(tx, Filed{Task: t, By: by, Note: note})
+	if err != nil {
+		return t, err
+	}
+	return t, tx.Commit()
+}
+
+func (s *Store) insertTask(tx *sql.Tx, f Filed) (Task, error) {
+	t := f.Task
+	if !ValidID(t.ID) || t.Project == "" || t.Owner == "" || strings.TrimSpace(t.Title) == "" || t.State == "" {
+		return t, errors.New("parent: task needs id, project, owner, title and state")
+	}
 	if t.Flow == "" {
+		p, err := scanProject(tx.QueryRow(`SELECT `+projectCols+` FROM projects WHERE id = ?`, t.Project))
+		if errors.Is(err, sql.ErrNoRows) {
+			return t, ErrNoProject
+		}
+		if err != nil {
+			return t, err
+		}
 		t.Flow, t.FlowVersion = p.Flow, p.FlowVersion
 	}
 	t.Owner = strings.ToLower(t.Owner)
@@ -394,24 +421,19 @@ func (s *Store) InsertTask(t Task, by, note string) (Task, error) {
 		t.Created = now
 	}
 	t.Updated = now
-	tx, err := s.db.Begin()
-	if err != nil {
-		return t, err
-	}
-	defer tx.Rollback()
+	t.Retries, t.Error, t.Session = 0, "", ""
 	if _, err := tx.Exec(`INSERT INTO tasks (id, project, owner, title, description, goal, why, parent, origin, repo, ref, flow, flow_version, state, retries, error, session, created, updated)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', '', ?, ?)`,
 		t.ID, t.Project, t.Owner, t.Title, t.Description, t.Goal, t.Why, t.Parent, t.Origin, t.Repo, t.Ref, t.Flow, t.FlowVersion, t.State, t.Created, t.Updated); err != nil {
+		if strings.Contains(err.Error(), "FOREIGN KEY") {
+			return t, ErrNoProject
+		}
 		return t, err
 	}
 	if _, err := tx.Exec(`INSERT INTO task_log (task, seq, at, from_state, to_state, actor, note) VALUES (?, 1, ?, '', ?, ?, ?)`,
-		t.ID, now, t.State, by, note); err != nil {
+		t.ID, now, t.State, f.By, f.Note); err != nil {
 		return t, err
 	}
-	if err := tx.Commit(); err != nil {
-		return t, err
-	}
-	t.Retries, t.Session = 0, ""
 	return t, nil
 }
 
@@ -482,29 +504,51 @@ func (s *Store) Tasks(v Viewer, project string, limit int) ([]Task, error) {
 	return s.queryTasks(`WHERE `+where+` ORDER BY updated DESC LIMIT ?`, append(args, limit)...)
 }
 
-// TasksInStates lists every task whose flow state's driver is one of
-// the given drivers — what the beat reconciles. It walks the flows
-// once; a task on an unknown flow version is skipped.
+// TasksInStates lists every task sitting in a state match picks, by
+// walking the flows once and asking for those (flow, version, state)
+// triples — what the beat reconciles.
 func (s *Store) TasksInStates(match func(flow Flow, state string) bool) ([]Task, error) {
-	all, err := s.queryTasks(`ORDER BY updated`)
+	rows, err := s.db.Query(`SELECT doc FROM flows WHERE (id, version) IN (SELECT DISTINCT flow, flow_version FROM tasks)`)
 	if err != nil {
 		return nil, err
 	}
-	flows := map[string]Flow{}
+	var flows []Flow
+	for rows.Next() {
+		var doc []byte
+		if err := rows.Scan(&doc); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		var f Flow
+		if err := json.Unmarshal(doc, &f); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		flows = append(flows, f)
+	}
+	rows.Close()
 	var out []Task
-	for _, t := range all {
-		key := fmt.Sprintf("%s@%d", t.Flow, t.FlowVersion)
-		f, ok := flows[key]
-		if !ok {
-			f, err = s.Flow(t.Flow, t.FlowVersion)
-			if err != nil {
-				continue
+	for _, f := range flows {
+		var states []string
+		for name := range f.States {
+			if match(f, name) {
+				states = append(states, name)
 			}
-			flows[key] = f
 		}
-		if match(f, t.State) {
-			out = append(out, t)
+		if len(states) == 0 {
+			continue
 		}
+		sort.Strings(states)
+		marks := strings.TrimSuffix(strings.Repeat("?,", len(states)), ",")
+		args := []any{f.ID, f.Version}
+		for _, st := range states {
+			args = append(args, st)
+		}
+		ts, err := s.queryTasks(`WHERE flow = ? AND flow_version = ? AND state IN (`+marks+`) ORDER BY updated`, args...)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ts...)
 	}
 	return out, nil
 }
@@ -527,13 +571,15 @@ func (s *Store) CanTask(t Task, v Viewer) bool {
 
 // Move applies a transition: the task leaves its state for to, its
 // retries reset, its session cleared, the rewrite applied, the log
-// line appended. The task must still be in from (a concurrent move
-// loses).
-func (s *Store) Move(id, from, to, by, session string, tr Transition) (Task, error) {
+// line appended, and the tasks the transition files (children,
+// follow-ups) inserted — all in one transaction, so a crash leaves
+// either the whole move or none of it. The task must still be in from
+// (a concurrent move loses). Returns the moved task and the filed ones.
+func (s *Store) Move(id, from, to, by, session string, tr Transition, file ...Filed) (Task, []Task, error) {
 	now := time.Now().Unix()
 	tx, err := s.db.Begin()
 	if err != nil {
-		return Task{}, err
+		return Task{}, nil, err
 	}
 	defer tx.Rollback()
 	sets, args := []string{"state = ?", "retries = 0", "error = ''", "session = ''", "updated = ?"}, []any{to, now}
@@ -547,10 +593,10 @@ func (s *Store) Move(id, from, to, by, session string, tr Transition) (Task, err
 	}
 	res, err := tx.Exec(`UPDATE tasks SET `+strings.Join(sets, ", ")+` WHERE id = ? AND state = ?`, append(args, id, from)...)
 	if err != nil {
-		return Task{}, err
+		return Task{}, nil, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return Task{}, fmt.Errorf("parent: task %s is no longer in %s", id, from)
+		return Task{}, nil, fmt.Errorf("parent: task %s is no longer in %s", id, from)
 	}
 	var art []byte
 	if len(tr.Artifact) > 0 && string(tr.Artifact) != "null" {
@@ -559,13 +605,21 @@ func (s *Store) Move(id, from, to, by, session string, tr Transition) (Task, err
 	if _, err := tx.Exec(`INSERT INTO task_log (task, seq, at, from_state, to_state, actor, session, note, artifact)
 		VALUES (?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM task_log WHERE task = ?), ?, ?, ?, ?, ?, ?, ?)`,
 		id, id, now, from, to, by, session, strings.TrimSpace(tr.Note), art); err != nil {
-		return Task{}, err
+		return Task{}, nil, err
+	}
+	var filed []Task
+	for _, f := range file {
+		ft, err := s.insertTask(tx, f)
+		if err != nil {
+			return Task{}, nil, err
+		}
+		filed = append(filed, ft)
 	}
 	t, err := scanTask(tx.QueryRow(`SELECT `+taskCols+` FROM tasks WHERE id = ?`, id))
 	if err != nil {
-		return Task{}, err
+		return Task{}, nil, err
 	}
-	return t, tx.Commit()
+	return t, filed, tx.Commit()
 }
 
 // Attach binds a session to the task's current attempt; a session

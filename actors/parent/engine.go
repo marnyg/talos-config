@@ -58,18 +58,31 @@ func (p *Parent) CreateTask(ctx context.Context, owner, project string, spec Tas
 
 // file inserts one task; the caller holds tmu.
 func (p *Parent) file(owner string, pr Project, f Flow, spec TaskSpec, state, parent, origin, by, note string) (Task, error) {
-	id, err := newID()
+	fd, err := p.filed(owner, pr, f, spec, state, parent, origin, by, note)
 	if err != nil {
 		return Task{}, err
+	}
+	t, err := p.store.InsertTask(fd.Task, fd.By, fd.Note)
+	if err != nil {
+		return Task{}, err
+	}
+	p.logFiled(t, by)
+	return t, nil
+}
+
+// filed shapes one task to insert (an id minted here).
+func (p *Parent) filed(owner string, pr Project, f Flow, spec TaskSpec, state, parent, origin, by, note string) (Filed, error) {
+	id, err := newID()
+	if err != nil {
+		return Filed{}, err
 	}
 	t := Task{ID: id, Project: pr.ID, Owner: owner, Title: spec.Title, Description: spec.Description, Goal: spec.Goal, Why: spec.Why,
 		Parent: parent, Origin: origin, Repo: spec.Repo, Ref: spec.Ref, Flow: f.ID, FlowVersion: f.Version, State: state}
-	t, err = p.store.InsertTask(t, by, note)
-	if err != nil {
-		return Task{}, err
-	}
-	p.log.Info("parent: task filed", "task", t.ID, "project", pr.ID, "state", state, "by", by, "parent", parent, "origin", origin)
-	return t, nil
+	return Filed{Task: t, By: by, Note: note}, nil
+}
+
+func (p *Parent) logFiled(t Task, by string) {
+	p.log.Info("parent: task filed", "task", t.ID, "project", t.Project, "state", t.State, "by", by, "parent", t.Parent, "origin", t.Origin)
 }
 
 // Transition is a person asking: allowed in a human state, or in an
@@ -131,25 +144,44 @@ func (p *Parent) apply(ctx context.Context, t Task, f Flow, by, session string, 
 	if err != nil {
 		return Task{}, err
 	}
-	moved, err := p.store.Move(t.ID, t.State, tr.To, by, session, tr)
+	// Children and follow-ups are filed in the move's own transaction:
+	// a crash leaves the whole move or none of it. The goal and why
+	// are inherited by a child that names none; the title stays.
+	var file []Filed
+	for _, c := range tr.Children {
+		if c.Goal == "" {
+			c.Goal, c.Why = t.Goal, t.Why
+			if tr.Set != nil {
+				if tr.Set.Goal != nil {
+					c.Goal = *tr.Set.Goal
+				}
+				if tr.Set.Why != nil {
+					c.Why = *tr.Set.Why
+				}
+			}
+		}
+		fd, err := p.filed(t.Owner, pr, f, c, f.Leaf, t.ID, "", by, "carved out of "+t.Title)
+		if err != nil {
+			return Task{}, err
+		}
+		file = append(file, fd)
+	}
+	for _, c := range tr.Followups {
+		fd, err := p.filed(t.Owner, pr, f, c, f.Initial, "", t.ID, by, "follow-up of "+t.Title)
+		if err != nil {
+			return Task{}, err
+		}
+		file = append(file, fd)
+	}
+	moved, filed, err := p.store.Move(t.ID, t.State, tr.To, by, session, tr, file...)
 	if err != nil {
 		return Task{}, err
 	}
 	p.log.Info("parent: task moved", "task", t.ID, "from", t.State, "to", tr.To, "by", by, "note", tr.Note)
-	for _, c := range tr.Children {
-		if c.Goal == "" {
-			c.Goal, c.Why = moved.Goal, moved.Why
-		}
-		kid, err := p.file(moved.Owner, pr, f, c, f.Leaf, moved.ID, "", by, "carved out of "+moved.Title)
-		if err != nil {
-			p.log.Warn("parent: child task", "task", moved.ID, "err", err)
-			continue
-		}
-		p.enter(ctx, kid, f)
-	}
-	for _, c := range tr.Followups {
-		if _, err := p.file(moved.Owner, pr, f, c, f.Initial, "", moved.ID, by, "follow-up of "+moved.Title); err != nil {
-			p.log.Warn("parent: follow-up task", "task", moved.ID, "err", err)
+	for _, ft := range filed {
+		p.logFiled(ft, by)
+		if ft.Parent == moved.ID {
+			p.enter(ctx, ft, f)
 		}
 	}
 	p.enter(ctx, moved, f)

@@ -145,11 +145,11 @@ func TestStoreProjectsAndTasks(t *testing.T) {
 		t.Fatal("task ACL")
 	}
 	why := "because"
-	moved, err := s.Move("t1", "captured", "framed", "0xab", "", Transition{Note: "go", Artifact: []byte(`{"x":1}`), Set: &TaskSet{Why: &why, Title: strPtr("  ")}})
+	moved, _, err := s.Move("t1", "captured", "framed", "0xab", "", Transition{Note: "go", Artifact: []byte(`{"x":1}`), Set: &TaskSet{Why: &why, Title: strPtr("  ")}})
 	if err != nil || moved.State != "framed" || moved.Why != "because" || moved.Title != "T" {
 		t.Fatalf("move %+v %v", moved, err)
 	}
-	if _, err := s.Move("t1", "captured", "framed", "0xab", "", Transition{}); err == nil {
+	if _, _, err := s.Move("t1", "captured", "framed", "0xab", "", Transition{}); err == nil {
 		t.Fatal("moved from a state the task left")
 	}
 	if n, _ := s.Retry("t1", "boom"); n != 1 {

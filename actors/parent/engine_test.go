@@ -134,7 +134,7 @@ func TestTaskRetriesThenParks(t *testing.T) {
 		t.Fatal(err)
 	}
 	// captured has no exit to flaky: set the scene through the store.
-	if _, err := r.store.Move(tk.ID, "captured", "stuck", owner, "", parent.Transition{Note: "scene"}); err != nil {
+	if _, _, err := r.store.Move(tk.ID, "captured", "stuck", owner, "", parent.Transition{Note: "scene"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.p.Transition(r.pctx, tk.ID, owner, parent.Transition{To: "flaky"}); err != nil {
@@ -174,12 +174,7 @@ func TestTaskSplitsIntoChildren(t *testing.T) {
 	if _, err := r.p.Transition(r.pctx, tk.ID, owner, parent.Transition{To: "split"}); err != nil {
 		t.Fatal(err)
 	}
-	// The move lands before the children are filed (same lock, two
-	// writes): wait for both.
-	waitFor(t, "delegated", func() bool {
-		kids, _ := r.store.ChildTasks(tk.ID)
-		return r.taskState(tk.ID) == "delegated" && len(kids) == 2
-	})
+	waitFor(t, "delegated", func() bool { return r.taskState(tk.ID) == "delegated" })
 	kids, _ := r.store.ChildTasks(tk.ID)
 	if len(kids) != 2 || kids[0].Title != "part a" || kids[0].Goal != "g2" || kids[0].Why != "spans repos" || kids[0].Parent != tk.ID {
 		t.Fatalf("children %+v", kids)
@@ -266,7 +261,7 @@ func TestTaskReconcile(t *testing.T) {
 
 	// Moved but never spawned.
 	tk2, _ := r.p.CreateTask(r.pctx, owner, "p1", parent.TaskSpec{Title: "orphan"}, false)
-	if _, err := r.store.Move(tk2.ID, "captured", "work", owner, "", parent.Transition{}); err != nil {
+	if _, _, err := r.store.Move(tk2.ID, "captured", "work", owner, "", parent.Transition{}); err != nil {
 		t.Fatal(err)
 	}
 	r.p.Beat(r.pctx)
