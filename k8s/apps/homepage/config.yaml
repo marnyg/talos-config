@@ -34,11 +34,13 @@ data:
     disableUpdateCheck: true
     statusStyle: dot
     # Tabs/columns per group; groups are named in the Ingress
-    # annotations. Order here is display order.
+    # annotations. Order here is display order. Platform is 3 wide so
+    # the ntfy tile's widget (ntfy/ingress.yaml) has room for its
+    # fields; the rest are 4.
     layout:
       Platform:
         style: row
-        columns: 4
+        columns: 3
       Apps:
         style: row
         columns: 4

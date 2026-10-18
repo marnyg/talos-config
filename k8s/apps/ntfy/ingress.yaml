@@ -21,13 +21,16 @@ metadata:
     gethomepage.dev/href: https://ntfy.gw.mesh.internal
     gethomepage.dev/pod-selector: app=ntfy
     gethomepage.dev/weight: "35"
-    # Service widget: the latest page on the alerts topic (title,
-    # priority, when). Homepage's pod polls the Service directly —
-    # in-cluster, so no gate and no token, the same reachability trust
-    # the publishers have (deployment.yaml).
+    # Service widget: the latest page on the alerts topic. Homepage's
+    # pod polls the Service directly — in-cluster, so no gate and no
+    # token, the same reachability trust the publishers have
+    # (deployment.yaml). Without `message`, which is Alertmanager's
+    # markdown label dump; the tile width comes from the Platform
+    # layout in homepage/config.yaml.
     gethomepage.dev/widget.type: ntfy
     gethomepage.dev/widget.url: http://ntfy.ntfy.svc
     gethomepage.dev/widget.topic: alerts
+    gethomepage.dev/widget.fields: '["title", "priority", "lastReceived"]'
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
