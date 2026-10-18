@@ -24,8 +24,8 @@ data:
   config.yaml: |
     web:
       port: 8080
-    # Prometheus /metrics for kube-prometheus-stack (epic xhk3) — a
-    # ServiceMonitor is the only addition needed there.
+    # Prometheus /metrics for kube-prometheus-stack (epic xhk3); the
+    # ServiceMonitor is in deployment.yaml.
     metrics: true
     # In-memory results: Gatus holds the last 100 results and 50 events
     # per endpoint, which at 60 s is ~100 min of history, and loses them

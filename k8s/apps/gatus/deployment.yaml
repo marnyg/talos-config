@@ -83,9 +83,32 @@ kind: Service
 metadata:
   name: gatus
   namespace: gatus
+  labels:
+    app: gatus
 spec:
   selector:
     app: gatus
   ports:
-    - port: 8080
+    - name: http
+      port: 8080
       targetPort: 8080
+---
+# Exposing metrics = a ServiceMonitor next to the app (ADR-0041). Gatus
+# serves gatus_results_* on /metrics (config.yaml `metrics: true`):
+# the probe results as a time series, so an outage Gatus only keeps
+# ~100 min of in memory is in Prometheus for 15 d.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gatus
+  namespace: gatus
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  selector:
+    matchLabels:
+      app: gatus
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s

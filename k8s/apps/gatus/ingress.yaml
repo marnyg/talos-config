@@ -2,7 +2,8 @@
 # the *arr apps (k8s/apps/media/ingress.yaml explains the mechanism).
 # Admins only for now: the page is read-only (there is nothing to edit
 # — config is git) but it enumerates every service in the cluster.
-# Widening it to another group is a change to the group= query here.
+# Widening it to another group means naming one with this Ingress's
+# own auth-url (the controller's global-auth-url says `admins`).
 #
 # Plain request/response (the page polls), so no WebSocket timeouts.
 apiVersion: networking.k8s.io/v1

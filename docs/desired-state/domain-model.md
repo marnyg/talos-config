@@ -1037,6 +1037,28 @@ provisioning or recovery path may depend on it.
   a hung NFS mount, and ArgoCD reads `Healthy`. The hub's `/status`
   `storage` row watches robustness for that reason (`cnb5`,
   ADR-0027's dated note).
+- **Observability stack** — three watchers with three vantage points,
+  not one (ADR-0041, epic `xhk3`). **White-box**: Prometheus + Loki in
+  `monitoring`, what the cluster says about itself (metrics, logs,
+  Events), a data-plane tenant whose stores are a projection of a
+  re-derivable cluster — losing them loses history, not a capability;
+  everything that configures it (dashboards, datasources, rules,
+  routes) is git. **Black-box**: Gatus, "does the pod answer" by
+  HTTP/TCP from inside the cluster; its only cross-internet probe is
+  the hub's `/sealed`. **Absence**: the hub's `/status` `gitops` and
+  `storage` rows (ADR-0027), read from *outside* the failure domain —
+  the only vantage that can say the cluster has stopped. Grafana is
+  the UI for the first; the **group gate** is its whole login and
+  `X-Mesh-Name` only the username (the device is the principal, as
+  for ArgoCD).
+- **Page / notifier** — the in-mesh sink every alert path ends at:
+  ntfy in `k8s/apps/ntfy`, topic `alerts`, behind the group gate,
+  subscribed by a device over its own tunnel (ADR-0042). Gatus
+  publishes natively; Alertmanager through the `ntfy-alertmanager`
+  shim. Deliverable through a **sealed** hub (the relay runs across
+  seals) — which is why the sealed-hub row can page in-mesh without a
+  hosted channel — and not through a *dead* one, except on the LAN.
+  Nothing public carries a page (invariant 5); no Firebase upstream.
 - **Sandbox** — a pod that runs under its own guest kernel
   (`runtimeClassName: kata`, Kata Containers on cloud-hypervisor;
   ADR-0035, every node since 2026-10-08). The isolation grain for an

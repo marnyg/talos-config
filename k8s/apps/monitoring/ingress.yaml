@@ -2,13 +2,16 @@
 # k8s/apps/media/ingress.yaml). The gate is the whole login: Grafana's
 # auth.proxy (kube-prometheus-stack.yaml) takes X-Mesh-Name — which the
 # gateway set from the device's verified member cert and ingress-nginx
-# forwarded untouched — as the username, and this annotation is what
-# makes sure only an `admins` device gets that far. Remove the
-# annotation and any mesh device becomes a Grafana org Admin.
+# forwarded untouched — as the username, and the controller's
+# global-auth-url (k8s/apps/ingress-nginx, `?group=admins`) is what
+# makes sure only an `admins` device gets that far. Opt this Ingress
+# out of the global gate (enable-global-auth: "false") and any mesh
+# device becomes a Grafana org Admin.
 #
 # Prometheus and Alertmanager stay unexposed: Grafana's Explore and its
 # Alertmanager view cover the UI need, and both have no auth of their
-# own. Add an Ingress here (same annotation) if a raw UI is ever wanted.
+# own. Add an Ingress here (it inherits the gate) if a raw UI is ever
+# wanted.
 #
 # Live tail / dashboards use WebSockets; same timeout treatment as
 # Vaultwarden's notifications hub.
