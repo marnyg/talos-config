@@ -54,16 +54,17 @@
 #
 # Depths: hub/approval verify at 12–15 steps; enroll's growing sets
 # verify at 8; authorize regenerates its whole scenario every step so
-# depth 2 is exhaustive (~345 s wall / 342 s solver for invAll with the
-# ADR-0010 pins, d0o0 — OVER the 5-minute budget; the pre-pin file measured
-# 233 s wall / 184 s solver on the same machine the same day, i.e. the
-# header's ~173 s was already optimistic. The four pin laws in invAll
-# cost ~35 s of solver time together; the rest is the larger scenario
-# (pins, bundlePins, OWNER1_NEW as a signer) making every pre-existing
-# law a little slower — no single law is the hog standalone.
+# depth 2 is exhaustive (~333 s wall / 328 s solver for invAll with `res`
+# the PINNED receiver and the pin edge inside the laws, djdl — still OVER
+# the 5-minute budget; 349 s / 342 s with the bridge-law shape of d0o0,
+# 409 s before `resolve` lost its `if (pins == Set())` branch; the pre-pin
+# file measured 233 s wall / 184 s solver on the same machine, i.e. the
+# header's ~173 s was already optimistic. No single law is the hog: the
+# larger scenario (pins, bundlePins, OWNER1_NEW as a signer) and the pin
+# hop in every `authorize` encoding make every law a little slower.
 # invTrivialPinsPreserveVerdicts, a biconditional over two full
 # `authorize` encodings with no concrete hypothesis, verifies on its own
-# line, ~85 s solver / ~100 s wall; ~173 s with the ADR-0004 wildcard
+# line, ~61 s solver / ~73 s wall (~85 s / ~100 s under d0o0); ~173 s with the ADR-0004 wildcard
 # target sets, zeb; ~170 s since cav.target may name a principal the
 # receiver answers for, kau; ~135 s after xwu; ~95 s before); runway's nondet
 # init reaches the 6 d boundaries in ≤ 10 steps — the 30 d speak-as

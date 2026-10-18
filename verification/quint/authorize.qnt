@@ -188,23 +188,23 @@
 // pin hop is one hop more and adds no delegation: a trivial pin
 // (`root == id`) is the identity map; consents stay addressed to the
 // identity; a dead pin admits nothing; `bundlePins` — what a caller
-// could carry — is read by nothing. The pre-d0o0 laws are stated over
-// keys (`liveConsentTo(w) and w == member.iss`) and so quantify the
-// receiver holding NO pins (`res`, `chainRes`), unchanged; the pinned
-// receiver (`resPin`, `chainResPin`) is covered by bridge laws:
-//   trivial pins ⇒ same verdict  invTrivialPinsPreserveVerdicts (p5: subtract
-//                              without re-adding; on its own check.sh line,
-//                              not in invAll — verify time)
-//   old root dies              invOldRootDiesOnRotation (p1: additive hop)
-//   new root = identity        invNewRootAdmittedViaPin — the pinned verdict
-//                              on OWNER1_NEW's bundle equals the unpinned
-//                              verdict on the OWNER1-signed twin (p2: hop
-//                              yields the root; p6: hop reads the signer only)
-//   dead pin admits nothing    invDeadPinAdmitsNothing (p3: `dead` ignored)
-//   caller pins ignored        invCallerPinsIgnored (p4: `pins ∪ bundlePins`)
-//   witness                    pinRotatedTest (initPinRotated: the post-
-//                              rotation bundle, accepted with the pin,
-//                              rejected without it, dead with a dead pin)
+// could carry — is read by nothing. `res`/`chainRes` IS the pinned
+// receiver; every law speaks about it, and the five "consented sovereign
+// vouches for key" laws carry the pin edge raw (`pinnedAs`, on the `pins`
+// records, never via `resolve`): invMemberIssuerConsented,
+// invSpeakAsIssuerConsented, invGrantSpeakAsRequired,
+// invGroupMatchRootedInChain, invChainLinked — refusing the old root (p1:
+// additive hop), a dead identity's keys (p3: `dead` ignored) and a
+// caller-carried pin (p4: `pins ∪ bundlePins`) directly. The ACCEPTING
+// direction, which those cannot state, is two bridge laws against an
+// explicitly unpinned receiver (and the witness pinRotatedTest):
+//   trivial pins ⇒ same verdict  invTrivialPinsPreserveVerdicts vs `resNoPins`
+//                              (p5: subtract without re-adding; on its own
+//                              check.sh line, not in invAll — verify time)
+//   new root = identity        invNewRootAdmittedViaPin — the verdict equals
+//                              unpinned `twinRes` with every consent to
+//                              OWNER1 re-addressed to OWNER1_NEW (p2: hop
+//                              yields the root; p6: hop reads signer only)
 //
 // FINDING (2026-10-15, model-first, d0o0): the design's first cut made
 // the pin hop ADDITIVE — "each resolved sovereign S additionally
@@ -383,8 +383,7 @@ module authorize {
         s.can == SpeakAs and sigOk(s, now) and isKey(s.aud, signer)
         and s.cav.verbs.contains(verb) and groups.subseteq(s.cav.groups))
       .map(s => s.iss))
-    if (pins == Set()) ks   // today's receiver; keeps the no-pin verdicts' encoding as it was
-    else ks.exclude(pins.map(p => p.id))
+    ks.exclude(pins.map(p => p.id))   // with no pins held this is `ks`: today's receiver
       .union(pins.filter(p => ks.exists(k => pinAdmits(p, k))).map(p => p.id))
 
   // The groups a grant names: its group audience, if any. A hot key may
@@ -651,17 +650,16 @@ module authorize {
   var cfacet: str                 // the facet the caller derived (`to.facet` / AcceptTable[ALPN])
   var cverb: Verb                 // the verb the receiver expects the chain to carry (xwu)
 
-  // Two receivers judge every scenario: one holding NO pins (`res`,
-  // `chainRes` — today's receiver; every pre-d0o0 law is stated over it,
-  // unchanged) and one holding `pins` (`resPin`, `chainResPin`; the
-  // d0o0 laws bridge the two: trivial pins ⇒ same verdict; a rotated pin
-  // ⇒ the verdict of the unpinned receiver on the identity-signed twin).
-  val res = authorize(R, ACCEPT_TABLE, consents, held, Set(), blocklist, NOW, alpn, peer, member, speakAs, grants)
-  val resAtt = authorize(R, ACCEPT_TABLE, consents, heldAtt, Set(), blocklist, NOW, alpn, peer, member, speakAsAtt, grantsAtt)
-  val chainRes = verifyChain(R, cverb, consents, held, Set(), chain, chainSpeakAs, signer, cfacet, NOW)
-  val chainResAtt = verifyChain(R, cverb, consents, heldAtt, Set(), chainAtt, chainSpeakAsAtt, signer, cfacet, NOW)
-  val resPin = authorize(R, ACCEPT_TABLE, consents, held, pins, blocklist, NOW, alpn, peer, member, speakAs, grants)
-  val chainResPin = verifyChain(R, cverb, consents, held, pins, chain, chainSpeakAs, signer, cfacet, NOW)
+  // The receiver that exists judges every scenario: R holding its
+  // consents, `held` AND `pins` (`res`, `chainRes`; every law is stated
+  // over it). `resNoPins` / `chainResNoPins` is the same R with its pins
+  // forgotten — referenced by invTrivialPinsPreserveVerdicts only.
+  val res = authorize(R, ACCEPT_TABLE, consents, held, pins, blocklist, NOW, alpn, peer, member, speakAs, grants)
+  val resAtt = authorize(R, ACCEPT_TABLE, consents, heldAtt, pins, blocklist, NOW, alpn, peer, member, speakAsAtt, grantsAtt)
+  val chainRes = verifyChain(R, cverb, consents, held, pins, chain, chainSpeakAs, signer, cfacet, NOW)
+  val chainResAtt = verifyChain(R, cverb, consents, heldAtt, pins, chainAtt, chainSpeakAsAtt, signer, cfacet, NOW)
+  val resNoPins = authorize(R, ACCEPT_TABLE, consents, held, Set(), blocklist, NOW, alpn, peer, member, speakAs, grants)
+  val chainResNoPins = verifyChain(R, cverb, consents, held, Set(), chain, chainSpeakAs, signer, cfacet, NOW)
 
   // The speak-as a sovereign issues to R's key when R is its hot key
   // (ADR-0018 shape: {iss: wallet, aud: hubkey, verbs, groups}); held by R.
@@ -1381,9 +1379,22 @@ module authorize {
   def answerable: Set[int] =
     Set(R).union(held.filter(s => s.can == SpeakAs and isKey(s.aud, R) and sigOk(s, NOW)).map(s => s.iss))
 
-  // A speak-as `s` that would let wallet `w` vouch for signer `k` (raw fields).
-  pure def vouches(s: Cert, w: int, k: int, now: int): bool =
-    s.iss == w and isKey(s.aud, k) and s.can == SpeakAs and sigOk(s, now)
+  // The pin edge (ADR-0010, d0o0), raw: identity `w` is reachable from
+  // key `k` through what R HOLDS — no held pin for `w` and `w` IS the
+  // key, or R's one pin for `w` is alive with `root == k`. Read as a set
+  // of records, never via `resolve`/`pinAdmits`. A receiver holding no
+  // pins reads `w == k`, the pre-d0o0 clause.
+  def pinnedAs(w: int, k: int): bool =
+    if (pins.exists(p => p.id == w)) pins.exists(p => p.id == w and not(p.dead) and p.root == k)
+    else w == k
+
+  // A speak-as `s` that would let identity `w` vouch for signer `k` (raw
+  // fields): `s` is signed by a key `w` is pinned as, names `k`, and is live.
+  def vouches(s: Cert, w: int, k: int): bool =
+    pinnedAs(w, s.iss) and isKey(s.aud, k) and s.can == SpeakAs and sigOk(s, NOW)
+
+  // Some identity R consented to is reachable from key `k` (raw fields).
+  def consentedKey(k: int): bool = WALLETS.exists(w => liveConsentTo(w) and pinnedAs(w, k))
 
   // Everything a signer could POSSIBLY be attributed to, ignoring every
   // check (the loosest reading) — for necessary-condition laws.
@@ -1420,14 +1431,14 @@ module authorize {
     implies not(accepted(res))
 
   // Step (2b) on the RESOLVED issuer: some sovereign R consented to must
-  // vouch for the member cert — the signer itself, or a wallet whose
-  // live speak-as names the signer, covers `member` and the member's
-  // groups (3cx + ADR-0018).
+  // vouch for the member cert — pinned as the signer itself, or pinned as
+  // the issuer of a live speak-as that names the signer, covers `member`
+  // and the member's groups (3cx + ADR-0018 + ADR-0010).
   val invMemberIssuerConsented =
     accepted(res) implies WALLETS.exists(w =>
       liveConsentTo(w) and (
-        w == member.iss
-        or speakAs.exists(s => vouches(s, w, member.iss, NOW)
+        pinnedAs(w, member.iss)
+        or speakAs.exists(s => vouches(s, w, member.iss)
              and s.cav.verbs.contains(Member)
              and member.cav.groups.subseteq(s.cav.groups))))
 
@@ -1453,10 +1464,11 @@ module authorize {
     implies not(accepted(res))
 
   // ADR-0018 law 5 — receiver-rooted survives the extra link: a speak-as
-  // from a wallet R never consented to resolves to nothing.
+  // from a key no consented identity is pinned as resolves to nothing
+  // (the old root after a rotation, a dead identity's key, a stranger).
   val invSpeakAsIssuerConsented =
     (HUBS.contains(member.iss)
-      and speakAs.forall(s => not(isKey(s.aud, member.iss)) or not(liveConsentTo(s.iss))))
+      and speakAs.forall(s => not(isKey(s.aud, member.iss)) or not(consentedKey(s.iss))))
     implies not(accepted(res))
 
   // Fail-closed on the link itself: a forged speak-as, a cert with
@@ -1473,7 +1485,7 @@ module authorize {
     grants.forall(g => HUBS.contains(g.iss)
       and speakAs.forall(s => not(isKey(s.aud, g.iss))
                               or s.exp <= NOW or s.forged or s.can != SpeakAs or s.cav.unknown
-                              or not(s.cav.verbs.contains(Invoke)) or not(liveConsentTo(s.iss))))
+                              or not(s.cav.verbs.contains(Invoke)) or not(consentedKey(s.iss))))
     implies not(accepted(res))
 
   // Literal caveats on the grant side: a hot key may address `group:g`
@@ -1516,8 +1528,8 @@ module authorize {
       | AAny => g.cav.postage != NO_POSTAGE or consents.exists(c => c.cav.postage != NO_POSTAGE)
       | AGroup(grp) => member.cav.groups.contains(grp) and WALLETS.exists(w =>
           liveConsentTo(w)
-          and (w == g.iss or speakAs.exists(s => vouches(s, w, g.iss, NOW)))
-          and (w == member.iss or speakAs.exists(s => vouches(s, w, member.iss, NOW))))
+          and (pinnedAs(w, g.iss) or speakAs.exists(s => vouches(s, w, g.iss)))
+          and (pinnedAs(w, member.iss) or speakAs.exists(s => vouches(s, w, member.iss))))
     })
 
   // Target: a grant whose target set names neither R nor a principal R
@@ -1536,7 +1548,7 @@ module authorize {
     if (g.cav.target == WILD) g.with("cav", g.cav.with("target", t)) else g
   val invGrantWildcardNeverWidens =
     accepted(res) implies consents.exists(c => c.iss == R and
-      accepted(authorize(R, ACCEPT_TABLE, consents, held, Set(), blocklist, NOW, alpn, peer, member, speakAs,
+      accepted(authorize(R, ACCEPT_TABLE, consents, held, pins, blocklist, NOW, alpn, peer, member, speakAs,
                          grants.map(g => dewildCert(g, c.cav.target)))))
 
   // Facet: ALPN routes, grants authorize — the granted facet must
@@ -1593,12 +1605,16 @@ module authorize {
     not(consents.exists(c => c.iss == R and not(c.forged))) implies not(chainAccepted),
   }
 
-  // Rule 2 — linkage: each link's signer is attributable (itself or via
-  // a speak-as naming it) to the key the previous link's `aud` names.
-  // Corollary: a group or `*` audience is never followed.
+  // Rule 2 — linkage: the identity the previous link's `aud` names is
+  // pinned as a key the link's signer is attributable to (itself or via
+  // a speak-as naming it). Corollary: a group or `*` audience is never
+  // followed.
   val invChainLinked =
     chainRes.forall(v => links(v).indices().forall(i =>
-      i == 0 or chainAttributable(links(v).nth(i).iss).exists(p => isKey(links(v).nth(i - 1).aud, p))))
+      i == 0 or match links(v).nth(i - 1).aud {
+        | AKey(a) => chainAttributable(links(v).nth(i).iss).exists(k => pinnedAs(a, k))
+        | _ => false
+      }))
 
   // Receiver-rooted survives every link: a chain link signed by a hot
   // key with no live speak-as to it covering the chain's verb admits
@@ -1738,7 +1754,7 @@ module authorize {
     ch.foldl([], (acc, l) => acc.append(dewildCert(l, t)))
   val invWildcardTargetNeverWidens =
     chainRes.forall(v =>
-      verifyChain(R, cverb, Set(v.consent), held, Set(), dewild(chain, v.consent.cav.target), chainSpeakAs, signer, cfacet, NOW)
+      verifyChain(R, cverb, Set(v.consent), held, pins, dewild(chain, v.consent.cav.target), chainSpeakAs, signer, cfacet, NOW)
         .exists(w => w.eff.cav.target == v.eff.cav.target))
   val invChainFacetMatches =
     chainAccepted implies (chain.indices().forall(i => chain.nth(i).cav.facet.contains(cfacet))
@@ -1750,17 +1766,13 @@ module authorize {
   val invChainMonotone = (chainResAtt != Set()) implies chainAccepted
 
   // ---- laws on receiver-held pins (protocol ADR-0010, talos-config-d0o0) ---
-  // Raw fields again: `pins` is read as a set of records, never through
-  // `resolve`/`pinAdmits`. The pinned receiver's verdicts are `resPin` /
-  // `chainResPin`; the unpinned receiver's (`res` / `chainRes`) are the
-  // reference every pre-d0o0 law already quantifies.
-
-  // The sovereign names a key could POSSIBLY sign as, before any pin:
-  // itself unless it is a hot key, plus every speak-as issuer naming it
-  // (loosest reading, for necessary-condition laws).
-  def vouchers(k: int): Set[int] = attributable(k).exclude(HOT_KEYS)
-  def chainVouchers(k: int): Set[int] = chainAttributable(k).exclude(HOT_KEYS)
-  def chainAcceptedPin: bool = chainResPin != Set()
+  // The pin edge sits in the laws above (`pinnedAs`, raw): a consented
+  // identity must be pinned as the key behind every signer, so an old
+  // root (p1), a dead identity's keys (p3) and a pin only the caller
+  // carries (p4) are refused by invMemberIssuerConsented / invChainLinked
+  // directly. What remains here is the ACCEPTING direction, which
+  // necessary-condition laws cannot state: the pinned receiver admits
+  // exactly what its pins say.
 
   // Trivial pins are the identity map: a receiver holding only pins whose
   // root is the identity itself judges exactly as one holding none. (The
@@ -1769,19 +1781,7 @@ module authorize {
   // ~20 s per state for nothing the boolean does not catch.)
   val invTrivialPinsPreserveVerdicts =
     pins.forall(p => p.root == p.id and not(p.dead))
-    implies (resPin == res and chainAcceptedPin == chainAccepted)
-
-  // The old root dies with its epoch: with OWNER1 rotated to OWNER1_NEW
-  // (one pin per id — the rotated pin IS R's view of OWNER1, and no
-  // other identity's root is the key OWNER1), a cert that only OWNER1
-  // could sign as (itself, or a hot key only OWNER1 vouches for) admits
-  // nothing — the consent to OWNER1 names the identity, not the key.
-  val invOldRootDiesOnRotation =
-    pins.contains(PIN_ROTATED) implies and {
-      vouchers(member.iss).subseteq(Set(OWNER1)) implies not(accepted(resPin)),
-      chain.indices().exists(i => chainVouchers(chain.nth(i).iss).subseteq(Set(OWNER1)))
-        implies not(chainAcceptedPin),
-    }
+    implies (res == resNoPins and chainAccepted == (chainResNoPins != Set()))
 
   // The pin hop is exactly as strong as identity: a rotated pin behind a
   // consent to the identity IS a consent to the new root key. With the
@@ -1797,29 +1797,7 @@ module authorize {
   val twinRes = authorize(R, ACCEPT_TABLE, consents.map(toNewRoot), held, Set(), blocklist, NOW, alpn, peer,
                           member, speakAs, grants)
   val invNewRootAdmittedViaPin =
-    pins.contains(PIN_ROTATED) implies (accepted(resPin) == accepted(twinRes))
-
-  // A dead pin admits nothing: with OWNER1 dead at R, a cert only OWNER1
-  // or OWNER1_NEW could sign as admits nothing — the identity is gone and
-  // the new key is a stranger under its own name.
-  val invDeadPinAdmitsNothing =
-    pins.contains(PIN_DEAD) implies and {
-      vouchers(member.iss).subseteq(Set(OWNER1, OWNER1_NEW)) implies not(accepted(resPin)),
-      chain.indices().exists(i => chainVouchers(chain.nth(i).iss).subseteq(Set(OWNER1, OWNER1_NEW)))
-        implies not(chainAcceptedPin),
-    }
-
-  // Only a pin R HOLDS admits a new root: when no held pin is alive with
-  // root OWNER1_NEW, a cert only OWNER1_NEW could sign as admits nothing —
-  // whatever `bundlePins` the caller carries (the mutant `pins :=
-  // pins ∪ bundlePins` at the verdict dies here under FPinInBundleOnly /
-  // gen's `bpins`).
-  val invCallerPinsIgnored =
-    pins.forall(p => p.dead or p.root != OWNER1_NEW) implies and {
-      vouchers(member.iss).subseteq(Set(OWNER1_NEW)) implies not(accepted(resPin)),
-      chain.indices().exists(i => chainVouchers(chain.nth(i).iss).subseteq(Set(OWNER1_NEW)))
-        implies not(chainAcceptedPin),
-    }
+    pins.contains(PIN_ROTATED) implies (accepted(res) == accepted(twinRes))
 
   val invAll = and {
     invUnknownAlpnRejects,
@@ -1867,14 +1845,12 @@ module authorize {
     invWildcardTargetNeverWidens,
     invChainFacetMatches,
     invChainMonotone,
-    // receiver-held pins (ADR-0010, d0o0). invTrivialPinsPreserveVerdicts
+    // receiver-held pins (ADR-0010, d0o0): the pin edge is inside the laws
+    // above; this is the accepting direction. invTrivialPinsPreserveVerdicts
     // is NOT here: a biconditional over two full `authorize` encodings
     // costs Apalache ~45 s per state and pushed the depth-2 verify past
     // the 5-minute budget; check.sh runs it on its own line (run + verify).
-    invOldRootDiesOnRotation,
     invNewRootAdmittedViaPin,
-    invDeadPinAdmitsNothing,
-    invCallerPinsIgnored,
   }
 
   // Sanity: the happy path must actually accept, otherwise every law
@@ -2053,12 +2029,12 @@ module authorize {
   pure val OLD_SPEAKAS = Set(mkSpeakAs(OWNER1, HUB_A, VERBS, GROUPS, false, 10, false),
                              mkSpeakAs(OWNER1, HUB_B, VERBS, GROUPS, false, 10, false))
   run pinRotatedTest = initPinRotated.then(all {
-    assert(accepted(resPin)),
-    assert(chainAcceptedPin),
-    assert(chainResPin.forall(v => v.consent == CONSENT1 and v.aud == AudBound and v.eff.cav.target == Set(R))),
-    // the pin removed: the unpinned receiver rejects both halves
-    assert(not(accepted(res))),
-    assert(not(chainAccepted)),
+    assert(accepted(res)),
+    assert(chainAccepted),
+    assert(chainRes.forall(v => v.consent == CONSENT1 and v.aud == AudBound and v.eff.cav.target == Set(R))),
+    // the pin removed: the same receiver, pins forgotten, rejects both halves
+    assert(not(accepted(authorize(R, ACCEPT_TABLE, consents, held, Set(), blocklist, NOW, alpn, peer, member, speakAs, grants)))),
+    assert(verifyChain(R, Invoke, consents, held, Set(), chain, chainSpeakAs, signer, cfacet, NOW) == Set()),
     // the pin trivial (no rotation at R): OWNER1_NEW is still a stranger
     assert(not(accepted(authorize(R, ACCEPT_TABLE, consents, held, PINS_TRIVIAL, blocklist, NOW, alpn, peer, member, speakAs, grants)))),
     // the old root's bundle is dead at the pinned receiver — and alive at the unpinned one
