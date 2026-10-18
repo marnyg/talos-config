@@ -52,6 +52,13 @@
 # layer, which dies with the pod like the emptyDir does. /etc/passwd
 # names uid 65534 so tmux, git and node can resolve the user; SHELL is
 # bash for tmux's default-shell.
+# Layers (talos-config-9g6m): pi's closure (node, the bulk) and the
+# tools' closure sit in their own layers below the image layer, so a
+# rebuild that changes only the child binary or the entrypoint re-pulls
+# megabytes, not the whole ~450 MB — a fresh digest used to cost every
+# node ~45 s of image pull on its first birth (2026-10-18). A layer
+# changes only when what it holds does: pi on a `nixpkgs-pi` bump, the
+# tools on a nixpkgs bump.
 # x86_64-linux only; from a laptop:
 #
 #   k8s/apps/sandbox/build.sh   # HUB_BUILDER=mar@nixos: build, push ghcr.io/marnyg/sandbox-agent:<rev>
@@ -139,10 +146,18 @@ let
       pi
     ];
   };
+  # The stable bulk, bottom to top: pi (node + the agent), then the
+  # tools minus whatever pi's layers already carry. Popularity-split
+  # inside each so a single changed dependency re-pulls little.
+  piLayer = nix2container.buildLayer { deps = [ pi ]; maxLayers = 16; };
+  toolsLayer = nix2container.buildLayer { deps = [ env ]; layers = [ piLayer ]; maxLayers = 16; };
 in
 nix2container.buildImage {
   name = "ghcr.io/marnyg/sandbox-agent";
   tag = self.shortRev or self.dirtyShortRev or "dev";
+  layers = [ piLayer toolsLayer ];
+  # What is left for the image's own layer: the entrypoint, the child
+  # binary, /etc, the scratch dirs, the CA bundle.
   copyToRoot = [ pkgs.cacert root scratch env ];
   # Writable by uid 65534 when no volume covers them (a child pod).
   # The regex sees the STORE path (…-sandbox-agent-scratch/tmp), not
