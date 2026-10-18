@@ -79,7 +79,11 @@ Folder ─┬─< Template ─< TemplateExercise ─< TemplateSet
   every earlier set of that exercise; counted per workout in history.
 - **Setting** — key/value: units (`kg`/`lb`, `km`/`mi`, `cm`/`in`),
   first weekday, default rest timer, available bars/plates, xRM
-  formula. Single user, so no owner column anywhere.
+  formula. Single user, so no owner column anywhere. `weight_unit`
+  is applied at render time only (every stored weight is kg, including
+  the `plates` list, which is entered in kg whatever the display unit
+  — `63fi`); the plate calculator reads `plates` and the bar off the
+  live set row.
 
 ## Identity and origin
 

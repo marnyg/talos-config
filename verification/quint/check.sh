@@ -124,7 +124,7 @@ verify)
   quint verify --invariant=invAll --max-steps=12 approval.qnt
   quint verify --invariant=invAll --max-steps=8 enroll.qnt
   quint verify --invariant=invAll --max-steps=2 authorize.qnt
-  quint verify --invariant=invTrivialPinsPreserveVerdicts --max-steps=2 authorize.qnt   # d0o0, ~85 s; see Depths
+  quint verify --invariant=invTrivialPinsPreserveVerdicts --max-steps=2 authorize.qnt   # d0o0/djdl, ~61 s; see Depths
   quint verify --invariant=invAll --max-steps=10 runway.qnt
   quint verify --invariant=invAll --max-steps=10 clock.qnt
   quint verify --invariant=invAll --max-steps=7 rotation.qnt

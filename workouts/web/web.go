@@ -848,9 +848,14 @@ func (h *Handler) profile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.fail(w, err)
+		return
+	}
+	// Only keys the form submitted are written, so a submitted empty
+	// value clears a setting back to its default.
 	for _, k := range []string{"rest_s", "weight_unit", "length_unit", "first_weekday", "plates"} {
-		if v, ok := r.Form[k]; ok || r.FormValue(k) != "" {
-			_ = v
+		if _, ok := r.Form[k]; ok {
 			if err := h.s.SetSetting(r.Context(), k, strings.TrimSpace(r.FormValue(k))); err != nil {
 				h.fail(w, err)
 				return

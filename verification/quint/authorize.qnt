@@ -212,8 +212,9 @@
 // identity address IS the epoch-0 root key (ADR-0010: "pinned at
 // consent"), so after a rotation a cert signed by the OLD key still
 // self-resolves to the identity and matches the consent: the old root
-// never dies (mutant p1 is that cut; invOldRootDiesOnRotation refutes
-// it). The rule is subtractive for pinned addresses: a resolved
+// never dies (mutant p1 is that cut; refuted by the pin edge in
+// invMemberIssuerConsented — at the time, by invOldRootDiesOnRotation,
+// dropped as redundant in djdl). The rule is subtractive for pinned addresses: a resolved
 // sovereign equal to a pin's `id` is kept only if that pin admits the
 // key that produced it. Design doc amended the same day.
 //
@@ -373,8 +374,8 @@ module authorize {
   // reachable only through that pin — a legacy EOA's identity address IS
   // its epoch-0 root key, so after a rotation the OLD key would otherwise
   // still self-resolve to the identity and match the consent (the
-  // additive hop was the first cut; invOldRootDiesOnRotation refutes it —
-  // mutant p1). A trivial pin (`root == id`) subtracts the name and adds
+  // additive hop was the first cut; the pin edge in the five consent
+  // laws refutes it — mutant p1). A trivial pin (`root == id`) subtracts the name and adds
   // it back: the identity map. A dead pin admits nothing. Unpinned names
   // resolve as before (a receiver holding no pins is today's receiver).
   pure def resolve(pins: Set[Pin], speakAs: Set[Cert], signer: int, verb: Verb, groups: Set[str], now: int): Set[int] =

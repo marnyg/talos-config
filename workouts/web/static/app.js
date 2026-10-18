@@ -201,7 +201,7 @@
     finishBtn.addEventListener('click', function (e) {
       if (finishBtn.dataset.template && confirm('Update the template with this workout?')) document.getElementById('update_template').value = '1';
     });
-    window.addEventListener('beforeunload', function () { Object.keys(pending).forEach(function (id) { var tr = log.querySelector('tr.set[data-id="' + id + '"]'); if (tr) { clearTimeout(pending[id]); navigator.sendBeacon && fetch('/api/sets/' + id, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData(tr)) }); } }); });
+    window.addEventListener('beforeunload', function () { Object.keys(pending).forEach(function (id) { var tr = log.querySelector('tr.set[data-id="' + id + '"]'); if (tr) { clearTimeout(pending[id]); fetch('/api/sets/' + id, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rowData(tr)) }); } }); });
   }
 
   // ---- template editor ----
