@@ -127,17 +127,20 @@ data:
     # application registered below. Jackett and its per-id Torznab loop
     # retired 2026-10-21 (talos-config-6t21).
 
-    # Add NZBgeek indexer (Newznab/usenet)
+    # NZBgeek indexer (Newznab/usenet), the one indexer this configurator
+    # still owns — PUT-or-POST as in sonarr/configmap.yaml, so a rotated
+    # key in the secret reaches the persisted DB (the block was add-only
+    # until 2026-10-22, talos-config-m0vb).
     existing=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/indexer")
-    if [ -n "$NZBGEEK_API_KEY" ] && ! echo "$existing" | grep -q "NZBgeek"; then
-      echo "Adding NZBgeek indexer..."
-      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+    if [ -n "$NZBGEEK_API_KEY" ]; then
+      name="NZBgeek"
+      body='{
         "enableRss": true,
         "enableAutomaticSearch": true,
         "enableInteractiveSearch": true,
         "protocol": "usenet",
         "priority": 10,
-        "name": "NZBgeek",
+        "name": "'"$name"'",
         "implementation": "Newznab",
         "configContract": "NewznabSettings",
         "fields": [
@@ -147,7 +150,18 @@ data:
           {"name": "categories", "value": [2000, 2010, 2020, 2030, 2040, 2050]},
           {"name": "animeCategories", "value": []}
         ]
-      }' "$RADARR_URL/api/v3/indexer" || echo "WARN: NZBgeek indexer failed"
+      }'
+      eid=$(printf '%s\n' "$existing" | awk -v n="$name" \
+        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+      if [ -n "$eid" ]; then
+        echo "Refreshing $name indexer (id $eid)..."
+        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+          -d "${body%\}}, \"id\": $eid}" "$RADARR_URL/api/v3/indexer/$eid" || echo "WARN: $name refresh failed"
+      else
+        echo "Adding $name indexer..."
+        curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$body" "$RADARR_URL/api/v3/indexer" || echo "WARN: $name indexer failed"
+      fi
     fi
 
     # Register with Prowlarr as an application; see sonarr/configmap.yaml
