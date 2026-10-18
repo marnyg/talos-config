@@ -237,6 +237,10 @@ func TestStartShape(t *testing.T) {
 // A miss while outfits are configured is warned on Config.Log, naming
 // the image and the lease; a hit is not.
 func TestStartOutfit(t *testing.T) {
+	// An outfit keyed on a tag, not a digest, is refused at New.
+	if _, err := New(Config{Host: "http://x", Namespace: "n", Outfit: map[string][]string{"ghcr.io/x/child:latest": {"s"}}}); err == nil {
+		t.Fatal("New accepted an outfit key that is not digest-pinned")
+	}
 	other := "ghcr.io/x/child@sha256:" + strings.Repeat("b", 64)
 	api, srv := newAPI(t)
 	var buf bytes.Buffer

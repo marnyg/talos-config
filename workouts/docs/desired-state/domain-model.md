@@ -49,13 +49,20 @@ Folder ─┬─< Template ─< TemplateExercise ─< TemplateSet
   most **one workout is in progress** at a time.
 - **WorkoutExercise** — an exercise's slot in a workout, ordered by
   `position`; carries the exercise note, the rest timer (seconds, null
-  = app default) and an optional `superset` group number. Strong's
-  `cellSetGroup`.
+  = app default) and an optional `superset` group number (Strong's
+  `cellSetGroup`). The group is editable on the live screen: joining
+  takes the partner's number or the smallest unused one, a group left
+  with one member dissolves; the rest timer is per group — it starts
+  after the group's *last* slot completes a set.
 - **Set** — one row under a WorkoutExercise: `position`, `kind`
   (`normal | warmup | drop | failure`), the cell values
   (`weight_kg reps rpe duration_s distance_m`, each nullable), and
   `completed`. A set that is not completed when the workout ends is
   **dropped**, not stored (Strong's "handle incomplete sets" default).
+  A **warm-up ramp** (bar ×10, 50 % ×5, 70 % ×3, 90 % ×1 of the first
+  working weight, rounded to the plate increment) is a client-side
+  derivation materialised as `warmup` sets in front of the slot's
+  working sets; the server stores them, it never derives them.
 - **Template** — a plan: name, folder, ordered **TemplateExercise**
   (exercise, note, rest timer, superset) each with ordered
   **TemplateSet** (kind + target cell values). Starting a template
@@ -80,10 +87,11 @@ Folder ─┬─< Template ─< TemplateExercise ─< TemplateSet
 - **Setting** — key/value: units (`kg`/`lb`, `km`/`mi`, `cm`/`in`),
   first weekday, default rest timer, available bars/plates, xRM
   formula. Single user, so no owner column anywhere. `weight_unit`
-  is applied at render time only (every stored weight is kg, including
-  the `plates` list, which is entered in kg whatever the display unit
-  — `63fi`); the plate calculator reads `plates` and the bar off the
-  live set row.
+  is applied at render time only: every stored weight is kg, including
+  the `plates` list, which the profile form enters and shows in the
+  display unit and converts at save (unset ⇒ a per-unit default: kg
+  25…1.25, lb 45…2.5); the plate calculator reads `plates` and the bar
+  off the live set row.
 
 ## Identity and origin
 

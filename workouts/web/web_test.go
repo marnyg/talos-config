@@ -132,6 +132,13 @@ func TestPagesAndLiveWorkout(t *testing.T) {
 		t.Fatalf("slot update: %v %v", err, res)
 	}
 	get(t, c, u+"/log", `class="slot ss" data-id="`+slotID+`" data-rest="" data-superset="1"`, `>SS1</span>`, "Remove from superset", "Superset with…", "Generate warm-up")
+	// partial update: a body without "superset" leaves the group alone
+	req, _ = http.NewRequest("POST", u+"/api/exercise-slots/"+slotID, strings.NewReader(`{"rest":90}`))
+	req.Header.Set("Content-Type", "application/json")
+	if res, err := c.Do(req); err != nil || res.StatusCode != 200 {
+		t.Fatalf("slot partial update: %v %v", err, res)
+	}
+	get(t, c, u+"/log", `data-id="`+slotID+`" data-rest="90" data-superset="1"`)
 	// warm-ups: the client-generated ramp lands in front of the bench working set
 	benchSlot := body[strings.Index(body, `class="slot" data-id="`)+len(`class="slot" data-id="`):]
 	benchSlot = benchSlot[:strings.Index(benchSlot, `"`)]

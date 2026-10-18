@@ -884,7 +884,7 @@ func (h *Handler) profile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set := map[string]string{}
-	for _, k := range []string{"rest_s", "weight_unit", "length_unit", "first_weekday", "plates"} {
+	for _, k := range settingKeys {
 		set[k], _ = h.s.Setting(ctx, k)
 	}
 	// plates is stored in kg; the form shows and takes it in the display unit.
@@ -893,6 +893,9 @@ func (h *Handler) profile(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "profile.html", page{Title: "Profile", Tab: "profile", Data: profileData{Workouts: n, Weeks: weeks, Settings: set, Unit: u, Plates: defaultPlates[u]}})
 }
 
+// settingKeys are the settings the profile form reads and writes.
+var settingKeys = []string{"rest_s", "weight_unit", "length_unit", "first_weekday", "plates"}
+
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		h.fail(w, err)
@@ -900,7 +903,7 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 	}
 	// Only keys the form submitted are written, so a submitted empty
 	// value clears a setting back to its default.
-	for _, k := range []string{"rest_s", "weight_unit", "length_unit", "first_weekday", "plates"} {
+	for _, k := range settingKeys {
 		if _, ok := r.Form[k]; ok {
 			v := strings.TrimSpace(r.FormValue(k))
 			if k == "plates" {
@@ -1015,16 +1018,34 @@ func (h *Handler) apiWarmupsAdd(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) apiSlotUpdate(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Note     string `json:"note"`
-		Rest     *int   `json:"rest"`
-		Superset *int   `json:"superset"`
-	}
+	// A partial update: only the keys present in the body are written
+	// (`"rest": null` clears; an absent "rest" leaves it alone), so a
+	// client saving the note never has to echo the superset.
+	var in map[string]json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.s.UpdateWorkoutExercise(r.Context(), r.PathValue("id"), in.Note, in.Rest, in.Superset); err != nil {
+	var p store.SlotPatch
+	for k, raw := range in {
+		var err error
+		switch k {
+		case "note":
+			err = json.Unmarshal(raw, &p.Note.V)
+			p.Note.Set = true
+		case "rest":
+			err = json.Unmarshal(raw, &p.RestS.V)
+			p.RestS.Set = true
+		case "superset":
+			err = json.Unmarshal(raw, &p.Superset.V)
+			p.Superset.Set = true
+		}
+		if err != nil {
+			http.Error(w, k+": "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if err := h.s.UpdateWorkoutExercise(r.Context(), r.PathValue("id"), p); err != nil {
 		h.fail(w, err)
 		return
 	}

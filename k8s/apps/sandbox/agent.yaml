@@ -74,8 +74,9 @@ spec:
               type: RuntimeDefault
           containers:
             - name: agent
-              # k8s/apps/sandbox/build.sh prints the tag@digest to pin here.
-              image: ghcr.io/marnyg/sandbox-agent:941af91@sha256:d16a0c182da68b8899ce35885152c1ec7a1caef80a78d5451de826f070fd1153
+              # k8s/apps/sandbox/build.sh prints the @digest to pin here (the same
+              # string as the sap-provisioner -outfit and sap-parent -image pins).
+              image: ghcr.io/marnyg/sandbox-agent@sha256:d16a0c182da68b8899ce35885152c1ec7a1caef80a78d5451de826f070fd1153
               env:
                 - name: AGENT_MODEL
                   value: anthropic/claude-sonnet-4.6

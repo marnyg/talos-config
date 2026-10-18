@@ -16,16 +16,15 @@ set -euo pipefail
 repo=marnyg/sandbox-agent
 out=$("$(git rev-parse --show-toplevel)/scripts/ghcr-push.sh" .#packages.x86_64-linux.sandbox-agent-image "$repo" | tee /dev/stderr)
 
-# ghcr-push.sh ends with `pushed ghcr.io/<repo>:<tag>` and
-# `image: ghcr.io/<repo>@sha256:…`; parse the tag and digest from those.
-tag=$(sed -n "s|^pushed ghcr.io/$repo:||p" <<<"$out" | tail -n1)
+# ghcr-push.sh ends with `image: ghcr.io/<repo>@sha256:…`; the three
+# pins are that one string (no tag: all three must be byte-identical).
 digest=$(sed -n "s|^image: ghcr.io/$repo@||p" <<<"$out" | tail -n1)
-[ -n "$tag" ] && [ -n "$digest" ] || { echo "could not parse tag/digest from ghcr-push.sh output" >&2; exit 1; }
+[ -n "$digest" ] || { echo "could not parse the digest from ghcr-push.sh output" >&2; exit 1; }
 
 cat <<EOF
 
 pin these three lines (all three, same digest):
-  k8s/apps/sandbox/agent.yaml                 image: ghcr.io/$repo:$tag@$digest
+  k8s/apps/sandbox/agent.yaml                 image: ghcr.io/$repo@$digest
   k8s/apps/sap-provisioner/deployment.yaml    - -outfit=ghcr.io/$repo@$digest=openrouter,forgejo-agent
   k8s/apps/sap-parent/deployment.yaml         - -image=ghcr.io/$repo@$digest
 EOF

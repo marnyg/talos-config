@@ -337,9 +337,39 @@ func (s *Store) RemoveWorkoutExercise(ctx context.Context, weID string) error {
 	})
 }
 
-// UpdateWorkoutExercise sets note / rest / superset.
-func (s *Store) UpdateWorkoutExercise(ctx context.Context, weID, note string, restS, superset *int) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE workout_exercise SET note = ?, rest_s = ?, superset = ? WHERE id = ?`, note, restS, superset, weID)
+// Opt is a patch field: Set=false leaves the column alone; Set=true
+// writes V (a nil pointer V clears a nullable column).
+type Opt[T any] struct {
+	Set bool
+	V   T
+}
+
+// SlotPatch is a partial update of a WorkoutExercise.
+type SlotPatch struct {
+	Note     Opt[string]
+	RestS    Opt[*int]
+	Superset Opt[*int]
+}
+
+// UpdateWorkoutExercise writes the set fields of p; nothing to set is a
+// no-op.
+func (s *Store) UpdateWorkoutExercise(ctx context.Context, weID string, p SlotPatch) error {
+	var cols []string
+	var args []any
+	if p.Note.Set {
+		cols, args = append(cols, "note = ?"), append(args, p.Note.V)
+	}
+	if p.RestS.Set {
+		cols, args = append(cols, "rest_s = ?"), append(args, p.RestS.V)
+	}
+	if p.Superset.Set {
+		cols, args = append(cols, "superset = ?"), append(args, p.Superset.V)
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	args = append(args, weID)
+	_, err := s.db.ExecContext(ctx, `UPDATE workout_exercise SET `+strings.Join(cols, ", ")+` WHERE id = ?`, args...)
 	return err
 }
 

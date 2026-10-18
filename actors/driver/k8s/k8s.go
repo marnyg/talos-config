@@ -130,6 +130,14 @@ func New(cfg Config) (*Driver, error) {
 	if cfg.Now == nil {
 		cfg.Now = func() int64 { return time.Now().Unix() }
 	}
+	// An outfit keyed on anything but a digest-pinned image can never
+	// match a StartSpec.Image (CheckImage refuses those first): a typo
+	// here would be a silent, permanent miss — refuse it at construction.
+	for img := range cfg.Outfit {
+		if err := provisioner.CheckImage(img); err != nil {
+			return nil, fmt.Errorf("k8s: outfit key %q: %w", img, err)
+		}
+	}
 	return &Driver{cfg: cfg, http: &http.Client{Transport: tr}}, nil
 }
 
