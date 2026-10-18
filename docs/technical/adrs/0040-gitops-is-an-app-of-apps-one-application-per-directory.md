@@ -1,8 +1,8 @@
 # ADR-0040: GitOps is an app of apps — one ArgoCD Application per `k8s/apps` directory
 
-- Status: Accepted 2026-10-22 (owner). Live: cutover the same day,
+- Status: Accepted 2026-10-18 (owner). Live: cutover the same day,
   44 Applications Synced/Healthy, no workload restarted.
-- Date: 2026-10-22
+- Date: 2026-10-18
 - Related: ADR-0027 (the hub's gitops row reads the root Application),
   invariant 2 (git is the single source of truth); chore
   `talos-config-1ova` (the motivating failure); task `talos-config-pe8m`

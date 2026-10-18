@@ -96,6 +96,10 @@ spec:
             # -token-client — a review signed off by "laptop" is the
             # wrong principal; by the person is right (Jellyfin's reason).
             - -client=forgejo=http://git.gw.mesh.internal/user/oauth2/siwe/callback
+            # The parent actor's UI (k8s/apps/sap-parent, ADR-0037):
+            # person gate, NOT -token-client — a session's owner is the
+            # wallet that submitted it.
+            - -client=agents=http://agents.gw.mesh.internal/callback
           ports:
             - containerPort: 8080
           readinessProbe:

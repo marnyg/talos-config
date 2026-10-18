@@ -13,9 +13,11 @@
 #   /usr/local/bin/child          static musl, -tags iroh (cmd/child)
 #   /usr/local/bin/provisioner    static musl, -tags iroh (cmd/provisioner)
 #   /usr/local/bin/lighthouse     static musl, -tags iroh (cmd/lighthouse)
+#   /usr/local/bin/parent         static musl, -tags iroh (cmd/parent)
 #   /etc/ssl/certs/…              a CA bundle (the relay is web-PKI HTTPS)
 #   /var/lib/sap-provisioner      the provisioner's state mount point
 #   /var/lib/sap-lighthouse       the lighthouse's
+#   /var/lib/sap-parent           the parent's (key, store, cookie key)
 #
 # User 65534: the k8s driver submits Jobs under PSS `restricted`, which
 # requires runAsNonRoot; the child needs nothing more. A provisioner
@@ -23,10 +25,11 @@
 { pkgs, lib, self, nix2container, actors }:
 let
   root = pkgs.runCommand "sap-actors-root" { } ''
-    mkdir -p $out/usr/local/bin $out/var/lib/sap-provisioner $out/var/lib/sap-lighthouse $out/tmp
+    mkdir -p $out/usr/local/bin $out/var/lib/sap-provisioner $out/var/lib/sap-lighthouse $out/var/lib/sap-parent $out/tmp
     ln -s ${actors}/bin/child $out/usr/local/bin/child
     ln -s ${actors}/bin/provisioner $out/usr/local/bin/provisioner
     ln -s ${actors}/bin/lighthouse $out/usr/local/bin/lighthouse
+    ln -s ${actors}/bin/parent $out/usr/local/bin/parent
   '';
 in
 nix2container.buildImage {

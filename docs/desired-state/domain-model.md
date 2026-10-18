@@ -1089,8 +1089,30 @@ provisioning or recovery path may depend on it.
   the `openrouter` secret by digest (its **outfit**, ADR-0037 — never
   the intro); first live run: `spawn -prompt` from the laptop, 45
   events, `child_settled`. The parent actor is not built.
+- **Parent** _(built 2026-10-18, `ivof.4`–`ivof.8`, ADR-0037)_ — the
+  agent backend: one long-lived sovereign actor (`actors/parent`,
+  `cmd/parent`; Deployment `sap-parent` in `sap`, PVC for key + store +
+  cookie key, `agents.gw.mesh.internal`). Per session it rents a child
+  from the provisioner (`#spawn` → birth → `#ping` → `#task`), is the
+  sink of the child's stream (the `agent-events` facet: `Admit` by
+  VerifyChain, `Handler` into the store), forwards `#steer`/`#abort`
+  stamped with the sender's wallet, refuses `#renew` to a child whose
+  session ended and `#kill`s its lease once the session shipped (or a
+  grace later). A **durable-key actor** (root invariant 2): on restart
+  it re-installs the consents it issued and `spawn.Adopt`s its born
+  table from the store, loses what it cannot vouch for (a session
+  whose child is not in the cache), and the children's resumable
+  uploads find it again. Its UI is an OIDC client of `siwe-oidc`
+  (hand-rolled RP: PKCE, RS256 via JWKS; the principal rides the
+  parent's own HMAC cookie), opted out of the admins group gate like
+  ArgoCD because the share list names wallets and groups beyond
+  admins. Store: SQLite + FTS5 (`modernc.org/sqlite`, pure Go), tables
+  `sessions`, `events` (+ `events_fts` over finished messages and tool
+  results — never deltas), `shares`, and the two actor-state caches
+  `children` and `consents`. Decision `4ijo`: deployed before `bsj`
+  (its loss is transcripts and share lists, not a security regression).
 - **Session** _(designed 2026-10-11, epic `ivof`; child side built
-  2026-10-12, parent not)_ — the record of one agent run as the
+  2026-10-12, parent 2026-10-18)_ — the record of one agent run as the
   **parent actor** keeps it: pi's event stream (the child beat runs pi
   as an RPC subprocess and relays every record up over a stream
   facet), pi's own session JSONL shipped at settle (what
@@ -1101,7 +1123,12 @@ provisioning or recovery path may depend on it.
   (`child_settled`: `{status, events, session, repo, branch, head, pr}`
   since `e6pu.3`). Lives
   in the parent's own store (SQLite+FTS5 on a Longhorn PVC; the born
-  table stays a cache). **Owner** = the wallet that submitted the
+  table stays a cache). A session has its own id (the parent's) and
+  the child's **task id** (the stream's path); statuses `pending`
+  (the `#spawn` is out) → `running` (born) → `settled | aborted |
+  failed` (the child's last line) or `lost` (the parent gave up
+  without one: the child lapsed, or a restart found no child to
+  re-adopt). **Owner** = the wallet that submitted the
   task; a **share list** of wallets/groups at two rights, `view` (live
   tail, transcript, search) and `steer` (`steer`/`abort`, follow-ups —
   the sender's wallet is stamped on the event); `admins` views all,

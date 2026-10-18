@@ -1,0 +1,174 @@
+# The parent actor — the agent backend (ADR-0037, talos-config-ivof):
+# a long-lived sovereign actor in `sap` beside the provisioner and
+# lighthouse it talks to. It rents one child per session from the
+# provisioner (#spawn → #birth → #task; the child is the sandbox-agent
+# image under kata, outfitted by the provisioner), is the sink of each
+# child's event stream (the agent-events facet over iroh), keeps every
+# session in its own store, and serves the list/watch/steer/search UI at
+# agents.gw.mesh.internal behind the person gate. Same image as the
+# provisioner (actors/image.nix), `--entrypoint parent`.
+#
+# State (root invariant 2, actor-owned): the PVC holds the key (the id
+# the provisioner's -customer and the lighthouse's -member name, minted
+# on first run and never travelling), the store (parent.db: sessions,
+# transcripts with an FTS index, share lists; sessions/*.jsonl: pi's
+# session files for resume) and the cookie key. A durable-key actor:
+# a restart re-adopts its running children from the store (consents,
+# born table) — see actors/parent. The store is data-plane payload the
+# parent holds, so its durability is Longhorn's (replication) and bsj's
+# (backup), not git's; transcripts can contain whatever the agent
+# read, so the volume inherits 9io. One holder at a time: Recreate.
+#
+# First deploy is two steps: the pod comes up, logs `parent: id id=ed:…`
+# and warns that #lookup failed; that id goes into the lighthouse's
+# -member and the provisioner's -customer (k8s/apps/sap-lighthouse,
+# k8s/apps/sap-provisioner), and the next beat finds the provisioner.
+#
+# Login: an OIDC client of siwe-oidc (`-client=agents=…/callback` in
+# k8s/apps/siwe-oidc), PKCE, person gate — the owner of a session is the
+# wallet that submitted it, so this is NOT a -token-client (a device is
+# the wrong principal, Forgejo's reasoning). The issuer name is pinned
+# to the siwe-oidc Service's ClusterIP exactly as Forgejo and ArgoCD do
+# (pods cannot resolve .mesh.internal); issuer-URL equality holds.
+#
+# The Ingress opts out of the controller's admins group gate like
+# ArgoCD's: the app has its own person gate, and ADR-0037's share list
+# names wallets and groups beyond admins. Mesh membership is still the
+# transport (nothing reaches *.gw from outside the mesh).
+#
+# PSS restricted; egress to the hub's relay (iroh), siwe-oidc, and the
+# provisioner/lighthouse/children over iroh.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sap-parent-state
+  namespace: sap
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sap-parent
+  namespace: sap
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sap-parent
+  template:
+    metadata:
+      labels:
+        app: sap-parent
+    spec:
+      automountServiceAccountToken: false
+      hostAliases:
+        - ip: 10.107.226.217
+          hostnames: [auth.gw.mesh.internal]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: parent
+          # actors/build.sh prints the tag@digest to pin here (keep in
+          # step with sap-provisioner's and sap-lighthouse's).
+          image: ghcr.io/marnyg/sap-actors:c882727@sha256:72ffd32f9d7c9d43ed15df6ed4a99c225394fb29ca0675a055c0081b69462f4a
+          command: ["/usr/local/bin/parent"]
+          args:
+            - -state=/var/lib/sap-parent
+            - -relay=https://marnyg-talos-config.fly.dev
+            # The sap-lighthouse and sap-provisioner ids (on their PVCs;
+            # the provisioner's deployment.yaml names the same two).
+            - -lighthouse=ed:5cad808a3ed6be7628401c714409311cee59007d06e0aecbcdff2c1f81c662d7
+            - -provisioner-id=ed:9c3ae5ecc9a7eeacc4138fb91977d0e2fe6318bdde8429a12198b814ebb41c86
+            # The agent child image (k8s/apps/sandbox/build.sh), by the
+            # digest the provisioner's -outfit dresses.
+            - -image=ghcr.io/marnyg/sandbox-agent@sha256:51840a569d8e1c7d050b4b1b6cc908bada17e040083791706d060ad084600455
+            - -listen=:8080
+            - -issuer=http://auth.gw.mesh.internal
+            - -client-id=agents
+            - -public-url=http://agents.gw.mesh.internal
+          env:
+            - name: SAP_LOG
+              value: warn
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/sap-parent
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: sap-parent-state
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sap-parent
+  namespace: sap
+spec:
+  selector:
+    app: sap-parent
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sap-parent
+  namespace: sap
+  annotations:
+    nginx.ingress.kubernetes.io/enable-global-auth: "false"
+    # The live tail is a long SSE response.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Agents
+    gethomepage.dev/group: Platform
+    gethomepage.dev/icon: mdi-robot
+    gethomepage.dev/description: agent sessions — run, watch, steer
+    gethomepage.dev/pod-selector: app=sap-parent
+    gethomepage.dev/weight: "21"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: agents.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sap-parent
+                port:
+                  number: 80

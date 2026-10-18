@@ -651,7 +651,15 @@ whose deployment-free form differs from the talos wording. Source:
   it, `Kill(child)` sends `#kill`, and a child past its deadline is
   forgotten. _(Built 2026-09-23 as `protocol/spawn`: M4.1 `Spawner`,
   `Born`, the `#spawn`/`#extend`/`#kill` wire types; M4.2 the born
-  table, the `#renew` decorator, `Kill`.)_
+  table, the `#renew` decorator, `Kill`.)_ The born table is a
+  **cache** (invariant 12: actors restart from spec): `Children()`
+  snapshots it and `Adopt()` refills it from an owner's durable store
+  before Listen _(2026-10-18, root `ivof.4`, the first long-lived
+  parent)_. Adopt supplies the lease; what it does not supply the
+  owner must — the consents this key issued (the envelope roots a
+  child's chain in `Consents` before any handler runs; `#renew` itself
+  needs no table, it verifies the actor's own past signature) and a
+  `SeqBase` past what counterparties have seen (ADR-0006).
   Provisioner selection is **optional and transparent by default**:
   the spawner is configured with a default provisioner (id + chain)
   and `spec` may name another; a provisioner is just another
@@ -796,11 +804,17 @@ whose deployment-free form differs from the talos wording. Source:
   one fixed ALPN class and is named by `to.facet` in the envelope,
   checked per Invocation. The chain verifier takes `facet` and is
   derivation-blind.
-- **Uploader** _(built 2026-10-12, `e6pu.2`, root ADR-0037)_ — the
+- **Uploader** _(built 2026-10-12, `e6pu.2`, root ADR-0037; resumable
+  since 2026-10-18, root `ivof.6`)_ — the
   agent child's use of chain-on-connect: per `#task`, one admitted
   `agent-events` connection to the parent carrying one long chunked
-  `POST /events/<task-id>` (every pi record in order, ndjson) and,
-  at settle, `PUT /session/<task-id>` (pi's own session JSONL). The
+  `POST /events/<task-id>?from=N` (every pi record in order, ndjson)
+  and, at settle, `PUT /session/<task-id>` (pi's own session JSONL).
+  The upload is **resumable**: every line is kept for the run, a POST
+  that dies is re-dialled and resumed from the parent's `GET
+  /events/<task-id>` → `{count}` with backoff for the run's life plus
+  a grace, and the PUT retries on its own — the parent's store is the
+  record, and a parent restart must not strand a run's tail. The
   `#task` reply is an **ack** `{started, session}` — handlers run
   inline in the receiver's mailbox loop, so a reply cannot wait on the
   run — and the outcome is the stream's last line, `child_settled

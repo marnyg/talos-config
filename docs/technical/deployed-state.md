@@ -160,7 +160,7 @@ history and, where the numbers still matter, in ADR-0006 and
   -provisioner-id <P>` — nothing is read off a pod. Directory is
   volatile: a restart empties it until the provisioner's next beat
   (≤ 1 min).
-- **ArgoCD** _(verified 2026-10-22)_: app of apps (ADR-0040). Root
+- **ArgoCD** _(verified 2026-10-18)_: app of apps (ADR-0040). Root
   `apps` syncs `k8s/clusters/homelab/`; its ApplicationSet `homelab`
   emits `platform-<name>` for each of the 37 `k8s/apps/<name>`
   directories; 6 nested Helm Applications (longhorn, ingress-nginx,

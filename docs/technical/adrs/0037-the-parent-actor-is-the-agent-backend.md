@@ -1,8 +1,16 @@
 # ADR-0037: The parent actor is the agent backend — sessions in its own store, pi driven over RPC, results as Forgejo branches
 
 - Status: Accepted (owner, 2026-10-11; designed the same day in a grill-design session;
-  built the same day: `ivof.1`, `ivof.2`, `e6pu.1`). Epic
-  `talos-config-ivof`; remaining build is `e6pu.2` and the parent.
+  built the same day: `ivof.1`, `ivof.2`, `e6pu.1`; the child
+  2026-10-12/17/18 (`e6pu`); the parent 2026-10-18 (`ivof.4`–`ivof.8`:
+  `actors/parent`, `cmd/parent`, `k8s/apps/sap-parent`). Epic
+  `talos-config-ivof`. Amended 2026-10-18 (decision `4ijo`): deployed
+  **before** `bsj` — the store's loss is transcripts and share lists,
+  a nuisance, not a security regression; `bsj` stays the epic's open
+  dependency. The Deployment is in `sap` beside the provisioner and
+  lighthouse, not `ai` as written below. Building it found one gap in
+  the child: the upload had to become resumable (a parent restart
+  otherwise stranded a run's tail, PR pointer and session file).
 - Date: 2026-10-11
 - Amended 2026-10-11 (`dimt`): Forgejo's Ingress **does** carry the
   group gate. The original "no `auth-url`, git clients cannot pass it"

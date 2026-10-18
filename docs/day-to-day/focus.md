@@ -11,9 +11,16 @@ the `agent-events` uploader, `spawn -prompt` as the stand-in parent), and 2026-1
 shipped in the `sandbox-agent` image and passed the live acceptance
 under kata (provisioner `-runtime-class`/`-outfit`, `e6pu`); 2026-10-18
 the git half followed (`e6pu.3`: `#task {repo, ref}` → branch + PR,
-pointer on `child_settled`; `e6pu` closed).
-Next: the parent actor itself (SQLite+FTS5 store,
-list/watch/steer/search UI behind the person gate). Epic `ivof`. **Side effect:** the relay gate
+pointer on `child_settled`; `e6pu` closed); 2026-10-18 the **parent
+actor** itself (`ivof.4`–`ivof.8`: `actors/parent` store + actor side +
+web, `cmd/parent`, `k8s/apps/sap-parent`; the child's upload became
+resumable on the way). Deployed by the push that carries this file;
+**not yet observed live.**
+Next: the two-step bootstrap (read the minted id from the pod log →
+lighthouse `-member` + provisioner `-customer`), then ADR-0037's
+confirmation from the phone (submit, live tail, steer from a shared
+wallet, PR on `git.gw`, 404 for a stranger, restart re-adopts); then
+`bsj` (backup) for real. Epic `ivof`. **Side effect:** the relay gate
 (`5gz`) is observe-only until sovereign actors have an admission
 story (spike `qx5c`). **Detour landed 2026-10-13:** root
 rotation (protocol ADR-0010, spike `aja2`; ADR-0011, `d0o0` wires

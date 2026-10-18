@@ -3,7 +3,7 @@
 # tag `iroh` (as config-server's do), so this is the only place they get
 # compiled and tested. Same shape as config-server/nix/default.nix:
 #
-#   nix build .#actors-bin       — host build: bin/{child,provisioner,spawn};
+#   nix build .#actors-bin       — host build: bin/{child,provisioner,lighthouse,parent,spawn};
 #                                   checkPhase = go test ./... -tags iroh -race
 #   nix build .#actors-static    — pkgsStatic (musl) + -extldflags -static:
 #                                   what actors/image.nix ships. Linux only.
@@ -18,6 +18,7 @@ let
       ../go.mod
       ../go.sum
       (lib.fileset.fileFilter (f: f.hasExt "go") ../.)
+      ../parent/ui # go:embed: the parent's templates, JS and CSS
       ../../protocol/go.mod
       ../../protocol/go.sum
       (lib.fileset.fileFilter (f: f.hasExt "go") ../../protocol)
@@ -39,7 +40,7 @@ let
       # (git add first; FOD drift after touching a replaced tree; the
       # two-step --rebuild check). The pre-push hook and CI's vendor-hash
       # job cover this module too.
-      vendorHash = "sha256-Im7wJNew2AHVr5yfT+v0+1D7vcG17YWnKTialclJgqA=";
+      vendorHash = "sha256-PlnCseBdB/c9Cgs5M0VW6ciO3JBZdMy7taIp2nEbkv0=";
       tags = [ "iroh" ];
       env.CGO_ENABLED = 1;
       env.CGO_LDFLAGS = irohGo'.cgoLdflags;
@@ -53,7 +54,7 @@ let
         export GOCACHE=$TMPDIR/gocache-check
       '';
       passthru = { inherit (irohGo') iroh-ffi-static; };
-      meta.description = "sovereign-actor provisioner and child binaries on iroh (k8s + docker drivers)";
+      meta.description = "sovereign-actor provisioner, child, lighthouse and parent binaries on iroh (k8s + docker drivers)";
     };
 
   irohGo = import ../../iroh-go/nix { inherit pkgs lib self; };
