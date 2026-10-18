@@ -363,6 +363,40 @@ func (s *Store) AddSet(ctx context.Context, weID string) (Set, error) {
 	return st, err
 }
 
+// InsertWarmups puts `sets` in front of a slot's existing sets, in one
+// transaction: existing positions shift up by len(sets), the new rows
+// take 0..n-1 with kind warmup, not completed. Returned sets carry their
+// ids and positions. AddSet (append) is unchanged.
+func (s *Store) InsertWarmups(ctx context.Context, weID string, sets []Set) ([]Set, error) {
+	n := len(sets)
+	out := make([]Set, 0, n)
+	if n == 0 {
+		return out, nil
+	}
+	err := s.tx(ctx, func(tx *sql.Tx) error {
+		// Shift in two passes to dodge UNIQUE(workout_exercise_id, position).
+		if _, err := tx.ExecContext(ctx, `UPDATE "set" SET position = -position-1 WHERE workout_exercise_id = ?`, weID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE "set" SET position = -position-1+? WHERE workout_exercise_id = ? AND position < 0`, n, weID); err != nil {
+			return err
+		}
+		for i, st := range sets {
+			st.ID, st.Position, st.Kind, st.Completed, st.CompletedAt = NewID(), i, KindWarmup, false, nil
+			if _, err := tx.ExecContext(ctx, `INSERT INTO "set" (id, workout_exercise_id, position, kind, weight_kg, reps, duration_s, distance_m)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, st.ID, weID, st.Position, st.Kind, st.WeightKg, st.Reps, st.DurationS, st.DistanceM); err != nil {
+				return err
+			}
+			out = append(out, st)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UpdateSet writes values and completion for a set.
 func (s *Store) UpdateSet(ctx context.Context, st Set) error {
 	if st.Kind == "" {

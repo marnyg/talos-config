@@ -241,6 +241,7 @@ func (h *Handler) routes() {
 	m.HandleFunc("POST /api/sets/{id}", h.apiSetUpdate)
 	m.HandleFunc("DELETE /api/sets/{id}", h.apiSetDelete)
 	m.HandleFunc("POST /api/exercise-slots/{id}/sets", h.apiSetAdd)
+	m.HandleFunc("POST /api/exercise-slots/{id}/warmups", h.apiWarmupsAdd)
 	m.HandleFunc("POST /api/exercise-slots/{id}", h.apiSlotUpdate)
 	m.HandleFunc("DELETE /api/exercise-slots/{id}", h.apiSlotDelete)
 }
@@ -930,6 +931,37 @@ func (h *Handler) apiSetAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, toJSON(st))
+}
+
+// apiWarmupsAdd inserts a client-generated warm-up ramp in front of a
+// slot's sets. The body is `[{kind:"warmup", weight, reps}]` in kg; the
+// server does not compute the ramp (the client has the display unit and
+// the plates), it only insists every row is a warm-up. Replies with the
+// inserted sets in apiSetAdd's shape.
+func (h *Handler) apiWarmupsAdd(w http.ResponseWriter, r *http.Request) {
+	var in []setJSON
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	sets := make([]store.Set, 0, len(in))
+	for _, s := range in {
+		if s.Kind != store.KindWarmup {
+			http.Error(w, "warmups: kind must be warmup", http.StatusBadRequest)
+			return
+		}
+		sets = append(sets, store.Set{Kind: store.KindWarmup, WeightKg: s.Weight, Reps: s.Reps, DurationS: s.Duration, DistanceM: s.Distance})
+	}
+	out, err := h.s.InsertWarmups(r.Context(), r.PathValue("id"), sets)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	res := make([]setJSON, 0, len(out))
+	for _, st := range out {
+		res = append(res, toJSON(st))
+	}
+	writeJSON(w, res)
 }
 
 func (h *Handler) apiSlotUpdate(w http.ResponseWriter, r *http.Request) {
