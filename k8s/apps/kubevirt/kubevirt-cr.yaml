@@ -28,4 +28,44 @@ spec:
         - ImageVolume
   customizeComponents: {}
   imagePullPolicy: IfNotPresent
+  # Infra components (virt-api, virt-controller, virt-exportproxy) may run
+  # on workers, not only on cp1 (`bhui`, notes 2026-10-08). virt-operator
+  # defaults them to a *required* nodeAffinity on
+  # node-role.kubernetes.io/control-plane (OR …/master); with a single
+  # control plane that pins every replica to cp1 and the operator-owned
+  # PDBs (minAvailable 1) then block a cp1 drain until Talos' 5-min
+  # DrainTimeout, because the evicted replica has nowhere to go.
+  #
+  # The required term below is a match-all (every node is linux; the
+  # operator already adds nodeSelector kubernetes.io/os=linux), which
+  # replaces the control-plane requirement with "any node". The preferred
+  # term keeps steady-state placement on cp1 so nothing moves until a
+  # drain or a rollout actually forces it — preferred is ignored for a
+  # cordoned node, so during a drain the replacements land on w1/nas1.
+  #
+  # verify: virt-operator (v1.9) injects its default required term only
+  # when the user's nodeAffinity.required is nil, and merges (appends)
+  # user terms into the deployment's own pod anti-affinity rather than
+  # replacing it. If it instead appends our required term, the terms are
+  # ORed and the result is the same. Confirm after Argo syncs with
+  #   kubectl -n kubevirt get deploy virt-api -o yaml | yq .spec.template.spec.affinity
+  # — there must be no `control-plane` under required…nodeSelectorTerms.
+  # `workloads` (virt-handler / virt-launcher) is deliberately untouched.
+  infra:
+    nodePlacement:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
   workloadUpdateStrategy: {}
