@@ -1,0 +1,28 @@
+# The Forgejo token agent children push with (ADR-0037, e6pu.3; ivof.1
+# bootstrap step 5): bot user `agent`, team `bots` in org `agents`,
+# scopes write:repository,write:issue. A data-plane credential like the
+# OpenRouter key beside it (kanr memo, invariant 1 check) — the wire
+# carries repo names, never this. FORGEJO_URL is the in-cluster Service:
+# pods cannot resolve the mesh name. Attached by the provisioner's
+# -outfit to the sandbox-agent image (deployment.yaml); the child reads
+# it once and scrubs it from pi's environment (actors/cmd/child).
+# Moved here from k8s/apps/sandbox (ns ai) when the shell git path went.
+#
+# Rotate: k8s/apps/forgejo/bootstrap.md step 5 with a new --token-name,
+# then DELETE the old token as sysadmin; reseal with
+# kubeseal --cert talos/clusters/homelab/sealed-secrets.crt.
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: forgejo-agent
+  namespace: sap
+spec:
+  encryptedData:
+    FORGEJO_TOKEN: AgCilQtTY1kVTVlHGchhH1nvx4wuBd6mjognHUjED1nbEz7yvbqfwniY0fE/OKnTeRv4npFdZBvROBraEpGJPx4WM6qbnSRIof6QfUavCNAbd9klaUZ7tQxH/oKNlQcJuCBDcx1mQjzyZkZp7LfugwirDDvwQYJG0/uqDgJKrCIrZYacAEAHk+I8heFsgFLfNMV3tI7RNnmC62oSe/QDZ+J4gerKXL0ak8gAkiSXEcP4fInBzNs7YdlemOH8LJYMnN5JZgU1aiktCfFYgq1gnRPt+MHCznWYRoei64qLHdRxKBR/I193wN7hoqjYGC7h8ZRuoY3iPo/Yba3uWx9mvH4aPpOm0njdwDXj7NS00HciKkDB7Wsxbznbzl128HITN+dxpU+R4V6ItFaR5aiAYaZriIpj48Dojd41/gNzbjWoKDOzZXrD0yvIKX+QmyOhDEbnqS0nkDuT71J8c/YmrZ/MvP7oMym+Yf4y2RH1DdE8qtEjQ+0GSPifwHNoU2pDK68kGOYnPgkuvWVotxt/uAOOE8AX1WB8aJi4dsqcMGoHYIHMfbbLCythu/xSunynT4X7S2rOxDQ4phmU+xW7ksbS/m7SiKa3PtrX65CS4QTrAVDvzYeAS0FgkO9RL3oCMGY2C9RuJxjWErR0Cz/EB7peXIpnPflLlZBpRX0nSyBdGG0vo7We8phCqxdyN0RfsHije9+dtEHKg/72eYzevMz3Qsp7Sx3LW8SA8LgcYLCv4qvJBMcE4a3w
+    FORGEJO_URL: AgAF6uKqygkU2fB4MnY/9AtZIt3ugy2aXn+lsErzcrEiG93oo2M/AlGAYOxkypXqixVNkH2hirX7T0LvKqWH8JnmqMy7dalQlo/T4SI5fwwsTF/fZeuUvVWXLVVmq8v12Dj6BeLxGGWH6it4yF4kmdLfnRPvvhxq83NQkwJoh7ck6BeQI5B4KLwDFGTCK2DbBQnJXV5wYeuytHb77USRYPXKFarGpwCKjf+7j62VKp9AolrOL+Gd8Nlpk/rHus31R848LG4Ywpsmuhq5aUrClAgSLF+OgKbW+LYPbYS1TPZxY7iCM+u5hPBRa9PLi7cBtSZ/Ya2bCzh3JTu2e0UGlAYwHgbrNcLLWkC4XCoRpANSRSYN2+OOGm4rggPatyuqc2UR+rpmZpQAk6XSEzpShDgd9NU0vb3+L2Lm245AP8vDCGRCTj54mjeyNmLvUSdE1fqJmQ2TQMF1EqlwiCbp00datLxZXAQCgPvPLWknj1yr8EX50qNDYCxs1Q+9T9tG3+QnxshV+U9NbJ3A5s5Pv81K+8xi6gbnmoGUBr6MUQVqEnVxO8juJj/0r6FEfwAFhb1F1pFiexCeRL9ldAud7EsSMhN49pBhVRsGnxS8BglAFB/nK85Cf1oh2Ip1FsX6XxTfloDbBeZ+SumACr8un5u16WBtoiIe1PqRav6QKggTbW/VlFjzYcn7cwhunRi4ojEFe3Q/oZbsi2YXATH//HAF73wnCN0qBA2I+jA1wR5H
+  template:
+    metadata:
+      name: forgejo-agent
+      namespace: sap
+    type: Opaque

@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,8 +28,9 @@ import (
 // Options.Task names a pi binary serves these three beside FacetPing
 // and consents the parent to them at Born. One task per child (v0).
 const (
-	// FacetTask starts a run: `{"prompt": "…"}` (`repo`/`ref` are
-	// accepted and ignored for now). The reply is an ack,
+	// FacetTask starts a run: `{"prompt": "…", "repo": "owner/name",
+	// "ref": "…"}` — with a repo, pi runs in a clone of it and the
+	// result is a branch + PR (workspace.go). The reply is an ack,
 	// `{"status":"started","session":"<task-id>"}`; the outcome is the
 	// LAST line on the event stream (see FacetAgentEvents), not the
 	// reply — handlers run inline in the mailbox loop, so a #task that
@@ -65,8 +67,13 @@ type TaskOptions struct {
 	PiBin string
 	// PiArgs follow `--mode rpc --session-dir DIR` on pi's command line.
 	PiArgs []string
-	// Dir is pi's working directory (the workspace); "" ⇒ the process's.
+	// Dir is pi's working directory; with a repo on the task, the
+	// clone goes under it (Dir/<name>) and pi runs there. "" ⇒ the
+	// process's.
 	Dir string
+	// Forge is where a task's repo is cloned from and its result pushed
+	// to (ADR-0037); zero ⇒ a #task naming a repo is refused.
+	Forge Forge
 	// Dial reaches the parent's FacetAgentEvents facet. Required when
 	// PiBin is set.
 	Dial Dialer
@@ -143,13 +150,16 @@ func DecodePreamble(raw []byte) (chain, speakAs []cert.Cert, err error) {
 // the deadline — ctx end, lapse — ended it first) or "failed" (pi could
 // not be started or prompted, or exited mid-run); Events counts the
 // pirpc records forwarded before this line; Reason is free text on
-// the non-settled statuses.
+// the non-settled statuses, and on a settled run whose result (push,
+// PR) failed. Pointer is where the result lives when the task named
+// a repo.
 type Settled struct {
 	Type    string `json:"type"`
 	Status  string `json:"status"`
 	Events  int    `json:"events"`
 	Session string `json:"session"`
 	Reason  string `json:"reason,omitempty"`
+	Pointer
 }
 
 // TypeSettled is Settled.Type.
@@ -255,6 +265,9 @@ func (ag *agent) task(_ context.Context, inv *actor.Invocation) ([]byte, error) 
 	if req.Prompt == "" {
 		return nil, errors.New("child: #task: empty prompt")
 	}
+	if req.Repo != "" && !ag.o.Forge.set() {
+		return nil, errors.New("child: #task: repo named but this child has no forge (outfit)")
+	}
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
 	if ag.cur != nil {
@@ -276,7 +289,7 @@ func (ag *agent) task(_ context.Context, inv *actor.Invocation) ([]byte, error) 
 	r := &run{id: hex.EncodeToString(b[:]), cancel: cancel, done: make(chan struct{})}
 	ag.cur = r
 	hints := ag.hints
-	go ag.execute(rctx, r, req.Prompt, pre, hints)
+	go ag.execute(rctx, r, req, pre, hints)
 	return json.Marshal(map[string]string{"status": "started", "session": r.id})
 }
 
@@ -344,9 +357,9 @@ func (ag *agent) live(facet string) (*pirpc.Client, error) {
 
 // execute is one task's life, on its own goroutine: dial the parent's
 // facet, start pi, prompt, forward every record up as the POST body,
-// wait for settle/abort/deadline, read the session, close pi, write
-// the last line, PUT the session, free the slot.
-func (ag *agent) execute(rctx context.Context, r *run, prompt string, preamble []byte, hints []string) {
+// wait for settle/abort/deadline, read the session, close pi, push
+// the result, write the last line, PUT the session, free the slot.
+func (ag *agent) execute(rctx context.Context, r *run, req TaskRequest, preamble []byte, hints []string) {
 	log := ag.log.With("task", r.id)
 	defer func() {
 		ag.mu.Lock()
@@ -374,12 +387,25 @@ func (ag *agent) execute(rctx context.Context, r *run, prompt string, preamble [
 	}
 	defer os.RemoveAll(sdir)
 
+	// The workspace: a clone when the task names a repo, else Dir.
+	dir := ag.o.Dir
+	var ws *workspace
+	if req.Repo != "" {
+		if ws, err = clone(rctx, ag.o.Forge, ag.o.Dir, req.Repo, req.Ref, r.id, log); err != nil {
+			settled.Reason = err.Error()
+			up.finish(settled, nil, log)
+			return
+		}
+		dir = ws.dir
+		settled.Repo = req.Repo
+	}
+
 	// pi's lifetime is ours to end (pctx), not the run's: the deadline
 	// closes stdin only after the session file is read.
 	pctx, pcancel := context.WithCancel(context.Background())
 	defer pcancel()
 	pi, err := pirpc.Start(pctx, ag.o.PiBin, pirpc.Options{
-		Dir:       ag.o.Dir,
+		Dir:       dir,
 		Args:      append([]string{"--session-dir", sdir}, ag.o.PiArgs...),
 		Log:       log,
 		KillAfter: ag.o.KillAfter,
@@ -399,18 +425,22 @@ func (ag *agent) execute(rctx context.Context, r *run, prompt string, preamble [
 	var once sync.Once
 	var n atomic.Int64
 	forwarded := make(chan struct{})
+	var final string // pi's last assistant message: the PR body
 	go func() {
 		defer close(forwarded)
 		for rec := range pi.Events() {
 			n.Add(1)
 			up.line(rec.Raw, log)
+			if t, ok := assistantText(rec.Raw); ok {
+				final = t
+			}
 			if rec.Type == "agent_settled" {
 				once.Do(func() { close(agentSettled) })
 			}
 		}
 	}()
 
-	resp, err := pi.Prompt(pctx, prompt)
+	resp, err := pi.Prompt(pctx, req.Prompt)
 	switch {
 	case err != nil:
 		settled.Reason = "prompt: " + err.Error()
@@ -453,6 +483,20 @@ func (ag *agent) execute(rctx context.Context, r *run, prompt string, preamble [
 	}
 	<-forwarded
 	settled.Events = int(n.Load())
+
+	// The result: whatever the run left in the clone, pushed as the
+	// task's branch with a PR — on every status (an aborted run's
+	// partial work is still worth a look), bounded, past the deadline.
+	if ws != nil {
+		wctx, wcancel := context.WithTimeout(context.Background(), resultTimeout)
+		p, err := ws.result(wctx, taskTitle(req.Prompt), prBody(final, r.id, settled.Status))
+		wcancel()
+		settled.Pointer = p
+		if err != nil {
+			log.Warn("child: task: result", "err", err)
+			settled.Reason = strings.TrimSpace(settled.Reason + " result: " + err.Error())
+		}
+	}
 	up.finish(settled, session, log)
 	log.Info("child: task done", "status", settled.Status, "events", settled.Events, "session", len(session))
 }

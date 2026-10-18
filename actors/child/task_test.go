@@ -10,7 +10,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -85,7 +87,12 @@ func fakeMain() {
 					continue
 				}
 				emit(`{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"hi"}}`)
-				emit(`{"type":"message_end"}`)
+				// CHILD_FAKE_WRITE: leave a file in cwd (the workspace), as
+				// an agent that did work would.
+				if os.Getenv("CHILD_FAKE_WRITE") == "1" {
+					_ = os.WriteFile("done.txt", []byte(cmd.Message+"\n"), 0o644)
+				}
+				emit(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hi, done"}]}}`)
 				emit(`{"type":"turn_end"}`)
 				emit(`{"type":"agent_end","messages":[],"willRetry":false}`)
 				emit(`{"type":"agent_settled"}`)
@@ -377,6 +384,134 @@ func TestTaskWithoutOutfitRefused(t *testing.T) {
 	if p.dials != 0 {
 		t.Fatal("dialled without a chain")
 	}
+}
+
+// TestTaskRepoResultIsBranchAndPR (e6pu.3): #task with a repo clones
+// it from the forge, pi runs in the clone, and after settle the
+// changes are on agent/<id> at the origin with a PR whose body is
+// pi's final message; child_settled carries the pointer. The forge is
+// a bare repo (clone base) plus an httptest API.
+func TestTaskRepoResultIsBranchAndPR(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	r, p := agentRig(t, false)
+	t.Setenv("CHILD_FAKE_WRITE", "1")
+
+	// origin: bare agents/scratch.git with one commit on main.
+	forge := t.TempDir()
+	bare := filepath.Join(forge, "agents", "scratch.git")
+	gitRun(t, "", "init", "-q", "--bare", "-b", "main", bare)
+	seed := t.TempDir()
+	gitRun(t, "", "clone", "-q", bare, seed)
+	if err := os.WriteFile(filepath.Join(seed, "README"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, seed, "add", "README")
+	gitRun(t, seed, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "seed")
+	gitRun(t, seed, "push", "-q", "origin", "HEAD:main")
+
+	// the API: one POST /pulls → 201, the request kept for the checks.
+	var prMu sync.Mutex
+	var prReq map[string]string
+	var prAuth string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodPost || req.URL.Path != "/api/v1/repos/agents/scratch/pulls" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		prMu.Lock()
+		defer prMu.Unlock()
+		prAuth = req.Header.Get("Authorization")
+		_ = json.NewDecoder(req.Body).Decode(&prReq)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"html_url":"http://forge/agents/scratch/pulls/1"}`)
+	}))
+	defer api.Close()
+
+	ws := t.TempDir()
+	r.drv.opts.Task.Dir = ws
+	r.drv.opts.Task.Forge = child.Forge{URL: api.URL, Token: "tok", CloneBase: forge}
+	b := r.spawn(t, spawn.Spec{Image: image, Outfit: agentOutfit(r)})
+	p.peer = b.ID
+	r.pingUntilUp(t, b.ID)
+
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+	rep, err := r.parent.Send(ctx, b.ID, child.FacetTask, []byte(`{"prompt":"write done.txt\nsecond line","repo":"agents/scratch","ref":"main"}`))
+	if err != nil {
+		t.Fatalf("#task: %v", err)
+	}
+	var ack struct{ Session string }
+	_ = json.Unmarshal(rep.Payload, &ack)
+	var s child.Settled
+	waitFor(t, "child_settled", func() bool {
+		var ok bool
+		s, ok = p.settled(ack.Session)
+		return ok
+	})
+	if s.Status != "settled" || s.Reason != "" {
+		t.Fatalf("settled %+v", s)
+	}
+	if s.Repo != "agents/scratch" || s.Branch != "agent/"+ack.Session || s.Head == "" || s.PR != "http://forge/agents/scratch/pulls/1" {
+		t.Fatalf("pointer %+v", s.Pointer)
+	}
+	// The branch is at the origin with the file, committed as the bot.
+	if got := gitRun(t, "", "--git-dir", bare, "show", s.Branch+":done.txt"); !strings.Contains(got, "write done.txt") {
+		t.Fatalf("done.txt on %s: %q", s.Branch, got)
+	}
+	if head := strings.TrimSpace(gitRun(t, "", "--git-dir", bare, "rev-parse", s.Branch)); head != s.Head {
+		t.Fatalf("origin %s = %s, pointer head %s", s.Branch, head, s.Head)
+	}
+	if log := gitRun(t, "", "--git-dir", bare, "log", "-1", "--format=%s%n%b%n%an", s.Branch); !strings.Contains(log, "agent: "+ack.Session) || !strings.Contains(log, "agent: write done.txt") || !strings.HasSuffix(strings.TrimSpace(log), "\nagent") {
+		t.Fatalf("commit on %s:\n%s", s.Branch, log)
+	}
+	// The PR: title from the prompt, base from the clone, body = final message + trailer.
+	prMu.Lock()
+	defer prMu.Unlock()
+	if prAuth != "token tok" {
+		t.Fatalf("PR auth %q", prAuth)
+	}
+	if prReq["title"] != "agent: write done.txt" || prReq["head"] != s.Branch || prReq["base"] != "main" {
+		t.Fatalf("PR request %v", prReq)
+	}
+	if !strings.HasPrefix(prReq["body"], "hi, done\n\n---\nTask "+ack.Session+", settled, ") {
+		t.Fatalf("PR body %q", prReq["body"])
+	}
+	// pi ran in the clone.
+	if _, err := os.Stat(filepath.Join(ws, "scratch", "done.txt")); err != nil {
+		t.Fatalf("workspace: %v", err)
+	}
+}
+
+// TestTaskRepoWithoutForgeRefused: a #task naming a repo on a child
+// with no forge is refused at the ack, nothing dialled.
+func TestTaskRepoWithoutForgeRefused(t *testing.T) {
+	r, p := agentRig(t, false)
+	b := r.spawn(t, spawn.Spec{Image: image, Outfit: agentOutfit(r)})
+	p.peer = b.ID
+	r.pingUntilUp(t, b.ID)
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+	_, err := r.parent.Send(ctx, b.ID, child.FacetTask, []byte(`{"prompt":"x","repo":"agents/scratch"}`))
+	if err == nil || !strings.Contains(err.Error(), "forge") {
+		t.Fatalf("#task repo without forge: %v", err)
+	}
+	if p.dials != 0 {
+		t.Fatal("dialled")
+	}
+}
+
+func gitRun(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
 }
 
 // TestTaskSecondRefusedThenAbort: one task per child — a second #task

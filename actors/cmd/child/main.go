@@ -17,7 +17,16 @@
 //	            parent's agent-events facet (child.TaskOptions);
 //	            SAP_PI="" (set, empty) ⇒ #ping only
 //	SAP_PI_ARGS extra pi arguments, comma-separated (--provider,x,…)
-//	SAP_WORKDIR pi's working directory; default /workspace
+//	SAP_WORKDIR pi's working directory; default /workspace. A #task
+//	            naming a repo clones it under here and runs pi in the
+//	            clone.
+//	FORGEJO_URL, FORGEJO_TOKEN, FORGEJO_USER
+//	            the forge a task's repo comes from and its result goes
+//	            to (child.Forge, e6pu.3) — the outfit's `forgejo-agent`
+//	            secret (ADR-0037). Read once and REMOVED from the
+//	            environment before pi starts: the token reaches git as
+//	            a header and the agent never sees it. Unset — a #task
+//	            naming a repo is refused.
 //
 // The key is minted here, in memory, and never written: a spawned
 // actor's identity exists only on its own compute (invariant 13). It
@@ -83,7 +92,7 @@ func main() {
 	}
 	defer ep.Close()
 	task := taskOptions(ep)
-	slog.Info("child: up", "id", a.ID(), "parent", in.Parent, "relay", relay, "beat", beat, "pi", task.PiBin, "workdir", task.Dir)
+	slog.Info("child: up", "id", a.ID(), "parent", in.Parent, "relay", relay, "beat", beat, "pi", task.PiBin, "workdir", task.Dir, "forge", task.Forge.URL)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -101,7 +110,8 @@ func main() {
 	}
 }
 
-// taskOptions reads SAP_PI, SAP_PI_ARGS and SAP_WORKDIR and binds the
+// taskOptions reads SAP_PI, SAP_PI_ARGS, SAP_WORKDIR and FORGEJO_*
+// (the last scrubbed from the environment) and binds the
 // Dialer to iroh: one connection to the parent's agent-events facet,
 // admitted on the preamble, kept for the process's lifetime and
 // re-dialled when it is gone; each Dial call is one stream on it.
@@ -120,6 +130,10 @@ func taskOptions(ep *irohtransport.Endpoint) child.TaskOptions {
 	dir := os.Getenv("SAP_WORKDIR")
 	if dir == "" {
 		dir = "/workspace"
+	}
+	forge := child.Forge{URL: os.Getenv("FORGEJO_URL"), Token: os.Getenv("FORGEJO_TOKEN"), User: os.Getenv("FORGEJO_USER")}
+	for _, k := range []string{"FORGEJO_URL", "FORGEJO_TOKEN", "FORGEJO_USER"} {
+		_ = os.Unsetenv(k)
 	}
 	var mu sync.Mutex
 	var conn *irohtransport.Conn
@@ -147,7 +161,7 @@ func taskOptions(ep *irohtransport.Endpoint) child.TaskOptions {
 		conn = c
 		return raw, nil
 	}
-	return child.TaskOptions{PiBin: bin, PiArgs: args, Dir: dir, Dial: dial}
+	return child.TaskOptions{PiBin: bin, PiArgs: args, Dir: dir, Forge: forge, Dial: dial}
 }
 
 // homeOf is the first iroh relay the parent's reach-me-at names, or

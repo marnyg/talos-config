@@ -117,18 +117,20 @@ name, and the agent's pushes need not round-trip ingress-nginx.
 ```sh
 TOKEN=$($F admin user generate-access-token --username agent \
   --token-name sandbox --scopes write:repository,write:issue --raw)
-kubectl -n ai create secret generic forgejo-agent \
+kubectl -n sap create secret generic forgejo-agent \
   --from-literal=FORGEJO_TOKEN="$TOKEN" \
   --from-literal=FORGEJO_URL=http://forgejo.forgejo.svc:3000 \
   --dry-run=client -o yaml \
   | kubeseal --cert talos/clusters/homelab/sealed-secrets.crt -o yaml \
-  > k8s/apps/sandbox/forgejo-agent.sealed.yaml
+  > k8s/apps/sap-provisioner/forgejo-agent.sealed.yaml
 unset TOKEN ADMIN_PW
 ```
 
-Commit `k8s/apps/sandbox/forgejo-agent.sealed.yaml` (signed). Rotation
+Commit `k8s/apps/sap-provisioner/forgejo-agent.sealed.yaml` (signed). Rotation
 = rerun step 5 with a new `--token-name` and delete the old token
-(`DELETE /api/v1/users/agent/tokens/sandbox` as admin).
+(`DELETE /api/v1/users/agent/tokens/sandbox` as admin). The secret lives in
+`sap`, where the provisioner's `-outfit` attaches it to agent children
+(e6pu.3; the `ai` copy went with the shell git path).
 
 Check from inside the cluster (`/api/v1/user` needs `read:user`, which
 this token deliberately lacks — ask for a repo it can write instead;

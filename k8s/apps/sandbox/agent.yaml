@@ -81,26 +81,18 @@ spec:
                   value: anthropic/claude-sonnet-4.6
                   # AGENT_PROMPT: set by agent-run.sh for a batch run;
                   # absent ⇒ interactive (tmux session `agent`).
+              # Only the model key: this template's runs have no git
+              # (ADR-0037, e6pu.3 — a repo task is a protocol #task; the
+              # sap-provisioner's outfit dresses THAT child in
+              # forgejo-agent, k8s/apps/sap-provisioner).
               envFrom:
                 - secretRef:
                     name: openrouter
-                # forgejo-agent (FORGEJO_URL, FORGEJO_TOKEN: the bot user
-                # `agent`, write:repository + write:issue) is what
-                # `agent-run.sh -r owner/name` clones and pushes with
-                # (ivof.2). Interim: attached here to every run, optional
-                # so a run without the SealedSecret still boots; once e6pu
-                # lands the driver attaches it by image (ADR-0037) and this
-                # entry goes.
-                - secretRef:
-                    name: forgejo-agent
-                    optional: true
               volumeMounts:
                 - name: workspace
                   mountPath: /workspace
                 - name: tmp
                   mountPath: /tmp
-                - name: run-agent
-                  mountPath: /run/agent
               resources:
                 requests:
                   cpu: 250m
@@ -119,11 +111,3 @@ spec:
             - name: tmp
               emptyDir:
                 sizeLimit: 512Mi
-            # The entrypoint's curl header file carries FORGEJO_TOKEN in
-            # plaintext; workspace and tmp are disk-backed, and plaintext
-            # secrets exist only in memory (invariant 8, 3leu) — so it
-            # gets its own tmpfs, as forgejo-runner's do (7828ce2).
-            - name: run-agent
-              emptyDir:
-                medium: Memory
-                sizeLimit: 1Mi

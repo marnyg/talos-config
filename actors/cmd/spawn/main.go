@@ -46,8 +46,9 @@
 // over the preamble's chain, serves it with facethttp: every line of
 // `POST /events/<task-id>` goes to stdout as `event <child-id> <line>`,
 // `PUT /session/<task-id>` lands in -session-dir. After #ping it sends
-// one #task {prompt} and logs the ack; the outcome is the stream's last
-// line (child_settled).
+// one #task {prompt, repo, ref} and logs the ack; the outcome is the
+// stream's last line (child_settled, with the result pointer when -repo
+// was given).
 package main
 
 import (
@@ -94,6 +95,8 @@ func main() {
 		beat     = flag.Duration("beat", 30*time.Second, "sweep + reach-me-at interval")
 		locTTL   = flag.Duration("location-ttl", 10*time.Minute, "lifetime of each published reach-me-at; keep well above -beat")
 		prompt   = flag.String("prompt", "", "send the born child one #task with this prompt and print its event stream (empty: no task)")
+		repo     = flag.String("repo", "", "with -prompt: the task's workspace, a Forgejo owner/name the child clones; the result is a branch + PR (e6pu.3)")
+		ref      = flag.String("ref", "", "with -repo: the branch to clone and PR against (default the repo's default branch)")
 		sessDir  = flag.String("session-dir", "", "where a task's session JSONL (PUT /session/<id>) is written (default -state)")
 	)
 	flag.Parse()
@@ -192,7 +195,7 @@ func main() {
 	// P→C on the child's own consent. The promise resolved at #birth,
 	// before Born installed that consent on the child: retry briefly.
 	if ping(ctx, a, b.ID) && *prompt != "" {
-		task(ctx, a, b.ID, *prompt)
+		task(ctx, a, b.ID, child.TaskRequest{Prompt: *prompt, Repo: *repo, Ref: *ref})
 	}
 
 	t := time.NewTicker(*beat)
@@ -286,8 +289,8 @@ func ping(ctx context.Context, a *actor.Actor, id cert.ActorID) bool {
 
 // task sends the one #task; the ack is logged, the run itself shows
 // up on stdout through the sink. Failure is logged, not fatal.
-func task(ctx context.Context, a *actor.Actor, id cert.ActorID, prompt string) {
-	payload, err := json.Marshal(child.TaskRequest{Prompt: prompt})
+func task(ctx context.Context, a *actor.Actor, id cert.ActorID, req child.TaskRequest) {
+	payload, err := json.Marshal(req)
 	if err != nil {
 		log.Fatal(err)
 	}
