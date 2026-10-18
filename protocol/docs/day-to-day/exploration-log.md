@@ -45,3 +45,8 @@
   pin edge and break on every rotated acceptance; keeping them verbatim
   forced `res` unpinned + `resPin` pinned + bridge laws. Follow-up:
   restate them pin-aware.
+- 2026-10-18 — Landed on: `res` pinned; the five laws carry a raw
+  `pinnedAs(w, k)` edge ("identity w reachable from key k through what R
+  holds"), bridge laws reduced to the trivial-pin equality and the
+  accepting direction (`djdl`). Verify cost moved by dropping
+  `resolve`'s no-pin branch, not by weakening laws.

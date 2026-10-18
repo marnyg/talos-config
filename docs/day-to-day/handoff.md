@@ -48,8 +48,19 @@ handoff's chronology, now absorbed.
 - Birth cost is the image pull (~450 MB, ~110 s on this cluster; a
   second tag of the same layers pulled again). `-window 4m` covers it;
   the 3 m default does not on a cold node.
-- Another session landed `7f7bf69` (iroh-transport relay without QAD,
-  `p5g`) and `72db3f9` (workouts plates) meanwhile — not covered here.
+- **Swarm 2026-10-18 (four autonomous leaves, all merged+closed):**
+  `btmw` workouts lb display + plate calculator (`72db3f9`), `p5g`
+  iroh-transport home relay without QAD — `Online` 3.0 s → 0.2 s
+  (`8512f58`, vendorHash bump `3971e73`), `q74h` workouts offline
+  write queue in `sw.js` v2 (`eb80cff`), `djdl` `authorize.qnt` with
+  `res` as the pinned receiver and a raw `pinnedAs` edge in the five
+  consent laws (`49e7f62`). Reports in `/tmp/swarm/<name>.md`.
+  Watch: the offline queue is **not verified live** (no browser run;
+  first dead-spot gym session is the test); `plates` is kg-only even
+  when `weight_unit=lb`; `authorize.qnt` depth-2 verify is 333 s —
+  still over the 300 s budget (nightly tier); three negative bridge
+  laws were dropped as redundant (p1/p3/p4 die on all five restated
+  laws — see the report's mutation table).
 
 ## Suggested next steps
 

@@ -5,7 +5,18 @@
 
 ## Last session
 
-2026-10-17 — `7w5` (swarm worker `f-actor-silent`, `744cc9f`):
+2026-10-18 — `djdl` (swarm worker `q-pin-laws`, `49e7f62`):
+`authorize.qnt`'s `res`/`chainRes` are the PINNED receiver; the five
+"consented sovereign vouches for key" laws carry a raw `pinnedAs(w, k)`
+edge (`consentedKey(k)` for speak-as issuers); three negative bridge
+laws dropped as redundant, `invTrivialPinsPreserveVerdicts` keeps an
+explicit `resNoPins`, `invNewRootAdmittedViaPin` stays. 12-mutant
+table all killed. `resolve` lost its no-pin ITE branch (same
+semantics): depth-2 `invAll` 409 → 333 s wall — still over the 300 s
+budget (nightly tier). ADR-0011's "pre-d0o0 laws quantify the unpinned
+receiver" Open bullet is closed; rule 3 aud-binding (`l3on`) is not.
+
+Before that, 2026-10-17 — `7w5` (swarm worker `f-actor-silent`, `744cc9f`):
 `Actor.serve` closes the stream unanswered on a failed envelope
 signature, like undecodable bytes; wrong-target/postage rejects still
 sign. The test asserts no Signer call. Domain-model Mailbox entry
@@ -24,9 +35,9 @@ ADR-0011 Proposed)**, swarm of three (`c5705eb` ADR, `0870a68`
   no verdict. **FINDING** (`d-pin-adr` → `authorize.qnt` mutant p1):
   the additive first cut let the old EOA key keep resolving to itself
   (identity address == epoch-0 key) and match the consent.
-- **Model**: five pin laws, mutation-tested; `res` stays the unpinned
-  receiver and `resPin` the pinned one, with bridge laws (trivial ⇒
-  equal; rotated ⇒ equals unpinned with re-addressed consents).
+- **Model**: five pin laws, mutation-tested; `res` stayed the unpinned
+  receiver and `resPin` the pinned one, with bridge laws — superseded
+  2026-10-18 (`djdl`, above: `res` is pinned).
   Depth-2 verify of `invAll` is now ~305–342 s (over the 300 s budget;
   accepted — nightly tier; the regression is in pre-existing chain
   laws from the extra `OWNER1_NEW` draw). `invTrivialPinsPreserveVerdicts`

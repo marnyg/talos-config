@@ -123,10 +123,15 @@ the re-pin ceremony after a dead view, the on-chain follower.
   chain presented by the identity's *new* root itself (`aud: I`,
   signer `0xNEW`) is `AudUnbound` without a speak-as I→0xNEW. The
   root acts through hot keys in practice; left as a decision.
-- Open: the pre-d0o0 laws in `authorize.qnt` quantify the UNPINNED
-  receiver; bridge laws (trivial ⇒ same verdict; rotated ⇒ verdict of
-  the unpinned receiver with re-addressed consents) transfer coverage.
-  Restating them with a raw pin edge is a follow-up.
+- Closed 2026-10-18 (`djdl`): the laws in `authorize.qnt` now quantify
+  the PINNED receiver directly — `res` holds `pins`, and the five
+  "consented sovereign vouches for key" laws carry a raw `pinnedAs(w, k)`
+  edge (identity `w` is reachable from key `k` through what R holds).
+  Remaining bridge laws: `invTrivialPinsPreserveVerdicts` (vs an
+  explicitly unpinned `resNoPins`) and `invNewRootAdmittedViaPin` (the
+  accepting direction); `invOldRootDiesOnRotation`,
+  `invDeadPinAdmitsNothing`, `invCallerPinsIgnored` were dropped as
+  redundant (their mutants die on every restated law).
 - Open: a member's pin advances only on what the hub relays in
   `#bundle`: the hub can starve, never forge (k guardian signatures
   verify at the member against its own pin) — inv 3 holds, but the hub

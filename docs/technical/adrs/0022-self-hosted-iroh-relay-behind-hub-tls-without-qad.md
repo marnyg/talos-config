@@ -59,8 +59,10 @@ over the relay; peers behind a NAT advertise no reflexive address.
   capture shows only the hub host.
 - Cons: **no remote hole-punching** (a peer behind any NAT — even
   Docker's — has no reachable candidate; direct paths need one side
-  with a LAN-reachable address); every endpoint burns a 3 s QAD probe
-  at startup until the client is told the relay has no QUIC (`p5g`).
+  with a LAN-reachable address); every endpoint burned a 3 s QAD probe
+  at startup until the client was told the relay has no QUIC — closed
+  2026-10-18 (`p5g`): `iroh-transport` builds the relay map with
+  `QuicPort: nil`, `Online` 3.0 s → 0.2 s.
 
 ### Option B: Relay owns TLS; QAD on UDP 7842 passthrough
 
@@ -117,7 +119,7 @@ admission uses the upstream HTTP-POST access hook
   agent port.
 - Location records carry `iroh:relay=https://<hub>` as the only
   guaranteed hint; `iroh:udp=` hints are bonuses.
-- Follow-ups: `p5g` (tell clients the relay has no QUIC), `5gz` (hub
+- Follow-ups: `p5g` (tell clients the relay has no QUIC — done), `5gz` (hub
   embedding), `0pq` (revisit Option B only if remote-direct becomes a
   goal), `kql` (tear down the scratch app after the gate).
 

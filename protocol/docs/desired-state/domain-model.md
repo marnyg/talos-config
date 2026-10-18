@@ -386,7 +386,8 @@ protocol scope must never contradict these entries.
   (`{root: I, guardians: [I], k: 1}`) is the identity map and changes
   no verdict (`authorize.qnt` `invTrivialPinsPreserveVerdicts`); after
   a rotation the old root dies at the receiver and the new root is
-  admitted exactly as the identity (`invOldRootDiesOnRotation`,
+  admitted exactly as the identity (the `pinnedAs` edge in
+  `invMemberIssuerConsented` and its four siblings;
   `invNewRootAdmittedViaPin`); a dead view admits nothing. Consents
   stay addressed to the identity address. The hub pins each admin
   address, a member pins its Kit's `speak-as` issuer; `#bundle`
