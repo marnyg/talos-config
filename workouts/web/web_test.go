@@ -193,9 +193,15 @@ func TestWeightUnitLb(t *testing.T) {
 	c := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	u := srv.URL
 
-	post(t, c, u+"/settings", "weight_unit=lb&plates=20,10,5,2.5")
+	// plates are entered in the submitted unit and stored in kg (3 dp);
+	// data-plates stays kg for app.js, the profile form shows them in lb.
+	post(t, c, u+"/settings", "weight_unit=lb&plates=45,35,25")
+	if v, _ := s.Setting(context.Background(), "plates"); v != "20.412,15.876,11.34" {
+		t.Fatalf("plates stored as %q, want kg", v)
+	}
+	get(t, c, u+"/profile", "Available plates (lb, comma separated)", `value="45,35,25"`, `placeholder="45,35,25,10,5,2.5"`)
 	post(t, c, u+"/workouts/start", "template=t1")
-	get(t, c, u+"/log", "<th>LB</th>", `value="132.3"`, `data-kg="60"`, "132.3 lb × 8", `data-unit="lb"`, `data-plates="20,10,5,2.5"`, `step="2.5"`, `id="plate-dialog"`, "44.1 lb")
+	get(t, c, u+"/log", "<th>LB</th>", `value="132.3"`, `data-kg="60"`, "132.3 lb × 8", `data-unit="lb"`, `data-plates="20.412,15.876,11.34"`, `step="2.5"`, `id="plate-dialog"`, "44.1 lb")
 	get(t, c, u+"/history", " lb")
 	get(t, c, u+"/exercises/bench?s=records", "164 lb", "132.3 lb (×8)")
 	post(t, c, u+"/log/cancel", "")
@@ -206,10 +212,21 @@ func TestWeightUnitLb(t *testing.T) {
 		t.Fatalf("storage drifted: %v", *tpl.Exercises[0].Sets[0].WeightKg)
 	}
 
-	// unset / blank plates fall back to the default list; kg is the default unit
+	// switching the unit alone leaves the stored kg list intact; the
+	// profile form just renders it in kg now.
+	post(t, c, u+"/settings", "weight_unit=kg")
+	get(t, c, u+"/profile", "Available plates (kg, comma separated)", `value="20.412,15.876,11.34"`, `placeholder="25,20,15,10,5,2.5,1.25"`)
+
+	// unset / blank plates fall back to the display unit's default list,
+	// still handed to the page in kg; kg is the default unit.
 	post(t, c, u+"/settings", "weight_unit=kg&plates=+")
 	post(t, c, u+"/workouts/start", "template=t1")
 	get(t, c, u+"/log", "<th>KG</th>", `value="60"`, `data-unit="kg"`, `data-plates="25,20,15,10,5,2.5,1.25"`, `step="0.5"`)
+	post(t, c, u+"/log/cancel", "")
+	post(t, c, u+"/settings", "weight_unit=lb&plates=")
+	get(t, c, u+"/profile", "Available plates (lb, comma separated)", `name="plates" value=""`, `placeholder="45,35,25,10,5,2.5"`)
+	post(t, c, u+"/workouts/start", "template=t1")
+	get(t, c, u+"/log", `data-unit="lb"`, `data-plates="20.412,15.876,11.34,4.536,2.268,1.134"`)
 }
 
 func TestWeightUnitFormat(t *testing.T) {
