@@ -36,22 +36,24 @@ Five small beads closed, four of them by a herdr swarm (reports under
 
 ## Loose threads
 
-- **Workouts is not redeployed:** `workouts/build.sh` + pin bump in
-  `k8s/apps/workouts/deployment.yaml` are still to do; until then the
-  PWA runs the old shell (sw.js v2).
+- Workouts image `sha256:d21e9c…` is pinned (e5a3361); Argo rolls it
+  out — not confirmed live from this session (cluster unreachable from
+  the shell). First open on the phone should pull sw.js v3.
+- Broken windows fixed the same session (63b4ad4): agent.yaml pins the
+  bare `@digest`; k8s driver refuses non-digest outfit keys at `New`;
+  `settingKeys` hoisted; `POST /api/exercise-slots/{id}` is a partial
+  update (`store.SlotPatch`).
 - Plates form ambiguity: the profile form posts `weight_unit` + `plates`
   together and `plates` is read in the *submitted* unit, so flipping the
   dropdown without retyping re-labels the numbers (25 kg → 25 lb). A
   hidden "unit the values were rendered in" field would remove it.
 - Warm-up generator rough edges: runs twice ⇒ two ramps (no dedupe);
   bar hard-coded 20 kg; picker is a `prompt()`.
-- `ivof.4`–`ivof.8` are still `in_progress` in beads although the parent
-  is live (2026-10-18 handoff); `9g6m` likewise done-but-open. Close them.
 - Carried: `d0o0` (durable `talos/pins` copy), `tmm5`, `88uq` phone
   subscription, ntfy first page.
 
 ## Suggested next steps
 
-- Redeploy workouts and try supersets + a warm-up ramp on the phone.
+- Try supersets + a warm-up ramp on the phone (`tmm5` offline check too).
 - `bsj` (Longhorn backup target) — unchanged from last handoff.
 - `d0o0` remainder solo (hub trust root; not swarm material).
