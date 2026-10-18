@@ -34,26 +34,44 @@ Five small beads closed, four of them by a herdr swarm (reports under
   so `check.sh`'s Depths paragraph now states a **6-minute** authorize
   budget honestly.
 
+**Wave 3 + solo follow-ups, same day:**
+
+- `bhui` → `k-kubevirt-infra`: `kubevirt-cr.yaml` gets `spec.infra.nodePlacement`
+  (match-all required term + preferred control-plane) so virt-api/
+  controller/exportproxy can land on workers during a cp1 drain.
+  **Not confirmed live** — recipe in `/tmp/swarm/k-kubevirt-infra.md`.
+- `6t21` → `m-prowlarr`: Prowlarr seeds thepiratebay/knaben/iptorrents
+  from git (schema-template awk; IPT cookie+UA from the moved
+  `iptorrents` SealedSecret), sonarr/radarr lose the Jackett Torznab
+  loops and env, `k8s/apps/jackett` + Ingress + gatus + app-of-apps
+  entry deleted. **Gate is yours**: IPT results through Prowlarr —
+  recipe in `/tmp/swarm/m-prowlarr.md` §Confirm-live (sync prowlarr
+  first; then delete the orphaned `Jackett (…)` indexers in the *arr UIs).
+- Solo: `tho0` (ramp replaces instead of stacking, bar from the plate
+  dialog remembered in localStorage, superset picker is a dialog),
+  `bwhy` (hidden `plates_unit` field), blank-row `<template>` per slot
+  (no more `location.reload()`), `TestPlatesUnit` split out, check.sh
+  Depths history as a table. Workouts image `sha256:92c83f…` pinned.
+
 ## Loose threads
 
-- Workouts image `sha256:d21e9c…` is pinned (e5a3361); Argo rolls it
-  out — not confirmed live from this session (cluster unreachable from
-  the shell). First open on the phone should pull sw.js v3.
+- Workouts image `sha256:92c83f…` is pinned; Argo rolls it out — not
+  confirmed live from this session (cluster unreachable from the
+  shell). First open on the phone should pull sw.js v4.
 - Broken windows fixed the same session (63b4ad4): agent.yaml pins the
   bare `@digest`; k8s driver refuses non-digest outfit keys at `New`;
   `settingKeys` hoisted; `POST /api/exercise-slots/{id}` is a partial
   update (`store.SlotPatch`).
-- Plates form ambiguity: the profile form posts `weight_unit` + `plates`
-  together and `plates` is read in the *submitted* unit, so flipping the
-  dropdown without retyping re-labels the numbers (25 kg → 25 lb). A
-  hidden "unit the values were rendered in" field would remove it.
-- Warm-up generator rough edges: runs twice ⇒ two ramps (no dedupe);
-  bar hard-coded 20 kg; picker is a `prompt()`.
+- `bhui` and `6t21` stay open until you confirm them live (above).
+- `hp79` (terminal client of the parent's stream) is unblocked but needs
+  the CLI-auth design first (OIDC cookie vs a member-cert facet) —
+  grill-design, not a worker. `jlgz` left alone per its own note.
 - Carried: `d0o0` (durable `talos/pins` copy), `tmm5`, `88uq` phone
   subscription, ntfy first page.
 
 ## Suggested next steps
 
+- Confirm `6t21` (Prowlarr/IPT) and `bhui` (cp1 drain) live; close them.
 - Try supersets + a warm-up ramp on the phone (`tmm5` offline check too).
 - `bsj` (Longhorn backup target) — unchanged from last handoff.
 - `d0o0` remainder solo (hub trust root; not swarm material).
