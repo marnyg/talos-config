@@ -9,7 +9,8 @@ metadata:
   name: sillytavern
   namespace: ai
   annotations:
-    gethomepage.dev/enabled: "true"
+    # Off the dashboard by choice (2026-10-18); flip to "true" to list.
+    gethomepage.dev/enabled: "false"
     gethomepage.dev/name: SillyTavern
     gethomepage.dev/group: Apps
     gethomepage.dev/icon: sillytavern.png
