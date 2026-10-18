@@ -15,7 +15,7 @@
 // entry (the server refused it; retrying will not help); a network
 // failure stops the drain and keeps the rest for next time.
 // Add-set (POST .../sets) is not queued: the page needs the new id.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = ['/static/app.css', '/static/app.js', '/static/icon.svg', '/static/icon-192.png', '/static/icon-512.png', '/manifest.webmanifest'];
 const WRITE_PATH = /^\/api\/(sets|exercise-slots)\/[^/]+$/;
 const DB = 'workouts-sw', STORE = 'writes';

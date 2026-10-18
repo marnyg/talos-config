@@ -41,7 +41,27 @@
     });
     return { sides: out, rest: side };
   }
-  window.Workouts = { plateSplit: plateSplit, toKg: toKg, toDisplay: toDisplay };
+  // warmupRamp: warm-up sets leading up to `workingKg` on `barKg`:
+  // bar×10, 50 %×5, 70 %×3, 90 %×1, each rounded DOWN to what the plate
+  // set can load (multiples of 2×smallest plate above the bar). Steps
+  // that land on the bar or repeat the previous step are dropped; an
+  // empty list when the working weight is not above the bar. Pure, kg
+  // in / kg out — the caller converts for display.
+  function warmupRamp(workingKg, barKg, plates) {
+    var out = [];
+    if (!(workingKg > barKg)) return out;
+    var small = plates.filter(function (p) { return p > 0; }).sort(function (a, b) { return a - b; })[0];
+    var inc = small ? small * 2 : 2.5;
+    out.push({ weight: barKg, reps: 10 });
+    [[.5, 5], [.7, 3], [.9, 1]].forEach(function (step) {
+      var w = barKg + Math.floor((workingKg * step[0] - barKg + 1e-9) / inc) * inc;
+      w = Math.round(w * 1000) / 1000;
+      if (w <= barKg || w === out[out.length - 1].weight) return;
+      out.push({ weight: w, reps: step[1] });
+    });
+    return out;
+  }
+  window.Workouts = { plateSplit: plateSplit, warmupRamp: warmupRamp, toKg: toKg, toDisplay: toDisplay };
 
   // ---- active workout ----
   var log = document.getElementById('log');
@@ -105,8 +125,65 @@
       });
       window.addEventListener('online', function () { if (sw.controller) sw.controller.postMessage({ type: 'flush' }); });
     }
-    function slotSave(slot, body) {
+    // slotSave writes the slot's note / rest / superset from its DOM state.
+    // The API overwrites all three, so every save must carry the current
+    // superset or it would be NULLed.
+    function slotSave(slot) {
+      var body = { note: slot.querySelector('.note').value, rest: slot.dataset.rest ? +slot.dataset.rest : null, superset: slot.dataset.superset ? +slot.dataset.superset : null };
       api('POST', '/api/exercise-slots/' + slot.dataset.id, body).then(function (r) { mark(slot, r); }, function () { mark(slot); });
+    }
+
+    // ---- supersets ----
+    // Slots with the same data-superset form a group: a coloured left
+    // border (one colour per group) and an SS<n> tag. The rest timer
+    // starts only after the group's last slot; the others point onward.
+    var SS_COLOURS = ['#4a9eff', '#e8a33d', '#c678dd', '#3dd68c'];
+    function slots() { return Array.prototype.slice.call(log.querySelectorAll('.slot')); }
+    function groupOf(slot) { var g = slot.dataset.superset; return g ? slots().filter(function (s) { return s.dataset.superset === g; }) : [slot]; }
+    function renderSupersets() {
+      slots().forEach(function (s) {
+        var g = +s.dataset.superset || 0, tag = s.querySelector('.ss-tag'), btn = s.querySelector('[data-act=superset]');
+        s.classList.toggle('ss', g > 0);
+        if (g > 0) s.style.setProperty('--ss', SS_COLOURS[(g - 1) % SS_COLOURS.length]); else s.style.removeProperty('--ss');
+        tag.hidden = !g; tag.textContent = 'SS' + (g || '');
+        if (btn) btn.textContent = g ? 'Remove from superset' : 'Superset with\u2026';
+      });
+    }
+    function superset(slot) {
+      if (slot.dataset.superset) {
+        var rest = groupOf(slot).filter(function (s) { return s !== slot; });
+        slot.dataset.superset = ''; slotSave(slot);
+        if (rest.length === 1) { rest[0].dataset.superset = ''; slotSave(rest[0]); } // a group of one is no group
+        renderSupersets(); return;
+      }
+      var others = slots().filter(function (s) { return s !== slot; });
+      if (!others.length) { alert('Add another exercise first.'); return; }
+      var menu = others.map(function (s, i) { return (i + 1) + '. ' + s.querySelector('.ex-name').textContent + (s.dataset.superset ? ' (SS' + s.dataset.superset + ')' : ''); }).join('\n');
+      var v = prompt('Superset with\u2026 (enter a number)\n' + menu, '1');
+      if (v === null) return;
+      var partner = others[parseInt(v, 10) - 1]; if (!partner) return;
+      var g = partner.dataset.superset;
+      if (!g) { var used = {}; slots().forEach(function (s) { if (s.dataset.superset) used[s.dataset.superset] = 1; }); for (g = 1; used[g]; g++) {} partner.dataset.superset = String(g); slotSave(partner); }
+      slot.dataset.superset = String(g); slotSave(slot); renderSupersets();
+    }
+    renderSupersets();
+
+    // ---- warm-up generator ----
+    var BAR_KG = 20;
+    function workingKg(slot) {
+      var tr = Array.prototype.slice.call(slot.querySelectorAll('tr.set')).filter(function (r) { return (r.dataset.kind || 'normal') === 'normal'; })[0];
+      var wi = tr && tr.querySelector('[name=weight]'); if (!wi) return null;
+      return wi.dataset.kg != null ? num(wi.dataset.kg) : toKg(num(wi.value), unit);
+    }
+    function generateWarmups(slot) {
+      var kg = workingKg(slot);
+      if (kg == null) { alert('Set a working weight first.'); return; }
+      var ramp = warmupRamp(kg, BAR_KG, plates);
+      if (!ramp.length) { alert('Working weight is not above the bar \u2014 nothing to warm up with.'); return; }
+      var tbody = slot.querySelector('tbody');
+      api('POST', '/api/exercise-slots/' + slot.dataset.id + '/warmups', ramp.map(function (r) { return { kind: 'warmup', weight: r.weight, reps: r.reps }; }))
+        .then(function (rows) { var first = tbody.firstChild; rows.forEach(function (s) { var tr = setRow(s, slot); if (tr) tbody.insertBefore(tr, first); }); renumber(tbody); })
+        .catch(function () { alert('Could not add warm-ups \u2014 you seem to be offline. Try again when connected.'); });
     }
 
     var pending = {};
@@ -140,7 +217,8 @@
     function setRow(s, slot) {
       var tpl = slot.querySelector('tr.set'); var tr;
       if (tpl) { tr = tpl.cloneNode(true); } else { return location.reload(); }
-      tr.className = 'set kind-normal'; tr.dataset.id = s.id; tr.dataset.kind = 'normal';
+      var kind = s.kind || 'normal';
+      tr.className = 'set kind-' + kind; tr.dataset.id = s.id; tr.dataset.kind = kind;
       tr.querySelector('.prev').textContent = '-';
       var set = function (n, v) { var i = tr.querySelector('[name=' + n + ']'); if (i) i.value = v == null ? '' : v; };
       set('weight', toDisplay(s.weight, unit)); var wi = tr.querySelector('[name=weight]'); if (wi) wi.dataset.kg = s.weight == null ? '' : s.weight;
@@ -173,7 +251,12 @@
       if (t.closest('.check')) {
         var tr = t.closest('tr.set'); var slot = tr.closest('.slot');
         tr.classList.toggle('done'); save(tr, true);
-        if (tr.classList.contains('done')) { if (ding && ding.state === 'suspended') ding.resume(); startRest(+slot.dataset.rest || restDefault); }
+        if (tr.classList.contains('done')) {
+          if (ding && ding.state === 'suspended') ding.resume();
+          var grp = groupOf(slot), next = grp[grp.indexOf(slot) + 1];
+          if (next) { var tag = slot.querySelector('.ss-tag'); tag.textContent = 'SS' + slot.dataset.superset + ' \u2192 next'; setTimeout(function () { renderSupersets(); }, 2500); next.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+          else startRest(+slot.dataset.rest || restDefault);
+        }
         return;
       }
       if (t.closest('.add-set')) {
@@ -188,13 +271,15 @@
         if (act.dataset.act === 'note') { var n = slot3.querySelector('.note'); n.hidden = false; n.focus(); }
         if (act.dataset.act === 'rest') {
           var v = prompt('Rest timer for this exercise (seconds, empty = default)', slot3.dataset.rest || '');
-          if (v === null) return; slot3.dataset.rest = v; slotSave(slot3, { note: slot3.querySelector('.note').value, rest: v === '' ? null : +v }); act.textContent = 'Rest timer (' + (v === '' ? 'default' : fmt(+v)) + ')';
+          if (v === null) return; slot3.dataset.rest = v; slotSave(slot3); act.textContent = 'Rest timer (' + (v === '' ? 'default' : fmt(+v)) + ')';
         }
-        if (act.dataset.act === 'remove' && confirm('Remove exercise and its sets?')) api('DELETE', '/api/exercise-slots/' + slot3.dataset.id).then(function () { slot3.remove(); });
+        if (act.dataset.act === 'superset') superset(slot3);
+        if (act.dataset.act === 'warmup') generateWarmups(slot3);
+        if (act.dataset.act === 'remove' && confirm('Remove exercise and its sets?')) api('DELETE', '/api/exercise-slots/' + slot3.dataset.id).then(function () { slot3.remove(); renderSupersets(); });
       }
     });
     log.addEventListener('change', function (e) {
-      if (e.target.matches('.note')) { var slot = e.target.closest('.slot'); slotSave(slot, { note: e.target.value, rest: slot.dataset.rest ? +slot.dataset.rest : null }); }
+      if (e.target.matches('.note')) slotSave(e.target.closest('.slot'));
     });
 
     var finishBtn = document.getElementById('finish-btn');

@@ -125,6 +125,37 @@ func TestPagesAndLiveWorkout(t *testing.T) {
 	if res, err := c.Do(req); err != nil || res.StatusCode != 200 {
 		t.Fatalf("add set: %v %v", err, res)
 	}
+	// superset: the slot update carries it and /log renders data-superset
+	req, _ = http.NewRequest("POST", u+"/api/exercise-slots/"+slotID, strings.NewReader(`{"note":"","rest":null,"superset":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	if res, err := c.Do(req); err != nil || res.StatusCode != 200 {
+		t.Fatalf("slot update: %v %v", err, res)
+	}
+	get(t, c, u+"/log", `class="slot ss" data-id="`+slotID+`" data-rest="" data-superset="1"`, `>SS1</span>`, "Remove from superset", "Superset with…", "Generate warm-up")
+	// warm-ups: the client-generated ramp lands in front of the bench working set
+	benchSlot := body[strings.Index(body, `class="slot" data-id="`)+len(`class="slot" data-id="`):]
+	benchSlot = benchSlot[:strings.Index(benchSlot, `"`)]
+	req, _ = http.NewRequest("POST", u+"/api/exercise-slots/"+benchSlot+"/warmups", strings.NewReader(`[{"kind":"normal","weight":20,"reps":10}]`))
+	req.Header.Set("Content-Type", "application/json")
+	if res, err := c.Do(req); err != nil || res.StatusCode != 400 {
+		t.Fatalf("warmups with kind normal accepted: %v %v", err, res)
+	}
+	req, _ = http.NewRequest("POST", u+"/api/exercise-slots/"+benchSlot+"/warmups", strings.NewReader(`[{"kind":"warmup","weight":20,"reps":10},{"kind":"warmup","weight":40,"reps":5}]`))
+	req.Header.Set("Content-Type", "application/json")
+	res, err = c.Do(req)
+	if err != nil || res.StatusCode != 200 {
+		t.Fatalf("warmups: %v %v", err, res)
+	}
+	var wu []setJSON
+	json.NewDecoder(res.Body).Decode(&wu)
+	res.Body.Close()
+	if len(wu) != 2 || wu[0].ID == "" || wu[0].Position != 0 || wu[1].Position != 1 || wu[1].Kind != "warmup" || *wu[1].Weight != 40 || *wu[1].Reps != 5 {
+		t.Fatalf("warmups: %+v", wu)
+	}
+	body = get(t, c, u+"/log", `kind-warmup" data-id="`+wu[0].ID+`"`, `kind-warmup" data-id="`+wu[1].ID+`"`, `value="40"`)
+	if strings.Index(body, wu[1].ID) > strings.Index(body, setID) {
+		t.Fatal("warm-up rows rendered after the working set")
+	}
 	res = post(t, c, u+"/log/finish", "update_template=1")
 	if res.StatusCode != 303 || !strings.HasPrefix(res.Header.Get("Location"), "/workouts/") {
 		t.Fatalf("finish: %d %s", res.StatusCode, res.Header.Get("Location"))

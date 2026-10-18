@@ -132,6 +132,24 @@ func TestWorkoutLifecycle(t *testing.T) {
 	if len(got.Exercises[0].Sets) != 3 || got.Exercises[0].Sets[0].Position != 0 || got.Exercises[0].Sets[2].Position != 2 {
 		t.Fatalf("renumber after delete: %+v", got.Exercises[0].Sets)
 	}
+	// warm-ups go in front: existing rows shift up, new rows are 0..n-1
+	wu, err := s.InsertWarmups(ctx, we.ID, []Set{{WeightKg: f(20), Reps: i(10), Completed: true}, {WeightKg: f(40), Reps: i(5)}})
+	if err != nil || len(wu) != 2 || wu[0].ID == "" || wu[0].Position != 0 || wu[1].Position != 1 || wu[0].Kind != KindWarmup || wu[0].Completed {
+		t.Fatalf("InsertWarmups: %v %+v", err, wu)
+	}
+	got, _ = s.GetWorkout(ctx, w.ID)
+	sets := got.Exercises[0].Sets
+	if len(sets) != 5 || sets[0].ID != wu[0].ID || sets[1].ID != wu[1].ID || sets[2].ID != st.ID || sets[2].Position != 2 || sets[4].ID != extra.ID || sets[4].Position != 4 {
+		t.Fatalf("shift after InsertWarmups: %+v", sets)
+	}
+	if _, err := s.InsertWarmups(ctx, we.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range wu {
+		if err := s.DeleteSet(ctx, x.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	fin, err := s.FinishWorkout(ctx, w.ID)
 	if err != nil {

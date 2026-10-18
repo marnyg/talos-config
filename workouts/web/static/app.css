@@ -77,6 +77,9 @@ table.plain td { padding: 3px 0; vertical-align: top; }
 .meta form { display: grid; gap: 8px; margin: 8px 0; }
 .slot { margin: 18px 0; }
 .ex-name { color: var(--accent); font-weight: 600; font-size: 1.05rem; }
+/* supersets: one colour per group (set as --ss by app.js), SS<n> tag beside the name */
+.slot.ss { border-left: 3px solid var(--ss, var(--accent)); padding-left: 8px; margin: 10px 0; }
+.ss-tag { font-size: .7rem; font-weight: 700; color: var(--ss, var(--accent)); border: 1px solid currentColor; border-radius: 6px; padding: 0 5px; margin-left: 6px; white-space: nowrap; }
 .slot .note { margin: 6px 0; }
 table.sets { width: 100%; border-collapse: collapse; table-layout: fixed; }
 table.sets th { font-size: .75rem; color: var(--muted); font-weight: 600; padding: 4px 2px; }
