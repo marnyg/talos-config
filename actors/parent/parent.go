@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -338,7 +339,11 @@ func (p *Parent) Steer(ctx context.Context, id, from, message string) error {
 }
 
 // Abort ends a live run: #abort to the child, stamped on the stream.
-// The child settles "aborted" and ships what it has.
+// The child settles "aborted" and ships what it has. A child that
+// answers "no task is running" has already finished a run whose last
+// line never reached this parent (its upload broke and was not
+// resumed): the session is lost with that reason and the lease killed
+// — otherwise it would stay "running", and the child renewing, for ever.
 func (p *Parent) Abort(ctx context.Context, id, from string) error {
 	sess, err := p.store.Get(id)
 	if err != nil {
@@ -350,11 +355,30 @@ func (p *Parent) Abort(ctx context.Context, id, from string) error {
 	sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if _, err := p.a.Send(sctx, sess.Child, child.FacetAbort, []byte(`{}`)); err != nil {
+		var re *actor.RemoteError
+		if errors.As(err, &re) && strings.Contains(re.Msg, "no task is running") {
+			return p.lose(ctx, sess, from, "child reports no task running: its run ended but the stream never reached this parent")
+		}
 		return err
 	}
 	line, _ := json.Marshal(map[string]any{"type": "abort", "from": from})
 	_, err = p.store.Append(id, "abort", from, line)
 	return err
+}
+
+// lose ends a session the parent will hear no more about and kills
+// its child's lease.
+func (p *Parent) lose(ctx context.Context, sess Session, from, reason string) error {
+	if err := p.store.Settle(sess.ID, StatusLost, reason, "", "", ""); err != nil {
+		return err
+	}
+	line, _ := json.Marshal(map[string]any{"type": child.TypeSettled, "status": StatusLost, "reason": reason, "from": from})
+	if _, err := p.store.Append(sess.ID, child.TypeSettled, from, line); err != nil {
+		return err
+	}
+	p.log.Info("parent: session lost", "session", sess.ID, "child", sess.Child, "reason", reason, "by", from)
+	go p.kill(context.WithoutCancel(ctx), sess.Child, "session lost")
+	return nil
 }
 
 // ---- the kit's outfit -------------------------------------------------------

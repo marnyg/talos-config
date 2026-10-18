@@ -403,6 +403,25 @@ func TestSubmitRunsToSettled(t *testing.T) {
 	if hits, _ = r.store.Search(parent.Viewer{Wallet: "0x1111111111111111111111111111111111111111"}, "zebra", 0); len(hits) != 0 {
 		t.Fatal("a stranger searches the transcript")
 	}
+
+	// A session the parent believes running on a child that is idle
+	// (its run ended but the stream never arrived — the pre-resume
+	// child, live 2026-10-18): #abort is answered "no task is running"
+	// and the parent loses the session instead of waiting for ever.
+	if err := r.store.Create(parent.Session{ID: "stuck", Owner: owner, Prompt: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.Started("stuck", x.Child, x.Lease); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.p.Abort(r.pctx, "stuck", owner); err != nil {
+		t.Fatalf("abort on an idle child: %v", err)
+	}
+	y, _ := r.store.Get("stuck")
+	evs, _ = r.store.Events("stuck", 0, 0)
+	if y.Status != parent.StatusLost || len(evs) != 1 || evs[0].Type != "child_settled" || evs[0].From != owner {
+		t.Fatalf("stuck session after abort: %+v %+v", y, evs)
+	}
 }
 
 // TestSteerAbortAndRestart: a hanging run takes a steer stamped with
