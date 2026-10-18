@@ -188,7 +188,8 @@
 // pin hop is one hop more and adds no delegation: a trivial pin
 // (`root == id`) is the identity map; consents stay addressed to the
 // identity; a dead pin admits nothing; `bundlePins` — what a caller
-// could carry — is read by nothing. `res`/`chainRes` IS the pinned
+// could carry — is read by nothing (and since xrfm only `genNear`'s
+// FPinInBundleOnly fault ever fills it). `res`/`chainRes` IS the pinned
 // receiver; every law speaks about it, and the five "consented sovereign
 // vouches for key" laws carry the pin edge raw (`pinnedAs`, on the `pins`
 // records, never via `resolve`): invMemberIssuerConsented,

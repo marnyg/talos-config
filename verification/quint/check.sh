@@ -55,33 +55,32 @@
 # Depths: hub/approval verify at 12–15 steps; enroll's growing sets
 # verify at 8; authorize regenerates its whole scenario every step so
 # depth 2 is exhaustive. Its budget is SIX minutes, not the five the
-# other models get: ~327 s wall / 322 s solver for invAll on an M4 Pro
-# (xrfm, 2026-10-21) after `gen` stopped drawing PIN_DEAD and a
-# caller-carried pin — both are single boundaries genNear's FPinDead /
-# FPinInBundleOnly faults already reach, and the mutants p3/p4 that guard
-# them still die (run tier) — down from 350 s / 338 s on the same machine
-# with the full draws, i.e. the model lever bought ~7%, not the 50 s
-# needed. History: ~333 s / 328 s with `res` the PINNED receiver and the
-# pin edge inside the laws, djdl; 349 s / 342 s with the bridge-law shape
-# of d0o0; 409 s before `resolve` lost its `if (pins == Set())` branch;
-# the pre-pin file measured 233 s wall / 184 s solver, i.e. the header's
-# ~173 s was already optimistic. No single law is the hog: the larger
-# scenario (pins, OWNER1_NEW as a signer) and the pin hop in every
-# `authorize` encoding make every law a little slower.
+# other models get (xrfm, 2026-10-21): no single law is the hog — the
+# larger scenario (pins, OWNER1_NEW as a signer) and the pin hop in
+# every `authorize` encoding make every law a little slower.
 # invTrivialPinsPreserveVerdicts, a biconditional over two full
 # `authorize` encodings with no concrete hypothesis, verifies on its own
-# line, ~61 s solver / ~73 s wall (~85 s / ~100 s under d0o0); ~173 s with the ADR-0004 wildcard
-# target sets, zeb; ~170 s since cav.target may name a principal the
-# receiver answers for, kau; ~135 s after xwu; ~95 s before); runway's nondet
-# init reaches the 6 d boundaries in ≤ 10 steps — the 30 d speak-as
-# cliff is 720 h out and is covered by its witness tests (nag*Test,
-# rotationConvergesTest) instead; clock's 8-tick horizon is covered at 10;
-# rotation's view is a fold over MAX_EPOCH=3 so 7 steps reach every
-# chain shape incl. recurrence and equivocation-after-advance (115–140 s;
-# 8 steps blew past 5 min). Every invariant
-# has been mutation-tested (seeding the bug it guards against produces
-# a [violation]); authorize additionally needed a boundary-biased
-# generator before its mutants would die.
+# line. runway's nondet init reaches the 6 d boundaries in ≤ 10 steps —
+# the 30 d speak-as cliff is 720 h out and is covered by its witness
+# tests (nag*Test, rotationConvergesTest) instead; clock's 8-tick
+# horizon is covered at 10; rotation's view is a fold over MAX_EPOCH=3
+# so 7 steps reach every chain shape incl. recurrence and
+# equivocation-after-advance (115–140 s; 8 steps blew past 5 min).
+# Every invariant has been mutation-tested (seeding the bug it guards
+# against produces a [violation]); authorize additionally needed a
+# boundary-biased generator before its mutants would die.
+#
+# History (authorize invAll depth 2, wall / solver; one line per change):
+#   2026-10-21 xrfm  327 s / 322 s  M4 Pro; gen stops drawing PIN_DEAD + caller pin (−7%)
+#   2026-10-21 xrfm  350 s / 338 s  M4 Pro baseline, full draws
+#   2026-10-18 djdl  333 s / 328 s  res = the PINNED receiver, pin edge inside the laws
+#   2026-10-15 d0o0  349 s / 342 s  bridge-law shape
+#   2026-10-15 d0o0  409 s          before `resolve` lost its `if (pins == Set())` branch
+#   2026-10-1x  —    233 s / 184 s  pre-pin file (header then claimed ~173 s)
+# invTrivialPinsPreserveVerdicts on its own line (wall / solver):
+#   2026-10-18 djdl   73 s /  61 s;  d0o0 ~100 s / ~85 s;  zeb ~173 s (ADR-0004 wildcard
+#   target sets);  kau ~170 s (cav.target may name an answered-for principal);
+#   xwu ~135 s;  before that ~95 s.
 set -euo pipefail
 cd "$(dirname "$0")"
 
