@@ -12,13 +12,15 @@
   </details>
   {{range $we := $w.Exercises}}
   {{$e := $we.Exercise}}
-  <article class="slot" data-id="{{$we.ID}}" data-rest="{{if $we.RestS}}{{$we.RestS}}{{end}}"{{if plateCalc $e}} data-plates="1"{{end}}>
+  <article class="slot{{if $we.Superset}} ss{{end}}" data-id="{{$we.ID}}" data-rest="{{if $we.RestS}}{{$we.RestS}}{{end}}" data-superset="{{if $we.Superset}}{{derefi $we.Superset}}{{end}}"{{if plateCalc $e}} data-plates="1"{{end}}>
     <div class="row">
-      <a class="ex-name" href="/exercises/{{$e.ID}}">{{$e.Name}}</a><span class="grow"></span>
+      <a class="ex-name" href="/exercises/{{$e.ID}}">{{$e.Name}}</a><span class="ss-tag" {{if not $we.Superset}}hidden{{end}}>SS{{if $we.Superset}}{{derefi $we.Superset}}{{end}}</span><span class="grow"></span>
       <details class="menu"><summary class="btn">⋯</summary>
         <div class="menu-items">
           <button data-act="note">Add note</button>
           <button data-act="rest">Rest timer ({{if $we.RestS}}{{secs2 $we.RestS}}{{else}}default{{end}})</button>
+          <button data-act="superset">{{if $we.Superset}}Remove from superset{{else}}Superset with…{{end}}</button>
+          {{if plateCalc $e}}<button data-act="warmup">Generate warm-up</button>{{end}}
           <button data-act="remove" class="danger">Remove exercise</button>
         </div>
       </details>
