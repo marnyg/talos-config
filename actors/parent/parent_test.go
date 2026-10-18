@@ -461,6 +461,9 @@ func TestSteerAbortAndRestart(t *testing.T) {
 	if len(kids) != 1 {
 		t.Fatalf("born table %+v", kids)
 	}
+	// Count extends from before the restart: the child's beat may land
+	// at the new process the moment it listens.
+	before, _ := r.drv.seen()
 	lost := r.restart(t)
 	if len(lost) != 1 || lost[0] != "orphan" {
 		t.Fatalf("lost %v, want [orphan]", lost)
@@ -472,7 +475,6 @@ func TestSteerAbortAndRestart(t *testing.T) {
 		t.Fatalf("adopted %+v want %+v", got, kids)
 	}
 	// The child's beat renews at the new process and the lease follows.
-	before, _ := r.drv.seen()
 	r.clock.Add(r.sp.KitTTL / 2)
 	waitFor(t, "#extend through the restarted parent", func() bool { n, _ := r.drv.seen(); return n > before })
 	// Abort from the new process: the child settles aborted and ships.
