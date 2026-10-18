@@ -293,8 +293,11 @@ type logData struct {
 }
 
 // defaultPlates is the per-side plate set the calculator assumes when the
-// `plates` setting is unset.
-const defaultPlates = "25,20,15,10,5,2.5,1.25"
+// `plates` setting is unset, keyed by display unit and expressed in it.
+var defaultPlates = map[weightUnit]string{
+	unitKg: "25,20,15,10,5,2.5,1.25",
+	unitLb: "45,35,25,10,5,2.5",
+}
 
 func (h *Handler) logWorkout(w http.ResponseWriter, r *http.Request) {
 	cur, err := h.s.CurrentWorkout(r.Context())
@@ -320,21 +323,58 @@ func (h *Handler) logWorkout(w http.ResponseWriter, r *http.Request) {
 			Unit: h.weightUnit(r.Context()), Plates: h.plates(r.Context())}})
 }
 
-// plates returns the `plates` setting normalised (trimmed, numeric,
-// descending) or defaultPlates when unset/unparseable.
+// plates returns the stored `plates` setting (kg) normalised, or the
+// display unit's default list converted to kg when unset/unparseable.
+// The result is always kg: it feeds `data-plates`, which app.js parses
+// as kg (domain-model invariant 5).
 func (h *Handler) plates(ctx context.Context) string {
 	v, _ := h.s.Setting(ctx, "plates")
-	var out []string
+	if kg := parsePlates(v); len(kg) > 0 {
+		return joinPlates(kg)
+	}
+	u := h.weightUnit(ctx)
+	return platesToKg(defaultPlates[u], u)
+}
+
+// parsePlates splits a comma-separated list into its positive numbers,
+// dropping blanks and junk.
+func parsePlates(v string) []float64 {
+	var out []float64
 	for _, p := range strings.Split(v, ",") {
-		p = strings.TrimSpace(p)
-		if f, err := strconv.ParseFloat(p, 64); err == nil && f > 0 {
-			out = append(out, fmtNum(f))
+		if f, err := strconv.ParseFloat(strings.TrimSpace(p), 64); err == nil && f > 0 {
+			out = append(out, f)
 		}
 	}
-	if len(out) == 0 {
-		return defaultPlates
+	return out
+}
+
+func joinPlates(fs []float64) string {
+	out := make([]string, len(fs))
+	for i, f := range fs {
+		out[i] = fmtNum(f)
 	}
 	return strings.Join(out, ",")
+}
+
+// platesToKg converts a plate list entered in unit u to the stored kg
+// form; lb is kept to 3 decimals so it round-trips through
+// platesDisplay (45 lb → 20.412 kg → 45 lb). Empty in, empty out.
+func platesToKg(v string, u weightUnit) string {
+	fs := parsePlates(v)
+	for i, f := range fs {
+		fs[i] = u.toKg(f)
+	}
+	return joinPlates(fs)
+}
+
+// platesDisplay renders a stored kg plate list in unit u for the
+// profile form, 2 decimals in lb.
+func platesDisplay(v string, u weightUnit) string {
+	fs := parsePlates(v)
+	for i, f := range fs {
+		fs[i] = u.displayPlate(f)
+	}
+	return joinPlates(fs)
 }
 
 func (h *Handler) settingInt(ctx context.Context, key string, def int) int {
@@ -831,6 +871,8 @@ type profileData struct {
 	Workouts int
 	Weeks    []store.Point
 	Settings map[string]string
+	Unit     weightUnit // display unit the `plates` field is shown/entered in
+	Plates   string     // default plate list in Unit, the field's placeholder
 }
 
 func (h *Handler) profile(w http.ResponseWriter, r *http.Request) {
@@ -845,7 +887,10 @@ func (h *Handler) profile(w http.ResponseWriter, r *http.Request) {
 	for _, k := range []string{"rest_s", "weight_unit", "length_unit", "first_weekday", "plates"} {
 		set[k], _ = h.s.Setting(ctx, k)
 	}
-	h.render(w, r, "profile.html", page{Title: "Profile", Tab: "profile", Data: profileData{Workouts: n, Weeks: weeks, Settings: set}})
+	// plates is stored in kg; the form shows and takes it in the display unit.
+	u := h.weightUnit(ctx)
+	set["plates"] = platesDisplay(set["plates"], u)
+	h.render(w, r, "profile.html", page{Title: "Profile", Tab: "profile", Data: profileData{Workouts: n, Weeks: weeks, Settings: set, Unit: u, Plates: defaultPlates[u]}})
 }
 
 func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
@@ -857,7 +902,12 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 	// value clears a setting back to its default.
 	for _, k := range []string{"rest_s", "weight_unit", "length_unit", "first_weekday", "plates"} {
 		if _, ok := r.Form[k]; ok {
-			if err := h.s.SetSetting(r.Context(), k, strings.TrimSpace(r.FormValue(k))); err != nil {
+			v := strings.TrimSpace(r.FormValue(k))
+			if k == "plates" {
+				// Entered in the unit submitted alongside it; stored in kg.
+				v = platesToKg(v, weightUnit(r.FormValue("weight_unit")))
+			}
+			if err := h.s.SetSetting(r.Context(), k, v); err != nil {
 				h.fail(w, err)
 				return
 			}
@@ -1018,6 +1068,24 @@ func (u weightUnit) display(kg float64) float64 {
 		return math.Round(kg*lbPerKg*10) / 10
 	}
 	return kg
+}
+
+// displayPlate is display with 2 decimals, enough for an lb plate list
+// to round-trip through toKg (1.25 kg → 2.76 lb; 20.412 kg → 45 lb).
+func (u weightUnit) displayPlate(kg float64) float64 {
+	if u == unitLb {
+		return math.Round(kg*lbPerKg*100) / 100
+	}
+	return kg
+}
+
+// toKg converts a value entered in the unit to kg; lb is kept to 3
+// decimals (45 lb → 20.412).
+func (u weightUnit) toKg(v float64) float64 {
+	if u == unitLb {
+		return math.Round(v/lbPerKg*1000) / 1000
+	}
+	return v
 }
 
 func (u weightUnit) fmt(kg float64) string { return fmtNum(u.display(kg)) }
