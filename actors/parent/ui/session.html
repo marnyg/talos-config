@@ -1,0 +1,51 @@
+{{template "head.html" .}}
+<header>
+  <h1><a href="/">agents</a> / <span class="mono">{{.Session.ID}}</span></h1>
+  <span class="me" title="{{.Me.Wallet}}">{{.Me.Username}}</span>
+</header>
+<main data-session="{{.Session.ID}}" data-live="{{.Session.Live}}" data-steer="{{.CanSteer}}">
+<section class="meta">
+  <span class="badge {{.Session.Status}}" id="status">{{.Session.Status}}</span>
+  {{if .Session.Repo}}<span class="mono">{{.Session.Repo}}{{if .Session.Ref}}@{{.Session.Ref}}{{end}}</span>{{end}}
+  <span title="{{.Session.Owner}}">by {{short .Session.Owner}}</span>
+  <span>{{ago .Session.Created}}</span>
+  <span id="result">
+    {{if .Session.PR}}<a href="{{.Session.PR}}">PR</a>{{else if .Session.Branch}}<span class="mono">{{.Session.Branch}}</span>{{end}}
+    {{if .Session.Reason}}<span class="muted">{{.Session.Reason}}</span>{{end}}
+  </span>
+  {{if .Session.File}}<a href="/api/sessions/{{.Session.ID}}/file">session.jsonl</a>{{end}}
+</section>
+
+<section class="prompt"><pre>{{.Session.Prompt}}</pre></section>
+
+<section id="transcript" class="transcript"></section>
+
+{{if .CanSteer}}
+<section class="controls" id="controls" {{if not .Session.Live}}hidden{{end}}>
+  <form id="steer">
+    <textarea name="message" rows="2" placeholder="steer the agent…" required></textarea>
+    <div class="row">
+      <button type="submit">steer</button>
+      <button type="button" id="abort" class="danger">abort</button>
+    </div>
+  </form>
+</section>
+{{end}}
+
+{{if .Owner}}
+<details class="shares">
+  <summary>sharing ({{len .Shares}})</summary>
+  <ul>
+    {{range .Shares}}<li><span class="mono">{{.Principal}}</span> <span class="badge">{{.Right}}</span>
+      <button class="link unshare" data-principal="{{.Principal}}">remove</button></li>{{else}}<li class="muted">only you (and admins can view)</li>{{end}}
+  </ul>
+  <form method="post" action="/api/sessions/{{.Session.ID}}/shares" class="row">
+    <input name="principal" placeholder="0x… wallet or group:name" required>
+    <select name="right"><option value="view">view</option><option value="steer">steer</option></select>
+    <button type="submit">share</button>
+  </form>
+</details>
+{{end}}
+</main>
+<script src="/static/app.js"></script>
+</body></html>

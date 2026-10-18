@@ -1,0 +1,54 @@
+{{template "head.html" .}}
+<header>
+  <h1><a href="/">agents</a></h1>
+  <form class="search" method="get" action="/">
+    <input type="search" name="q" placeholder="search transcripts" value="{{.Query}}">
+  </form>
+  <span class="me" title="{{.Me.Wallet}}">{{.Me.Username}}</span>
+  <form method="post" action="/logout"><button class="link">log out</button></form>
+</header>
+<main>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+
+<details class="new" {{if not .Sessions}}open{{end}}>
+  <summary>new task</summary>
+  <form method="post" action="/sessions">
+    <textarea name="prompt" rows="5" required placeholder="what should the agent do?"></textarea>
+    <div class="row">
+      <input name="repo" placeholder="repo (owner/name on git.gw, optional)">
+      <input name="ref" placeholder="ref (default branch)">
+    </div>
+    <input name="title" placeholder="PR title (default: first line of the prompt)">
+    <button type="submit">run</button>
+  </form>
+</details>
+
+{{if .Query}}
+<section class="hits">
+  <h2>{{len .Hits}} hits for “{{.Query}}”</h2>
+  {{range .Hits}}<p><a href="/s/{{.Session}}#e{{.Seq}}">{{.Session}}</a> <span class="snippet">{{.Snippet}}</span></p>{{else}}<p class="muted">nothing</p>{{end}}
+</section>
+{{end}}
+
+<section>
+  <h2>sessions</h2>
+  <table>
+    <thead><tr><th>status</th><th>prompt</th><th>repo</th><th>owner</th><th>when</th><th>result</th></tr></thead>
+    <tbody>
+    {{range .Sessions}}
+      <tr class="st-{{.Status}}">
+        <td><span class="badge {{.Status}}">{{.Status}}</span></td>
+        <td><a href="/s/{{.ID}}">{{.Title}}{{if not .Title}}{{.Prompt}}{{end}}</a></td>
+        <td>{{.Repo}}{{if .Ref}}@{{.Ref}}{{end}}</td>
+        <td title="{{.Owner}}">{{short .Owner}}</td>
+        <td>{{ago .Created}}</td>
+        <td>{{if .PR}}<a href="{{.PR}}">PR</a>{{else if .Branch}}{{.Branch}}{{end}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="6" class="muted">no sessions yet</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</section>
+</main>
+</body></html>
