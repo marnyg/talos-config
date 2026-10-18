@@ -52,7 +52,7 @@ spec:
       containers:
         - name: workouts
           # workouts/build.sh prints the digest; pin it here.
-          image: ghcr.io/marnyg/workouts@sha256:d21e9c07bde298ab6142df7e488f312e714194313cf478f95b6de71d086d2754
+          image: ghcr.io/marnyg/workouts@sha256:92c83fa6710c9538e38da9f9c18d713fa7e5a8a06f4e33b976daf2c3bebd4e69
           args: ["serve", "-data", "/var/lib/workouts", "-listen", ":8080", "-tz", "Europe/Oslo"]
           ports:
             - containerPort: 8080
