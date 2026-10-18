@@ -15,7 +15,7 @@ metadata:
   annotations:
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: ntfy
-    gethomepage.dev/group: Platform
+    gethomepage.dev/group: Notifications
     gethomepage.dev/icon: ntfy.png
     gethomepage.dev/description: pages
     gethomepage.dev/href: https://ntfy.gw.mesh.internal
@@ -25,8 +25,8 @@ metadata:
     # pod polls the Service directly — in-cluster, so no gate and no
     # token, the same reachability trust the publishers have
     # (deployment.yaml). Without `message`, which is Alertmanager's
-    # markdown label dump; the tile width comes from the Platform
-    # layout in homepage/config.yaml.
+    # markdown label dump. Own group so the tile is wide enough for
+    # the fields (layout in homepage/config.yaml).
     gethomepage.dev/widget.type: ntfy
     gethomepage.dev/widget.url: http://ntfy.ntfy.svc
     gethomepage.dev/widget.topic: alerts
