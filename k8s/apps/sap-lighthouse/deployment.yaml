@@ -72,6 +72,9 @@ spec:
             - -member=ed:9c3ae5ecc9a7eeacc4138fb91977d0e2fe6318bdde8429a12198b814ebb41c86
             # The laptop parent of the acceptance run (spawn -print-id).
             - -member=ed:79547a961cf58b525d4a65c32dca8db46c5aa568526f56911433f7410dcd769b
+            # The sap-parent (k8s/apps/sap-parent; its id is on its PVC,
+            # `parent: id` in its log at start).
+            - -member=ed:960861402cbbb8624f6735d622698b86d2db720de354670da93389fcb278c9c3
           env:
             - name: SAP_LOG
               value: warn

@@ -126,6 +126,9 @@ spec:
             - -outfit=ghcr.io/marnyg/sandbox-agent@sha256:51840a569d8e1c7d050b4b1b6cc908bada17e040083791706d060ad084600455=openrouter,forgejo-agent
             # The laptop parent of the acceptance run (spawn -print-id).
             - -customer=ed:79547a961cf58b525d4a65c32dca8db46c5aa568526f56911433f7410dcd769b
+            # The sap-parent (k8s/apps/sap-parent, ADR-0037): the agent
+            # backend, the first long-lived customer.
+            - -customer=ed:960861402cbbb8624f6735d622698b86d2db720de354670da93389fcb278c9c3
             # The sap-lighthouse (k8s/apps/sap-lighthouse); this id is
             # one of its -member (id minted on its PVC 2026-09-29).
             - -lighthouse=ed:5cad808a3ed6be7628401c714409311cee59007d06e0aecbcdff2c1f81c662d7
