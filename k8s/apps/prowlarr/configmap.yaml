@@ -102,10 +102,14 @@ data:
           cookie="$IPTORRENTS_COOKIE"; ua="$IPTORRENTS_USER_AGENT"
           ;;
       esac
-      awk -v d="$id" '
+      # definitionName is case-insensitive here: Cardigann YAML ids are
+      # lowercase (thepiratebay) but Prowlarr's native C# indexers carry
+      # their class name (IPTorrents, Knaben); the list above stays
+      # lowercase so the `case` branch keeps matching.
+      awk -v d="$(printf '%s' "$id" | tr 'A-Z' 'a-z')" '
         /^  \{$/ { buf = ""; hit = 0 }
         { buf = buf $0 "\n" }
-        $0 ~ "^    \"definitionName\": \"" d "\",?$" { hit = 1 }
+        tolower($0) ~ "^    \"definitionname\": \"" d "\",?$" { hit = 1 }
         /^  \},?$/ { if (hit) { printf "%s", buf; exit } }
       ' /tmp/schema.json > /tmp/tpl.json
       if [ ! -s /tmp/tpl.json ]; then
