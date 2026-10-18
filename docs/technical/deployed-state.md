@@ -118,7 +118,7 @@ history and, where the numbers still matter, in ADR-0006 and
   raw TCP splice to :8096. **ingress-nginx runs 2 replicas** on
   distinct nodes (required anti-affinity, PDB minAvailable 1,
   `maxUnavailable: 1`) _(2026-09-30, `9l67` slice 2)_. Ingress hosts, all `<svc>.gw.mesh.internal`:
-  argocd, auth, oauth2, jackett, jellyfin, nzbget, prowlarr, radarr,
+  argocd, auth, oauth2, jellyfin, nzbget, prowlarr, radarr,
   sonarr, transmission. No `*.cp1` names remain. No web NodePorts remain
   (Jellyfin's 30096 and win2k25's RDP 30389 cut 2026-10-04 — a v3 node
   forwards only its own facets, so they were dead doors); only

@@ -4,23 +4,36 @@ metadata:
   name: prowlarr-configurator
   namespace: media
 data:
-  # Prowlarr is the indexer manager: it holds the indexers and pushes
-  # them into Sonarr/Radarr itself ("Apps" sync). The pairing runs the
-  # other way round from what the UI suggests — each *arr's configurator
+  # Prowlarr is the single source of indexers: this configurator seeds
+  # them from git (the `indexers` key below) and Prowlarr pushes them
+  # into Sonarr/Radarr itself ("Apps" sync). The pairing runs the other
+  # way round from what the UI suggests — each *arr's configurator
   # registers itself here (POST /api/v1/applications with its own key
   # from config.xml), since it is the one that knows its key; Prowlarr's
   # key is sealed in git (sealed-secret.yaml) so they can call this API.
+  # Per-app categories (and the anime handling) live on those
+  # application entries, see sonarr/configmap.yaml.
   #
-  # Runs beside Jackett for now (2026-10-20): the indexers themselves
-  # are added in the UI, and the Jackett entries the sonarr/radarr
-  # configurators own stay. Prowlarr only ever removes indexers it
-  # created, so the two coexist. Seeding the indexers from git and
-  # retiring Jackett is the follow-up.
+  # Jackett retired 2026-10-21 (talos-config-6t21): it had held the
+  # same three indexers and sonarr/radarr each kept one Torznab entry
+  # per id; now there is one list, here, and no per-app loop.
+  #
+  # Prowlarr definition ids (space-separated) to enable. 1337x and eztv
+  # sit behind Cloudflare challenges and need FlareSolverr; knaben is a
+  # meta-search over many trackers, so it covers a lot on its own.
+  # nyaasi was tried and dropped (never returned results). iptorrents
+  # is a private tracker whose login has a captcha, so it takes a
+  # browser session cookie + the User-Agent it was issued to, from the
+  # `iptorrents` sealed secret (sealed-secret.yaml).
+  indexers: "thepiratebay knaben iptorrents"
   configure.sh: |
     #!/bin/sh
     set -e
 
     PROWLARR_URL="http://localhost:9696"
+    # PROWLARR_INDEXERS (this ConfigMap), IPTORRENTS_COOKIE and
+    # IPTORRENTS_USER_AGENT (iptorrents sealed secret, optional) come
+    # from the env.
 
     echo "Waiting for Prowlarr to start..."
     until curl -sf "$PROWLARR_URL/ping" > /dev/null 2>&1; do
@@ -47,6 +60,95 @@ data:
       sleep 15
       until curl -sf "$PROWLARR_URL/ping" > /dev/null 2>&1; do sleep 5; done
     fi
+
+    # Indexers, one per definition id in PROWLARR_INDEXERS. The body is
+    # the definition's own template from /api/v1/indexer/schema (what the
+    # UI's "Add Indexer" POSTs): it carries every setting with its
+    # default, so only name/enable/profile/priority and the credential
+    # fields are patched in. The schema list is large and pretty-printed
+    # — one entry per `  {`…`  }` block, top-level keys at 4 spaces,
+    # field objects at 6/8 — the same layout the sonarr/radarr
+    # configurators already lean on for Prowlarr's application list.
+    #
+    # The configurator owns these entries: an existing one (matched by
+    # name) is PUT back so a rotated cookie in the iptorrents secret
+    # reaches the persisted DB, a missing one is POSTed. Prowlarr tests
+    # the indexer on both (for iptorrents: the cookie against the live
+    # site), so a stale cookie or a tracker that is down shows up here as
+    # a WARN; fix the secret / wait, then restart the pod to re-run.
+    # Prowlarr syncs every change to the registered apps on its own.
+    #
+    # App profile: the default ("Standard", minimumSeeders 1) is the
+    # first one listed; its id is 1 on a fresh DB but read it anyway.
+    profile=$(curl -sf -H "$AUTH" "$PROWLARR_URL/api/v1/appprofile" \
+      | sed -n 's/^    "id": \([0-9]*\),\{0,1\}$/\1/p' | head -n 1)
+    profile=${profile:-1}
+    curl -sf -H "$AUTH" "$PROWLARR_URL/api/v1/indexer/schema" > /tmp/schema.json \
+      || { echo "WARN: indexer schema unavailable, indexers skipped"; : > /tmp/schema.json; }
+    existing=$(curl -sf -H "$AUTH" "$PROWLARR_URL/api/v1/indexer")
+    for id in $PROWLARR_INDEXERS; do
+      # Credentialed definitions: the env vars are patched into the
+      # schema fields whose name normalises to cookie / useragent (the
+      # Cardigann field names are not pinned here, the label-ish match
+      # survives a definition rename). No JSON escaping: cookie and UA
+      # strings carry no quotes/backslashes.
+      cookie=""; ua=""
+      case "$id" in
+        iptorrents)
+          if [ -z "$IPTORRENTS_COOKIE" ] || [ -z "$IPTORRENTS_USER_AGENT" ]; then
+            echo "WARN: $id skipped, iptorrents secret not present"
+            continue
+          fi
+          cookie="$IPTORRENTS_COOKIE"; ua="$IPTORRENTS_USER_AGENT"
+          ;;
+      esac
+      awk -v d="$id" '
+        /^  \{$/ { buf = ""; hit = 0 }
+        { buf = buf $0 "\n" }
+        $0 ~ "^    \"definitionName\": \"" d "\",?$" { hit = 1 }
+        /^  \},?$/ { if (hit) { printf "%s", buf; exit } }
+      ' /tmp/schema.json > /tmp/tpl.json
+      if [ ! -s /tmp/tpl.json ]; then
+        echo "WARN: $id not in Prowlarr's indexer schema, skipped"
+        continue
+      fi
+      name=$(sed -n 's/^    "name": "\(.*\)",$/\1/p' /tmp/tpl.json | head -n 1)
+      eid=$(printf '%s\n' "$existing" | awk -v n="$name" \
+        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+      # Lines are emitted one behind so the last key before `}` can lose
+      # its comma (or gain the id) whatever the schema put last.
+      COOKIE="$cookie" UA="$ua" awk -v pid="$profile" -v eid="$eid" '
+        function out(l) { if (held != "") print held; held = l }
+        NR == 1 { out("{"); out("  \"enable\": true,"); out("  \"appProfileId\": " pid ","); out("  \"priority\": 25,"); next }
+        /^  \},?$/ { sub(/,$/, "", held); if (eid != "") { held = held ","; out("  \"id\": " eid) } out("}"); next }
+        /^    "(enable|appProfileId|priority|id)": / { next }
+        /^      \{$/ { f = 1; k = "" }
+        f && /^        "name": / {
+          k = $0; sub(/^.*"name": "/, "", k); sub(/".*$/, "", k)
+          k = tolower(k); gsub(/[^a-z]/, "", k)
+          out($0)
+          if (k == "cookie" && ENVIRON["COOKIE"] != "") out("        \"value\": \"" ENVIRON["COOKIE"] "\",")
+          if (k == "useragent" && ENVIRON["UA"] != "") out("        \"value\": \"" ENVIRON["UA"] "\",")
+          next
+        }
+        f && /^        "value": / && ((k == "cookie" && ENVIRON["COOKIE"] != "") || (k == "useragent" && ENVIRON["UA"] != "")) { next }
+        /^      \},?$/ { f = 0 }
+        { out($0) }
+        END { if (held != "") print held }
+      ' /tmp/tpl.json > /tmp/body.json
+      if [ -n "$eid" ]; then
+        echo "Refreshing indexer $name (id $eid)..."
+        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+          --data-binary @/tmp/body.json "$PROWLARR_URL/api/v1/indexer/$eid" \
+          && echo "$name refreshed" || echo "WARN: $name refresh failed (test against the tracker?)"
+        continue
+      fi
+      echo "Adding indexer $name..."
+      curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
+        --data-binary @/tmp/body.json "$PROWLARR_URL/api/v1/indexer" \
+        && echo "$name added" || echo "WARN: $name failed (test against the tracker?)"
+    done
+    rm -f /tmp/body.json
 
     echo "Prowlarr configuration complete!"
     sleep infinity

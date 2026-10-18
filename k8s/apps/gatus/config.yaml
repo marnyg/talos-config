@@ -204,12 +204,6 @@ data:
         interval: 60s
         conditions: ["[STATUS] == 200"]
         alerts: [{type: ntfy}]
-      - name: jackett
-        group: media
-        url: http://jackett.media.svc:9117/health
-        interval: 60s
-        conditions: ["[STATUS] == 200"]
-        alerts: [{type: ntfy}]
       - name: nzbget
         group: media
         url: http://nzbget.media.svc:6789/

@@ -95,7 +95,6 @@ spec:
           - {name: sonarr}
           - {name: radarr}
           - {name: prowlarr}
-          - {name: jackett}
           - {name: seerr}
           - {name: nzbget}
           - {name: transmission}

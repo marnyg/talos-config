@@ -115,6 +115,27 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          env:
+            - name: PROWLARR_INDEXERS
+              valueFrom:
+                configMapKeyRef:
+                  name: prowlarr-configurator
+                  key: indexers
+            # iptorrents is cookie-auth (sealed-secret.yaml); optional so
+            # a missing secret degrades to "iptorrents skipped" (WARN in
+            # the configurator log) instead of blocking the pod.
+            - name: IPTORRENTS_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: iptorrents
+                  key: cookie
+                  optional: true
+            - name: IPTORRENTS_USER_AGENT
+              valueFrom:
+                secretKeyRef:
+                  name: iptorrents
+                  key: userAgent
+                  optional: true
           volumeMounts:
             - name: config
               mountPath: /config
