@@ -21,6 +21,13 @@ metadata:
     gethomepage.dev/href: https://ntfy.gw.mesh.internal
     gethomepage.dev/pod-selector: app=ntfy
     gethomepage.dev/weight: "35"
+    # Service widget: the latest page on the alerts topic (title,
+    # priority, when). Homepage's pod polls the Service directly —
+    # in-cluster, so no gate and no token, the same reachability trust
+    # the publishers have (deployment.yaml).
+    gethomepage.dev/widget.type: ntfy
+    gethomepage.dev/widget.url: http://ntfy.ntfy.svc
+    gethomepage.dev/widget.topic: alerts
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
