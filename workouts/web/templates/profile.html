@@ -12,7 +12,7 @@
     <label>Default rest timer (seconds) <input type="number" name="rest_s" value="{{index $s "rest_s"}}" placeholder="120"></label>
     <label>Weight unit <select name="weight_unit"><option value="kg" {{if ne (index $s "weight_unit") "lb"}}selected{{end}}>kg</option><option value="lb" {{if eq (index $s "weight_unit") "lb"}}selected{{end}}>lb</option></select></label>
     <label>Size unit <select name="length_unit"><option value="cm" {{if ne (index $s "length_unit") "in"}}selected{{end}}>cm</option><option value="in" {{if eq (index $s "length_unit") "in"}}selected{{end}}>in</option></select></label>
-    <label>Available plates ({{.Data.Unit}}, comma separated) <input name="plates" value="{{index $s "plates"}}" placeholder="{{.Data.Plates}}"></label>
+    <label>Available plates ({{.Data.Unit}}, comma separated) <input name="plates" value="{{index $s "plates"}}" placeholder="{{.Data.Plates}}"><input type="hidden" name="plates_unit" value="{{.Data.Unit}}"></label>
     <button class="primary wide">Save</button>
   </form>
   <p class="muted small">Workouts v0 · <a href="/static/about.html">about</a></p>

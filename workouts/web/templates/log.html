@@ -48,6 +48,14 @@
       {{end}}
       </tbody>
     </table>
+    <template class="set-tpl"><tr class="set kind-normal" data-id="" data-kind="normal">
+        <td><button class="kind">1</button></td><td class="prev muted">-</td>
+        {{if $e.HasWeight}}<td><input type="number" inputmode="decimal" step="{{wstep}}" name="weight" data-kg=""></td>{{end}}
+        {{if $e.HasCell "REPS"}}<td><input type="number" inputmode="numeric" name="reps"></td>{{end}}
+        {{if $e.HasCell "DISTANCE"}}<td><input type="number" inputmode="decimal" step="0.01" name="distance"></td>{{end}}
+        {{if $e.HasCell "DURATION"}}<td><input type="text" inputmode="numeric" name="duration" placeholder="m:ss"></td>{{end}}
+        <td><button class="check" aria-label="complete">✓</button></td>
+      </tr></template>
     <button class="wide add-set">+ ADD SET</button>
   </article>
   {{end}}
@@ -62,6 +70,9 @@
   <button data-kind="warmup"><b>W</b> Warm up</button><button data-kind="drop"><b>D</b> Drop set</button><button data-kind="failure"><b>F</b> Failure</button><button data-kind="normal">Normal</button>
   <button data-kind="plates" id="kind-plates" hidden>⚖ Plate calculator</button>
   <button data-kind="delete" class="danger">Delete set</button><button onclick="this.closest('dialog').close()">Close</button></dialog>
+<dialog id="ss-dialog"><h2>Superset with…</h2>
+  <div id="ss-list"></div>
+  <button onclick="this.closest('dialog').close()">Cancel</button></dialog>
 <dialog id="plate-dialog"><h2>Plates per side</h2>
   <div class="row plate-inputs">
     <label>Weight ({{wunit}}) <input type="number" inputmode="decimal" step="{{wstep}}" id="plate-target"></label>

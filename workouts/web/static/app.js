@@ -102,6 +102,9 @@
     // and posts {type:'saved'|'rejected', url}. Background Sync is a
     // bonus (no Safari); the SW also drains on `online` and on the next
     // successful fetch.
+    // Add-set and warm-ups need server-issued ids, so they are online-only
+    // (sw.js does not queue them); one message for both.
+    function offline() { alert('Could not add sets \u2014 you seem to be offline. Try again when connected.'); }
     var sw = navigator.serviceWorker;
     function requestSync() {
       if (!sw || !sw.ready) return;
@@ -158,18 +161,33 @@
       }
       var others = slots().filter(function (s) { return s !== slot; });
       if (!others.length) { alert('Add another exercise first.'); return; }
-      var menu = others.map(function (s, i) { return (i + 1) + '. ' + s.querySelector('.ex-name').textContent + (s.dataset.superset ? ' (SS' + s.dataset.superset + ')' : ''); }).join('\n');
-      var v = prompt('Superset with\u2026 (enter a number)\n' + menu, '1');
-      if (v === null) return;
-      var partner = others[parseInt(v, 10) - 1]; if (!partner) return;
+      // The picker is a dialog of the other slots (tho0: a prompt() was
+      // the first cut); picking one joins its group or starts a new one.
+      ssList.innerHTML = '';
+      others.forEach(function (s) {
+        var b = document.createElement('button'); b.type = 'button';
+        b.textContent = s.querySelector('.ex-name').textContent + (s.dataset.superset ? ' (SS' + s.dataset.superset + ')' : '');
+        b.onclick = function () { ssDialog.close(); joinSuperset(slot, s); };
+        ssList.appendChild(b);
+      });
+      ssDialog.showModal();
+    }
+    function joinSuperset(slot, partner) {
       var g = partner.dataset.superset;
       if (!g) { var used = {}; slots().forEach(function (s) { if (s.dataset.superset) used[s.dataset.superset] = 1; }); for (g = 1; used[g]; g++) {} partner.dataset.superset = String(g); slotSave(partner); }
       slot.dataset.superset = String(g); slotSave(slot); renderSupersets();
     }
+    var ssDialog = document.getElementById('ss-dialog'), ssList = document.getElementById('ss-list');
     renderSupersets();
 
     // ---- warm-up generator ----
-    var BAR_KG = 20;
+    // The bar is the plate dialog's select (#plate-bar, kg values); the
+    // last choice is remembered per device so the ramp and the calculator
+    // agree (tho0). 20 kg until the user picks otherwise.
+    var plateBar = document.getElementById('plate-bar');
+    try { if (localStorage.bar && plateBar.querySelector('option[value="' + localStorage.bar + '"]')) plateBar.value = localStorage.bar; } catch (e) {}
+    plateBar.addEventListener('change', function () { try { localStorage.bar = plateBar.value; } catch (e) {} });
+    function barKg() { return +plateBar.value || 20; }
     function workingKg(slot) {
       var tr = Array.prototype.slice.call(slot.querySelectorAll('tr.set')).filter(function (r) { return (r.dataset.kind || 'normal') === 'normal'; })[0];
       var wi = tr && tr.querySelector('[name=weight]'); if (!wi) return null;
@@ -178,12 +196,17 @@
     function generateWarmups(slot) {
       var kg = workingKg(slot);
       if (kg == null) { alert('Set a working weight first.'); return; }
-      var ramp = warmupRamp(kg, BAR_KG, plates);
+      var ramp = warmupRamp(kg, barKg(), plates);
       if (!ramp.length) { alert('Working weight is not above the bar \u2014 nothing to warm up with.'); return; }
       var tbody = slot.querySelector('tbody');
-      api('POST', '/api/exercise-slots/' + slot.dataset.id + '/warmups', ramp.map(function (r) { return { kind: 'warmup', weight: r.weight, reps: r.reps }; }))
+      // A second run replaces the ramp instead of stacking one (tho0):
+      // the existing warm-up rows are deleted first.
+      var old = Array.prototype.slice.call(tbody.querySelectorAll('tr.set[data-kind=warmup]'));
+      if (old.length && !confirm('Replace the ' + old.length + ' existing warm-up set' + (old.length > 1 ? 's' : '') + '?')) return;
+      Promise.all(old.map(function (tr) { return api('DELETE', '/api/sets/' + tr.dataset.id).then(function () { tr.remove(); }); }))
+        .then(function () { return api('POST', '/api/exercise-slots/' + slot.dataset.id + '/warmups', ramp.map(function (r) { return { kind: 'warmup', weight: r.weight, reps: r.reps }; })); })
         .then(function (rows) { var first = tbody.firstChild; rows.forEach(function (s) { var tr = setRow(s, slot); if (tr) tbody.insertBefore(tr, first); }); renumber(tbody); })
-        .catch(function () { alert('Could not add warm-ups \u2014 you seem to be offline. Try again when connected.'); });
+        .catch(offline);
     }
 
     var pending = {};
@@ -215,8 +238,10 @@
     });
     function renumber(tbody) { var n = 0; tbody.querySelectorAll('tr.set').forEach(function (tr) { var b = tr.querySelector('.kind'); var k = tr.dataset.kind; if (k === 'warmup') b.textContent = 'W'; else if (k === 'drop') b.textContent = 'D'; else if (k === 'failure') b.textContent = 'F'; else b.textContent = ++n; }); }
     function setRow(s, slot) {
-      var tpl = slot.querySelector('tr.set'); var tr;
-      if (tpl) { tr = tpl.cloneNode(true); } else { return location.reload(); }
+      // Clone an existing row, else the slot's server-rendered blank
+      // <template> (an emptied slot used to reload the page here).
+      var tpl = slot.querySelector('tbody tr.set'), tr;
+      if (tpl) { tr = tpl.cloneNode(true); } else { tr = slot.querySelector('template.set-tpl').content.firstElementChild.cloneNode(true); }
       var kind = s.kind || 'normal';
       tr.className = 'set kind-' + kind; tr.dataset.id = s.id; tr.dataset.kind = kind;
       tr.querySelector('.prev').textContent = '-';
@@ -227,7 +252,7 @@
     }
 
     // ---- plate calculator (per side, greedy over the `plates` setting) ----
-    var plateDialog = document.getElementById('plate-dialog'), plateTarget = document.getElementById('plate-target'), plateBar = document.getElementById('plate-bar'), plateList = document.getElementById('plate-list'), plateNote = document.getElementById('plate-note');
+    var plateDialog = document.getElementById('plate-dialog'), plateTarget = document.getElementById('plate-target'), plateList = document.getElementById('plate-list'), plateNote = document.getElementById('plate-note');
     function renderPlates() {
       var target = toKg(num(plateTarget.value), unit), bar = +plateBar.value;
       plateList.innerHTML = ''; plateNote.textContent = '';
@@ -262,7 +287,7 @@
       if (t.closest('.add-set')) {
         var slot2 = t.closest('.slot'); var tbody = slot2.querySelector('tbody');
         // Add-set needs the server-issued id, so it is online-only.
-        api('POST', '/api/exercise-slots/' + slot2.dataset.id + '/sets').then(function (s) { var tr = setRow(s, slot2); if (tr) { tbody.appendChild(tr); renumber(tbody); } }).catch(function () { alert('Could not add a set — you seem to be offline. Try again when connected.'); });
+        api('POST', '/api/exercise-slots/' + slot2.dataset.id + '/sets').then(function (s) { var tr = setRow(s, slot2); if (tr) { tbody.appendChild(tr); renumber(tbody); } }).catch(offline);
         return;
       }
       var act = t.closest('[data-act]');

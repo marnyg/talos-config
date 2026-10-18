@@ -907,8 +907,16 @@ func (h *Handler) settings(w http.ResponseWriter, r *http.Request) {
 		if _, ok := r.Form[k]; ok {
 			v := strings.TrimSpace(r.FormValue(k))
 			if k == "plates" {
-				// Entered in the unit submitted alongside it; stored in kg.
-				v = platesToKg(v, weightUnit(r.FormValue("weight_unit")))
+				// Entered in the unit the form RENDERED it in (hidden
+				// plates_unit), not the weight_unit submitted beside it:
+				// flipping the dropdown without retyping must not re-read
+				// "25" kg as 25 lb (bwhy). Older forms without the field
+				// fall back to the submitted unit.
+				pu := r.FormValue("plates_unit")
+				if pu == "" {
+					pu = r.FormValue("weight_unit")
+				}
+				v = platesToKg(v, weightUnit(pu))
 			}
 			if err := h.s.SetSetting(r.Context(), k, v); err != nil {
 				h.fail(w, err)
