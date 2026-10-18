@@ -261,7 +261,7 @@ func (w *workspace) api(ctx context.Context, method, url string, body []byte, ou
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := forgeClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -275,8 +275,19 @@ func (w *workspace) api(ctx context.Context, method, url string, body []byte, ou
 	return resp.StatusCode, nil
 }
 
-// taskTitle is the prompt's first non-empty line, bounded.
-func taskTitle(prompt string) string {
+// forgeClient bounds each API call on its own, under resultTimeout.
+var forgeClient = &http.Client{Timeout: 15 * time.Second}
+
+// taskTitle is the task's title when it has one, else the prompt's
+// first non-empty line, bounded (a long first line makes a long PR
+// title: name the task).
+func taskTitle(title, prompt string) string {
+	if t := strings.TrimSpace(title); t != "" {
+		if len(t) > 200 {
+			t = t[:200]
+		}
+		return "agent: " + t
+	}
 	for _, l := range strings.Split(prompt, "\n") {
 		if l = strings.TrimSpace(l); l != "" {
 			if len(l) > 200 {

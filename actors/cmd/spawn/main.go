@@ -97,6 +97,7 @@ func main() {
 		prompt   = flag.String("prompt", "", "send the born child one #task with this prompt and print its event stream (empty: no task)")
 		repo     = flag.String("repo", "", "with -prompt: the task's workspace, a Forgejo owner/name the child clones; the result is a branch + PR (e6pu.3)")
 		ref      = flag.String("ref", "", "with -repo: the branch to clone and PR against (default the repo's default branch)")
+		title    = flag.String("title", "", "with -repo: the PR title (default the prompt's first line)")
 		sessDir  = flag.String("session-dir", "", "where a task's session JSONL (PUT /session/<id>) is written (default -state)")
 	)
 	flag.Parse()
@@ -195,7 +196,7 @@ func main() {
 	// P→C on the child's own consent. The promise resolved at #birth,
 	// before Born installed that consent on the child: retry briefly.
 	if ping(ctx, a, b.ID) && *prompt != "" {
-		task(ctx, a, b.ID, child.TaskRequest{Prompt: *prompt, Repo: *repo, Ref: *ref})
+		task(ctx, a, b.ID, child.TaskRequest{Prompt: *prompt, Repo: *repo, Ref: *ref, Title: *title})
 	}
 
 	t := time.NewTicker(*beat)

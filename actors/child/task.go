@@ -177,6 +177,9 @@ type TaskRequest struct {
 	Prompt string `json:"prompt"`
 	Repo   string `json:"repo,omitempty"`
 	Ref    string `json:"ref,omitempty"`
+	// Title names the task on the forge (commit body, PR title); ""
+	// ⇒ the prompt's first line.
+	Title string `json:"title,omitempty"`
 }
 
 // SteerRequest is #steer's payload.
@@ -489,7 +492,7 @@ func (ag *agent) execute(rctx context.Context, r *run, req TaskRequest, preamble
 	// partial work is still worth a look), bounded, past the deadline.
 	if ws != nil {
 		wctx, wcancel := context.WithTimeout(context.Background(), resultTimeout)
-		p, err := ws.result(wctx, taskTitle(req.Prompt), prBody(final, r.id, settled.Status))
+		p, err := ws.result(wctx, taskTitle(req.Title, req.Prompt), prBody(final, r.id, settled.Status))
 		wcancel()
 		settled.Pointer = p
 		if err != nil {

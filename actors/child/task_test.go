@@ -438,7 +438,7 @@ func TestTaskRepoResultIsBranchAndPR(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
 	defer cancel()
-	rep, err := r.parent.Send(ctx, b.ID, child.FacetTask, []byte(`{"prompt":"write done.txt\nsecond line","repo":"agents/scratch","ref":"main"}`))
+	rep, err := r.parent.Send(ctx, b.ID, child.FacetTask, []byte(`{"prompt":"write done.txt\nsecond line","repo":"agents/scratch","ref":"main","title":"hello file"}`))
 	if err != nil {
 		t.Fatalf("#task: %v", err)
 	}
@@ -463,7 +463,7 @@ func TestTaskRepoResultIsBranchAndPR(t *testing.T) {
 	if head := strings.TrimSpace(gitRun(t, "", "--git-dir", bare, "rev-parse", s.Branch)); head != s.Head {
 		t.Fatalf("origin %s = %s, pointer head %s", s.Branch, head, s.Head)
 	}
-	if log := gitRun(t, "", "--git-dir", bare, "log", "-1", "--format=%s%n%b%n%an", s.Branch); !strings.Contains(log, "agent: "+ack.Session) || !strings.Contains(log, "agent: write done.txt") || !strings.HasSuffix(strings.TrimSpace(log), "\nagent") {
+	if log := gitRun(t, "", "--git-dir", bare, "log", "-1", "--format=%s%n%b%n%an", s.Branch); !strings.Contains(log, "agent: "+ack.Session) || !strings.Contains(log, "agent: hello file") || !strings.HasSuffix(strings.TrimSpace(log), "\nagent") {
 		t.Fatalf("commit on %s:\n%s", s.Branch, log)
 	}
 	// The PR: title from the prompt, base from the clone, body = final message + trailer.
@@ -472,7 +472,7 @@ func TestTaskRepoResultIsBranchAndPR(t *testing.T) {
 	if prAuth != "token tok" {
 		t.Fatalf("PR auth %q", prAuth)
 	}
-	if prReq["title"] != "agent: write done.txt" || prReq["head"] != s.Branch || prReq["base"] != "main" {
+	if prReq["title"] != "agent: hello file" || prReq["head"] != s.Branch || prReq["base"] != "main" {
 		t.Fatalf("PR request %v", prReq)
 	}
 	if !strings.HasPrefix(prReq["body"], "hi, done\n\n---\nTask "+ack.Session+", settled, ") {
