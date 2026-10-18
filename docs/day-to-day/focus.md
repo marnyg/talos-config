@@ -9,10 +9,11 @@ outfit (`e6pu.1`), and 2026-10-12 the child as an agent (`e6pu.2`:
 `protocol/facethttp`, `actors/pirpc`, `#task`/`#steer`/`#abort` with
 the `agent-events` uploader, `spawn -prompt` as the stand-in parent), and 2026-10-17 the child
 shipped in the `sandbox-agent` image and passed the live acceptance
-under kata (provisioner `-runtime-class`/`-outfit`, `e6pu`).
+under kata (provisioner `-runtime-class`/`-outfit`, `e6pu`); 2026-10-18
+the git half followed (`e6pu.3`: `#task {repo, ref}` → branch + PR,
+pointer on `child_settled`; `e6pu` closed).
 Next: the parent actor itself (SQLite+FTS5 store,
-list/watch/steer/search UI behind the person gate); `e6pu.3` (git
-half in the child). Epic `ivof`. **Side effect:** the relay gate
+list/watch/steer/search UI behind the person gate). Epic `ivof`. **Side effect:** the relay gate
 (`5gz`) is observe-only until sovereign actors have an admission
 story (spike `qx5c`). **Detour landed 2026-10-13:** root
 rotation (protocol ADR-0010, spike `aja2`; ADR-0011, `d0o0` wires

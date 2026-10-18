@@ -1243,4 +1243,13 @@
   new tag re-pulls ~450 MB on this cluster) — the default `-window 3m`
   is marginal on a cold node. Events print as `event <child> <json>`;
   the run ends at `child_settled`. The parent exits when the lease
-  lapses (`-renewals`), a few minutes after the task.
+  lapses (`-renewals`), a few minutes after the task. **With
+  `-repo owner/name`** (e6pu.3) the outfit must also carry
+  `forgejo-agent` or `#task` is refused ("no forge"); the pointer is
+  the `child_settled` line; read the PR with the bot token
+  (`kubectl -n sap get secret forgejo-agent …`) — the API 404s without
+  auth on a private org even through the gateway.
+- 2026-10-18 — **A new file is invisible to `nix build` until `git add`**
+  (flake source = the git tree): `actors/child/workspace.go` built fine
+  with `go build` and failed inside `nix build .#actors-bin` with
+  "undefined: Forge" until staged. Stage before the tagged gate.

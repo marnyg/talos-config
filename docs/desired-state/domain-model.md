@@ -1076,8 +1076,8 @@ provisioning or recovery path may depend on it.
   head, pr}` — the result itself is a Forgejo branch + PR, the report
   as the PR body. The `#task` reply is only an ack `{started,
   session}`; the pointer rides the stream as its last line
-  (`child_settled`, today `{status, events, session}` — the git fields
-  arrive with `e6pu.3`). Lives
+  (`child_settled`: `{status, events, session, repo, branch, head, pr}`
+  since `e6pu.3`). Lives
   in the parent's own store (SQLite+FTS5 on a Longhorn PVC; the born
   table stays a cache). **Owner** = the wallet that submitted the
   task; a **share list** of wallets/groups at two rights, `view` (live
@@ -1086,18 +1086,24 @@ provisioning or recovery path may depend on it.
   nothing is public. The UI is an OIDC client of `siwe-oidc` (the
   person gate, ADR-0032: per-user state); a terminal client of the
   same stream is the power-user path, `kubectl exec` the debug door.
-- **Workspace** _(built 2026-10-11, `ivof.2`, interim shape)_ — the
-  repo and ref an agent run works on: a clone into the sandbox's
-  emptyDir (`/workspace/<name>`, beside HOME so pi's dot-dirs stay out
-  of the result) from **Forgejo**, written with the bot user `agent`'s
-  token (a data-plane credential: SealedSecret `forgejo-agent` in `ai`,
-  mounted by `envFrom` today, attached by the driver's **outfit** once
-  `e6pu` lands). Named by `agent-run.sh -r owner/name [-b ref]` as
-  `AGENT_REPO`/`AGENT_REF` today, by `#task` (`repo`, `ref`) later —
-  never carried as a secret. The result is the branch `agent/<job>`
-  and a PR whose body is pi's final message; pushed on exit and on the
-  deadline's SIGTERM; never force-pushed. First live run: PR #1 on
-  `agents/scratch` (`agent-scratch-1`).
+- **Workspace** _(built 2026-10-11, `ivof.2`; in the child since
+  2026-10-18, `e6pu.3`)_ — the repo and ref an agent task works on: a
+  clone under the child's workspace dir (`/workspace/<name>`, beside
+  HOME so pi's dot-dirs stay out of the result) from **Forgejo**,
+  named by `#task` (`repo`, `ref`) — never carried as a secret. The
+  bot user `agent`'s token is a data-plane credential the provisioner's
+  **outfit** dresses the image in (SealedSecret `forgejo-agent` in
+  `sap`); the child reads it once, scrubs it from pi's environment,
+  and hands it to git as an HTTP header per subprocess — no file, no
+  argv, and the agent cannot read it. The result is the branch
+  `agent/<task-id>` and a PR whose body is pi's final message, pushed
+  after settle on every status (an aborted run's partial work too);
+  never force-pushed; the pointer `{repo, branch, head, pr}` rides
+  `child_settled`. A run with no diff pushes nothing (empty pointer).
+  The batch/interactive `agent.yaml` runs have no workspace any more
+  (the shell clone-and-PR path went with `e6pu.3`). First live runs:
+  PR #1 on `agents/scratch` (shell, `agent-scratch-1`), PR #2 (a
+  protocol child, `spawn -repo`).
 - **Forgejo** _(live 2026-10-11, `ivof.1`, ADR-0037)_ — the in-cluster
   git host for agent work: ns `forgejo`, sqlite3 + minted secrets on
   one Longhorn PVC, `git.gw.mesh.internal` behind the **group gate**

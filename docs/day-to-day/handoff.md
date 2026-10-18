@@ -3,7 +3,22 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
-## Last session (2026-10-17, evening)
+## Last session (2026-10-17 evening → 2026-10-18)
+
+**The git half of the child is live** (`e6pu.3`, closes `e6pu`):
+`actors/child/workspace.go` — `#task {prompt, repo, ref}` clones from
+the forge under the workspace dir, pi runs in the clone, and after
+settle (on every status) the child commits, plain-pushes
+`agent/<task-id>` and opens the PR with pi's final message as body;
+`child_settled` carries `{repo, branch, head, pr}`. The token reaches
+git as `http.<url>.extraHeader` through the subprocess env only, and
+`cmd/child` scrubs `FORGEJO_*` before pi starts (verified live: pi
+reports `FORGEJO_TOKEN` unset). `spawn -repo/-ref`. `forgejo-agent`
+resealed for `sap` and on the provisioner's `-outfit`; the `ai` copy,
+the shell entrypoint's `AGENT_REPO` path, `/run/agent` tmpfs and
+`agent-run.sh -r/-b` are gone. Live: **PR #2 on `agents/scratch`**
+from a protocol child (image `sandbox-agent:b8d542b`).
+
 
 **The agent child is live under kata** (`e6pu`, ADR-0037's "ship the
 child in the image"): `k8s/apps/sandbox/image.nix` now carries
@@ -42,9 +57,12 @@ handoff's chronology, now absorbed.
 - The outfit is keyed on the sandbox-agent **digest**: every rebuild of
   that image means re-pinning `-outfit` in the provisioner Deployment
   as well as `agent.yaml` (two places, by hand).
-- `agent.yaml`'s own `envFrom: forgejo-agent` is still the interim; the
-  driver does not outfit `forgejo-agent` yet (nothing uses it until
-  `e6pu.3`, the git half).
+- `agent-run.sh` is now git-less by design; a repo task is `spawn
+  -prompt … -repo owner/name`. If a plain-Job git run is ever wanted
+  again, it is the child's code, not the shell's.
+- PR title = the prompt's first line (≤ 200 chars) — ugly for long
+  prompts; a `title` on `#task` or the parent's store naming it is the
+  fix when the parent exists.
 - Birth cost is the image pull (~450 MB, ~110 s on this cluster; a
   second tag of the same layers pulled again). `-window 4m` covers it;
   the 3 m default does not on a cold node.
@@ -65,8 +83,8 @@ handoff's chronology, now absorbed.
 ## Suggested next steps
 
 - Sign the hub's proposals (sealed since the `82d496c` deploy).
-- Close `e6pu` if the acceptance is the bar; then the parent actor
-  (SQLite+FTS5 store, list/watch/steer UI behind the person gate) —
-  `cmd/spawn -prompt` is the stand-in to replace.
+- The parent actor (SQLite+FTS5 store, list/watch/steer UI behind the
+  person gate) — `cmd/spawn -prompt` is the stand-in to replace; the
+  pointer shape it stores is now settled.
 - `qx5c`: decide how sovereign actors get admitted to the relay before
   the gate is enforced again.
