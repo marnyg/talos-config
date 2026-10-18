@@ -27,8 +27,9 @@ remainder.
 
 **Detour 2026-10-16, done:** the workouts tracker (`yz75`) is live and
 seeded, and HTTPS over the mesh (ADR-0033, `eu0m`) landed so it
-installs as a PWA. What remains is using it (first real session on the
-phone). **Detour 2026-10-19, done:** Vaultwarden (`l5v8`) at
+installs as a PWA; 2026-10-21 supersets + warm-up ramp on the live
+screen and plates in the display unit (`ne6e`, `63fi`, swarm). What
+remains is redeploying and using it (first real session on the phone). **Detour 2026-10-19, done:** Vaultwarden (`l5v8`) at
 `vault.gw.mesh.internal` — the first https-only consumer of ADR-0033
 beyond the PWA; first account + extension pairing remain. **Detour
 2026-10-17, done:** Home Assistant (`k8s/apps/homeassistant`) at
