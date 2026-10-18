@@ -30,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -65,8 +66,13 @@ type Config struct {
 	// {image, params, until}, because a parent that could name a
 	// secret would read any secret in the namespace through a child.
 	// The driver decides what an image gets; the parent only picks
-	// the image.
+	// the image. A miss is silent on the wire — the child boots
+	// keyless and nobody is told — so when Outfit is non-empty and a
+	// spawned image has no (non-empty) entry, Start logs a Warn naming
+	// the image and the lease; the spawn still proceeds.
 	Outfit map[string][]string
+	// Log receives the outfit-miss warning above. nil ⇒ slog.Default().
+	Log *slog.Logger
 }
 
 // DefaultTTLAfterFinished keeps a finished Job around long enough to
@@ -257,11 +263,23 @@ type secretRef struct {
 	Optional bool   `json:"optional"`
 }
 
+func (d *Driver) log() *slog.Logger {
+	if d.cfg.Log != nil {
+		return d.cfg.Log
+	}
+	return slog.Default()
+}
+
 // outfit renders cfg.Outfit[image] as envFrom entries, in order; nil
-// on a miss (so the field is omitted).
-func (d *Driver) outfit(image string) []envFrom {
+// on a miss (so the field is omitted). A miss while other images do
+// have outfits is the silent-keyless case: warn, naming the image and
+// the lease. A driver with no outfits at all is not misconfigured.
+func (d *Driver) outfit(lease, image string) []envFrom {
 	names := d.cfg.Outfit[image]
 	if len(names) == 0 {
+		if len(d.cfg.Outfit) > 0 {
+			d.log().Warn("k8s: no outfit for image; child boots keyless", "image", image, "lease", lease)
+		}
 		return nil
 	}
 	out := make([]envFrom, 0, len(names))
@@ -314,7 +332,7 @@ func (d *Driver) Start(ctx context.Context, spec provisioner.StartSpec) (provisi
 			Name:            "actor",
 			Image:           spec.Image,
 			Env:             []envVar{{Name: driver.ParamsEnv, Value: string(spec.Params)}},
-			EnvFrom:         d.outfit(spec.Image),
+			EnvFrom:         d.outfit(spec.Lease, spec.Image),
 			SecurityContext: containerSecurity,
 		}},
 	}
