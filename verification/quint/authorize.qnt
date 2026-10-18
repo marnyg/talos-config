@@ -383,8 +383,7 @@ module authorize {
         s.can == SpeakAs and sigOk(s, now) and isKey(s.aud, signer)
         and s.cav.verbs.contains(verb) and groups.subseteq(s.cav.groups))
       .map(s => s.iss))
-    if (pins == Set()) ks   // today's receiver; keeps the no-pin verdicts' encoding as it was
-    else ks.exclude(pins.map(p => p.id))
+    ks.exclude(pins.map(p => p.id))   // with no pins held this is `ks`: today's receiver
       .union(pins.filter(p => ks.exists(k => pinAdmits(p, k))).map(p => p.id))
 
   // The groups a grant names: its group audience, if any. A hot key may
