@@ -1,10 +1,12 @@
 package k8s
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -232,12 +234,17 @@ func TestStartShape(t *testing.T) {
 // secretRefs in order, keyed on the exact digest-pinned image — the
 // same name at another digest is a miss, and a miss renders no
 // envFrom at all (ADR-0037: the outfit is driver policy by image).
+// A miss while outfits are configured is warned on Config.Log, naming
+// the image and the lease; a hit is not.
 func TestStartOutfit(t *testing.T) {
 	other := "ghcr.io/x/child@sha256:" + strings.Repeat("b", 64)
 	api, srv := newAPI(t)
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
 	d := newDriver(t, srv, func(c *Config) {
 		c.RuntimeClass = "kata"
 		c.Outfit = map[string][]string{image: {"openrouter", "forgejo-agent"}}
+		c.Log = log
 	})
 	start := func(d *Driver, lease, img string) map[string]any {
 		t.Helper()
@@ -263,6 +270,9 @@ func TestStartOutfit(t *testing.T) {
 			t.Fatalf("envFrom[%d] %v", i, ef[i])
 		}
 	}
+	if buf.Len() != 0 {
+		t.Fatalf("log on a hit: %q", buf.String())
+	}
 
 	// Miss: same name, another digest — the outfit is keyed on the
 	// whole pinned string. The runtime class still applies: it is per
@@ -275,12 +285,23 @@ func TestStartOutfit(t *testing.T) {
 	if _, ok := c["envFrom"]; ok {
 		t.Fatalf("envFrom on a miss: %v", c["envFrom"])
 	}
+	if s := buf.String(); !strings.Contains(s, "level=WARN") || !strings.Contains(s, other) || !strings.Contains(s, "lease=0022") {
+		t.Fatalf("no warning on a miss: %q", s)
+	}
 
-	// An outfit entry with no secrets is a miss too, not an empty list.
-	d2 := newDriver(t, srv, func(c *Config) { c.Outfit = map[string][]string{image: {}} })
+	// An outfit entry with no secrets is a miss too, not an empty list,
+	// and it warns like one.
+	buf.Reset()
+	d2 := newDriver(t, srv, func(c *Config) {
+		c.Outfit = map[string][]string{image: {}}
+		c.Log = log
+	})
 	c = start(d2, "0033", image)["containers"].([]any)[0].(map[string]any)
 	if _, ok := c["envFrom"]; ok {
 		t.Fatalf("envFrom on an empty outfit: %v", c["envFrom"])
+	}
+	if s := buf.String(); !strings.Contains(s, "level=WARN") || !strings.Contains(s, image) || !strings.Contains(s, "lease=0033") {
+		t.Fatalf("no warning on an empty outfit: %q", s)
 	}
 }
 
