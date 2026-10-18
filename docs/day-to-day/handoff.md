@@ -53,16 +53,32 @@ Five small beads closed, four of them by a herdr swarm (reports under
   (no more `location.reload()`), `TestPlatesUnit` split out, check.sh
   Depths history as a table. Workouts image `sha256:92c83f…` pinned.
 
+## 2026-10-22 confirm-live pass
+
+- `6t21` **closed**: the seed loop had skipped `knaben`/`iptorrents` —
+  Prowlarr's native C# indexers carry their class name in
+  `definitionName` (`IPTorrents`, `Knaben`), Cardigann ids are lowercase.
+  Case-insensitive match (226ddfd); after a restart all three added, IPT
+  search returned 50 results via Prowlarr, pushed into sonarr+radarr, and
+  the six orphaned `Jackett (…)` entries deleted via API.
+- `bhui` **closed**: operator rolled out nodePlacement — each infra
+  deployment has one replica on cp1 + one on a worker, PDBs at 1.
+  Drain itself not exercised. Stale Completed/Error pods cleared.
+- `m0vb` **closed**: radarr NZBgeek block is PUT-or-POST like sonarr
+  (5289111); live refresh of id 2 confirmed. Seen once on that restart:
+  `WARN: Prowlarr Radarr refresh failed` — Prowlarr tests the app by
+  calling Radarr back before Radarr is fully up; a manual PUT 202'd.
+  Transient, not tracked.
+- Workouts `sha256:92c83f…` confirmed running.
+
 ## Loose threads
 
-- Workouts image `sha256:92c83f…` is pinned; Argo rolls it out — not
-  confirmed live from this session (cluster unreachable from the
-  shell). First open on the phone should pull sw.js v4.
+- Workouts image `sha256:92c83f…` is live; first open on the phone
+  should pull sw.js v4.
 - Broken windows fixed the same session (63b4ad4): agent.yaml pins the
   bare `@digest`; k8s driver refuses non-digest outfit keys at `New`;
   `settingKeys` hoisted; `POST /api/exercise-slots/{id}` is a partial
   update (`store.SlotPatch`).
-- `bhui` and `6t21` stay open until you confirm them live (above).
 - `hp79` (terminal client of the parent's stream) is unblocked but needs
   the CLI-auth design first (OIDC cookie vs a member-cert facet) —
   grill-design, not a worker. `jlgz` left alone per its own note.
@@ -71,7 +87,6 @@ Five small beads closed, four of them by a herdr swarm (reports under
 
 ## Suggested next steps
 
-- Confirm `6t21` (Prowlarr/IPT) and `bhui` (cp1 drain) live; close them.
 - Try supersets + a warm-up ramp on the phone (`tmm5` offline check too).
 - `bsj` (Longhorn backup target) — unchanged from last handoff.
 - `d0o0` remainder solo (hub trust root; not swarm material).
