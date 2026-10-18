@@ -1,0 +1,8 @@
+# `ntfy`: the in-mesh notifier (ADR-0042). Only ntfy lives here; the
+# things that publish to it (Gatus, the Alertmanager bridge) stay in
+# their own namespaces and dial the Service. Inherits the cluster-wide
+# PSS restricted default.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ntfy

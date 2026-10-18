@@ -1,0 +1,133 @@
+# ntfy-alertmanager: the shim between Alertmanager's webhook payload
+# and ntfy's publish API (ADR-0042). Alertmanager can only POST its own
+# JSON shape and ntfy only reads its own, so one of them needs a
+# translator; this one is a small Go service that maps alert labels to
+# ntfy priority/tags, stateless apart from a memory cache of alerts
+# it has already sent (single mode, so a 12 h repeat_interval does not
+# re-page the same alert). Alertmanager's receiver points here
+# (kube-prometheus-stack.yaml); this points at ntfy (k8s/apps/ntfy).
+#
+# No silence button: that needs this pod reachable from the phone and
+# proxying to the Alertmanager API. Silences happen in Grafana's
+# Alertmanager view behind the gate, which is where they already did.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ntfy-alertmanager
+  namespace: monitoring
+data:
+  # scfg (https://git.sr.ht/~emersion/scfg); the full example with
+  # every knob is config.scfg in the upstream repo.
+  config: |
+    http-address :8080
+    log-level info
+    log-format text
+    # One ntfy message per alert, not one per Alertmanager group:
+    # a page should name the thing that broke.
+    alert-mode single
+
+    labels {
+        order "severity"
+
+        severity "critical" {
+            priority 5
+            tags "rotating_light"
+        }
+        severity "warning" {
+            priority 4
+            tags "warning"
+        }
+        severity "info" {
+            priority 2
+        }
+    }
+
+    resolved {
+        priority 2
+        tags "white_check_mark"
+    }
+
+    ntfy {
+        server http://ntfy.ntfy.svc
+        topic alerts
+        markdown true
+    }
+
+    cache {
+        type memory
+        duration 24h
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntfy-alertmanager
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ntfy-alertmanager
+  template:
+    metadata:
+      labels:
+        app: ntfy-alertmanager
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ntfy-alertmanager
+          # Static Go binary on alpine; pinned by digest, the 1.0.1 tag
+          # resolved on 2026-10-18.
+          image: docker.io/xenrox/ntfy-alertmanager:1.0.1@sha256:4dff34a4cb0ab4ba9925c8e21101c6cfc72ccd776223183c64d67b5799f516f7
+          args: [--config, /etc/ntfy-alertmanager/config]
+          ports:
+            - containerPort: 8080
+              name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/ntfy-alertmanager
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+      volumes:
+        - name: config
+          configMap:
+            name: ntfy-alertmanager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntfy-alertmanager
+  namespace: monitoring
+spec:
+  selector:
+    app: ntfy-alertmanager
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

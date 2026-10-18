@@ -13,10 +13,9 @@
 # content is "which services exist", which git already knows.
 #
 # No volume: results live in memory (config.yaml explains the
-# trade-off), config is a read-only ConfigMap mount. No alerting yet —
-# every Gatus alert provider needs a token or webhook URL, i.e. a
-# SealedSecret and a `$VAR` reference in config.yaml; add when a
-# channel is chosen.
+# trade-off), config is a read-only ConfigMap mount. Alerting goes to
+# the in-cluster ntfy (config.yaml `alerting:`, ADR-0042) — no token,
+# so no SealedSecret here either.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

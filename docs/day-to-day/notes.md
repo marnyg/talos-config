@@ -1253,3 +1253,11 @@
   (flake source = the git tree): `actors/child/workspace.go` built fine
   with `go build` and failed inside `nix build .#actors-bin` with
   "undefined: Forge" until staged. Stage before the tagged gate.
+- 2026-10-18 — **A Gatus endpoint pages only if it lists
+  `alerts: [{type: ntfy}]`** — the provider's `default-alert` fills in
+  thresholds but never adds the alert itself, so a new row in
+  `k8s/apps/gatus/config.yaml` without that line is green on the page
+  and silent on the phone. ntfy (`k8s/apps/ntfy`) has no auth: any
+  `admins` device may publish to `alerts`, any pod may subscribe. The
+  Android app must be on "instant delivery" (no Firebase upstream);
+  if it refuses the meshtls user CA, subscribe at `http://ntfy.gw…`.

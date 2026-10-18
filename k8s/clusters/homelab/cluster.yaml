@@ -73,6 +73,9 @@ spec:
           - {name: monitoring}
           # Gatus uptime page.
           - {name: gatus}
+          # ntfy: the in-mesh notifier Gatus and Alertmanager page to
+          # (ADR-0042).
+          - {name: ntfy}
           # Homepage dashboard.
           - {name: homepage}
           # --- virtualisation

@@ -1,0 +1,166 @@
+# ntfy: pub/sub push notifications, self-hosted — the one place a page
+# goes (ADR-0042). Publishers are in-cluster (Gatus's `alerting.ntfy`,
+# the ntfy-alertmanager bridge in k8s/apps/monitoring) and POST to
+# http://ntfy.ntfy.svc; subscribers are mesh devices (the ntfy Android
+# app, the web UI) reaching https://ntfy.gw.mesh.internal through the
+# device's tunnel, so a page crosses nothing public (invariant 5): the
+# phone's path is device → relay → gateway → here, and a SEALED hub
+# still relays (config-server/relay.go), which is exactly the alert
+# that matters most. A hub that is fully down is the one case nothing
+# in-mesh can deliver remotely; on the LAN the direct path still works.
+#
+# No upstream (NTFY_UPSTREAM_BASE_URL unset): with it ntfy would poke
+# ntfy.sh so Firebase wakes the app — a hosted hop carrying alert ids
+# off-mesh. Without it the Android app keeps its own connection
+# ("instant delivery", a foreground service) and the Play Store build
+# does the same as the F-Droid one. Web push is likewise off (no VAPID
+# keys): the web UI delivers only while open.
+#
+# Identity: none of ntfy's own. The admins gate on the Ingress is the
+# login (the gate is the mesh, not a cookie — the app carries the
+# gateway-signed X-Mesh-Token because it goes through the tunnel), and
+# in-cluster publishers are trusted by reachability, the same gap every
+# auth-url gated Service has (k8s/apps/monitoring/kube-prometheus-stack
+# .yaml, Grafana's whitelist note). Signup/login stay disabled.
+#
+# State: one small Longhorn volume for the message cache. Data plane
+# (invariant 2's exception): what it holds is the last 24 h of
+# notifications so a phone that was off the mesh when a page fired
+# catches up on reconnect (`since=`); losing it loses that catch-up and
+# nothing else. 24 h rather than the 12 h default for the same reason —
+# a night away should still be readable in the morning.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ntfy
+  namespace: ntfy
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ntfy
+  namespace: ntfy
+spec:
+  replicas: 1
+  # RWO volume + sqlite: no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ntfy
+  template:
+    metadata:
+      labels:
+        app: ntfy
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ntfy
+          # Alpine image with the static binary; pinned by digest, the
+          # v2.31.1 tag resolved on 2026-10-18.
+          image: docker.io/binwiederhier/ntfy:v2.31.1@sha256:91bb7fa607b02006c119bb4a31032923b414a713a032ecb40f0c5d6bfd5b7e40
+          args: [serve]
+          env:
+            # The name the app subscribes at; https because the device
+            # terminates TLS (ADR-0033). http://ntfy.gw.mesh.internal
+            # is served beside it for a client that cannot trust the
+            # device's user CA.
+            - name: NTFY_BASE_URL
+              value: https://ntfy.gw.mesh.internal
+            # Non-root: the image defaults to :80.
+            - name: NTFY_LISTEN_HTTP
+              value: ":8080"
+            - name: NTFY_CACHE_FILE
+              value: /var/cache/ntfy/cache.db
+            - name: NTFY_CACHE_DURATION
+              value: 24h
+            # Rate limits keyed on X-Forwarded-For (ingress-nginx sets
+            # it) rather than on the one nginx pod IP.
+            - name: NTFY_BEHIND_PROXY
+              value: "true"
+            - name: NTFY_ENABLE_SIGNUP
+              value: "false"
+            - name: NTFY_ENABLE_LOGIN
+              value: "false"
+            # /metrics on the main listener for the ServiceMonitor
+            # below; reached by Prometheus on the Service, never by a
+            # device (the gate sits in front of the Ingress only).
+            - name: NTFY_ENABLE_METRICS
+              value: "true"
+          ports:
+            - containerPort: 8080
+              name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/ntfy
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: ntfy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntfy
+  namespace: ntfy
+  labels:
+    app: ntfy
+spec:
+  selector:
+    app: ntfy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+# Exposing metrics = a ServiceMonitor next to the app (the convention
+# kube-prometheus-stack.yaml's cross-namespace selectors exist for).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ntfy
+  namespace: ntfy
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  selector:
+    matchLabels:
+      app: ntfy
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s

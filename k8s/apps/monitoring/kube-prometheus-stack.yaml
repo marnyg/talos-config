@@ -69,8 +69,10 @@ spec:
             # No etcd-on-pods alerts: Talos etcd is a host service with
             # its own lifecycle; the metrics still land for dashboards.
             etcd: true
-            # No external Alertmanager receiver yet, so the watchdog
-            # heartbeat has nobody to tell.
+            # The Watchdog it carries is routed to null below: a
+            # dead-man's switch is only worth something to a receiver
+            # OUTSIDE the failure domain, and the hub (ADR-0027) does
+            # not take heartbeats yet.
             general: true
 
         kubeEtcd:
@@ -197,16 +199,42 @@ spec:
                 memory: 32Mi
               limits:
                 memory: 128Mi
-          # Receivers: none yet. Nothing public may carry a page
-          # (invariant 5) and no in-mesh notifier exists; alerts show
-          # in Grafana's Alertmanager view until one does (talos-config
-          # follow-up on the epic).
+          # Receiver: the in-mesh notifier (ADR-0042) through the
+          # ntfy-alertmanager shim next to this file. Nothing public
+          # carries a page (invariant 5): the phone reads ntfy over its
+          # tunnel. Watchdog (always firing by design) and InfoInhibitor
+          # (the chart's helper for silencing info-level noise) are the
+          # two the upstream default config also drops. Grafana's
+          # Alertmanager view stays the place to silence.
           config:
             route:
-              receiver: "null"
+              receiver: ntfy
               group_by: [alertname, namespace]
+              group_wait: 30s
+              group_interval: 5m
+              repeat_interval: 12h
+              routes:
+                - receiver: "null"
+                  matchers:
+                    - alertname =~ "Watchdog|InfoInhibitor"
             receivers:
               - name: "null"
+              - name: ntfy
+                webhook_configs:
+                  - url: http://ntfy-alertmanager.monitoring.svc:8080
+                    send_resolved: true
+            # A critical page silences the warning/info copies of the
+            # same thing (the upstream default's three rules).
+            inhibit_rules:
+              - source_matchers: [severity = critical]
+                target_matchers: [severity =~ "warning|info"]
+                equal: [namespace, alertname]
+              - source_matchers: [severity = warning]
+                target_matchers: [severity = info]
+                equal: [namespace, alertname]
+              - source_matchers: [alertname = InfoInhibitor]
+                target_matchers: [severity = info]
+                equal: [namespace]
 
         grafana:
           enabled: true

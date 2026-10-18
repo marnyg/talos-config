@@ -39,6 +39,32 @@ data:
       header: Status
       description: Black-box checks from inside the cluster; the hub row is the only probe that crosses the public internet.
 
+    # Pages go to ntfy (k8s/apps/ntfy, ADR-0042) over the in-cluster
+    # Service — no token: ntfy has no auth of its own, the admins gate
+    # on its Ingress is the login for subscribers. Every endpoint lists
+    # `alerts: [{type: ntfy}]` (Gatus needs the type per endpoint even
+    # with a default-alert); the thresholds here are the policy: three
+    # misses in a row (3 min at 60 s) before a page, two hits before
+    # the all-clear, and the all-clear is sent. Priority 4 (high) for
+    # the cluster rows; the hub row is urgent (5) because a sealed hub
+    # is the runway running out and this is the row that must page —
+    # the ntfy app's per-subscription setting is what lets 5 through
+    # do-not-disturb.
+    alerting:
+      ntfy:
+        url: http://ntfy.ntfy.svc
+        topic: alerts
+        priority: 4
+        click: https://status.gw.mesh.internal
+        default-alert:
+          enabled: true
+          failure-threshold: 3
+          success-threshold: 2
+          send-on-resolved: true
+        overrides:
+          - group: external
+            priority: 5
+
     endpoints:
       # --- external: the one public surface (invariant 5) ---------------
       # /sealed is the hub's own monitoring endpoint — 200 when the hub
@@ -53,6 +79,7 @@ data:
           - "[STATUS] == 200"
           - "[CERTIFICATE_EXPIRATION] > 168h"
           - "[RESPONSE_TIME] < 2000"
+        alerts: [{type: ntfy}]
 
       # --- platform ---------------------------------------------------
       - name: argocd
@@ -60,26 +87,31 @@ data:
         url: http://argocd-server.argocd.svc/healthz
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: siwe-oidc (the gate)
         group: platform
         url: http://siwe-oidc.sso.svc/.well-known/openid-configuration
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: forgejo
         group: platform
         url: http://forgejo.forgejo.svc:3000/api/healthz
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: attic
         group: platform
         url: http://attic.nix-cache.svc/
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: nixos-mirror
         group: platform
         url: http://nixos-mirror.nix-cache.svc/nix-cache-info
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       # Homepage 400s any Host it was not told about
       # (HOMEPAGE_ALLOWED_HOSTS in homepage/deployment.yaml).
       - name: homepage
@@ -89,6 +121,7 @@ data:
           Host: dash.gw.mesh.internal
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
 
       # --- apps -------------------------------------------------------
       - name: vaultwarden
@@ -96,31 +129,37 @@ data:
         url: http://vaultwarden.vaultwarden.svc:8080/alive
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: actual
         group: apps
         url: http://actual.actual.svc:5006/health
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: homeassistant
         group: apps
         url: http://homeassistant.homeassistant.svc:8123/manifest.json
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: workouts
         group: apps
         url: http://workouts.workouts.svc:8080/
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: sillytavern
         group: apps
         url: http://sillytavern.ai.svc:8000/
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: samba
         group: apps
         url: tcp://samba.files.svc:445
         interval: 60s
         conditions: ["[CONNECTED] == true"]
+        alerts: [{type: ntfy}]
 
       # --- media ------------------------------------------------------
       - name: jellyfin
@@ -128,48 +167,58 @@ data:
         url: http://jellyfin.media.svc:8096/health
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: audiobookshelf
         group: media
         url: http://audiobookshelf.media.svc:13378/healthcheck
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: seerr
         group: media
         url: http://seerr.media.svc:5055/api/v1/status
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: sonarr
         group: media
         url: http://sonarr.media.svc:8989/ping
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: radarr
         group: media
         url: http://radarr.media.svc:7878/ping
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: chaptarr
         group: media
         url: http://chaptarr.media.svc:8789/ping
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: prowlarr
         group: media
         url: http://prowlarr.media.svc:9696/ping
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: jackett
         group: media
         url: http://jackett.media.svc:9117/health
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: nzbget
         group: media
         url: http://nzbget.media.svc:6789/
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: transmission
         group: media
         url: http://transmission.media.svc:9091/transmission/web/
         interval: 60s
         conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
