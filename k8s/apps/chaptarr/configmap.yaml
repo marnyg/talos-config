@@ -8,7 +8,7 @@ data:
   # does differently:
   # - no Allowed Hosts: Chaptarr's HostConfig has no allowedHosts field
   #   (openapi.json), so no DNS-rebinding guard to set and no restart.
-  # - no Jackett entries: Prowlarr pushes the torrent indexers in; only
+  # - no torrent indexers of its own: Prowlarr pushes them in; only
   #   NZBgeek is added directly, as sonarr/radarr do.
   # - no root folders: Chaptarr's root folder is a per-format object
   #   (folderType, audiobook/ebook quality + metadata profile ids,
