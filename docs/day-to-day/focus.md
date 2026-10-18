@@ -14,13 +14,10 @@ the git half followed (`e6pu.3`: `#task {repo, ref}` → branch + PR,
 pointer on `child_settled`; `e6pu` closed); 2026-10-18 the **parent
 actor** itself (`ivof.4`–`ivof.8`: `actors/parent` store + actor side +
 web, `cmd/parent`, `k8s/apps/sap-parent`; the child's upload became
-resumable on the way). Deployed by the push that carries this file;
-**not yet observed live.**
-Next: the two-step bootstrap (read the minted id from the pod log →
-lighthouse `-member` + provisioner `-customer`), then ADR-0037's
-confirmation from the phone (submit, live tail, steer from a shared
-wallet, PR on `git.gw`, 404 for a stranger, restart re-adopts); then
-`bsj` (backup) for real. Epic `ivof`. **Side effect:** the relay gate
+resumable on the way) — **live and confirmed** the same day, restart
+mid-run included.
+Next: `bsj` (backup) for real — the parent's store is the first state
+worth it; then real use decides what the UI lacks. Epic `ivof`. **Side effect:** the relay gate
 (`5gz`) is observe-only until sovereign actors have an admission
 story (spike `qx5c`). **Detour landed 2026-10-13:** root
 rotation (protocol ADR-0010, spike `aja2`; ADR-0011, `d0o0` wires

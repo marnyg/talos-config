@@ -32,17 +32,13 @@ deploy before `bsj`, ns `sap`, hand-rolled OIDC RP, one child per task):
 
 ## Loose threads
 
-- **Two-step bootstrap not done:** the pod will log `parent: id id=ed:…`
-  and warn `#lookup failed`; that id must be added to
-  `k8s/apps/sap-lighthouse` (`-member`) and `k8s/apps/sap-provisioner`
-  (`-customer`), and the image digest in `sap-parent/deployment.yaml`
-  is still the provisioner's old `sap-actors` pin — `actors/build.sh`
-  must push a new image (it now carries `parent`) and all three
-  `sap-*` deployments should move to it.
-- ADR-0037's confirmation is live-only (see focus.md). Things to watch
-  on the first run: the SSE tail through ingress-nginx (buffering off,
-  read timeout 3600 set), the OIDC round trip with the `hostAliases`
-  pin, kata birth time vs `-window` (5 min).
+- Bootstrap done: parent id `ed:9608…c9c3` is the lighthouse's
+  `-member` and the provisioner's `-customer`; all three `sap-*` run
+  `sap-actors:7751fa0`; `sandbox-agent` is `sha256:ec97d7…`.
+- Not confirmed live: sharing to a second wallet (none allow-listed at
+  hand; the ACL is under test).
+- A fresh `sandbox-agent` tag costs ~1–2 min of `pending` on first
+  birth per node (image pull, `9g6m`); the 5-min `-window` covers it.
 - Share list is wallets/`group:<name>`; the UI assumes the groups
   siwe-oidc puts in the token. Nothing verifies a shared wallet is a
   known one (it just never logs in if it is not).
@@ -56,9 +52,8 @@ deploy before `bsj`, ns `sap`, hand-rolled OIDC RP, one child per task):
 
 ## Suggested next steps
 
-- Push; `actors/build.sh`; pin the new digest in the three `sap-*`
-  deployments; wait for the `sap-parent` pod; copy its id into the
-  lighthouse/provisioner args; push again. Then the phone run.
-- Close `ivof.4`–`ivof.8` once confirmed live; `ivof` itself stays
-  open on `bsj`.
-- Then back to the open protocol threads (`qx5c`, `h5ao`) or `bsj`.
+- `bsj` (Longhorn backup target): the parent's store is the first
+  thing worth backing up; `ivof` closes on it.
+- Use it: a few real tasks from the phone; the terminal client
+  (`hp79`) when the web UI's shape has settled.
+- Protocol threads: `qx5c` (relay admission), `h5ao`'s remaining half.
