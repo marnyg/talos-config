@@ -20,6 +20,19 @@
   (`REQUIRE_SIGNIN_VIEW=false`), Forgejo's own login (wallet via OIDC,
   tokens for bots) is the identity for writes; agent pods bypass the
   Ingress on the pod network either way.
+- Amended 2026-10-19 (`hp79`): the "terminal client … later" below
+  landed as `cmd/sap`. The person gate gains a second carrier for the
+  same principal: `Authorization: Bearer <token>` on `/api/*`, where
+  the token *is* the login cookie's value (same HMAC signer, same
+  7-day TTL, nothing new stored). A bearer request has no cookie, so
+  the cross-site rule does not apply to it. `sap login` obtains one
+  the `gh auth` way — `/cli/authorize?port=N&state=S` asks the
+  logged-in person and, on a same-origin POST, redirects the token to
+  the CLI's `127.0.0.1:N` with its nonce. Ruled out: a mesh-header
+  path (`X-Mesh-Token`) — the parent opted out of that gate because
+  shares name wallets, and a device is not a person (`7ymy`); a
+  separate OIDC client for the CLI — siwe-oidc registration per client
+  for no gain. Revocation is TTL only, as for the cookie.
 - Related: ADR-0035 (the sandbox layer), ADR-0036 (the null option
   this grows out of; its deferred "protocol facet" and "wallet-gated
   surface" land here), ADR-0032 (the person gate the UI sits behind),
@@ -168,7 +181,8 @@ what the protocol is; the "backend" is that parent with a volume.
   (encrypting Longhorn user volumes).
 - The `tmux attach` path survives as a debug door only; "watch" is the
   parent's UI, and a terminal client of the parent's stream is the
-  power-user path later.
+  power-user path later (landed 2026-10-19 as `cmd/sap`, see the
+  amendment above).
 - Egress and budget stay unbounded (ADR-0036's gaps); budget becomes a
   protocol caveat only at M5.
 - `scripts/agent-run.sh` (`ivof.2`) gets the same workspace/result

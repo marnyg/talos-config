@@ -82,7 +82,7 @@ spec:
         - name: parent
           # actors/build.sh prints the tag@digest to pin here (keep in
           # step with sap-provisioner's and sap-lighthouse's).
-          image: ghcr.io/marnyg/sap-actors:1a38490@sha256:5b63c6eb7c5986307ec5acb511014b0823126067cb5f2b3adbeb3e67ce288de2
+          image: ghcr.io/marnyg/sap-actors:4799bf8@sha256:8b816691607783fe404f6e978ba1c3a283ac30951cb683f3cad6e356ab6b34fb
           command: ["/usr/local/bin/parent"]
           args:
             - -state=/var/lib/sap-parent

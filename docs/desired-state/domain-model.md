@@ -1111,7 +1111,9 @@ provisioning or recovery path may depend on it.
   whose child is not in the cache), and the children's resumable
   uploads find it again. Its UI is an OIDC client of `siwe-oidc`
   (hand-rolled RP: PKCE, RS256 via JWKS; the principal rides the
-  parent's own HMAC cookie), opted out of the admins group gate like
+  parent's own HMAC cookie, or the same value as a bearer token for
+  `cmd/sap`, the terminal client, handed over by `/cli/authorize` to a
+  `127.0.0.1` listener; `hp79`), opted out of the admins group gate like
   ArgoCD because the share list names wallets and groups beyond
   admins. Store: SQLite + FTS5 (`modernc.org/sqlite`, pure Go), tables
   `sessions`, `events` (+ `events_fts` over finished messages and tool
