@@ -5,7 +5,7 @@
 
 ## Last session
 
-2026-10-23 — **the durable pin copy (`d0o0`, talos consumer side)**:
+2026-10-19 — **the durable pin copy (`d0o0`, talos consumer side)**:
 `talos/pins/<scheme>-<address>.json` `{address, policy0, rotations}`
 read by `config-server/policy.LoadPins` at hub construction and on
 every served git tip; `FoldRotations` is now one function for hub and
@@ -67,7 +67,7 @@ ADR-0011 Proposed)**, swarm of three (`c5705eb` ADR, `0870a68`
 - `unsealIssuer` returns the admitting KEY's address, not the identity;
   the ce8 master-wallet pairing reads it — check when a real rotation
   exists.
-- Persistence: hub pins come from `talos/pins/` (2026-10-23); member
+- Persistence: hub pins come from `talos/pins/` (2026-10-19); member
   pins still survive only via the persisted bundle's `rotations` —
   fine while the hub's copy is durable, since every beat re-feeds it.
 - Still open: `kckm`, `lm2a`, `fh2y`; chain-on-connect ADR question;

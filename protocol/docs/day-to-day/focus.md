@@ -18,7 +18,7 @@ stream facet (`agent-events`, chain-on-connect admitted by
 root becomes recoverable by a guardian-signed epoch chain, inv 2/10
 verbatim. **2026-10-15:** pins wired into authorization (ADR-0011,
 `d0o0`): `Receiver.Pins`, subtractive resolution hop, hub + members
-hold trivial pins, `#bundle` carries rotations; **2026-10-23** the
+hold trivial pins, `#bundle` carries rotations; **2026-10-19** the
 durable copy in `talos/pins/` (closes `d0o0` on deploy). **Next is the
 owner's pick:** M5 money (`0bc.5`), or the parent actor (N=2 consumer,
 live since 2026-10-18 in root scope).

@@ -1271,7 +1271,7 @@
   text + frame + exit contract, rendered by `Flow.RenderPrompt`. To
   read what a persona actually saw, open the session (`/s/<id>`) the
   task's history links — the prompt is stored verbatim.
-- 2026-10-23 — **`talos/pins/` is read on every served git tip, not
+- 2026-10-19 — **`talos/pins/` is read on every served git tip, not
   only at startup**: a commit that adds a rotation (or removes a file
   to re-pin) changes who may unseal within one git poll, and a
   rotation that un-admits the current speak-as issuer **re-seals the

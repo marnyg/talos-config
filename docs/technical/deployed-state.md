@@ -237,23 +237,27 @@ history and, where the numbers still matter, in ADR-0006 and
   `600d2d4` — harmless while it holds a kit, fails only at a *new*
   enrollment (the gateway's did, 2026-09-30, until rebuilt).
 
-## Hub on fly — _verified 2026-10-04_
+## Hub on fly — _verified 2026-10-19_
 
 - App `marnyg-talos-config`, region `arn`, one `shared-cpu-1x`/256 MB
-  machine (`7817426a194968`, v83), **image
-  `registry.fly.io/marnyg-talos-config:341b542`** (nix-built
+  machine (`7817426a194968`), **image
+  `registry.fly.io/marnyg-talos-config:3267876`** (nix-built
   `fly/image.nix`: static `config-server -tags iroh` + static
   `iroh-relay` + busybox; `talos/` comes from the signed git tip,
-  ADR-0030), deployed 2026-10-16 11:19Z via `HUB_BUILDER=mar@nixos
-  fly/deploy.sh` from the laptop and unsealed by the owner at 11:21:17Z
+  ADR-0030), deployed 2026-10-19 09:11Z via `HUB_BUILDER=mar@nixos
+  fly/deploy.sh` from the laptop and unsealed by the owner at 09:11:30Z
   with both signatures (`speak-as` + `MasterMessage`). Ships: receiver-
   held **pins** (protocol ADR-0010/0011 — trivial `{root}, k=1` for the
   one admin address and every member's Kit identity; `#bundle` carries
-  an empty `rotations`), `protocol/facethttp` + the agent child's
+  an empty `rotations`) **with the durable copy from git**
+  (`talos/pins/eth-0xf568….json`, `d0o0`: read on every served tip,
+  a rotation by commit re-seals the identity; no `git: pins:` error on
+  the first tip = the file loaded). Previous image `341b542`
+  (2026-10-16), `protocol/facethttp` + the agent child's
   `#task`/`#steer`/`#abort` (root ADR-0037). Member re-beat observed:
   `marius-mac` renewed onto the new hubkey 11 s after unseal; cp1
-  answered auto-bootstrap over the plane at +13 s. Previous image
-  `925dc9d` (2026-10-04); first nebula-free image `0e67661`
+  answered auto-bootstrap over the plane at +13 s (2026-10-16). Before
+  that `925dc9d` (2026-10-04); first nebula-free image `0e67661`
   (2026-09-20).
 - **hubkey `ed:2a812ca5…`** (ephemeral, new on every unseal; was
   `60669a3c…`, before that `a65c301d…`) speaks for `0xf568…9406` (`speak-as` cert,

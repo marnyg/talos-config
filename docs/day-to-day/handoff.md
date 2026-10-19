@@ -3,7 +3,7 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
-## Last session (2026-10-23, pins from git — `d0o0`'s durable copy)
+## Last session (2026-10-19, pins from git — `d0o0`'s durable copy)
 
 The remainder of `d0o0` (protocol ADR-0010/0011): the hub's pins now
 have the durable copy ADR-0010 demanded, in git.

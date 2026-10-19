@@ -98,7 +98,7 @@ holds the durable copy (ADR-0010: the equivocation record is not
 safe-to-lose) in `talos/pins/<scheme>-<address>.json` `{address,
 policy0, rotations}`, loaded with the recipe at hub construction and
 on every served tip and re-verified from the certs
-(`config-server/policy/pins.go`, built 2026-10-23). The hub builds one
+(`config-server/policy/pins.go`, built 2026-10-19). The hub builds one
 trivial pin per `-admin-address`
 (`{root: w, guardians: [w], k: 1}`); `unsealIssuer` accepts a
 `speak-as` whose `iss` is admitted by some held pin — the view's

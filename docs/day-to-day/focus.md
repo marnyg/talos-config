@@ -28,7 +28,7 @@ Epic `ivof`. **Side effect:** the relay gate
 story (spike `qx5c`). **Detour landed 2026-10-13:** root
 rotation (protocol ADR-0010, spike `aja2`; ADR-0011, `d0o0` wires
 pins into every receiver) — model + code built, trivial pins
-everywhere; **2026-10-23** the durable copy landed (`talos/pins/`,
+everywhere; **2026-10-19** the durable copy landed (`talos/pins/`,
 read on every served tip; a rotation by commit re-seals the hub's
 identity) — `d0o0` closes on its deploy.
 

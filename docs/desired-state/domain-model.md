@@ -835,7 +835,7 @@ provisioning or recovery path may depend on it.
   `unsealIssuer` accepts only a root the pin admits; every member pins
   its Kit's `speak-as` issuer and folds the rotations `#bundle` carries;
   `Authorize` resolves a signer to the identity through the pin.
-  _Durable copy (2026-10-23)_: `talos/pins/<scheme>-<address>.json`
+  _Durable copy (2026-10-19)_: `talos/pins/<scheme>-<address>.json`
   `{address, policy0, rotations: [[rotate-root cert…]…]}`, read like
   the recipe and blocklist (`policy.LoadPins`) at hub construction and
   on every served git tip, rotations re-verified from their certs; the
