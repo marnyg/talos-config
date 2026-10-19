@@ -32,15 +32,20 @@ into spike `y8m0` and was then built in one pass under `actors/parent`:
 - Tests: `engine_test.go` (flow run, retries → park, split → join,
   abort/lost/orphan reconcile), `tasks_test.go` (live-DB migration,
   flow validation, store), `web_test.go` `TestWebTasks`. `go test
-  ./...` and `nix build .#actors-bin` green. **Not committed yet** at
-  the time of writing this file — see below.
+  ./...` and `nix build .#actors-bin` green. Committed (`f23f1da`,
+  `4edbd93`: children filed in the move's tx, reconcile by (flow,
+  version, state), "start right away" off by default) and **deployed**
+  (`a082862`): Longhorn snapshot `sap-parent-pre-tasklayer-20261022`
+  first, then `sap-parent` on `4edbd93` — store migrated in place,
+  restored clean, `/healthz` 200.
 
 ## Loose threads
 
-- **Not deployed.** The parent image is unchanged on the cluster; the
-  migration runs on the first start of the new image (`ALTER TABLE
-  sessions RENAME COLUMN task TO run`). Back the PVC up first if
-  `bsj` is still open — this is the first schema change on live data.
+- **No real task has run yet** — the person gate needs the owner's
+  wallet. `kmlg`: log in at `agents.gw.mesh.internal/tasks`, make a
+  project with goals, file a task without a repo, start it, watch the
+  framer. `sap-provisioner`/`sap-lighthouse` still pin `7751fa0`
+  (same binaries unchanged; pin all three next time).
 - The transition is a fenced block, not a tool; a persona running a
   real repo has never been exercised (the fake pi answers markers).
   First live run: file a task with no repo in a throwaway project and
@@ -54,8 +59,6 @@ into spike `y8m0` and was then built in one pass under `actors/parent`:
 
 ## Suggested next steps
 
-- Decide ADR-0043 (Proposed → Accepted), confirm the domain-model
-  additions proposed in the session report, commit + push.
-- Deploy the parent (`actors/build.sh`, pin in `k8s/apps/sap-parent`)
-  after a PVC snapshot; run the first real task through `framed`.
+- Run the first real task (`kmlg`); then decide ADR-0043 and confirm
+  the domain-model additions proposed in the session report.
 - `bsj` — now blocking real use of the task layer, not just nice.

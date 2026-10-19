@@ -19,9 +19,9 @@ mid-run included.
 **2026-10-22: the task layer** (spike `y8m0`, ADR-0043 Proposed):
 tasks above sessions, a project's flow of persona-driven states
 (`agent|human|children`), one `transition` op, goals as the frame —
-built and tested, not deployed, not committed at the time of writing.
-Next: deploy it (PVC snapshot first: the schema migrates in place),
-run one real task through `framed`, then `bsj` (backup) — now
+built, tested, **deployed 2026-10-22** (`a082862`; PVC snapshot
+taken first). Next: the first real task through `framed` (`kmlg`),
+then `bsj` (backup) — now
 blocking, since flows and goals are policy the store alone holds.
 Epic `ivof`. **Side effect:** the relay gate
 (`5gz`) is observe-only until sovereign actors have an admission
