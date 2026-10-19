@@ -106,6 +106,20 @@ spec:
             - name: default
               masquerade: {}
               model: e1000e
+          # w2's RTX 3070 (spike dsuj, 2026-10-19): the two functions of
+          # one IOMMU group, advertised by KubeVirt as extended
+          # resources (k8s/apps/kubevirt/kubevirt-cr.yaml) once the
+          # node's hardware layer has them on vfio-pci. Claiming them
+          # pins the VM to w2 — it can no longer run on cp1/w1 — and
+          # a spec change here needs a VMI restart (not live). The
+          # guest sees a bare PCI device until the NVIDIA driver is
+          # installed inside Windows; EFI firmware (above) is what the
+          # card's option ROM expects.
+          hostDevices:
+            - name: gpu
+              deviceName: nvidia.com/GA104_GEFORCE_RTX_3070
+            - name: gpu-audio
+              deviceName: nvidia.com/GA104_HD_AUDIO
       networks:
         - name: default
           pod: {}
