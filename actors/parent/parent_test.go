@@ -91,8 +91,15 @@ func fakeMain() {
 				if hang {
 					continue
 				}
-				emit(`{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"hi"}}`)
-				emit(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":` + jsonString(fakeAnswer(cmd.Message)) + `}]}}`)
+				if status := fakeError(cmd.Message); status != "" {
+					// The provider refused the call: pi ends the assistant
+					// message empty with stopReason error and the status in
+					// front of the body.
+					emit(`{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":` + jsonString(status+` {"type":"error","error":{"message":"fake refusal"}}`) + `}}`)
+				} else {
+					emit(`{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"hi"}}`)
+					emit(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":` + jsonString(fakeAnswer(cmd.Message)) + `}]}}`)
+				}
 				emit(`{"type":"turn_end"}`)
 				emit(`{"type":"agent_end","messages":[],"willRetry":false}`)
 				emit(`{"type":"agent_settled"}`)
@@ -135,6 +142,15 @@ func fakeAnswer(prompt string) string {
 	return zebra
 }
 
+// fakeError is the HTTP status a `fake:error=<status>` marker in the
+// prompt asks the fake to fail the model call with, "" for none.
+func fakeError(prompt string) string {
+	if i := strings.Index(prompt, "fake:error="); i >= 0 {
+		return strings.Fields(prompt[i+len("fake:error="):])[0]
+	}
+	return ""
+}
+
 func jsonString(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
@@ -161,6 +177,7 @@ type rig struct {
 	pctx    context.Context
 	pstop   context.CancelFunc
 	retries int
+	backoff time.Duration // <0 ⇒ retry at once (the rig's default)
 
 	prov *actor.Actor
 	drv  *driver
@@ -215,8 +232,13 @@ func (d *driver) seen() (int, int) {
 
 func setup(t *testing.T, hang bool) *rig { return setupWith(t, hang, 0) }
 
-// setupWith is setup with the parent's Retries.
+// setupWith is setup with the parent's Retries; retries happen at
+// once (Backoff < 0) unless the test sets r.backoff before up.
 func setupWith(t *testing.T, hang bool, retries int) *rig {
+	return setupBackoff(t, hang, retries, -1)
+}
+
+func setupBackoff(t *testing.T, hang bool, retries int, backoff time.Duration) *rig {
 	t.Helper()
 	t.Setenv("PARENT_FAKE_PI", "1")
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
@@ -226,7 +248,7 @@ func setupWith(t *testing.T, hang bool, retries int) *rig {
 		t.Setenv("PARENT_FAKE_HANG", "0")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &rig{t: t, ctx: ctx, cancel: cancel, net: actor.NewMemoryNetwork(), dir: t.TempDir(), retries: retries}
+	r := &rig{t: t, ctx: ctx, cancel: cancel, net: actor.NewMemoryNetwork(), dir: t.TempDir(), retries: retries, backoff: backoff}
 	t.Cleanup(cancel)
 	r.clock.Store(t0)
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -269,7 +291,7 @@ func (r *rig) up(t *testing.T) {
 	r.sp.Window = 10 * 60
 	r.sp.KitTTL = 20 * 60
 	r.sp.Provisioner = r.prov.ID()
-	r.p = parent.New(parent.Options{Actor: r.pa, Spawner: r.sp, Store: r.store, Image: image, Grace: 50 * time.Millisecond, Retries: r.retries})
+	r.p = parent.New(parent.Options{Actor: r.pa, Spawner: r.sp, Store: r.store, Image: image, Grace: 50 * time.Millisecond, Retries: r.retries, Backoff: r.backoff})
 	r.srv, r.ln = facethttp.Server(child.FacetAgentEvents, r.p.Handler())
 	go func() { _ = r.srv.Serve(r.ln) }()
 	r.pctx, r.pstop = context.WithCancel(r.ctx)

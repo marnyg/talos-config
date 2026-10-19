@@ -672,31 +672,47 @@ func (s *Store) Log(task string) ([]LogEntry, error) {
 	return out, rows.Err()
 }
 
-// LastAssistantText is the text of the newest assistant message on a
-// session's stream — where an agent's transition block sits.
-func (s *Store) LastAssistantText(session string) (string, error) {
+// RunEnd is the newest assistant message on a session's stream: its
+// text (where an agent's transition block sits) and how the model
+// call stopped — StopReason "error" with Error set when the provider
+// refused it (pi's errorMessage, e.g. `402 {...billing_error...}`).
+type RunEnd struct {
+	Text       string
+	StopReason string
+	Error      string
+}
+
+// Failed reports a run whose last model call errored rather than
+// answered.
+func (e RunEnd) Failed() bool { return e.StopReason == "error" }
+
+// LastAssistant reads the newest assistant message on a session's
+// stream; a zero RunEnd when there is none.
+func (s *Store) LastAssistant(session string) (RunEnd, error) {
 	rows, err := s.db.Query(`SELECT raw FROM events WHERE session = ? AND type = 'message_end' ORDER BY seq DESC LIMIT 50`, session)
 	if err != nil {
-		return "", err
+		return RunEnd{}, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var raw []byte
 		if err := rows.Scan(&raw); err != nil {
-			return "", err
+			return RunEnd{}, err
 		}
 		var m struct {
 			Message struct {
-				Role    string          `json:"role"`
-				Content json.RawMessage `json:"content"`
+				Role       string          `json:"role"`
+				Content    json.RawMessage `json:"content"`
+				StopReason string          `json:"stopReason"`
+				Error      string          `json:"errorMessage"`
 			} `json:"message"`
 		}
 		if json.Unmarshal(raw, &m) != nil || m.Message.Role != "assistant" {
 			continue
 		}
-		return textParts(m.Message.Content), nil
+		return RunEnd{Text: textParts(m.Message.Content), StopReason: m.Message.StopReason, Error: m.Message.Error}, nil
 	}
-	return "", rows.Err()
+	return RunEnd{}, rows.Err()
 }
 
 // textParts flattens only the text parts of pi's message content — a

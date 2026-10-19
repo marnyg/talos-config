@@ -180,9 +180,16 @@ func TestStoreProjectsAndTasks(t *testing.T) {
 	if _, err := s.Append("s1", "message_end", "", []byte(line)); err != nil {
 		t.Fatal(err)
 	}
-	text, _ := s.LastAssistantText("s1")
-	if tr, ok, err := ParseTransition(text); err != nil || !ok || tr.To != "x" {
-		t.Fatalf("last text %q → %+v %v %v", text, tr, ok, err)
+	end, _ := s.LastAssistant("s1")
+	if tr, ok, err := ParseTransition(end.Text); err != nil || !ok || tr.To != "x" || end.Failed() {
+		t.Fatalf("last text %q → %+v %v %v", end.Text, tr, ok, err)
+	}
+	failed := `{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"402 {\"type\":\"error\"}"}}`
+	if _, err := s.Append("s1", "message_end", "", []byte(failed)); err != nil {
+		t.Fatal(err)
+	}
+	if end, _ := s.LastAssistant("s1"); !end.Failed() || end.Text != "" || !strings.HasPrefix(end.Error, "402 ") {
+		t.Fatalf("failed run %+v", end)
 	}
 	ts, _ := s.Tasks(mine, "", 0)
 	if len(ts) != 1 {

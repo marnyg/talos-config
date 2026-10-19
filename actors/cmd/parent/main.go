@@ -63,6 +63,7 @@ func main() {
 		beat      = flag.Duration("beat", 30*time.Second, "housekeeping interval: sweep, snapshot, retire, reach-me-at")
 		locTTL    = flag.Duration("location-ttl", 10*time.Minute, "lifetime of each published reach-me-at; keep well above -beat")
 		grace     = flag.Duration("grace", 2*time.Minute, "restart grace for adopted children; how long a settled child keeps its lease to ship")
+		backoff   = flag.Duration("backoff", time.Minute, "wait before a task's second attempt, doubling per attempt (capped at 16×); spawned on the beat")
 		listen    = flag.String("listen", ":8080", "the UI's HTTP listen address")
 		issuer    = flag.String("issuer", "http://auth.gw.mesh.internal", "siwe-oidc issuer URL (as the browser and this process both reach it)")
 		clientID  = flag.String("client-id", "agents", "the -client name siwe-oidc knows this UI by")
@@ -95,7 +96,7 @@ func main() {
 	sp.Provisioner = prov
 	sp.Window = int64(window.Seconds())
 	sp.KitTTL = int64(kitTTL.Seconds())
-	p := parent.New(parent.Options{Actor: a, Spawner: sp, Store: store, Image: *image, Beat: *beat, Grace: *grace})
+	p := parent.New(parent.Options{Actor: a, Spawner: sp, Store: store, Image: *image, Beat: *beat, Grace: *grace, Backoff: *backoff})
 	lost, err := p.Restore()
 	if err != nil {
 		log.Fatal(err)

@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/marnyg/talos-config/actors/child"
 )
@@ -294,12 +296,25 @@ func (p *Parent) sessionEnded(ctx context.Context, session string) {
 	}
 	switch sess.Status {
 	case StatusSettled:
-		text, err := p.store.LastAssistantText(session)
+		end, err := p.store.LastAssistant(session)
 		if err != nil {
 			p.retry(ctx, t, f, "reading the run: "+err.Error())
 			return
 		}
-		tr, ok, err := ParseTransition(text)
+		if end.Failed() {
+			// The provider refused the call: say so, not "no transition
+			// block". A refusal that no retry can change (credentials,
+			// billing, a model that does not exist) parks the task now
+			// rather than burning the remaining attempts on it.
+			reason := "model error: " + clip(end.Error, 300)
+			if fatalModelError(end.Error) {
+				p.park(ctx, t, f, session, "not retried, "+reason)
+				return
+			}
+			p.retry(ctx, t, f, reason)
+			return
+		}
+		tr, ok, err := ParseTransition(end.Text)
 		if !ok {
 			p.retry(ctx, t, f, "the run ended without a transition block")
 			return
@@ -318,8 +333,29 @@ func (p *Parent) sessionEnded(ctx context.Context, session string) {
 	}
 }
 
+// fatalModelErr matches a provider refusal no retry can change: the
+// HTTP status pi prefixes (401 unauthenticated, 402 payment required,
+// 403 forbidden, 404 no such model) or the error types behind them.
+var fatalModelErr = regexp.MustCompile(`^40[1234]\b|billing_error|payment_required|authentication_error|invalid_api_key|insufficient_quota`)
+
+func fatalModelError(msg string) bool { return fatalModelErr.MatchString(msg) }
+
+// clip cuts s to at most n runes with an ellipsis, for a log line or
+// a transition note.
+func clip(s string, n int) string {
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "\u2026"
+}
+
 // retry counts a failed attempt: another session while retries
-// remain, else the task is parked in the flow's stuck state.
+// remain, else the task is parked in the flow's stuck state. The next
+// attempt waits out its backoff first (a #task refusal or a provider
+// outage must not burn every attempt in seconds); the beat spawns it
+// once due.
 func (p *Parent) retry(ctx context.Context, t Task, f Flow, reason string) {
 	n, err := p.store.Retry(t.ID, reason)
 	if err != nil {
@@ -330,9 +366,35 @@ func (p *Parent) retry(ctx context.Context, t Task, f Flow, reason string) {
 		p.park(ctx, t, f, t.Session, fmt.Sprintf("gave up after %d attempts: %s", n, reason))
 		return
 	}
-	p.log.Info("parent: task retry", "task", t.ID, "state", t.State, "attempt", n+1, "reason", reason)
+	wait := p.backoffFor(n)
+	p.log.Info("parent: task retry", "task", t.ID, "state", t.State, "attempt", n+1, "after", wait, "reason", reason)
+	if wait > 0 {
+		return // the beat spawns it: reconcileTasks checks retryDue
+	}
 	t.Retries, t.Error, t.Session = n, reason, ""
 	p.spawnFor(ctx, t, f)
+}
+
+// backoffFor is the wait before attempt n+1 after n failed ones:
+// Options.Backoff doubling per failure, capped at 16 times it.
+func (p *Parent) backoffFor(n int) time.Duration {
+	if p.backoff <= 0 || n <= 0 {
+		return 0
+	}
+	if n > 5 {
+		n = 5
+	}
+	return p.backoff << (n - 1)
+}
+
+// retryDue reports whether a task with no session may be (re)spawned:
+// at once on its first attempt, after its backoff on the next ones
+// (counted from the failure that Retry stamped on updated).
+func (p *Parent) retryDue(t Task, now time.Time) bool {
+	if t.Retries == 0 {
+		return true
+	}
+	return !now.Before(time.Unix(t.Updated, 0).Add(p.backoffFor(t.Retries)))
 }
 
 // park moves the task to the stuck state for a person, unless it is
@@ -352,8 +414,9 @@ func (p *Parent) park(ctx context.Context, t Task, f Flow, session, reason strin
 	}
 }
 
-// reconcileTasks is the beat's safety net: an agent state with no
-// session (a restart between move and spawn) is entered; one whose
+// reconcileTasks is the beat's safety net and the retry clock: an
+// agent state with no session (a restart between move and spawn, or a
+// failed attempt whose backoff has run out) is entered; one whose
 // session ended without being heard (a restart lost it) is settled;
 // a children state is re-checked.
 func (p *Parent) reconcileTasks(ctx context.Context) {
@@ -378,7 +441,7 @@ func (p *Parent) reconcileTasks(ctx context.Context) {
 		case DriverAgent:
 			if t.Session == "" {
 				p.tmu.Lock()
-				if cur, err := p.store.Task(t.ID); err == nil && cur.Session == "" && cur.State == t.State {
+				if cur, err := p.store.Task(t.ID); err == nil && cur.Session == "" && cur.State == t.State && p.retryDue(cur, time.Now()) {
 					p.spawnFor(ctx, cur, f)
 				}
 				p.tmu.Unlock()

@@ -42,6 +42,10 @@ type Options struct {
 	// its first failed or empty-handed run before the task is parked for
 	// a person; 0 ⇒ two.
 	Retries int
+	// Backoff is the wait before a task's second attempt, doubling per
+	// attempt after that (capped at 16×); the beat spawns the attempt
+	// once it is due. 0 ⇒ one minute; negative ⇒ retry at once (tests).
+	Backoff time.Duration
 	Log     *slog.Logger
 }
 
@@ -58,6 +62,7 @@ type Parent struct {
 	beat    time.Duration
 	grace   time.Duration
 	retries int
+	backoff time.Duration
 	log     *slog.Logger
 
 	mu      sync.Mutex
@@ -70,12 +75,15 @@ type Parent struct {
 // session has ended is refused renewal, so a lease outlives its run
 // by at most the kit TTL even if Kill fails.
 func New(o Options) *Parent {
-	p := &Parent{a: o.Actor, sp: o.Spawner, store: o.Store, image: o.Image, beat: o.Beat, grace: o.Grace, retries: o.Retries, log: o.Log, retired: make(map[cert.ActorID]time.Time)}
+	p := &Parent{a: o.Actor, sp: o.Spawner, store: o.Store, image: o.Image, beat: o.Beat, grace: o.Grace, retries: o.Retries, backoff: o.Backoff, log: o.Log, retired: make(map[cert.ActorID]time.Time)}
 	if p.beat <= 0 {
 		p.beat = 30 * time.Second
 	}
 	if p.retries <= 0 {
 		p.retries = 2
+	}
+	if p.backoff == 0 {
+		p.backoff = time.Minute
 	}
 	if p.grace <= 0 {
 		p.grace = 2 * time.Minute

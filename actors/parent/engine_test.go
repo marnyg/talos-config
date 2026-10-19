@@ -3,6 +3,7 @@ package parent_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marnyg/talos-config/actors/parent"
 )
@@ -20,15 +21,19 @@ func testFlow() parent.Flow {
 			"work":      {Driver: parent.DriverAgent, Persona: "worker", Next: []string{"review", "stuck"}},
 			"review":    {Driver: parent.DriverAgent, Persona: "reviewer", Next: []string{"done", "work", "stuck"}},
 			"flaky":     {Driver: parent.DriverAgent, Persona: "plain", Next: []string{"done", "stuck"}},
-			"stuck":     {Driver: parent.DriverHuman, Next: []string{"work", "flaky", "rejected"}},
+			"broke":     {Driver: parent.DriverAgent, Persona: "broke", Next: []string{"done", "stuck"}},
+			"throttled": {Driver: parent.DriverAgent, Persona: "throttled", Next: []string{"done", "stuck"}},
+			"stuck":     {Driver: parent.DriverHuman, Next: []string{"work", "flaky", "broke", "throttled", "rejected"}},
 			"done":      {Driver: parent.DriverHuman},
 			"rejected":  {Driver: parent.DriverHuman},
 		},
 		Personas: map[string]string{
-			"worker":   "You are the worker. fake:to=review",
-			"reviewer": "You are the reviewer. fake:to=done",
-			"splitter": "You split. fake:children=delegated",
-			"plain":    "You say nothing useful.",
+			"worker":    "You are the worker. fake:to=review",
+			"reviewer":  "You are the reviewer. fake:to=done",
+			"splitter":  "You split. fake:children=delegated",
+			"plain":     "You say nothing useful.",
+			"broke":     "The provider refuses you. fake:error=402",
+			"throttled": "The provider throttles you. fake:error=429",
 		},
 	}
 }
@@ -157,6 +162,89 @@ func TestTaskRetriesThenParks(t *testing.T) {
 	}
 	if _, err := r.p.Transition(r.pctx, tk2.ID, owner, parent.Transition{To: "work"}); err == nil {
 		t.Fatal("moved a terminal task")
+	}
+}
+
+// stuckAt sets the scene for a stuck-state exit: a captured task moved
+// to stuck through the store, then sent to state by a person.
+func (r *rig) stuckAt(t *testing.T, title, state string) parent.Task {
+	t.Helper()
+	tk, err := r.p.CreateTask(r.pctx, owner, "p1", parent.TaskSpec{Title: title}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.store.Move(tk.ID, "captured", "stuck", owner, "", parent.Transition{Note: "scene"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.p.Transition(r.pctx, tk.ID, owner, parent.Transition{To: state}); err != nil {
+		t.Fatal(err)
+	}
+	return tk
+}
+
+// TestTaskModelErrors: a run whose model call the provider refused is
+// reported as that, not as a missing transition block. A refusal no
+// retry can change (402 billing) parks the task at once, keeping its
+// attempts; a throttle (429) is retried like any failure, the reason
+// carried on the task and into the next prompt.
+func TestTaskModelErrors(t *testing.T) {
+	r := setupWith(t, false, 1)
+	r.listen(t)
+	r.project(t)
+
+	broke := r.stuckAt(t, "no credits", "broke")
+	waitFor(t, "parked on 402", func() bool { return r.taskState(broke.ID) == "stuck" })
+	log, _ := r.store.Log(broke.ID)
+	last := log[len(log)-1]
+	if last.By != "parent" || !strings.HasPrefix(last.Note, "not retried, model error: 402 ") || !strings.Contains(last.Note, "fake refusal") {
+		t.Fatalf("402 park entry %+v", last)
+	}
+	if x, _ := r.store.Task(broke.ID); x.Retries != 0 {
+		t.Fatalf("402 counted as an attempt %+v", x)
+	}
+	if sessions, _ := r.store.SessionsOfTask(broke.ID); len(sessions) != 1 {
+		t.Fatalf("402 retried: %d sessions", len(sessions))
+	}
+
+	throttled := r.stuckAt(t, "rate limited", "throttled")
+	waitFor(t, "parked on 429", func() bool { return r.taskState(throttled.ID) == "stuck" })
+	log, _ = r.store.Log(throttled.ID)
+	last = log[len(log)-1]
+	if !strings.Contains(last.Note, "gave up after 2 attempts: model error: 429 ") {
+		t.Fatalf("429 park entry %+v", last)
+	}
+	sessions, _ := r.store.SessionsOfTask(throttled.ID)
+	if len(sessions) != 2 || !strings.Contains(sessions[1].Prompt, "Previous attempt failed: model error: 429 ") {
+		t.Fatalf("429 attempts %+v", sessions)
+	}
+}
+
+// TestTaskRetryBackoff: with a backoff set, a failed attempt is not
+// respawned at once nor by a beat that comes too early; it is once
+// the backoff has run out.
+func TestTaskRetryBackoff(t *testing.T) {
+	r := setupBackoff(t, false, 1, time.Hour)
+	r.listen(t)
+	r.project(t)
+	tk := r.stuckAt(t, "flaky", "flaky")
+	waitFor(t, "first attempt failed", func() bool { x, _ := r.store.Task(tk.ID); return x.Retries == 1 })
+	r.p.Beat(r.pctx)
+	r.p.Beat(r.pctx)
+	x, _ := r.store.Task(tk.ID)
+	if x.Session != "" || x.State != "flaky" || !strings.Contains(x.Error, "without a transition block") {
+		t.Fatalf("respawned inside the backoff: %+v", x)
+	}
+	if sessions, _ := r.store.SessionsOfTask(tk.ID); len(sessions) != 1 {
+		t.Fatalf("%d sessions inside the backoff", len(sessions))
+	}
+	// Age the failure past the backoff: the next beat spawns attempt 2.
+	if err := r.store.AgeTask(tk.ID, 2*time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	r.p.Beat(r.pctx)
+	waitFor(t, "parked", func() bool { return r.taskState(tk.ID) == "stuck" })
+	if sessions, _ := r.store.SessionsOfTask(tk.ID); len(sessions) != 2 {
+		t.Fatalf("%d sessions after the backoff", len(sessions))
 	}
 }
 
