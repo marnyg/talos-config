@@ -145,6 +145,20 @@ these are properties of the tools, not current weather (that lives in
   a scheduled task is a *batch* logon: persistent drive letters are
   not restored there (only interactive logons do), so verify with the
   UNC path, not `dir T:\`.
+- **GeForce drivers on Windows Server: skip the installer, keep the
+  INF.** NVIDIA ships no Server package for GeForce and the Game Ready
+  installer refuses Server outright, but the INF inside targets NT 10.0
+  — `7zr x <pkg>.exe Display.Driver` + `pnputil /add-driver
+  nv_dispi.inf /install` binds the card with no reboot (win2k25,
+  617.42, 2026-10-19; `k8s/apps/vms/win2k25-provision.yaml`). pnputil
+  sits silent for ~5 min staging 2.7GB into the DriverStore — watch
+  `setupapi.dev.log`, don't kill it. And download with `curl.exe`:
+  PowerShell 5.1's `Invoke-WebRequest` crawls at ~2MB/s behind its
+  progress bar and buffers the whole body in memory.
+- **A KubeVirt `configMap` volume is a CD with the keys as files**,
+  Joliet names intact (`provision.ps1` stayed `provision.ps1`) — the
+  way to ship a reviewable script to a Windows guest next to the
+  sealed answer file, which should carry secrets only.
 - **A VMI spec change is not live.** Editing `hostDevices` (or most of
   `domain`) in the VirtualMachine only takes effect on the next boot of
   the VMI; with `runStrategy: Always`, `kubectl delete vmi <name>` is

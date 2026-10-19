@@ -60,8 +60,8 @@ the mesh (ADR-0042, `88uq`); the phone subscription and the first
 real page remain. **Detour 2026-10-19, done:** the Windows PC is
 node `w2` (`dsuj`: RTX 3070 host, two whole-NVMe Longhorn disks) and
 the same evening **the GPU is passed through to win2k25** (KubeVirt
-1.9.1); the guest driver, the VM↔AI-pod hand-off and the CP question
-stay on the spike. Back to the line above.
+1.9.1) with the NVIDIA driver and RDP audio provisioned by a CD-borne
+script; the VM↔AI-pod hand-off and the CP question stay on the spike. Back to the line above.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for

@@ -110,8 +110,9 @@ history and, where the numbers still matter, in ADR-0006 and
     `permittedHostDevices` + `HostDevices` gate; the VM is pinned to w2
     by its `hostDevices`; **8 cores / 24Gi** since the same evening, and
     the transfer share mapped as `T:` for Administrator — answer file
-    + applied live). Guest sees the card (no NVIDIA driver yet —
-    `dsuj`). IOMMU on, Secure Boot **off** (set in the BIOS at
+    + applied live). **NVIDIA 617.42 bound in the guest** (provision CD,
+    `win2k25-provision.yaml`; audio over RDP + RDP-on-GPU policies set
+    by the same script). IOMMU on, Secure Boot **off** (set in the BIOS at
     install; the imager build has no signed-UKI path).
     **Three NVMes**, install pinned by model (`hardware/asus-tuf-b550-pro.yaml`):
     `nvme0n1` KINGSTON SNVS1000G (serial `50026B778475CFE2`) = STATE 105MB +

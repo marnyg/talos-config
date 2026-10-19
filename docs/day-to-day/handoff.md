@@ -56,7 +56,12 @@
   on w2 and only w2** — if w2 is off, the VM is down. Then resized to
   8 cores / 24Gi and given the transfer share as `T:` (answer file
   resealed for reinstalls; applied live through the guest agent +
-  schtasks, gotchas.md).
+  schtasks, gotchas.md). Then **the NVIDIA driver, automated**:
+  `win2k25-provision.yaml` (ConfigMap CD + `provision.ps1`: audio over
+  RDP, RDP on the GPU, driver via pnputil on the extracted INF) runs
+  as the answer file's last command and was applied live — the guest
+  reports `NVIDIA GeForce RTX 3070 32.0.16.1742`, no reboot. RDP with
+  sound + GPU rendering is the next thing to try from the laptop.
 - README add-a-node example fixed (broken window): fleet image +
   diskSelector by model.
 
@@ -78,9 +83,7 @@
   `tools[]` per persona, per-project credential sets.
 - Carried: rotation never exercised live (`l3on`); `bsj` (Longhorn
   backup) blocks real task-layer use; `tmm5`, `88uq`, ntfy first page.
-- `dsuj` after passthrough: NVIDIA driver inside Windows Server 2025
-  (the GeForce installer refuses Server; Have-Disk from the extracted
-  `Display.Driver` INF is the known route), then the hand-off question
+- `dsuj` after the driver: the hand-off question
   — the GPU for AI pods while the VM is Halted means an nvidia Talos
   extension + device plugin, which is mutually exclusive with the vfio
   bind (a `driver_override` switch, or per-boot). Second control plane
