@@ -44,10 +44,9 @@
   on `10.0.0.77`, p0agent enrolled, Longhorn holding both Corsair NVMes
   whole (tag `nvme`). Only hitch: the data disks kept their Windows
   GPT and needed `talosctl wipe disk` (gotchas.md).
-- **w2 is powered off** (`talosctl shutdown`, ~20:40Z) so the owner
-  can move it to another room. It rejoins by itself when cabled —
-  nothing to do but keep the hub unsealed. The USB FE dongle it was
-  reached through under Windows must stay unplugged.
+- Powered off, moved to another room, powered on: **rejoined
+  unattended** (STATE unsealed, volumes mounted, beat ok). The USB FE
+  dongle it was reached through under Windows must stay unplugged.
 - The three talos files landed inside an unrelated commit (`b7284dc`,
   another session's broken-windows sweep picked them up).
 

@@ -19,9 +19,9 @@ history and, where the numbers still matter, in ADR-0006 and
   apps as a header from the gateway. IP survives only as each device's
   own fake-IP zone (`198.18/15`, `*.mesh.internal`).
 - **Four nodes since 2026-10-19**: w2 (the former Windows gaming PC,
-  GPU + two Longhorn NVMes) joined; **powered off the same evening
-  to be moved to another room** — it rejoins on its own on
-  `10.0.0.77` once cabled (hub must be unsealed for the STATE unlock).
+  GPU + two Longhorn NVMes) joined; moved to another room the same
+  evening and **rejoined unattended** on `10.0.0.77` after the cold
+  restart.
   Three since 2026-09-22: nas1 (storage) joined; hub runs
   `c33c305` _(2026-09-30: BeatGrantTTL = MemberTTL, `5hek`; `/status`
   gitops row, `9l67`)_.
@@ -120,7 +120,8 @@ history and, where the numbers still matter, in ADR-0006 and
     needed `talosctl wipe disk nvme1n1 nvme2n1` before provisioning
     (Windows GPT leftovers; guides/gotchas.md). SMBIOS UUID
     `60d8741a-5e28-1c4d-70b5-04421aed9d38` is per-unit, declared in
-    `meta.yaml`. **Powered off 2026-10-19 ~20:40Z** for relocation.
+    `meta.yaml`. Relocated 2026-10-19 (shutdown → move → power on):
+    rejoined unattended, STATE unsealed, volumes mounted, beat ok.
 - **Cluster endpoint `https://10.0.0.68:6443`** _(P2.5, `359.9.5`,
   2026-09-20)_: kube-apiserver SANs `cp1, cp1.mesh.internal,
   talos-wu6-eib, 10.0.0.68, 10.96.0.1` — no overlay address. etcd
