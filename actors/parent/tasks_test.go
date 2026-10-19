@@ -42,7 +42,7 @@ func TestMigrateSessions(t *testing.T) {
 		t.Fatalf("ByRun after migration: %+v %v", y, err)
 	}
 	f, err := s.Flow(DefaultFlowID, 0)
-	if err != nil || f.Version != 1 || f.Initial != "captured" {
+	if err != nil || f.Version != 2 || f.Initial != "captured" {
 		t.Fatalf("default flow %+v %v", f, err)
 	}
 	// Opening again is idempotent.
@@ -100,11 +100,11 @@ func TestStoreProjectsAndTasks(t *testing.T) {
 	if err := s.PutFlow(f); err == nil || !strings.Contains(err.Error(), "bump") {
 		t.Fatalf("rewrote a flow version: %v", err)
 	}
-	f.Version = 2
+	f.Version++
 	if err := s.PutFlow(f); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.Flow(DefaultFlowID, 0); got.Version != 2 {
+	if got, _ := s.Flow(DefaultFlowID, 0); got.Version != f.Version {
 		t.Fatalf("latest %d", got.Version)
 	}
 	if fs, _ := s.Flows(); len(fs) != 1 {
@@ -112,7 +112,7 @@ func TestStoreProjectsAndTasks(t *testing.T) {
 	}
 
 	pr, err := s.CreateProject(Project{ID: "p", Name: " P ", Owner: "0xAB"})
-	if err != nil || pr.Owner != "0xab" || pr.Name != "P" || pr.FlowVersion != 2 {
+	if err != nil || pr.Owner != "0xab" || pr.Name != "P" || pr.FlowVersion != f.Version {
 		t.Fatalf("project %+v %v", pr, err)
 	}
 	if _, err := s.CreateProject(Project{ID: "q", Name: "Q", Owner: "0xab", Flow: "missing"}); !errors.Is(err, ErrNoFlow) {
@@ -138,7 +138,7 @@ func TestStoreProjectsAndTasks(t *testing.T) {
 	}
 
 	tk, err := s.InsertTask(Task{ID: "t1", Project: "p", Owner: "0xAB", Title: " T ", State: "captured"}, "0xab", "filed")
-	if err != nil || tk.Flow != DefaultFlowID || tk.FlowVersion != 2 || tk.Title != "T" {
+	if err != nil || tk.Flow != DefaultFlowID || tk.FlowVersion != f.Version || tk.Title != "T" {
 		t.Fatalf("task %+v %v", tk, err)
 	}
 	if !s.CanTask(tk, mine) || s.CanTask(tk, other) || !s.CanTask(tk, admin) {

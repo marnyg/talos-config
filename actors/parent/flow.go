@@ -312,11 +312,18 @@ const DefaultFlowID = "default"
 // DefaultFlow is the flow every project starts with: the grooming
 // pipeline the swarm skills ran by hand (prep → worker → accept →
 // merge → docs), with the human at capture, at the merge, and
-// wherever an agent gets stuck.
+// wherever an agent gets stuck. Versions are immutable (PutFlow) and a
+// project pins the one it was created on; bump Version on any change.
+//
+// v2 (2026-10-19): the worker commits only — the child pushes the
+// branch and opens the PR after the run (child/workspace.go), with a
+// credential the agent never holds. v1 told it to "push, and open a
+// PR"; the first real run spent six minutes credential-hunting and
+// read the forge token out of /proc/1/environ (62a0ec24).
 func DefaultFlow() Flow {
 	return Flow{
 		ID:      DefaultFlowID,
-		Version: 1,
+		Version: 2,
 		Initial: "captured",
 		Leaf:    "groomed",
 		Stuck:   "needs-human",
@@ -353,10 +360,11 @@ func DefaultFlow() Flow {
 - Put the brief in "artifact": {"brief": "...", "acceptance": ["..."], "files": ["..."]}.
 - If the work is one repo, "set" repo and ref and go to executing. If it spans repos, go to delegated with one child per repo, each carrying its own brief in description.
 - If it needs a credential, a resource, spend, or a decision only a person can make, go to needs-human and say exactly what.`,
-			"worker": `You are the worker. Deliver the brief in the artifact above, in this repository, on a branch — commit as you go, push, and open a PR whose body is your report: what you did, how you verified it, what you left out and why.
+			"worker": `You are the worker. Deliver the brief in the artifact above, in this repository: edit and commit as you go, in the working tree you are in.
+- Do NOT push, do not open a PR, do not look for credentials — you have none, and you need none. When you finish, the harness pushes your branch and opens the PR for you, with your "report" as its body: what you did, how you verified it, what you left out and why.
 - Stay inside the brief. Things you notice but must not touch go in "followups".
-- Run the acceptance checks before you finish; put the results in "artifact": {"pr": "...", "checks": ["..."], "report": "..."}.
-- Go to reviewing when the PR is up. Go to needs-human only when you are genuinely blocked, saying what by.`,
+- Run the acceptance checks before you finish; put the results in "artifact": {"checks": ["..."], "report": "..."}.
+- Go to reviewing when the work is committed and checked. Go to needs-human only when you are genuinely blocked, saying what by.`,
 			"reviewer": `You are the reviewer. Judge the worker's result against the brief and the project's goal, not against taste.
 - Re-run the acceptance checks yourself. Read the diff. Check nothing outside the brief changed.
 - Go to ready when it holds; "artifact": {"verdict": "ready", "checked": ["..."]}.

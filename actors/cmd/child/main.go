@@ -63,6 +63,7 @@ import (
 
 func main() {
 	boot.Logging()
+	hideProc()
 
 	raw := os.Getenv(driver.ParamsEnv)
 	if raw == "" {
