@@ -10,6 +10,10 @@
 # passwords; this carries none and should be reviewable. Keep it so.
 #
 # What it does (2026-10-19, spike dsuj):
+#   0. Clock — the VM runs `clock: utc` and Windows gets UTC right, but
+#      the eval install defaults to Pacific, so every timestamp in the
+#      guest read ~9h behind Oslo (2026-10-19). tzutil to W. Europe
+#      and RealTimeIsUniversal so a RTC write-back never mangles it.
 #   1. Audio over RDP — Windows Server ships the Windows Audio service
 #      on Manual and audio/video playback redirection off; the RDP
 #      "Remote Audio" device needs the service running and the policy
@@ -42,6 +46,12 @@ data:
     New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
     Start-Transcript -Path "$LogDir\provision.log" -Append | Out-Null
     function Log($m) { Write-Host ("[{0}] {1}" -f (Get-Date -Format s), $m) }
+
+    # ---- 0. clock / time zone ----------------------------------------
+    $tz = 'W. Europe Standard Time'
+    if ((Get-TimeZone).Id -ne $tz) { & tzutil.exe /s $tz }
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation' -Name RealTimeIsUniversal -Type DWord -Value 1
+    Log ("time zone: " + (Get-TimeZone).Id + ", now " + (Get-Date -Format s))
 
     # ---- 1. audio over RDP -------------------------------------------
     foreach ($svc in 'AudioEndpointBuilder', 'Audiosrv') {

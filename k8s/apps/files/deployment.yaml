@@ -1,17 +1,20 @@
 # A general transfer share on the user-files class (ADR-0031,
-# `longhorn-user`: two replicas on different nodes): the data dump
-# from the Windows PC before it becomes a node (dsuj), and afterwards
-# the drive any Windows VM on the cluster maps. It began on
-# longhorn-bulk (2026-10-04) and moved the next day when the library
+# `longhorn-user`: two replicas on different nodes). It started as the
+# data dump from the Windows PC before it became node w2 (dsuj,
+# 2026-10-19 — that data was declared expendable and never moved), and
+# is now **permanent**: the drive every Windows VM on the cluster maps
+# (win2k25 maps it as T: at first logon from its answer file). It began
+# on longhorn-bulk (2026-10-04) and moved the next day when the library
 # dropped to one replica: this is the one volume here whose bytes are
 # not re-downloadable.
 #
 # Two ways in, one daemon:
-#   - the physical Windows PC on the LAN: \\10.0.0.74\transfer —
+#   - any Windows machine on the LAN: \\10.0.0.74\transfer —
 #     hostPort 445 on nas1, where the replicas already live. The
 #     Windows SMB client dials port 445 only (a /TCPPORT option exists
 #     from Win11 24H2, not relied on), hence hostPort rather than a
-#     NodePort, hence the privileged namespace.
+#     NodePort, hence the privileged namespace. Nothing uses this path
+#     today (the PC is gone); it stays for the next laptop or phone.
 #   - KubeVirt guests (masquerade networking, so they see Services):
 #     \\samba.files.svc.cluster.local\transfer over the ClusterIP.
 #
@@ -24,8 +27,9 @@
 # as), so a pod can read them later without a chown. Strategy Recreate:
 # RWO + hostPort both forbid two pods at once.
 #
-# Done transferring? `replicas: 0` here; the PVC and its data stay
-# (longhorn-user is Retain). Grow it by raising the request — up only.
+# Stopping it (`replicas: 0`) keeps the PVC and its data (longhorn-user
+# is Retain) but breaks every VM's T:. Grow it by raising the request —
+# up only.
 #
 # storageClassName is immutable on a PVC: to move the claim between
 # classes, commit the new class, then delete the PVC so ArgoCD
