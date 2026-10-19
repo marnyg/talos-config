@@ -60,10 +60,17 @@
   `win2k25-provision.yaml` (ConfigMap CD + `provision.ps1`: audio over
   RDP, RDP on the GPU, driver via pnputil on the extracted INF) runs
   as the answer file's last command and was applied live — the guest
-  reports `NVIDIA GeForce RTX 3070 32.0.16.1742`, no reboot. RDP with
-  sound + GPU rendering is the next thing to try from the laptop.
-- README add-a-node example fixed (broken window): fleet image +
-  diskSelector by model.
+  reports `NVIDIA GeForce RTX 3070 32.0.16.1742`, no reboot. **Then
+  proved end to end**: a from-scratch reinstall (trigger → 24 min,
+  zero interaction) came up with GPU driver, T:, audio, time zone, 8c/
+  24Gi — all from git. The run also caught that yesterday's longhorn
+  StorageProfile (Block first) broke fresh DataVolumes; fixed
+  (gotchas.md). RDP with sound + GPU rendering is the next thing to try
+  from the laptop (`xfreerdp3 /v:cp1.mesh.internal:30389 /sound`).
+- Broken windows closed: README add-a-node example; guest time zone
+  (provision.ps1); files/ share headers (permanent now, password also
+  lives in the answer file). Filed: `e4nk` (virtio disk/NIC switch —
+  needs WinPE DriverPaths, watch over VNC).
 
 ## Loose threads
 

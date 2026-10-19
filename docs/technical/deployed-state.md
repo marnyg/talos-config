@@ -112,7 +112,8 @@ history and, where the numbers still matter, in ADR-0006 and
     the transfer share mapped as `T:` for Administrator — answer file
     + applied live). **NVIDIA 617.42 bound in the guest** (provision CD,
     `win2k25-provision.yaml`; audio over RDP + RDP-on-GPU policies set
-    by the same script). IOMMU on, Secure Boot **off** (set in the BIOS at
+    by the same script; **reinstall proven end to end 2026-10-19**, 24 min
+    hands-off from `scripts/win2k25-reinstall.sh`). IOMMU on, Secure Boot **off** (set in the BIOS at
     install; the imager build has no signed-UKI path).
     **Three NVMes**, install pinned by model (`hardware/asus-tuf-b550-pro.yaml`):
     `nvme0n1` KINGSTON SNVS1000G (serial `50026B778475CFE2`) = STATE 105MB +

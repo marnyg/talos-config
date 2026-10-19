@@ -155,6 +155,15 @@ these are properties of the tools, not current weather (that lives in
   `setupapi.dev.log`, don't kill it. And download with `curl.exe`:
   PowerShell 5.1's `Invoke-WebRequest` crawls at ~2MB/s behind its
   progress bar and buffers the whole body in memory.
+- **A DataVolume that omits `volumeMode` takes the StorageProfile's
+  first matching set — state it.** The longhorn StorageProfile override
+  (2026-10-18) listed RWO/Block first on a wrong assumption; the next
+  win2k25 reinstall got a Block PVC and CDI's importer crash-looped
+  (`blockdev: cannot open /dev/cdi-block-volume: Permission denied`
+  — it runs non-root). Fixed both ends 2026-10-19: Filesystem first
+  in the profile, `volumeMode: Filesystem` explicit in the VM's
+  dataVolumeTemplate. A reinstall is the only thing that exercises
+  this; the running VM's PVC predates the profile.
 - **A KubeVirt `configMap` volume is a CD with the keys as files**,
   Joliet names intact (`provision.ps1` stayed `provision.ps1`) — the
   way to ship a reviewable script to a Windows guest next to the
