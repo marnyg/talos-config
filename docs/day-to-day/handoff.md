@@ -41,19 +41,21 @@
   sits in session `bce13a83`'s events and file; rotation is the
   sealed secret `k8s/apps/sap-provisioner/forgejo-agent.sealed.yaml`
   plus the bot's token on Forgejo.
-- `ghcr-push.sh`'s stale-eval guard did not fire once today (built
-  `4799bf8` again right after committing `87966ea` in the same shell
-  line); a second run built the right rev. Watch the first log line.
+- Broken windows fixed end of session (`d498a68`, deployed
+  `d5e7405`): `PUT /api/projects/{id}/flow` + `sap project -flow/
+  -version` (project `test` moved to v2 with it); `ghcr-push.sh` runs
+  `nix eval --refresh` and reads HEAD before the eval (it had built a
+  stale rev twice); the `cmd/child` scrub comment points at `hideProc`.
 - `sap` has no `new` (filing tasks is the UI's), no token revocation
-  (TTL only, as the cookie), no laptop package beyond `actors-bin`.
+  (TTL only, as the cookie) — `xt40`; no laptop package beyond
+  `actors-bin`.
 - `pd5c`'s other edges: transition as a typed stream event/tool,
-  `tools[]` per persona, per-project credential sets. A way to move an
-  existing project to a newer flow version is missing.
+  `tools[]` per persona, per-project credential sets.
 - Carried: rotation never exercised live (`l3on`); `bsj` (Longhorn
   backup) blocks real task-layer use; `tmm5`, `88uq`, ntfy first page.
 
 ## Suggested next steps
 
-- Rotate the token (`97rz`); file a fresh task in a new project (flow
+- Rotate the token (`97rz`); file a fresh task in `test` (now flow
   v2) and `sap watch` the worker commit without pushing.
 - `bsj`.
