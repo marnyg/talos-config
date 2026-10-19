@@ -30,8 +30,8 @@ spec:
     # function are bound to vfio-pci by the node's hardware layer
     # (talos/hardware/asus-tuf-b550-pro.yaml). Listing them here makes
     # virt-handler's device plugin advertise each as an extended
-    # resource on whichever node has the device vfio-bound " today only
-    # w2 " and a VM claims them by resourceName under
+    # resource on whichever node has the device vfio-bound — today only
+    # w2 — and a VM claims them by resourceName under
     # devices.hostDevices. Both must go to the same VM (one IOMMU
     # group). The selector is vendor:device, so a second identical card
     # would be a second unit of the same resource, not a new entry.
