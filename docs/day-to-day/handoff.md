@@ -32,15 +32,14 @@ have the durable copy ADR-0010 demanded, in git.
   `TestLoadShippedPins` guards the real file. Tests: `TestPinsFromGit`
   (construction, bad reload, re-pin, re-seal), `policy/pins_test.go`.
 - Gates green: `go test ./...`, `scripts/test-iroh.sh`,
-  `nix build .#config-server-bin`. Commits `25b8a5f` (+ the re-seal
-  follow-up). **Not yet deployed.**
+  `nix build .#config-server-bin`. Commits `25b8a5f`, `3267876`;
+  **deployed** the same day.
 
 ## Loose threads
 
-- `d0o0` stays open until the hub is deployed on this and the
-  `pins:` line is seen on the served tip (the trivial file logs
-  nothing — only a rotated or dead pin does; absence of a `git: pins:`
-  error is the signal). Pin all three `sap-*` images that deploy.
+- `d0o0` closed 2026-10-19: hub `3267876` deployed, unsealed, serving
+  the tip with `talos/pins/`, no `git: pins:` error (the trivial file
+  logs nothing — only a rotated or dead pin does).
 - Rotation has never been exercised live: `EncodePin` exists but no
   CLI assembles the k guardian certs into the file (the ADR-0011
   `unsealIssuer`-returns-the-key thread `l3on` bites at the first
@@ -51,7 +50,7 @@ have the durable copy ADR-0010 demanded, in git.
 
 ## Suggested next steps
 
-- Deploy the hub (fly) and close `d0o0`; then ADR-0010/0011 →
-  Accepted (protocol scope).
+- ~~Deploy the hub and close `d0o0`~~ — done 2026-10-19 (hub
+  `3267876`; ADR-0010/0011 Accepted).
 - Run the first real task (`kmlg`); decide ADR-0043.
 - `bsj`.

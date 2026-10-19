@@ -73,7 +73,8 @@ not copied:
   bounding assembly not validity; two rotations from one predecessor
   = equivocation = capture (reject both, proof travels); the on-chain
   account follows and never diverges, money only. Adds `rotate-root`
-  to invariant 4. _Proposed 2026-10-13 (spike talos-config-aja2)._
+  to invariant 4. _Proposed 2026-10-13 (spike talos-config-aja2);
+  Accepted 2026-10-19 (pins + durable `talos/pins/` live, `d0o0`)._
 - [0011](0011-receiver-resolves-root-keys-through-held-pins.md) — a
   receiver resolves a root key to an identity through a pin it holds:
   `Receiver.Pins` is the third receiver-held set beside `Consents` and
@@ -81,4 +82,5 @@ not copied:
   identity whose live view names S as root, `Pin.Admits`); consents,
   grants and roles stay addressed to the identity address, so an
   ADR-0010 rotation touches none of them; a dead view admits nothing.
-  _Proposed 2026-10-15 (task talos-config-d0o0; model d0o0.1 in flight)._
+  _Proposed 2026-10-15 (task talos-config-d0o0); Accepted 2026-10-19
+  (hub `3267876`: pins from `talos/pins/` on every served tip)._

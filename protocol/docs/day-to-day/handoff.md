@@ -12,7 +12,8 @@ every served git tip; `FoldRotations` is now one function for hub and
 node; a reload that un-admits the held speak-as issuer re-seals the
 hub (`issuer.Seal`). No protocol change; ADR-0011's consumer-wiring
 paragraph names the file. Closes the "persistence" thread below once
-deployed; ADR-0010/0011 can go Accepted after that.
+deployed on hub `3267876` the same day; `d0o0` closed, **ADR-0010/0011
+Accepted**.
 
 Before that, 2026-10-18 — `djdl` (swarm worker `q-pin-laws`, `49e7f62`):
 `authorize.qnt`'s `res`/`chainRes` are the PINNED receiver; the five
@@ -59,8 +60,6 @@ ADR-0011 Proposed)**, swarm of three (`c5705eb` ADR, `0870a68`
 
 ## Loose threads
 
-- Owner close: `d0o0.1/.2/.3` merged; `d0o0` itself closes when the
-  durable copy (git) of pins/rotations exists — or re-scope it.
 - Open from ADR-0011: rule 3 not pin-aware (a root presenting a
   consent-only chain itself); pre-d0o0 laws quantify the unpinned
   receiver (follow-up: restate with a raw pin edge, make `res` pinned).
@@ -75,7 +74,9 @@ ADR-0011 Proposed)**, swarm of three (`c5705eb` ADR, `0870a68`
 
 ## Suggested next steps
 
-- Deploy the hub on the pins build; then ADR-0010/0011 → Accepted.
+- A rotation has never run live: a CLI that assembles k guardian certs
+  into `talos/pins/` (via `policy.EncodePin`) is the next concrete step
+  before `l3on`'s unsealIssuer thread can be checked.
 - Restate the five "consented sovereign vouches for key" laws
   pin-aware (`authorize.qnt`), re-measure verify.
 - EIP-712 + seed decoupling as one decision superseding `ce8` (`4mg`).

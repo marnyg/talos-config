@@ -1,7 +1,8 @@
 # ADR-0011: A receiver resolves a root key to an identity through a pin it holds
 
-- Status: Proposed _(2026-10-15, task `talos-config-d0o0`; model
-  `d0o0.1` in flight)_
+- Status: Accepted _(2026-10-19: model `d0o0.1`, code `d0o0.3`, laws
+  pinned `djdl`, durable copy `talos/pins/` deployed on hub `3267876`;
+  task `talos-config-d0o0` closed)_. Proposed 2026-10-15.
 - Date: 2026-10-15
 - Amends: root ADR-0018 step 2a (issuer resolution gains one hop),
   ADR-0003 (the receiver-held set grows a third member, `Pins`)

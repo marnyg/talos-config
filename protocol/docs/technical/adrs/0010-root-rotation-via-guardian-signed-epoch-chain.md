@@ -1,8 +1,10 @@
 # ADR-0010: Root rotation via a guardian-signed epoch chain; equivocation is capture
 
-- Status: Proposed (2026-10-13, spike `talos-config-aja2`; model
-  `verification/quint/rotation.qnt` and `protocol/cert/rotation.go`
-  landed the same day — see FINDING under Consequences)
+- Status: Accepted _(2026-10-19: model `verification/quint/rotation.qnt`
+  and `protocol/cert/rotation.go` landed 2026-10-13 — see FINDING under
+  Consequences; pins wired into every receiver by ADR-0011 and the
+  durable git copy `talos/pins/` deployed on hub `3267876`, task
+  `talos-config-d0o0`)_. Proposed 2026-10-13 (spike `talos-config-aja2`).
 - Date: 2026-10-13 (spike `talos-config-aja2`, two review rounds)
 - Builds: nothing yet (`protocol/cert` is the next wave). Adds: verb
   `rotate-root` to invariant 4's set (versioned). Amends: sketch
