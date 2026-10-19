@@ -1095,7 +1095,7 @@ provisioning or recovery path may depend on it.
   puts every lease under RuntimeClass kata and dresses that image in
   the `openrouter` secret by digest (its **outfit**, ADR-0037 — never
   the intro); first live run: `spawn -prompt` from the laptop, 45
-  events, `child_settled`. The parent actor is not built.
+  events, `child_settled`. The parent actor followed on 2026-10-18.
 - **Parent** _(built 2026-10-18, `ivof.4`–`ivof.8`, ADR-0037)_ — the
   agent backend: one long-lived sovereign actor (`actors/parent`,
   `cmd/parent`; Deployment `sap-parent` in `sap`, PVC for key + store +
@@ -1115,9 +1115,12 @@ provisioning or recovery path may depend on it.
   ArgoCD because the share list names wallets and groups beyond
   admins. Store: SQLite + FTS5 (`modernc.org/sqlite`, pure Go), tables
   `sessions`, `events` (+ `events_fts` over finished messages and tool
-  results — never deltas), `shares`, and the two actor-state caches
-  `children` and `consents`. Decision `4ijo`: deployed before `bsj`
-  (its loss is transcripts and share lists, not a security regression).
+  results — never deltas), `shares`, the two actor-state caches
+  `children` and `consents`, and since the task layer (ADR-0043,
+  2026-10-22) `projects`, `goals`, `flows`, `tasks`, `task_log`.
+  Decision `4ijo`: deployed before `bsj` (its loss is transcripts and
+  share lists, not a security regression) — a trade the task layer
+  tightens, since flows and goals are policy the store alone holds.
 - **Session** _(designed 2026-10-11, epic `ivof`; child side built
   2026-10-12, parent 2026-10-18)_ — the record of one agent run as the
   **parent actor** keeps it: pi's event stream (the child beat runs pi
@@ -1160,6 +1163,64 @@ provisioning or recovery path may depend on it.
   (the shell clone-and-PR path went with `e6pu.3`). First live runs:
   PR #1 on `agents/scratch` (shell, `agent-scratch-1`), PR #2 (a
   protocol child, `spawn -repo`).
+- **Project** _(built 2026-10-22, spike `y8m0`, ADR-0043 Proposed)_ —
+  the frame above sessions: an owner's named container for tasks,
+  bound to one **flow** at a pinned version (a flow edit never moves
+  a task mid-flight) and carrying the **goals** every task in it must
+  name one of. Its owner's acts are the task's acts (one right for
+  now); the API is the only front door (`/api/projects`, the board at
+  `/tasks`).
+- **Goal** — one line of intent on a project (`{id, text}`), the
+  thing a task is *for*: the framer picks the goal a raw task serves
+  and writes the "because …" a worker reads first; a task naming no
+  goal of its project is refused. Project-level, never cluster-level.
+- **Flow** — an immutable, versioned state machine a project runs its
+  tasks on: `{initial, leaf, stuck, states{driver, persona, next[]}}`.
+  Each **state** has one **driver** — `human` (a person moves it),
+  `agent` (entering it spawns one session under the state's
+  **persona**, and only that session's last word moves it on), or
+  `children` (it waits until every task carved out of it ends) — and
+  the exits it allows. `initial` is where tasks are filed, `leaf`
+  where children are filed, `stuck` where the engine parks what it
+  cannot move (`needs-human` in the default flow). Stored as a JSON
+  document in `flows`; the default flow seeds on first open.
+- **Persona** — the voice an agent state is run in: a prompt prefix
+  (`framer`, `groomer`, `worker`, `reviewer`, `closer`, …) rendered
+  with the task's frame (project, goal, why, previous step, previous
+  failure) and the exit contract into one `#task` prompt. A persona
+  is text on the flow, not a separate actor or image; `tools[]` per
+  persona is an open edge (`pd5c`).
+- **Task** — a unit of work above a session: `{project, owner,
+  title, description, goal, why, repo, ref, state, retries, error,
+  session}` plus `parent` (the task it was carved out of) and
+  `origin` (the task whose run filed it as a follow-up). A task sits
+  in exactly one state of its project's flow version; an agent state
+  holds at most one live session per attempt (`sessions.task` links
+  them, one row per attempt). Moves only by **transition**.
+- **Transition** — the task layer's single operation: `{to, note,
+  set{title, goal, why, repo, ref}, children[], followups[],
+  artifact}`, asked for by the agent (a fenced ```transition block
+  in its last message), by a person (the API, in a human state or an
+  agent state with no live session), or by the parent itself (a
+  children state whose children all ended; giving up). Validated
+  against the state's exits and the project's goals, applied in one
+  transaction with the children (at `leaf`) and follow-ups (at
+  `initial`) it files, logged to `task_log` with the actor
+  (`wallet`, `session:<id>`, `parent`) and artifact. A move resets
+  `retries` and clears `session`.
+- **Attempt** — one session at an agent state. A run that settles
+  without a block, with a bad block, failed or lost **counts a
+  retry**; the next attempt waits out a **backoff** (`Backoff`,
+  doubling per failure, capped; the beat's `reconcileTasks` is the
+  retry clock, due from the failure's `updated`) and its prompt
+  carries the previous failure. After `Retries` more attempts the
+  task is **parked** in `stuck` by the parent with the reason. A run
+  whose model call the provider refused is reported as `model error:
+  …`; a refusal no retry can change (401–404, billing,
+  authentication) parks at once without spending attempts (added
+  2026-10-19 after the first live run met OpenRouter `402`). An
+  aborted run parks at once. (`kmlg`: the framer has not yet answered
+  live.)
 - **Forgejo** _(live 2026-10-11, `ivof.1`, ADR-0037)_ — the in-cluster
   git host for agent work: ns `forgejo`, sqlite3 + minted secrets on
   one Longhorn PVC, `git.gw.mesh.internal` behind the **group gate**

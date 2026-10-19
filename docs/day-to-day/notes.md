@@ -1298,8 +1298,8 @@
   `actors/**/*.go` from the trigger glob and check only the attrs an
   input feeds (`protocol/`, `iroh-transport/`, `iroh-go/iroh` →
   config-server-bin, iroh-transport, actors-bin; `<mod>/go.*` → that
-  module's attr). Until then `SKIP_VENDOR_HASH=1 git push` is honest for
-  actors-only pushes.
+  module's attr). Applied the same day — an actors-only push is now
+  hook-silent; a `protocol/` push checks three attrs, not four.
 - 2026-10-19 — **`actors/build.sh` can evaluate a stale rev.** Right
   after a commit, `nix eval` once returned the previous HEAD's
   `shortRev` and the script rebuilt and re-pushed the old tag (same

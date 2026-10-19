@@ -230,7 +230,12 @@ func (p *Parent) spawnFor(ctx context.Context, t Task, f Flow) {
 	prompt := f.RenderPrompt(t.State, in)
 	sess, err := p.submit(ctx, t.Owner, child.TaskRequest{Prompt: prompt, Repo: t.Repo, Ref: t.Ref, Title: t.Title}, t.ID)
 	if err != nil {
+		// Counted like a run that failed (a refused #spawn already is:
+		// run settles the session failed and sessionEnded retries), so a
+		// submit that keeps failing is bounded and backed off, not
+		// re-attempted uncounted on every beat.
 		p.log.Warn("parent: task session", "task", t.ID, "state", t.State, "err", err)
+		p.retry(ctx, t, f, "starting the run: "+err.Error())
 		return
 	}
 	p.log.Info("parent: task session", "task", t.ID, "state", t.State, "attempt", in.Attempt, "session", sess.ID)

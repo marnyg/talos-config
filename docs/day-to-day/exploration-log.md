@@ -208,23 +208,3 @@ ADR-0035):
   ADR-0026's header injection. Landed on: nothing until an app forces
   it, then **device-local termination + name-constrained per-device CA**
   (the daemon that already fakes DNS/IPs fakes the server too).
-
-## Nix CI on the cluster (2026-10-17)
-
-The executor alternatives (dind, the NixOS box, kata) are in ADR-0039.
-Dead ends below that level:
-
-- 2026-10-17 — Considered **a PVC at `/nix`** for a persistent runner
-  store. Ruled out: it shadows the image's own `/nix/store` (nix, git
-  and bash vanish), and re-seeding it from the image on every start
-  buys little over a LAN mirror. Landed on the overlay store, warm for
-  the pod's lifetime.
-- 2026-10-17 — Tried **builds as root, no build users, drop-ALL
-  caps**. Ruled out: the first build that touched `$HOME` created
-  `/homeless-shelter`, and nix refused every build after it. Landed on
-  `nixbld1..32` plus six baseline caps.
-- 2026-10-17 — Tried **Attic's upstream chunking (64 KiB) on
-  longhorn-bulk**. Ruled out: one sqlite write and fsync per chunk over
-  the LAN to nas1's SATA disks gave about 1.5 MB/s, then pool timeouts.
-  Landed on `nar-size-threshold = 0`. Revisit if Attic moves to the
-  NVMe `longhorn` class.

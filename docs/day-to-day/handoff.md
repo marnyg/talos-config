@@ -35,13 +35,14 @@
   `not retried, model error: 402 …` note if it is not.
 - `pd5c`'s other edges are open: transition as a typed stream
   event/tool, `tools[]` per persona, per-project credential sets.
-- `git push` takes ~4–5 min: `.githooks/pre-push` triggers the full
-  vendorHash dance (4 attrs × 2 builds, `--rebuild` re-fetches
-  modules) on any `actors/**/*.go` change, though `actors/` is never
-  vendored. Fix proposed, not applied — see notes 2026-10-19.
-- `actors/build.sh` once evaluated a stale rev (tagged and re-pushed
-  the old `4edbd93` image byte-for-byte); the second run was right.
-  Check the "building …:<tag>" line against `git rev-parse --short HEAD`.
+- Pre-push hook narrowed (same session): `actors/**/*.go` is no
+  longer a vendorHash trigger and only the attrs an input feeds are
+  checked. `scripts/ghcr-push.sh` now refuses a tag that is not HEAD's
+  shortRev (nix evaluated a stale rev once today).
+- `sap-parent` (`1a38490`) lacks one later engine change: a `submit`
+  that fails synchronously now counts a retry (`engine.go spawnFor`)
+  instead of being re-attempted uncounted by every beat. Harmless to
+  leave until the next image build.
 - Carried: rotation never exercised live (`l3on`); `bsj` (Longhorn
   backup) blocks real task-layer use; `tmm5`, `88uq`, ntfy first page.
 
@@ -49,5 +50,4 @@
 
 - Top up OpenRouter, re-run the framer on a throwaway project
   (`kmlg`), then decide ADR-0043.
-- Narrow the pre-push hook's triggers (notes 2026-10-19).
 - `bsj`.

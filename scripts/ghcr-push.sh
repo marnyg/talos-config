@@ -55,6 +55,14 @@ else
 fi
 
 eval "$(nix eval --raw "$attr" --apply 'i: "tag=${i.imageTag}; drv=${i.copyToRegistry.drvPath}"')"
+# The tag is the flake's shortRev. nix has evaluated a stale HEAD right
+# after a commit (2026-10-19: rebuilt and re-pushed the previous tag,
+# same digest); a pin taken from that line would have been a no-op.
+head=$(git rev-parse --short HEAD)
+case "$tag" in
+  "$head"|"$head"-dirty) ;;
+  *) echo "nix evaluated $attr at $tag but HEAD is $head: stale flake eval, run again" >&2; exit 1 ;;
+esac
 image="ghcr.io/$repo:$tag"
 echo "building $image${HUB_BUILDER:+ on $HUB_BUILDER}"
 push=$(nix build "${store[@]}" --no-link --print-out-paths "$drv^out")

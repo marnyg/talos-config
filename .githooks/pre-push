@@ -13,9 +13,16 @@
 # main sat red for 14 pushes until darwin-rebuild hit the stale cache
 # (irohup built against an iroh-transport without Conn.Paths).
 #
-# So: when the pushed range touches one of those inputs, realise each
-# FOD and re-run it with --rebuild (the two-step dance documented on
-# config-server/nix/default.nix). ~30 s, no iroh-ffi involved. The
+# So: when the pushed range touches one of those inputs, realise the
+# FODs that input feeds and re-run each with --rebuild (the two-step
+# dance documented on config-server/nix/default.nix; --rebuild
+# re-fetches the modules, so ~1 min per attr). Only the attrs an input
+# can move are checked: the three vendored trees feed config-server-bin,
+# iroh-transport and actors-bin; a module's own go.mod/go.sum and
+# nix/default.nix feed that module's attr alone. actors/ and
+# config-server/ sources are consumers, never vendored — a .go change
+# there moves no hash (2026-10-19: every actors push paid 4 attrs × 2
+# builds, ~5 min, for a hash that could not have changed). The
 # flake is evaluated at the pushed commit (git+file://…?rev=), not the
 # working tree: `$repo#attr` folds uncommitted edits under a replace'd
 # module into the vendor dir and fails pushes that do not carry them.
@@ -30,7 +37,17 @@ refs=$(cat)
 
 if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
   touched=""
+  attrs=""  # the goModules attrs the touched inputs feed, space-separated
   pushed="" # "<local_ref> <local_sha>" per ref whose range touches an input
+  # attrs_for prints the attrs one changed path can move.
+  attrs_for() {
+    case "$1" in
+      protocol/*|iroh-transport/*|iroh-go/*) echo "config-server-bin iroh-transport actors-bin" ;;
+      config-server/*) echo "config-server-bin" ;;
+      actors/*)        echo "actors-bin" ;;
+      workouts/*)      echo "workouts-bin" ;;
+    esac
+  }
   while read -r local_ref local_sha _remote_ref remote_sha; do
     [ -z "$local_sha" ] && continue                                           # no refs (the heredoc's blank line)
     [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue # deleting a ref
@@ -42,25 +59,27 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
     # shellcheck disable=SC2086
     files=$(git -C "$repo" diff --name-only $range -- \
       'protocol/**/*.go' 'protocol/*.go' 'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' \
-      'actors/**/*.go' 'actors/*.go' \
       'config-server/go.*' 'protocol/go.*' 'iroh-transport/go.*' 'iroh-go/go.*' 'actors/go.*' 'workouts/go.*' \
       'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 'workouts/nix/default.nix' 2>/dev/null || true)
     [ -n "$files" ] && touched="$touched$files
 " && pushed="$pushed$local_ref $local_sha
 "
+    for f in $files; do attrs="$attrs $(attrs_for "$f")"; done
   done <<EOF
 $refs
 EOF
 
   if [ -n "$touched" ]; then
-    echo "pre-push: vendored inputs changed in the pushed range:" >&2
+    # shellcheck disable=SC2086
+    attrs=$(printf '%s\n' $attrs | sort -u | tr '\n' ' ')
+    echo "pre-push: vendored inputs changed in the pushed range (checking:$attrs):" >&2
     printf '%s' "$touched" | sort -u | sed 's/^/  /' >&2
     log=$(mktemp "${TMPDIR:-/tmp}/pre-push-vendor.XXXXXX")
     trap 'rm -f "$log"' EXIT
     printf '%s' "$pushed" | sort -u | while read -r local_ref local_sha; do
       [ -z "$local_sha" ] && continue
       flake="git+file://$repo?ref=$local_ref&rev=$local_sha"
-      for attr in config-server-bin iroh-transport actors-bin workouts-bin; do
+      for attr in $attrs; do
         echo "pre-push: checking .#$attr.goModules vendorHash at ${local_sha%"${local_sha#???????}"}…" >&2
         # Realise first (substitution allowed — a stale cached output is
         # exactly the case), then --rebuild (implies --check) compares.
