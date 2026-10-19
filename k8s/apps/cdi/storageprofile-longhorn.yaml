@@ -14,8 +14,15 @@
 #     `migratable: true` on the class, which this cluster does not set.
 # The spec is the documented override (CDI docs, "StorageProfile");
 # status stays CDI's. The first claimPropertySet is the one a
-# DataVolume gets when it names neither accessModes nor volumeMode —
-# kept at RWO/Block so the existing vms/ disks are unchanged.
+# DataVolume gets when it names no volumeMode (accessModes alone picks
+# the first set with that mode). It MUST be RWO/Filesystem: CDI's
+# importer runs non-root and cannot open a Block-mode Longhorn volume
+# (`blockdev: cannot open /dev/cdi-block-volume: Permission denied`,
+# first hit 2026-08-11), which is why every vms/ disk is Filesystem.
+# This override shipped 2026-10-18 with RWO/Block first on the wrong
+# assumption that the existing disks were Block; the next win2k25
+# reinstall (2026-10-19) crash-looped its importer on a fresh Block
+# PVC. Block stays listed for a DataVolume that asks for it by name.
 #
 # CRD arrives via cdi-operator after the CDI CR, hence the wave and
 # SkipDryRunOnMissingResource (see cluster.yaml).
@@ -30,8 +37,8 @@ spec:
   cloneStrategy: csi-clone
   claimPropertySets:
     - accessModes: [ReadWriteOnce]
-      volumeMode: Block
+      volumeMode: Filesystem
     - accessModes: [ReadWriteMany]
       volumeMode: Filesystem
     - accessModes: [ReadWriteOnce]
-      volumeMode: Filesystem
+      volumeMode: Block

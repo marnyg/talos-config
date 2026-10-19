@@ -41,6 +41,9 @@ spec:
     # `blockdev: cannot open /dev/cdi-block-volume: Permission denied`
     # (2026-08-11). The double-filesystem overhead is irrelevant behind
     # SATA emulation; revisit Block only alongside the virtio switch.
+    # Stated explicitly since 2026-10-19: the longhorn StorageProfile
+    # override briefly listed RWO/Block first and a reinstall got a
+    # Block PVC — the mode must not depend on profile ordering.
     # Created degraded (1 of 2 replicas) while w1 is down; heals when
     # it returns. Lifecycle is tied to the VM: deleting the VM deletes
     # the Windows install, but never the ISO (separate DataVolume).
@@ -52,6 +55,7 @@ spec:
         storage:
           accessModes:
             - ReadWriteOnce
+          volumeMode: Filesystem
           storageClassName: longhorn
           resources:
             requests:
