@@ -1,0 +1,119 @@
+# Post-install provisioning for the win2k25 guest, as a CD the VM
+# carries (KubeVirt `configMap` volume → iso9660; win2k25-vm.yaml
+# attaches it as `provision`). The answer file's last FirstLogonCommand
+# runs provision.ps1 from whichever drive letter the CD lands on; the
+# script is idempotent, so it is also what gets re-run by hand (through
+# the guest agent) on an already-installed guest when this file
+# changes — a ConfigMap edit alone changes nothing inside Windows.
+#
+# Plain in git on purpose: the answer file is sealed because it carries
+# passwords; this carries none and should be reviewable. Keep it so.
+#
+# What it does (2026-10-19, spike dsuj):
+#   1. Audio over RDP — Windows Server ships the Windows Audio service
+#      on Manual and audio/video playback redirection off; the RDP
+#      "Remote Audio" device needs the service running and the policy
+#      cleared. Capture (microphone) redirection likewise.
+#   2. GPU for RDP sessions — once the NVIDIA driver is in, let RDP
+#      render on it (bEnumerateHWBeforeSW) and prefer AVC444 with
+#      hardware encode; harmless before the driver exists.
+#   3. NVIDIA driver — GeForce has no Windows Server package and its
+#      installer refuses Server outright, but the driver INF targets NT
+#      10.0 and installs fine by hand: download the pinned Win10/11
+#      DCH package (a 7z self-extractor), unpack Display.Driver with the
+#      standalone 7zr.exe, `pnputil /add-driver nv_dispi.inf /install`.
+#      Skipped when an NVIDIA display device is already present —
+#      bump $NvVersion here and re-run to upgrade. No GeForce
+#      Experience / control panel; the INF is the driver.
+#      The card must be in the VM (hostDevices) or pnputil has nothing
+#      to bind; the VM then shows it as "Microsoft Basic Display
+#      Adapter" until this runs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: win2k25-provision
+  namespace: vms
+data:
+  provision.ps1: |
+    # Idempotent guest provisioning for win2k25. Runs as Administrator
+    # (FirstLogonCommands) or SYSTEM (guest agent) — both are fine.
+    $ErrorActionPreference = 'Continue'
+    $LogDir = 'C:\ProgramData\provision'
+    New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+    Start-Transcript -Path "$LogDir\provision.log" -Append | Out-Null
+    function Log($m) { Write-Host ("[{0}] {1}" -f (Get-Date -Format s), $m) }
+
+    # ---- 1. audio over RDP -------------------------------------------
+    foreach ($svc in 'AudioEndpointBuilder', 'Audiosrv') {
+      Set-Service -Name $svc -StartupType Automatic
+      if ((Get-Service $svc).Status -ne 'Running') { Start-Service $svc }
+    }
+    Log ("audio services: " + ((Get-Service Audiosrv, AudioEndpointBuilder | % { $_.Name + '=' + $_.Status }) -join ' '))
+    $ts = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services'
+    New-Item -Path $ts -Force | Out-Null
+    # fDisableCam = "do not allow audio and video playback redirection";
+    # fDisableAudioCapture = "do not allow audio recording redirection".
+    Set-ItemProperty -Path $ts -Name fDisableCam -Type DWord -Value 0
+    Set-ItemProperty -Path $ts -Name fDisableAudioCapture -Type DWord -Value 0
+    # The non-policy listener setting Server ships with — clear it too.
+    $rdp = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
+    Set-ItemProperty -Path $rdp -Name fDisableCam -Type DWord -Value 0
+    Set-ItemProperty -Path $rdp -Name fDisableAudioCapture -Type DWord -Value 0
+    Log 'rdp audio redirection: playback + capture allowed'
+
+    # ---- 2. GPU for RDP ----------------------------------------------
+    Set-ItemProperty -Path $ts -Name bEnumerateHWBeforeSW -Type DWord -Value 1
+    Set-ItemProperty -Path $ts -Name AVC444ModePreferred -Type DWord -Value 1
+    Set-ItemProperty -Path $ts -Name AVCHardwareEncodePreferred -Type DWord -Value 1
+    Log 'rdp: hardware GPU + AVC444 + hw encode preferred'
+
+    # ---- 3. NVIDIA driver --------------------------------------------
+    $NvVersion = '617.42'   # GeForce Game Ready, Win10/11 DCH, 2026-10-06
+    $NvUrl = "https://us.download.nvidia.com/Windows/$NvVersion/$NvVersion-desktop-win10-win11-64bit-international-dch-whql.exe"
+    $SevenZr = 'https://github.com/ip7z/7zip/releases/download/25.01/7zr.exe'
+    $nvPresent = Get-PnpDevice -Class Display -PresentOnly -ErrorAction SilentlyContinue |
+      Where-Object { $_.FriendlyName -like 'NVIDIA*' }
+    $nvPci = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
+      Where-Object { $_.InstanceId -like 'PCI\VEN_10DE&DEV_2*' -and $_.Class -eq 'Display' }
+    if (-not $nvPci) {
+      Log 'no NVIDIA display-class PCI device in this VM — skipping driver'
+    } elseif ($nvPresent) {
+      Log ("NVIDIA driver already bound: " + ($nvPresent | % { $_.FriendlyName }) + " (" + (Get-CimInstance Win32_VideoController | ? Name -like 'NVIDIA*' | % DriverVersion) + ")")
+    } else {
+      $work = "$LogDir\nvidia-$NvVersion"
+      New-Item -ItemType Directory -Force -Path $work | Out-Null
+      # curl.exe (inbox since Server 2019) streams to disk at line rate;
+      # Invoke-WebRequest on PowerShell 5.1 buffers the whole body and
+      # crawls at ~2MB/s behind its progress bar (measured 2026-10-19).
+      function Fetch($url, $out) {
+        if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+          & curl.exe -fsSL --retry 3 -o $out $url
+          if ($LASTEXITCODE -ne 0) { throw "curl exit $LASTEXITCODE for $url" }
+        } else {
+          $ProgressPreference = 'SilentlyContinue'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $out
+        }
+      }
+      if (-not (Test-Path "$work\7zr.exe")) { Log "downloading 7zr.exe"; Fetch $SevenZr "$work\7zr.exe" }
+      if (-not (Test-Path "$work\driver.exe")) {
+        Log "downloading NVIDIA $NvVersion (~950MB)"
+        Fetch $NvUrl "$work\driver.exe.part"; Move-Item -Force "$work\driver.exe.part" "$work\driver.exe"
+      }
+      if (-not (Test-Path "$work\x\Display.Driver\nv_dispi.inf")) {
+        Log "extracting Display.Driver"
+        & "$work\7zr.exe" x "$work\driver.exe" -o"$work\x" -y Display.Driver | Select-Object -Last 3 | % { Log $_ }
+      }
+      Log "pnputil /add-driver nv_dispi.inf /install"
+      $out = & pnputil.exe /add-driver "$work\x\Display.Driver\nv_dispi.inf" /install 2>&1
+      $out | % { Log $_ }
+      Log ("pnputil exit " + $LASTEXITCODE + " (0 ok, 3010 reboot required)")
+      Start-Sleep -Seconds 10
+      Log ("display adapters now: " + ((Get-CimInstance Win32_VideoController | % { $_.Name + ' ' + $_.DriverVersion }) -join '; '))
+      if ($LASTEXITCODE -in 0, 3010) {
+        # The package lives in the DriverStore now; the ~4GB of download
+        # + extraction is dead weight on an 80GB system disk.
+        Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
+      }
+    }
+    Stop-Transcript | Out-Null

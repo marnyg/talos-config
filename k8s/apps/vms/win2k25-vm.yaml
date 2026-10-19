@@ -110,6 +110,9 @@ spec:
             - name: sysprep
               cdrom:
                 bus: sata
+            - name: provision
+              cdrom:
+                bus: sata
           interfaces:
             - name: default
               masquerade: {}
@@ -154,6 +157,12 @@ spec:
         # installed. Reinstall-from-scratch: fire the suspended CronJob
         # (win2k25-reinstall-trigger.yaml) or run
         # scripts/win2k25-reinstall.sh; zero interaction either way.
+        # provision.ps1 on an iso9660 CD (win2k25-provision.yaml): the
+        # answer file's last FirstLogonCommand runs it; idempotent, so
+        # it is also re-run by hand on a live guest. Plain in git.
+        - name: provision
+          configMap:
+            name: win2k25-provision
         - name: sysprep
           sysprep:
             secret:
