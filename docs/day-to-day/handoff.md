@@ -35,6 +35,22 @@
   .#actors-bin`. `87966ea` pinned on `sap-parent` (`2293ffe`; children
   take the image the parent names, so the hardening ships with it).
 
+## Also this day (2026-10-19, separate session): w2 joined the cluster
+
+- **The Windows gaming PC is Talos node `w2`** (spike `dsuj`, notes
+  there): inventoried over ssh while it still ran Windows, declared
+  from the measurements (`talos/hardware/asus-tuf-b550-pro.yaml`,
+  `talos/machines/04-42-1a-ed-9d-38/`), first boot straight to Ready
+  on `10.0.0.77`, p0agent enrolled, Longhorn holding both Corsair NVMes
+  whole (tag `nvme`). Only hitch: the data disks kept their Windows
+  GPT and needed `talosctl wipe disk` (gotchas.md).
+- **w2 is powered off** (`talosctl shutdown`, ~20:40Z) so the owner
+  can move it to another room. It rejoins by itself when cabled —
+  nothing to do but keep the hub unsealed. The USB FE dongle it was
+  reached through under Windows must stay unplugged.
+- The three talos files landed inside an unrelated commit (`b7284dc`,
+  another session's broken-windows sweep picked them up).
+
 ## Loose threads
 
 - **`97rz` (P1): rotate the Forgejo agent token.** The leaked value
@@ -53,6 +69,9 @@
   `tools[]` per persona, per-project credential sets.
 - Carried: rotation never exercised live (`l3on`); `bsj` (Longhorn
   backup) blocks real task-layer use; `tmm5`, `88uq`, ntfy first page.
+- `dsuj` after w2: GPU passthrough (vfio bind `10de:2488`/`228b`,
+  KubeVirt `permittedHostDevices`, win2k25 `hostDevices`) and the
+  second-control-plane question are still open; w2 is a worker.
 
 ## Suggested next steps
 

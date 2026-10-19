@@ -19,6 +19,15 @@
 
 ## Read first
 
+- 2026-10-19 — **w2 is powered off on purpose** (`talosctl shutdown`,
+  ~20:40Z) while the owner moves it to another room; `Ready=Unknown`
+  / no ping on `10.0.0.77` is expected until it is cabled again. It
+  rejoins unattended (static address, UUID-keyed unseal) as long as
+  the hub is unsealed — if it comes back in maintenance mode, that is
+  the first thing to check. Do NOT plug the Realtek USB FE dongle
+  (`32:0b:b1:…`) back in: a driver-generated MAC enumerating first
+  would fetch a config that does not exist. Longhorn has no replicas
+  on w2 yet, so nothing degrades while it is away.
 - 2026-10-16 — **HTTPS on the mesh is device-local (ADR-0033).** Each
   daemon's root is `<state>/tls/ca.crt` (Mac:
   `/var/lib/talos-mesh/marius-mac.iroh/tls/`, key 0600 beside the

@@ -18,7 +18,11 @@ history and, where the numbers still matter, in ADR-0006 and
   hub on fly is the relay and the issuer; per-request identity reaches
   apps as a header from the gateway. IP survives only as each device's
   own fake-IP zone (`198.18/15`, `*.mesh.internal`).
-- **Three nodes since 2026-09-22**: nas1 (storage) joined; hub runs
+- **Four nodes since 2026-10-19**: w2 (the former Windows gaming PC,
+  GPU + two Longhorn NVMes) joined; **powered off the same evening
+  to be moved to another room** — it rejoins on its own on
+  `10.0.0.77` once cabled (hub must be unsealed for the STATE unlock).
+  Three since 2026-09-22: nas1 (storage) joined; hub runs
   `c33c305` _(2026-09-30: BeatGrantTTL = MemberTTL, `5hek`; `/status`
   gitops row, `9l67`)_.
 - **Cluster endpoint is a LAN address** (`https://10.0.0.68:6443`); the
@@ -32,9 +36,10 @@ history and, where the numbers still matter, in ADR-0006 and
 
 ## Cluster — _verified 2026-10-08_
 
-- Three nodes, Talos v1.12.6 (kernel 6.18.18), k8s v1.32.3, containerd
-  2.1.6. **One fleet image** declared in all three `talos/hardware/*.yaml`
-  and running on every node (rolled w1 → nas1 → cp1, 2026-10-08):
+- Four nodes _(w2 added 2026-10-19)_, Talos v1.12.6 (kernel 6.18.18),
+  k8s v1.32.3, containerd 2.1.6. **One fleet image** declared in all
+  four `talos/hardware/*.yaml` and running on every node (rolled w1 →
+  nas1 → cp1, 2026-10-08; w2 installed with it):
   `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata@sha256:6e8e77cb…`
   (imager-built, ADR-0023: stock Talos + `iscsi-tools` v0.2.0 +
   `util-linux-tools` 2.41.2 + `kata-containers` 3.26.0 (ADR-0035) +
@@ -93,6 +98,29 @@ history and, where the numbers still matter, in ADR-0006 and
     `03000200-0400-…-000700080009`), declared in `meta.yaml` with its
     KMS-allowlist caveat; seal/unseal work and no `UNDECLARED` warning
     was raised.
+  - **w2** — worker, the GPU node, dir
+    `talos/machines/04-42-1a-ed-9d-38` (the onboard RTL8125's MAC —
+    the only wired PCI NIC), node name `w2` (**pinned**), **static
+    `10.0.0.77`** (selector by the directory MAC). Enrolled at first
+    boot 2026-10-19 (`beat ok`, member `w2`, groups `[machines]`).
+    Komplett build on ASUS TUF GAMING B550-PRO, Ryzen 5 5600X, 48GiB,
+    **RTX 3070** (`10de:2488`+`228b`, not yet bound to anything —
+    spike `dsuj`), IOMMU on, Secure Boot **off** (set in the BIOS at
+    install; the imager build has no signed-UKI path).
+    **Three NVMes**, install pinned by model (`hardware/asus-tuf-b550-pro.yaml`):
+    `nvme0n1` KINGSTON SNVS1000G (serial `50026B778475CFE2`) = STATE 105MB +
+    EPHEMERAL **998GB** (both LUKS2, no cap — nothing else lives there);
+    `u-longhorn` = the whole Corsair MP600 PRO (`nvme2n1`, 1.0TB, serial
+    `222879480001310150E8`) and `u-longhorn-1` = the whole Force MP510
+    (`nvme1n1`, 960GB, serial `20428299000129193081`), xfs, unencrypted
+    (same open thread, `9io`), tag `nvme` both — the first node where
+    Longhorn's disks are separate from the install disk. Longhorn Node
+    CR registered both from the `default-disks-config` annotation
+    (913Gi + 877Gi available, Ready+Schedulable). Both data disks
+    needed `talosctl wipe disk nvme1n1 nvme2n1` before provisioning
+    (Windows GPT leftovers; guides/gotchas.md). SMBIOS UUID
+    `60d8741a-5e28-1c4d-70b5-04421aed9d38` is per-unit, declared in
+    `meta.yaml`. **Powered off 2026-10-19 ~20:40Z** for relocation.
 - **Cluster endpoint `https://10.0.0.68:6443`** _(P2.5, `359.9.5`,
   2026-09-20)_: kube-apiserver SANs `cp1, cp1.mesh.internal,
   talos-wu6-eib, 10.0.0.68, 10.96.0.1` — no overlay address. etcd

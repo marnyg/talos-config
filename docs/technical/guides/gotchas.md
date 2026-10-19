@@ -17,6 +17,24 @@ these are properties of the tools, not current weather (that lives in
   `dig`, `curl`, `kubectl` and even `-e cp1.mesh.internal` resolved the
   same name fine. Check `get resolvers` on the node before blaming the
   client.
+- **A reused data disk must be wiped before a `UserVolumeConfig` will
+  take it.** Talos never overwrites a foreign partition table: on w2
+  (2026-10-19) both Corsair NVMes still carried their Windows GPT
+  (`Microsoft reserved partition` + NTFS), so the volumes failed with
+  `no disks matched for volume (1 matched selector): 1 have not enough
+  space` — the selector was right, the disk was full. Fix is live, no
+  reboot: `talosctl wipe disk <dev>...` (only for disks the install
+  did not touch — the install disk is wiped by the install). Same
+  applies to a disk that was previously a Longhorn volume on another
+  node, or any SATA drive pulled from a NAS.
+- **`talosctl get disks` prints the NVMe serial; Windows prints the
+  EUI-64.** Reading a still-running Windows box, `Get-Disk`/
+  `Get-PhysicalDisk` `SerialNumber` is the namespace EUI-64
+  (`6479_A740_…`, `0000_…_0026_B778_…`), not the controller serial
+  Talos matches `disk.serial` against. Pin by **model** when the only
+  measurement is from Windows (w2's hardware layer does; the model
+  string was identical on both sides), and record the Linux serial
+  after first boot.
 
 ## Nix / Go
 

@@ -57,7 +57,10 @@ Attic with this flake and the NixOS systems; pointing the machines'
 nix.conf at it remains. **Detour 2026-10-18, done:** the observability
 stack recorded (ADR-0041) and pages wired to a self-hosted ntfy over
 the mesh (ADR-0042, `88uq`); the phone subscription and the first
-real page remain. Back to the line above.
+real page remain. **Detour 2026-10-19, done:** the Windows PC is
+node `w2` (`dsuj`: RTX 3070 host, two whole-NVMe Longhorn disks);
+powered off for relocation, GPU passthrough and the CP question stay
+on the spike. Back to the line above.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for
