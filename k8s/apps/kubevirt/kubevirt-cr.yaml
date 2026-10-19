@@ -26,6 +26,21 @@ spec:
       # cluster reaches a k8s version where ImageVolume works (≥1.35).
       disabledFeatureGates:
         - ImageVolume
+    # PCI passthrough (spike dsuj, 2026-10-19): w2's RTX 3070 and its HDA
+    # function are bound to vfio-pci by the node's hardware layer
+    # (talos/hardware/asus-tuf-b550-pro.yaml). Listing them here makes
+    # virt-handler's device plugin advertise each as an extended
+    # resource on whichever node has the device vfio-bound " today only
+    # w2 " and a VM claims them by resourceName under
+    # devices.hostDevices. Both must go to the same VM (one IOMMU
+    # group). The selector is vendor:device, so a second identical card
+    # would be a second unit of the same resource, not a new entry.
+    permittedHostDevices:
+      pciHostDevices:
+        - pciVendorSelector: "10DE:2488"
+          resourceName: nvidia.com/GA104_GEFORCE_RTX_3070
+        - pciVendorSelector: "10DE:228B"
+          resourceName: nvidia.com/GA104_HD_AUDIO
   customizeComponents: {}
   imagePullPolicy: IfNotPresent
   # Infra components (virt-api, virt-controller, virt-exportproxy) may run

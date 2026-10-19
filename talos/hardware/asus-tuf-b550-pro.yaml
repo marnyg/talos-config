@@ -31,12 +31,23 @@
 # a config that does not exist (nas1's :a8/:a9 trap, from the other
 # side). Wi-Fi (Intel AX210) is undriven and irrelevant.
 #
-# GPU passthrough is deliberately NOT configured here yet (spike dsuj):
-# the IDs it will need are 10de:2488 (RTX 3070) + 10de:228b (its HDA
-# function); binding them to vfio-pci is kernel.modules + extraKernelArgs
-# on this layer plus the KubeVirt permittedHostDevices — a separate
-# commit once the node is in.
+# GPU: the RTX 3070 belongs to VMs, not the host (spike dsuj). The
+# Talos kernel has no nouveau and ships no nvidia driver, so at boot
+# 0000:0b:00.0 (10de:2488) and its HDA function 0000:0b:00.1
+# (10de:228b) sit unbound in IOMMU group 16 — the two of them alone,
+# measured 2026-10-19 — and vfio-pci below simply claims them by ID
+# (`ids=` is the module parameter; no kernel args, no reinstall:
+# kernel.modules applies live). KubeVirt's permittedHostDevices
+# (k8s/apps/kubevirt/kubevirt-cr.yaml) turns the bound devices into
+# the nvidia.com/* resources a VM's hostDevices asks for. Both
+# functions must go to the same VM: vfio hands out a whole group.
 machine:
+  kernel:
+    modules:
+      - name: vfio_pci
+        parameters:
+          - ids=10de:2488,10de:228b
+      - name: vfio_iommu_type1
   install:
     # THREE NVMes, so `type: nvme` (nas1's selector) is ambiguous and the
     # base template's /dev/sda default is forbidden anyway. Pin by model

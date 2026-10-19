@@ -156,19 +156,25 @@ flyctl logs -a marnyg-talos-config --no-tail | grep "device auth started"
 ```
 
 1. Hardware layer, if this hardware type is new — install disk (**required**;
-   the role templates set none) and the factory installer image, which must
-   carry the `p0agent` extension (`talos/extensions/`) or the node never
-   joins the identity plane:
+   the role templates set none) and **the fleet image**: the imager-built
+   `ghcr.io/marnyg/talos-installer:<tag>@sha256:…` every other
+   `hardware/*.yaml` declares (ADR-0023; it carries the `p0agent`
+   extension, without which the node never joins the identity plane —
+   a factory image will not do). Copy tag and digest from a sibling:
    ```yaml
    # hardware/new-hw.yaml
    machine:
      install:
-       disk: /dev/nvme0n1   # verify! /dev/sda may be a USB boot stick
-       image: factory.talos.dev/installer/<schematic>:v1.12.6
+       diskSelector:
+         model: KINGSTON SNVS1000G   # exact; never `disk: /dev/sda` — a USB boot stick enumerates there
+       image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata@sha256:6e8e…  # as in hardware/minipc.yaml
    ```
-   If the disk is genuinely unknown, use a `diskSelector` sized to **fail
-   safe** (a miss aborts the install and wipes nothing; a too-loose match
-   can eat a data disk), then pin the device node after first boot.
+   Prefer a selector on a measured fact (model, or `type: nvme` when there
+   is exactly one) over a device node — `/dev/nvmeXn1` is enumeration
+   order. A selector **fails safe** (a miss aborts the install and wipes
+   nothing; a too-loose match can eat a data disk).
+   `hardware/asus-tuf-b550-pro.yaml` is the worked example (three NVMes,
+   measured from Windows before the install).
 
 2. Declare the machine — directory named by MAC with dashes:
    ```yaml
