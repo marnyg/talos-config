@@ -3,51 +3,58 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
-## Last session (2026-10-19, the task layer's first real run — and `pd5c`)
+## Last session (2026-10-19, ADR-0043 Accepted; `cmd/sap`; the worker's credential hunt)
 
-- **Verified `kmlg` from the parent's store** (debug container,
-  `/proc/1/root/var/lib/sap-parent/sessions/*.jsonl`): the task layer
-  ran end-to-end — project, task, `framed` → `#spawn` → born →
-  `#task` → events → session stored → retry → `needs-human` — but
-  every model call died on **OpenRouter `402 billing_error`** (balance
-  below the 128k `max_tokens`). Three attempts in ~4 s per task, the
-  board saying only "ended without a transition block". ADR-0043 is
-  **not** decided yet: the framer has still never answered.
-- **`pd5c`, the retry half** (`5c61830`, `1a38490`; deployed
-  `f3b89ba`): `Store.LastAssistant` returns `RunEnd{Text, StopReason,
-  Error}`; a run whose model call errored is reported as `model error:
-  <pi's errorMessage>`; a refusal no retry can change (`40[1-4]`,
-  `billing_error`, `authentication_error`, …) parks the task at once as
-  `not retried, …` with attempts untouched; anything else retries after
-  `Options.Backoff` (`-backoff`, 1 min doubling, cap 16×) — the beat's
-  `reconcileTasks` is the retry clock (`retryDue` from `updated`, no
-  schema change). `-retries` is a flag now; `park()` with no exit to
-  `stuck` stamps the reason on the task (`Store.Stall`).
-- Tests: fake pi learned `fake:error=<status>`; `TestTaskModelErrors`,
-  `TestTaskRetryBackoff` (`export_test.go` `AgeTask`). Gates green:
-  `go test ./...`, `nix build .#actors-bin`. `sap-parent` on `1a38490`
-  (Argo needed a manual refresh annotation to pick the pin up).
+- **The first real task ran** (`kmlg`, credits topped up): `62a0ec24`
+  went framed → needs-human (the framer asked three concrete
+  questions) → framed → groomed → executing → needs-human (steered
+  "give up") → reviewing → **ready with PR #7** on `agents/scratch`.
+  ADR-0043 → **Accepted**; `kmlg` closed. `drou` closed (ADR-0041
+  was done).
+- **`cmd/sap`** (`hp79`, `4799bf8`, deployed `ef66863`): the parent
+  from a shell — `login`, `me`, `tasks`/`task`/`move`,
+  `sessions`/`session`, `watch` (SSE tail rendered like the UI, `-raw`
+  one line per event), `file`, `steer`, `abort`; `-json` everywhere.
+  Pure net/http, no iroh tag; `actors-bin` ships `bin/sap`. The gate:
+  `Login.Token` is the cookie's value, `api()` takes it as
+  `Authorization: Bearer`; `sap login` gets it via `/cli/authorize`
+  (GET asks, same-origin POST redirects the token to the CLI's
+  `127.0.0.1` port with its nonce). ADR-0037 amended. Verified live
+  from the laptop.
+- **Reading the run with `sap watch` found the defect** behind the
+  six-minute executing session: flow v1's worker persona said "push,
+  and open a PR", but the child does that after the run
+  (`child/workspace.go`). The agent hunted for a credential and read
+  `FORGEJO_TOKEN` out of **`/proc/1/environ`** — `os.Unsetenv` does
+  not touch the kernel's copy — and echoed it into the transcript.
+  `87966ea`: `cmd/child` goes non-dumpable (`prctl(PR_SET_DUMPABLE,
+  0)`; same-uid, no-caps pi gets EACCES on `/proc/1/*`), and
+  **DefaultFlow v2** tells the worker to commit only. Projects pin
+  their flow version: `test` stays on v1.
+- Gates green on both commits: `go test ./...`, `nix build
+  .#actors-bin`. Image `87966ea` was building at session end — **pin
+  it on `sap-parent`** (the pod runs `4799bf8`; children take the
+  image the parent names, so the hardening is live only once pinned).
 
 ## Loose threads
 
-- **OpenRouter has no credits.** Nothing in the task layer can run
-  until it is topped up; the first run after will show the new
-  `not retried, model error: 402 …` note if it is not.
-- `pd5c`'s other edges are open: transition as a typed stream
-  event/tool, `tools[]` per persona, per-project credential sets.
-- Pre-push hook narrowed (same session): `actors/**/*.go` is no
-  longer a vendorHash trigger and only the attrs an input feeds are
-  checked. `scripts/ghcr-push.sh` now refuses a tag that is not HEAD's
-  shortRev (nix evaluated a stale rev once today).
-- `sap-parent` (`1a38490`) lacks one later engine change: a `submit`
-  that fails synchronously now counts a retry (`engine.go spawnFor`)
-  instead of being re-attempted uncounted by every beat. Harmless to
-  leave until the next image build.
+- **`97rz` (P1): rotate the Forgejo agent token.** The leaked value
+  sits in session `bce13a83`'s events and file; rotation is the
+  sealed secret `k8s/apps/sap-provisioner/forgejo-agent.sealed.yaml`
+  plus the bot's token on Forgejo.
+- `ghcr-push.sh`'s stale-eval guard did not fire once today (built
+  `4799bf8` again right after committing `87966ea` in the same shell
+  line); a second run built the right rev. Watch the first log line.
+- `sap` has no `new` (filing tasks is the UI's), no token revocation
+  (TTL only, as the cookie), no laptop package beyond `actors-bin`.
+- `pd5c`'s other edges: transition as a typed stream event/tool,
+  `tools[]` per persona, per-project credential sets. A way to move an
+  existing project to a newer flow version is missing.
 - Carried: rotation never exercised live (`l3on`); `bsj` (Longhorn
   backup) blocks real task-layer use; `tmm5`, `88uq`, ntfy first page.
 
 ## Suggested next steps
 
-- Top up OpenRouter, re-run the framer on a throwaway project
-  (`kmlg`), then decide ADR-0043.
+- Pin `87966ea`, rotate the token (`97rz`), file a fresh task in a new
+  project (flow v2) and watch the worker commit without pushing.
 - `bsj`.
