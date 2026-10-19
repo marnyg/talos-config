@@ -32,9 +32,8 @@
   **DefaultFlow v2** tells the worker to commit only. Projects pin
   their flow version: `test` stays on v1.
 - Gates green on both commits: `go test ./...`, `nix build
-  .#actors-bin`. Image `87966ea` was building at session end — **pin
-  it on `sap-parent`** (the pod runs `4799bf8`; children take the
-  image the parent names, so the hardening is live only once pinned).
+  .#actors-bin`. `87966ea` pinned on `sap-parent` (`2293ffe`; children
+  take the image the parent names, so the hardening ships with it).
 
 ## Loose threads
 
@@ -55,6 +54,6 @@
 
 ## Suggested next steps
 
-- Pin `87966ea`, rotate the token (`97rz`), file a fresh task in a new
-  project (flow v2) and watch the worker commit without pushing.
+- Rotate the token (`97rz`); file a fresh task in a new project (flow
+  v2) and `sap watch` the worker commit without pushing.
 - `bsj`.
