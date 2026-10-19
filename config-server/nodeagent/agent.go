@@ -166,7 +166,7 @@ type Agent struct {
 	// pins are this node's commitments to the identities it consents
 	// to (protocol ADR-0010): one per Owner address (kit.SpeakAs.Iss),
 	// trivial until a #bundle carries the owner's rotations, which are
-	// folded in (hubclient.go foldRotations) and handed to the actor as
+	// folded in (policy.FoldRotations, the hub's fold too) and handed to the actor as
 	// Receiver.Pins. Values are replaced, never mutated, so an
 	// in-flight Authorize never races a fold. In memory plus whatever
 	// the persisted bundle carries: a restart re-folds the last

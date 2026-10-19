@@ -309,6 +309,26 @@ func TestPinsFromGit(t *testing.T) {
 	if len(got) != 2 || got[0].Address != wk || !got[0].Admits(wk) || got[1].Address != next || !got[1].Admits(next) {
 		t.Fatalf("actor pins after re-pin = %v", got)
 	}
+	// The speak-as held was signed by `next` AS the well-known wallet;
+	// `next` is still admitted — only now as its own identity — so the
+	// identity stays unsealed. Drop that extra pin: nothing admits the
+	// issuer, and the hub re-seals rather than serve under a dead root.
+	if m.issuer.SpeakAs() == nil {
+		t.Fatal("re-pin sealed the identity while its issuer is still admitted")
+	}
+	if err := os.Remove(filepath.Join(dir, policy.PinFileName(next))); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.reloadPins(); err != nil {
+		t.Fatal(err)
+	}
+	if sa := m.issuer.SpeakAs(); sa != nil || !errors.Is(m.issuer.Serving(), issuer.ErrSealed) {
+		t.Fatalf("identity still unsealed under an un-admitted root: %v", sa)
+	}
+	// And the wallet itself unseals again, trivially pinned.
+	if _, err := m.unsealIssuer(speakAsSig(t, m, testKey(t))); err != nil {
+		t.Fatalf("wallet refused after re-pin: %v", err)
+	}
 }
 
 // TestUnsealIssuerBeforeMaster: with the master from the dev env (no

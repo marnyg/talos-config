@@ -241,7 +241,27 @@ func (m *hubManager) reloadPins() error {
 	m.pins, m.pinOrder = pins, order
 	m.mu.Unlock()
 	m.holdPins()
+	// A held speak-as whose issuer no pin admits any more is from a
+	// root that died with its epoch (or a dead identity): re-seal rather
+	// than keep serving beats under it — a member's own pin would refuse them, and the unseal path already refuses that key.
+	if sa := m.issuer.SpeakAs(); sa != nil && !m.admitsRoot(sa.Iss) {
+		m.issuer.Seal()
+		log.Printf("pins: held speak-as issuer %s is no longer admitted by any pin; hub identity RE-SEALED — an admin must sign a fresh proposal at /status", sa.Iss)
+	}
 	return nil
+}
+
+// admitsRoot reports whether any installed pin admits root as the
+// current root of the identity it pins.
+func (m *hubManager) admitsRoot(root cert.ActorID) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.pins {
+		if p.Admits(root) {
+			return true
+		}
+	}
+	return false
 }
 
 // trivialPolicy is the epoch-0 policy of a legacy EOA: the address is

@@ -28,8 +28,9 @@ Epic `ivof`. **Side effect:** the relay gate
 story (spike `qx5c`). **Detour landed 2026-10-13:** root
 rotation (protocol ADR-0010, spike `aja2`; ADR-0011, `d0o0` wires
 pins into every receiver) — model + code built, trivial pins
-everywhere; the durable `talos/` copy of pins/rotations is the open
-remainder.
+everywhere; **2026-10-23** the durable copy landed (`talos/pins/`,
+read on every served tip; a rotation by commit re-seals the hub's
+identity) — `d0o0` closes on its deploy.
 
 **Detour 2026-10-16, done:** the workouts tracker (`yz75`) is live and
 seeded, and HTTPS over the mesh (ADR-0033, `eu0m`) landed so it

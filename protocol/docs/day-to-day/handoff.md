@@ -5,7 +5,16 @@
 
 ## Last session
 
-2026-10-18 — `djdl` (swarm worker `q-pin-laws`, `49e7f62`):
+2026-10-23 — **the durable pin copy (`d0o0`, talos consumer side)**:
+`talos/pins/<scheme>-<address>.json` `{address, policy0, rotations}`
+read by `config-server/policy.LoadPins` at hub construction and on
+every served git tip; `FoldRotations` is now one function for hub and
+node; a reload that un-admits the held speak-as issuer re-seals the
+hub (`issuer.Seal`). No protocol change; ADR-0011's consumer-wiring
+paragraph names the file. Closes the "persistence" thread below once
+deployed; ADR-0010/0011 can go Accepted after that.
+
+Before that, 2026-10-18 — `djdl` (swarm worker `q-pin-laws`, `49e7f62`):
 `authorize.qnt`'s `res`/`chainRes` are the PINNED receiver; the five
 "consented sovereign vouches for key" laws carry a raw `pinnedAs(w, k)`
 edge (`consentedKey(k)` for speak-as issuers); three negative bridge
@@ -58,17 +67,15 @@ ADR-0011 Proposed)**, swarm of three (`c5705eb` ADR, `0870a68`
 - `unsealIssuer` returns the admitting KEY's address, not the identity;
   the ce8 master-wallet pairing reads it — check when a real rotation
   exists.
-- Persistence: hub pins are memory-only; member pins survive only via
-  the persisted bundle's `rotations`. ADR-0010 says the equivocation
-  record is not safe-to-lose → `talos/` must carry `{policy0,
-  rotations}` per pinned address (format sketched in the code report).
+- Persistence: hub pins come from `talos/pins/` (2026-10-23); member
+  pins still survive only via the persisted bundle's `rotations` —
+  fine while the hub's copy is durable, since every beat re-feeds it.
 - Still open: `kckm`, `lm2a`, `fh2y`; chain-on-connect ADR question;
   `whxz`, `e7ru`.
 
 ## Suggested next steps
 
-- `talos/pins/<address>.json` (or a block in mesh-policy) → hub
-  `Pin.Hold` at construction; then ADR-0010/0011 → Accepted.
+- Deploy the hub on the pins build; then ADR-0010/0011 → Accepted.
 - Restate the five "consented sovereign vouches for key" laws
   pin-aware (`authorize.qnt`), re-measure verify.
 - EIP-712 + seed decoupling as one decision superseding `ce8` (`4mg`).

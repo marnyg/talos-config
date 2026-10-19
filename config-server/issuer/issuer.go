@@ -327,6 +327,20 @@ func (i *Issuer) hold(sa cert.Cert) error {
 	return nil
 }
 
+// Seal drops the held speak-as and the consents hold installed, back
+// to the state NewWithKey leaves: the hub's identity is sealed until a
+// wallet signs a fresh proposal. Used when the hub's pins stop
+// admitting the held speak-as's issuer (a rotation landed by commit:
+// the old root died with its epoch, and a member's own pin would
+// refuse this speak-as anyway). Idempotent.
+func (i *Issuer) Seal() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.speakAs = nil
+	i.Actor.Hold(nil, nil)
+	i.proposals = make(map[cert.ActorID]cert.Cert)
+}
+
 // SpeakAs returns the held speak-as, or nil while sealed.
 func (i *Issuer) SpeakAs() *cert.Cert {
 	i.mu.Lock()

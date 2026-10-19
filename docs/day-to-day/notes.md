@@ -1271,3 +1271,12 @@
   text + frame + exit contract, rendered by `Flow.RenderPrompt`. To
   read what a persona actually saw, open the session (`/s/<id>`) the
   task's history links — the prompt is stored verbatim.
+- 2026-10-23 — **`talos/pins/` is read on every served git tip, not
+  only at startup**: a commit that adds a rotation (or removes a file
+  to re-pin) changes who may unseal within one git poll, and a
+  rotation that un-admits the current speak-as issuer **re-seals the
+  hub identity** — beats stop until an admin signs a fresh proposal at
+  /status. Keep that in mind before committing a rotation: do it when
+  you can unseal right after. The file name must be
+  `<scheme>-<address>.json` (`eth-0x…`), lowercase, or the hub logs
+  `git: pins: …` and keeps the previous pins.
