@@ -1,6 +1,10 @@
 # ADR-0043: The parent is an issue processor — tasks move through a flow of persona-driven states, by one transition, with the product as the only front door
 
-- Status: Proposed
+- Status: Accepted 2026-10-19 (owner). Deployed 2026-10-22 (`a082862`),
+  backoff + model-error classification 2026-10-19 (`1a38490`); first
+  real task `62a0ec24` ran framed → needs-human (clarify) → framed →
+  groomed → executing (5538 events) → needs-human by steer (`kmlg`).
+  Executing-to-PR is not yet proven live.
 - Date: 2026-10-22
 - Related: ADR-0037 (the parent is the agent backend; this grows out of
   its "session" into a "task" above it, and overrides its consequence
