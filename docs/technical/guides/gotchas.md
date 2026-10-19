@@ -137,6 +137,14 @@ these are properties of the tools, not current weather (that lives in
   `devices.hostDevices` outright. And a launcher pod that was already
   allocated by the old plugin keeps its bad device spec: restart the
   VMI after the handler rolls. (w2 → win2k25, 2026-10-19.)
+- **The qemu guest agent runs as SYSTEM; per-user Windows state needs a
+  hop.** `guest-exec` cannot map a drive or store a credential for
+  Administrator. What works (win2k25, 2026-10-19): `guest-file-write`
+  a `.cmd`, `schtasks /create /sc once /ru Administrator /rp <pw>
+  /tr C:\x.cmd` + `/run`, read its log, delete the task and files. Note
+  a scheduled task is a *batch* logon: persistent drive letters are
+  not restored there (only interactive logons do), so verify with the
+  UNC path, not `dir T:\`.
 - **A VMI spec change is not live.** Editing `hostDevices` (or most of
   `domain`) in the VirtualMachine only takes effect on the next boot of
   the VMI; with `runStrategy: Always`, `kubectl delete vmi <name>` is

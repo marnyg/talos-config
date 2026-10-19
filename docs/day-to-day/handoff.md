@@ -53,7 +53,10 @@
   → the Windows guest reports `VEN_10DE&DEV_2488` OK (as "Microsoft
   Basic Display Adapter", no driver yet). Cost a KubeVirt bump
   v1.9.0 → v1.9.1 (kubevirt#18895; gotchas.md). **win2k25 now lives
-  on w2 and only w2** — if w2 is off, the VM is down.
+  on w2 and only w2** — if w2 is off, the VM is down. Then resized to
+  8 cores / 24Gi and given the transfer share as `T:` (answer file
+  resealed for reinstalls; applied live through the guest agent +
+  schtasks, gotchas.md).
 - README add-a-node example fixed (broken window): fleet image +
   diskSelector by model.
 
