@@ -799,8 +799,12 @@
   need to read files off its pods any more: every actor binary takes
   `-state DIR -print-id`, and the provisioner is found by `#lookup` at
   `sap-lighthouse` (`0bc.6`). If a file must be read anyway:
-  `kubectl debug --target=<container> --image=busybox` and
-  `/proc/1/root/…` (ephemeral containers stay until the pod restarts).
+  `kubectl debug --target=<container> --image=busybox --profile=restricted`
+  and `/proc/1/root/…` (ephemeral containers stay until the pod
+  restarts). The `sap` namespace is PodSecurity `restricted`: without
+  `--profile=restricted` the debug container is refused (the default
+  profile adds `SYS_PTRACE`); same-uid `/proc/<pid>/root` reads need no
+  ptrace. Use `KUBECONFIG=./kubeconfig` from the repo root.
 - 2026-09-29 — **A node that is truly off: taint it out of service.**
   `kubectl taint node w1 node.kubernetes.io/out-of-service=nodeshutdown:NoExecute`
   made KCM force-delete every ghost pod on w1 and release its three

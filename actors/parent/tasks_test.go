@@ -191,6 +191,12 @@ func TestStoreProjectsAndTasks(t *testing.T) {
 	if end, _ := s.LastAssistant("s1"); !end.Failed() || end.Text != "" || !strings.HasPrefix(end.Error, "402 ") {
 		t.Fatalf("failed run %+v", end)
 	}
+	if err := s.Stall("t1", "no exit to stuck"); err != nil {
+		t.Fatal(err)
+	}
+	if x, _ := s.Task("t1"); x.Error != "no exit to stuck" || x.Session != "" {
+		t.Fatalf("stalled %+v", x)
+	}
 	ts, _ := s.Tasks(mine, "", 0)
 	if len(ts) != 1 {
 		t.Fatalf("tasks %+v", ts)

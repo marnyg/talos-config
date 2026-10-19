@@ -399,7 +399,7 @@ func (p *Parent) retryDue(t Task, now time.Time) bool {
 
 // park moves the task to the stuck state for a person, unless it is
 // already there (or stuck is not an exit — then it stays put with the
-// reason logged).
+// reason on the task and logged).
 func (p *Parent) park(ctx context.Context, t Task, f Flow, session, reason string) {
 	if t.State == f.Stuck {
 		return
@@ -407,6 +407,9 @@ func (p *Parent) park(ctx context.Context, t Task, f Flow, session, reason strin
 	tr := Transition{To: f.Stuck, Note: reason}
 	if !f.States[t.State].Allows(f.Stuck) {
 		p.log.Warn("parent: task stuck with no exit to "+f.Stuck, "task", t.ID, "state", t.State, "reason", reason)
+		if err := p.store.Stall(t.ID, reason); err != nil {
+			p.log.Warn("parent: stall", "task", t.ID, "err", err)
+		}
 		return
 	}
 	if _, err := p.apply(ctx, t, f, byParent, session, tr); err != nil {

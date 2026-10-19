@@ -650,6 +650,13 @@ func (s *Store) Retry(task, reason string) (int, error) {
 	return n, err
 }
 
+// Stall records why a task sits where it is with no session and no
+// move to take (its state has no exit to the stuck state): the error
+// shows on the board; retries are not counted.
+func (s *Store) Stall(task, reason string) error {
+	return s.exec1(`UPDATE tasks SET error = ?, session = '', updated = ? WHERE id = ?`, reason, time.Now().Unix(), task)
+}
+
 // Log returns the task's transitions in order.
 func (s *Store) Log(task string) ([]LogEntry, error) {
 	rows, err := s.db.Query(`SELECT seq, at, from_state, to_state, actor, session, note, artifact FROM task_log WHERE task = ? ORDER BY seq`, task)
