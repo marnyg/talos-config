@@ -207,7 +207,7 @@
   HTTP over a stream facet) is revised by `mdv`: `/hosts` and `/policy`
   will not exist over the mesh — don't build them; the beat is
   `#renew` + `#bundle`. <!-- stale? -->
-- 2026-09-18 — **Touching `protocol/*.go` stales TWO `vendorHash`es**
+- 2026-09-18 — **Touching `protocol/*.go` stales TWO `vendorHash`es** <!-- stale? -->
   (`config-server/nix`, `iroh-transport/nix`) and a cached FOD hides
   it — `nix build` then fails with an "undefined: actor.X" that looks
   like a code bug (bitten again 2026-09-19). Recompute both:
@@ -477,7 +477,7 @@
   (relay test skips without the latter). `.#iroh-transport-static`
   exists only on Linux; no Linux builder is configured on the Mac —
   the CI `static` job is the only place the musl link runs. <!-- stale? -->
-- 2026-09-18 — **The next hub deploy asks for two signatures at
+- 2026-09-18 — **The next hub deploy asks for two signatures at <!-- stale? -->
   `/status`** (decision `ce8`): the master message as before, plus
   the hubkey speak-as proposal. The proposal is per wallet and names
   the process's key — sign it only on that page (or `cast wallet sign`
@@ -488,7 +488,7 @@
   plane is sealed or in the nag window** on a hub run with
   `--iroh-relay` (members depend on the hubkey); a dev run without it
   only reports.
-- 2026-09-18 — **Hub deploys are `fly/deploy.sh`, not `fly deploy`**
+- 2026-09-18 — **Hub deploys are `fly/deploy.sh`, not `fly deploy`** <!-- stale? -->
   (`e8d`): the image is nix-built (cgo hub), `fly.toml` has no
   `[build]`, and a bare `fly deploy` fails on purpose. From the Mac:
   `HUB_BUILDER=mar@nixos fly/deploy.sh` — builds in that box's nix
@@ -1284,3 +1284,29 @@
   you can unseal right after. The file name must be
   `<scheme>-<address>.json` (`eth-0x…`), lowercase, or the hub logs
   `git: pins: …` and keeps the previous pins.
+- 2026-10-19 — **OpenRouter credits gate the whole task layer.** A
+  balance below the child's `max_tokens` (128k) is a `402 billing_error`
+  on the first call of every run; the parent now parks such a task at
+  once as `not retried, model error: 402 …`. Check the balance before
+  blaming a persona. The retry backoff is `-backoff` on `sap-parent`
+  (1 min doubling); a retrying task shows `session: ""`, `retries > 0`
+  and its error on the board until the beat respawns it.
+- 2026-10-19 — **`git push` takes ~4–5 min after any `actors/**/*.go`
+  change**: `.githooks/pre-push` lists it as a vendored input (it is
+  not — nothing `replace`s `../actors`) and then realises all four
+  `goModules` FODs twice, `--rebuild` re-fetching modules. Fix: drop
+  `actors/**/*.go` from the trigger glob and check only the attrs an
+  input feeds (`protocol/`, `iroh-transport/`, `iroh-go/iroh` →
+  config-server-bin, iroh-transport, actors-bin; `<mod>/go.*` → that
+  module's attr). Until then `SKIP_VENDOR_HASH=1 git push` is honest for
+  actors-only pushes.
+- 2026-10-19 — **`actors/build.sh` can evaluate a stale rev.** Right
+  after a commit, `nix eval` once returned the previous HEAD's
+  `shortRev` and the script rebuilt and re-pushed the old tag (same
+  digest, so harmless). Read the `building ghcr.io/…:<tag>` line
+  against `git rev-parse --short HEAD` before pinning; re-run if they
+  differ.
+- 2026-10-19 — **Argo did not pick up the `sap-parent` pin within
+  the poll**; `kubectl -n argocd annotate application
+  platform-sap-parent argocd.argoproj.io/refresh=normal --overwrite`
+  synced it in seconds.

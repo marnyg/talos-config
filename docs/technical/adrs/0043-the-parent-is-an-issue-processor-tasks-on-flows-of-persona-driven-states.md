@@ -100,6 +100,13 @@ several.
   next attempt's prompt carries the previous failure.** — chosen. No
   transition happened, so nothing to roll back ("let the lease
   lapse").
+- **Retries back off (`Backoff`, doubling per attempt, capped), and
+  the beat spawns the attempt once due; a run whose model call the
+  provider refused is reported as that (`model error: …`), and a
+  refusal no retry can change (401–404, billing, authentication)
+  parks at once without spending the attempts.** — added 2026-10-19
+  after the first live run: OpenRouter `402` burned three leases in
+  four seconds and the board said "no transition block".
 
 ### Multi-repo work
 
@@ -157,8 +164,9 @@ and the "issue processor" are one program.
   (ADR-0005: when the first persona needs it).
 - The `tmux`/`spawn -prompt`/direct session path survives unchanged;
   a task is a layer above, not a replacement.
-- Retries are immediate (no backoff): a `#task` that is refused three
-  times burns three leases in seconds. Bounded, but a backoff is due.
+- The backoff is wall-clock from the failure (`updated`), not from
+  the provider's `Retry-After`; a 429 with a long window still spends
+  an attempt per backoff step.
 
 ### Confirmation
 

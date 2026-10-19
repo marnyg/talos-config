@@ -20,9 +20,12 @@ mid-run included.
 tasks above sessions, a project's flow of persona-driven states
 (`agent|human|children`), one `transition` op, goals as the frame —
 built, tested, **deployed 2026-10-22** (`a082862`; PVC snapshot
-taken first). Next: the first real task through `framed` (`kmlg`),
-then `bsj` (backup) — now
-blocking, since flows and goals are policy the store alone holds.
+taken first). 2026-10-19 the first run reached the framer and died on
+OpenRouter `402` — the plumbing is proven, the agent has not answered;
+retries now back off and a provider refusal parks at once (`1a38490`).
+Next: credits, re-run `framed` (`kmlg`), decide ADR-0043; then `bsj`
+(backup) — blocking, since flows and goals are policy the store alone
+holds.
 Epic `ivof`. **Side effect:** the relay gate
 (`5gz`) is observe-only until sovereign actors have an admission
 story (spike `qx5c`). **Detour landed 2026-10-13:** root
