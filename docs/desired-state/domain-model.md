@@ -835,6 +835,13 @@ provisioning or recovery path may depend on it.
   `unsealIssuer` accepts only a root the pin admits; every member pins
   its Kit's `speak-as` issuer and folds the rotations `#bundle` carries;
   `Authorize` resolves a signer to the identity through the pin.
+  _Durable copy (2026-10-23)_: `talos/pins/<scheme>-<address>.json`
+  `{address, policy0, rotations: [[rotate-root cert…]…]}`, read like
+  the recipe and blocklist (`policy.LoadPins`) at hub construction and
+  on every served git tip, rotations re-verified from their certs; the
+  checkout is the whole truth of the hub's pins (a re-pin is a commit;
+  a malformed file keeps the installed set), and members receive the
+  held rotations through `#bundle` as before.
 - **Kit** — what `Issuer.Mint` hands a new member: its `member` cert
   (90 d), the **beat grant** — one `invoke` grant to the Owner's
   `#renew` + `#bundle` facets (`target: wallet`, `issuer.BeatFacets`;

@@ -61,15 +61,24 @@ type hubManager struct {
 	// re-seals it while the master stays held).
 	issuer  *issuer.Issuer
 	wallets []cert.ActorID // adminAddrs as eth: actor ids
-	// pins are the hub's commitments to its admin identities (protocol
-	// ADR-0010, d0o0): one per wallet, the trivial epoch-0 policy
-	// {root: w, guardians: {w}, k: 1} — a legacy EOA is its own root.
-	// The Issuer's actor holds the same *Pin values (Receiver.Pins), so
-	// a speak-as issuer is judged by Pin.Admits both at unseal and in
-	// every Authorize. In-memory: nothing rotates a hub pin yet (a
-	// non-trivial policy from talos/ and persisting Held() are follow-
-	// ups); with trivial pins every verdict is unchanged.
+	// pins are the hub's commitments to the identities it resolves root
+	// keys for (protocol ADR-0010/0011, d0o0): every admin wallet at
+	// least, trivially — {root: w, guardians: {w}, k: 1}, a legacy EOA
+	// is its own root — overridden by talos/pins/<address>.json where
+	// one exists (policy.LoadPins: the durable copy, since a cert.Pin is
+	// volatile and the equivocation record is not safe-to-lose). Git is
+	// the whole truth: reloadPins rebuilds the set from the checkout on
+	// every served tip, so a rotation or a re-pin lands by commit, and
+	// nothing in memory survives that a file does not say. The Issuer's
+	// actor holds the same *Pin values (Receiver.Pins), so a speak-as
+	// issuer is judged by Pin.Admits both at unseal and in every
+	// Authorize; values are replaced, never mutated (cert.Pin is not
+	// safe for concurrent use). Guarded by mu.
 	pins map[cert.ActorID]*cert.Pin
+	// pinOrder is the addresses pins are handed to the actor in: the
+	// wallets in -admin-address order, then any further pinned identity
+	// from git, sorted. Guarded by mu.
+	pinOrder []cert.ActorID
 
 	// enroll is the Enroll actor (ADR-0024): own key, consented to by
 	// the Issuer for #mint-device, speaking to it over the in-process
@@ -173,13 +182,66 @@ func newHubManager(root string, adminAddrs []string, wan hubTransport) (*hubMana
 		}
 		wallets = append(wallets, w)
 	}
-	pins := make(map[cert.ActorID]*cert.Pin, len(wallets))
-	for _, w := range wallets {
-		pins[w] = cert.NewPin(w, trivialPolicy(w))
+	m := &hubManager{root: root, adminAddrs: adminAddrs, issuer: iss, wallets: wallets, enroll: en, wan: wanEp}
+	// A malformed pin file at construction is fatal, like a malformed
+	// recipe: better no hub than one pinned to a policy nobody wrote.
+	// On fly the checkout arrives later (gitsync.go swaps the tree in
+	// after the hub is built), so the same load runs again on every
+	// served tip (reloadPins) — there a bad file keeps the previous pins.
+	if err := m.reloadPins(); err != nil {
+		return nil, err
 	}
-	m := &hubManager{root: root, adminAddrs: adminAddrs, issuer: iss, wallets: wallets, pins: pins, enroll: en, wan: wanEp}
-	m.holdPins()
 	return m, nil
+}
+
+// reloadPins rebuilds the hub's pins from the checkout: a trivial pin
+// per admin wallet, each replaced by its talos/pins file when one
+// exists, plus every further identity the directory pins; rotations are
+// re-verified from their certs (policy.FoldRotations) — the file is
+// read, never trusted. Fresh values are installed wholesale (the actor
+// and the unseal path see the new set atomically); a load error leaves
+// the installed pins untouched and is returned for the caller to log.
+// Verification failures inside a file (a rotation that does not
+// assemble, an equivocation) are not load errors: they are the pin's
+// verdict and are logged as such, since an equivocation on record IS
+// the reason the file exists.
+func (m *hubManager) reloadPins() error {
+	records, err := policy.LoadPins(m.root)
+	if err != nil {
+		return fmt.Errorf("pins: %w", err)
+	}
+	byAddr := make(map[cert.ActorID]policy.PinRecord, len(records))
+	for _, r := range records {
+		byAddr[r.Address] = r
+	}
+	order := slices.Clone(m.wallets)
+	for _, r := range records {
+		if !slices.Contains(order, r.Address) {
+			order = append(order, r.Address)
+		}
+	}
+	now := m.issuer.Actor.Now()
+	pins := make(map[cert.ActorID]*cert.Pin, len(order))
+	for _, a := range order {
+		rec, fromGit := byAddr[a]
+		if !fromGit {
+			pins[a] = cert.NewPin(a, trivialPolicy(a))
+			continue
+		}
+		p := policy.FoldRotations(cert.NewPin(a, rec.Policy0), rec.Rotations, now, func(err error) { log.Printf("pins: %s: %v", a, err) })
+		switch v := p.View(); {
+		case v.Dead:
+			log.Printf("pins: identity %s is DEAD at epoch %d (equivocation on record); nothing under it verifies until re-pinned", a, v.Epoch+1)
+		case v.Epoch > 0:
+			log.Printf("pins: identity %s at epoch %d, root %s (from git)", a, v.Epoch, v.Policy.Root)
+		}
+		pins[a] = p
+	}
+	m.mu.Lock()
+	m.pins, m.pinOrder = pins, order
+	m.mu.Unlock()
+	m.holdPins()
+	return nil
 }
 
 // trivialPolicy is the epoch-0 policy of a legacy EOA: the address is
@@ -189,15 +251,24 @@ func trivialPolicy(w cert.ActorID) cert.Policy {
 	return cert.Policy{Root: w, Guardians: []cert.ActorID{w}, K: 1}
 }
 
-// holdPins hands the Issuer's actor the hub's pins, in wallet order.
+// holdPins hands the Issuer's actor the hub's pins, in pinOrder.
 func (m *hubManager) holdPins() {
-	pins := make([]*cert.Pin, 0, len(m.wallets))
-	for _, w := range m.wallets {
-		if p := m.pins[w]; p != nil {
+	m.mu.Lock()
+	pins := make([]*cert.Pin, 0, len(m.pinOrder))
+	for _, a := range m.pinOrder {
+		if p := m.pins[a]; p != nil {
 			pins = append(pins, p)
 		}
 	}
+	m.mu.Unlock()
 	m.issuer.Actor.HoldPins(pins)
+}
+
+// pin is the installed pin for an address, nil if none.
+func (m *hubManager) pin(a cert.ActorID) *cert.Pin {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.pins[a]
 }
 
 // admittedRoots is the speak-as issuers the hub accepts for the given
@@ -207,7 +278,7 @@ func (m *hubManager) holdPins() {
 func (m *hubManager) admittedRoots(wallets []cert.ActorID) []cert.ActorID {
 	out := make([]cert.ActorID, 0, len(wallets))
 	for _, w := range wallets {
-		p := m.pins[w]
+		p := m.pin(w)
 		if p == nil {
 			continue
 		}

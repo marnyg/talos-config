@@ -186,7 +186,7 @@ func TestUnsealIssuerPinAdmits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m2.pins[wk].Hold(rot); err != nil {
+	if err := m2.pin(wk).Hold(rot); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m2.unsealIssuer(speakAsSig(t, m2, testKey(t))); err == nil || !errors.Is(err, issuer.ErrNotAllowed) {
@@ -220,16 +220,94 @@ func TestUnsealIssuerPinAdmits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := m3.pins[wk].Hold(rot); err != nil {
+	if err := m3.pin(wk).Hold(rot); err != nil {
 		t.Fatal(err)
 	}
-	if err := m3.pins[wk].Hold(rotb); !errors.Is(err, cert.ErrEquivocation) {
+	if err := m3.pin(wk).Hold(rotb); !errors.Is(err, cert.ErrEquivocation) {
 		t.Fatalf("second successor: %v", err)
 	}
 	for name, k := range map[string]*secp256k1.PrivateKey{"old root": testKey(t), "new root": otherKey(t)} {
 		if _, err := m3.unsealIssuer(speakAsSig(t, m3, k)); err == nil || !errors.Is(err, issuer.ErrNotAllowed) {
 			t.Fatalf("dead pin admitted the %s: %v", name, err)
 		}
+	}
+}
+
+// TestPinsFromGit: talos/pins is the durable copy (d0o0). A rotation on
+// file at construction means the hub comes up admitting the NEW root
+// for the wallet, not the wallet itself — the view a restart would
+// otherwise lose; #bundle carries the same rotation to members. A
+// later tip (reloadPins) is the whole truth: a file that no longer
+// exists re-pins trivially, a malformed one keeps the installed set,
+// and an identity pinned by git without being an admin is held too.
+func TestPinsFromGit(t *testing.T) {
+	wk := issuer.WalletID(wellKnownAddr)
+	next := issuer.WalletID(otherAddr(t))
+	p0 := trivialPolicy(wk)
+	p1 := trivialPolicy(next)
+	rc, err := cert.Sign(cert.Cert{Aud: string(wk), Can: cert.VerbRotateRoot,
+		Cav: cert.Caveats{Epoch: 1, Prev: p0.Hash(), Policy: &p1}, Iat: 1, Exp: 1 << 40}, cert.NewEthSigner(testKey(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := policy.EncodePin(wk, p0, [][]cert.Cert{{rc}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build the tree first, then the hub over it: the construction path.
+	m := testHubManager(t, []string{wellKnownAddr})
+	dir := filepath.Join(m.root, policy.PinsDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, policy.PinFileName(wk))
+	if err := os.WriteFile(path, file, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err = newHubManager(m.root, []string{wellKnownAddr}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.issuer.Actor.Pins(); len(got) != 1 || got[0].View().Epoch != 1 || !got[0].Admits(next) || got[0].Admits(wk) {
+		t.Fatalf("actor pins after load = %v", got)
+	}
+	if _, err := m.unsealIssuer(speakAsSig(t, m, testKey(t))); !errors.Is(err, issuer.ErrNotAllowed) {
+		t.Fatalf("rotated-away root unsealed: %v", err)
+	}
+	if addr, err := m.unsealIssuer(speakAsSig(t, m, otherKey(t))); err != nil || addr != otherAddr(t) {
+		t.Fatalf("new root: %v (%s)", err, addr)
+	}
+
+	// A malformed file on the next tip keeps the installed pins.
+	if err := os.WriteFile(path, []byte(`{"address":"nope"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.reloadPins(); err == nil {
+		t.Fatal("malformed pin file accepted on reload")
+	}
+	if p := m.pin(wk); p == nil || !p.Admits(next) {
+		t.Fatalf("malformed reload replaced the pins: %v", p)
+	}
+
+	// The file gone (a re-pin by commit) ⇒ trivial again; a further
+	// identity on file is held beside the wallets.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	extra, err := policy.EncodePin(next, p1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, policy.PinFileName(next)), extra, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.reloadPins(); err != nil {
+		t.Fatal(err)
+	}
+	got := m.issuer.Actor.Pins()
+	if len(got) != 2 || got[0].Address != wk || !got[0].Admits(wk) || got[1].Address != next || !got[1].Admits(next) {
+		t.Fatalf("actor pins after re-pin = %v", got)
 	}
 }
 

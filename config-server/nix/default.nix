@@ -18,7 +18,7 @@
 let
   # go.mod `replace`s ../protocol, ../iroh-transport and ../iroh-go, so the
   # source root is the repo and modRoot points here. The real
-  # talos/mesh-policy-v3.yaml + blocklist ride along on purpose: the
+  # talos/mesh-policy-v3.yaml + blocklist + pins/ ride along on purpose: the
   # policy tests run against the shipped files (policy/ asserts its
   # facet vocabulary against the Nickel contract, the hub test compiles
   # a bundle from them), so the sandbox must carry them — a fixture
@@ -29,6 +29,7 @@ let
       ../.
       ../../talos/mesh-policy-v3.yaml
       ../../talos/mesh-blocklist-v3.txt
+      ../../talos/pins
       ../../verification/nickel/mesh-policy-v3.ncl
       ../../protocol/go.mod
       ../../protocol/go.sum

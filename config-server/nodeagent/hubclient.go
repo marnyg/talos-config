@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/marnyg/talos-config/config-server/issuer"
+	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/protocol/cert"
 )
 
@@ -153,60 +154,8 @@ func trivialPin(identity cert.ActorID) *cert.Pin {
 	return cert.NewPin(identity, cert.Policy{Root: identity, Guardians: []cert.ActorID{identity}, K: 1})
 }
 
-// foldRotations returns a FRESH pin equal to pin with every rotation
-// from a #bundle that names pin's address folded in: the hub's copy of
-// the owner's rotation history, re-verified here against the node's
-// own pin (cert.AssembleRotation checks the k guardian signatures and
-// the body; Pin.Hold re-checks and folds). A new value, never a
-// mutation: the installed pin is read concurrently by every Authorize,
-// and cert.Pin is not safe for concurrent use — callers HoldPins the
-// result. Rotations for other addresses are skipped; a rotation whose
-// prev names no policy this pin knows (the epoch-0 policy, the current
-// view, or any held rotation's next) cannot be assembled and is
-// reported; an equivocation is reported and the pin is dead from then
-// on (nothing under that identity verifies — the owner must re-pin out
-// of band). now bounds assembly only (the certs' exp), never validity.
+// foldRotations is policy.FoldRotations — the hub runs the same fold
+// over its git copy (talos/pins); the node runs it over a #bundle.
 func foldRotations(pin *cert.Pin, rotations [][]cert.Cert, now int64, report func(error)) *cert.Pin {
-	out := cert.NewPin(pin.Address, pin.Policy0)
-	for _, r := range pin.Held() {
-		if err := out.Hold(r); err != nil && !errors.Is(err, cert.ErrNotRooted) && !errors.Is(err, cert.ErrEquivocation) {
-			report(fmt.Errorf("nodeagent: re-holding rotation epoch %d: %w", r.Epoch, err))
-		}
-	}
-	for i, certs := range rotations {
-		if len(certs) == 0 || certs[0].Aud != string(out.Address) {
-			continue
-		}
-		head := certs[0]
-		prev, ok := knownPolicy(out, head.Cav.Prev)
-		if !ok {
-			report(fmt.Errorf("nodeagent: bundle rotation %d (epoch %d): prev %.8s names no policy this pin knows", i, head.Cav.Epoch, head.Cav.Prev))
-			continue
-		}
-		rot, err := cert.AssembleRotation(out.Address, prev, head.Cav.Epoch, certs, now)
-		if err != nil {
-			report(fmt.Errorf("nodeagent: bundle rotation %d (epoch %d): %w", i, head.Cav.Epoch, err))
-			continue
-		}
-		if err := out.Hold(rot); err != nil {
-			report(fmt.Errorf("nodeagent: bundle rotation %d (epoch %d): %w", i, head.Cav.Epoch, err))
-		}
-	}
-	return out
-}
-
-// knownPolicy finds the policy with the given hash among those the pin
-// can root a transition from: epoch 0, the current view, and every
-// held rotation's next (an out-of-order arrival chains later).
-func knownPolicy(pin *cert.Pin, hash string) (cert.Policy, bool) {
-	cands := []cert.Policy{pin.Policy0, pin.View().Policy}
-	for _, r := range pin.Held() {
-		cands = append(cands, r.Next)
-	}
-	for _, p := range cands {
-		if p.Hash() == hash {
-			return p, true
-		}
-	}
-	return cert.Policy{}, false
+	return policy.FoldRotations(pin, rotations, now, func(err error) { report(fmt.Errorf("nodeagent: bundle %w", err)) })
 }

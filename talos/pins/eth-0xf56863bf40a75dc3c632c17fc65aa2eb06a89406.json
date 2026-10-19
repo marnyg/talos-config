@@ -1,0 +1,11 @@
+{
+  "address": "eth:0xf56863bf40a75dc3c632c17fc65aa2eb06a89406",
+  "policy0": {
+    "root": "eth:0xf56863bf40a75dc3c632c17fc65aa2eb06a89406",
+    "guardians": [
+      "eth:0xf56863bf40a75dc3c632c17fc65aa2eb06a89406"
+    ],
+    "k": 1
+  },
+  "rotations": []
+}

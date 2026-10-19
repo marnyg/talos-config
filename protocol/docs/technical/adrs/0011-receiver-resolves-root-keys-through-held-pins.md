@@ -95,7 +95,11 @@ mails is an attenuated twin that is ignored.
 Consumer wiring (talos, N=1): `#bundle` gains `rotations` — the list
 of rotations the hub holds, each a list of certs, empty today; git
 holds the durable copy (ADR-0010: the equivocation record is not
-safe-to-lose). The hub builds one trivial pin per `-admin-address`
+safe-to-lose) in `talos/pins/<scheme>-<address>.json` `{address,
+policy0, rotations}`, loaded with the recipe at hub construction and
+on every served tip and re-verified from the certs
+(`config-server/policy/pins.go`, built 2026-10-23). The hub builds one
+trivial pin per `-admin-address`
 (`{root: w, guardians: [w], k: 1}`); `unsealIssuer` accepts a
 `speak-as` whose `iss` is admitted by some held pin — the view's
 current root, today `w` itself. A member pins `kit.SpeakAs.Iss`

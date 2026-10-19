@@ -452,6 +452,11 @@ func main() {
 				if err := hub.decryptTree(*root); err != nil {
 					log.Printf("git: decrypting the served tree: %v", err)
 				}
+				// talos/pins is git-as-truth like the recipe (d0o0): a
+				// rotation or a re-pin lands by commit, no redeploy.
+				if err := hub.reloadPins(); err != nil {
+					log.Printf("git: %v (keeping the previous pins)", err)
+				}
 			}
 		}
 		go gs.run(context.Background(), after)
