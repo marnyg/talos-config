@@ -104,8 +104,12 @@ history and, where the numbers still matter, in ADR-0006 and
     `10.0.0.77`** (selector by the directory MAC). Enrolled at first
     boot 2026-10-19 (`beat ok`, member `w2`, groups `[machines]`).
     Komplett build on ASUS TUF GAMING B550-PRO, Ryzen 5 5600X, 48GiB,
-    **RTX 3070** (`10de:2488`+`228b`, not yet bound to anything —
-    spike `dsuj`), IOMMU on, Secure Boot **off** (set in the BIOS at
+    **RTX 3070** (`0000:0b:00.0` `10de:2488` + HDA `.1` `228b`, alone in
+    IOMMU group 16) **on vfio-pci** (hardware layer `kernel.modules`,
+    live) and **passed through to win2k25** since 2026-10-19 (KubeVirt
+    `permittedHostDevices` + `HostDevices` gate; the VM is pinned to w2
+    by its `hostDevices`). Guest sees the card (no NVIDIA driver yet
+    — `dsuj`). IOMMU on, Secure Boot **off** (set in the BIOS at
     install; the imager build has no signed-UKI path).
     **Three NVMes**, install pinned by model (`hardware/asus-tuf-b550-pro.yaml`):
     `nvme0n1` KINGSTON SNVS1000G (serial `50026B778475CFE2`) = STATE 105MB +

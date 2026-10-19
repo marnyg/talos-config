@@ -19,6 +19,12 @@
 
 ## Read first
 
+- 2026-10-19 — **win2k25 is pinned to w2 by its GPU** (`hostDevices`):
+  it cannot schedule on cp1/w1/nas1 any more, and a w2 shutdown takes
+  the VM down with it (no live migration — it never was migratable).
+  The node advertises `nvidia.com/GA104_GEFORCE_RTX_3070: 1` only
+  while vfio-pci holds the card; nothing on the host can use the GPU
+  meanwhile (no nvidia extension on the fleet image).
 - 2026-10-19 — **w2 was powered off and moved to another room**
   (`talosctl shutdown` ~20:40Z, back ~20:42Z) and **rejoined
   unattended** — static address, UUID-keyed unseal, p0agent beat —

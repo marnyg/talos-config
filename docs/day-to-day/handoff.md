@@ -47,8 +47,15 @@
 - Powered off, moved to another room, powered on: **rejoined
   unattended** (STATE unsealed, volumes mounted, beat ok). The USB FE
   dongle it was reached through under Windows must stay unplugged.
-- The three talos files landed inside an unrelated commit (`b7284dc`,
-  another session's broken-windows sweep picked them up).
+- **GPU passthrough tested and working** the same evening: w2's RTX
+  3070 + HDA on vfio-pci (hardware layer, live), KubeVirt
+  `permittedHostDevices` + `HostDevices` gate, win2k25 `hostDevices`
+  → the Windows guest reports `VEN_10DE&DEV_2488` OK (as "Microsoft
+  Basic Display Adapter", no driver yet). Cost a KubeVirt bump
+  v1.9.0 → v1.9.1 (kubevirt#18895; gotchas.md). **win2k25 now lives
+  on w2 and only w2** — if w2 is off, the VM is down.
+- README add-a-node example fixed (broken window): fleet image +
+  diskSelector by model.
 
 ## Loose threads
 
@@ -68,9 +75,13 @@
   `tools[]` per persona, per-project credential sets.
 - Carried: rotation never exercised live (`l3on`); `bsj` (Longhorn
   backup) blocks real task-layer use; `tmm5`, `88uq`, ntfy first page.
-- `dsuj` after w2: GPU passthrough (vfio bind `10de:2488`/`228b`,
-  KubeVirt `permittedHostDevices`, win2k25 `hostDevices`) and the
-  second-control-plane question are still open; w2 is a worker.
+- `dsuj` after passthrough: NVIDIA driver inside Windows Server 2025
+  (the GeForce installer refuses Server; Have-Disk from the extracted
+  `Display.Driver` INF is the known route), then the hand-off question
+  — the GPU for AI pods while the VM is Halted means an nvidia Talos
+  extension + device plugin, which is mutually exclusive with the vfio
+  bind (a `driver_override` switch, or per-boot). Second control plane
+  still open; w2 is a worker.
 
 ## Suggested next steps
 

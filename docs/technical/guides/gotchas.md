@@ -126,6 +126,23 @@ these are properties of the tools, not current weather (that lives in
   map, so at most one value). The endpoint changes rarely enough that
   the recreate is the runbook.
 
+- **KubeVirt PCI passthrough on Talos needs ≥ v1.9.1.** v1.9.0's device
+  plugin saw `/sys/bus/pci/devices/<addr>/vfio-dev/` and handed the
+  launcher a `/dev/vfio/devices/vfioN` cdev path that the Talos kernel
+  never creates (`CONFIG_VFIO_DEVICE_CDEV` unset — the class dir exists,
+  the `dev` attribute does not); containerd then fails the compute
+  container with `lstat /dev/vfio/devices/vfio0: no such file`
+  (kubevirt#18895, fixed #18905). Also: `HostDevices` is **still a
+  feature gate** in 1.9 — without it the VM webhook rejects
+  `devices.hostDevices` outright. And a launcher pod that was already
+  allocated by the old plugin keeps its bad device spec: restart the
+  VMI after the handler rolls. (w2 → win2k25, 2026-10-19.)
+- **A VMI spec change is not live.** Editing `hostDevices` (or most of
+  `domain`) in the VirtualMachine only takes effect on the next boot of
+  the VMI; with `runStrategy: Always`, `kubectl delete vmi <name>` is
+  the restart (graceful via the guest agent). ArgoCD syncs the VM
+  object, never the running instance.
+
 ## OAuth / OIDC
 
 - **`golang.org/x/oauth2` sends `client_id` as HTTP Basic auth first**
