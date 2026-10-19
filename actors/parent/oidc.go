@@ -366,12 +366,19 @@ func audHas(aud any, want string) bool {
 
 // ---- the cookie -------------------------------------------------------------
 
-// SetCookie writes the signed principal.
-func (l *Login) SetCookie(w http.ResponseWriter, p Principal) {
+// Token is the signed principal as a string: the cookie's value, and
+// what a non-browser client (cmd/sap) presents as a bearer. One
+// signer, one format, one TTL — a token is a cookie you carry yourself.
+func (l *Login) Token(p Principal) string {
 	body, _ := json.Marshal(p)
 	enc := base64.RawURLEncoding.EncodeToString(body)
+	return enc + "." + l.sign(enc)
+}
+
+// SetCookie writes the signed principal.
+func (l *Login) SetCookie(w http.ResponseWriter, p Principal) {
 	http.SetCookie(w, &http.Cookie{
-		Name: cookieName, Value: enc + "." + l.sign(enc), Path: "/",
+		Name: cookieName, Value: l.Token(p), Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Expires: time.Unix(p.Exp, 0),
 	})
 }
@@ -388,7 +395,22 @@ func (l *Login) FromRequest(r *http.Request) (Principal, bool) {
 	if err != nil {
 		return Principal{}, false
 	}
-	enc, mac, ok := strings.Cut(c.Value, ".")
+	return l.parse(c.Value)
+}
+
+// FromBearer reads the principal off an `Authorization: Bearer` header
+// carrying a Token; ok is false when absent, forged or expired. A
+// bearer request carries no cookie, so it needs no CSRF rule.
+func (l *Login) FromBearer(r *http.Request) (Principal, bool) {
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		return Principal{}, false
+	}
+	return l.parse(strings.TrimSpace(tok))
+}
+
+func (l *Login) parse(value string) (Principal, bool) {
+	enc, mac, ok := strings.Cut(value, ".")
 	if !ok || !hmac.Equal([]byte(mac), []byte(l.sign(enc))) {
 		return Principal{}, false
 	}

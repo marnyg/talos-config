@@ -1,0 +1,22 @@
+{{template "head.html" .}}
+<header>
+  <h1><a href="/">agents</a> / cli</h1>
+  <span class="me" title="{{.Me.Wallet}}">{{.Me.Username}}</span>
+</header>
+<main>
+<section class="frame">
+  <h2>Authorize a command line?</h2>
+  <p>A <span class="mono">sap</span> process on <b>this machine</b> is waiting on
+    <span class="mono">127.0.0.1:{{.CLI.Port}}</span>. Approving hands it a token that acts as
+    <b>{{.Me.Username}}</b> (<span class="mono">{{short .Me.Wallet}}</span>) for as long as this login lasts.</p>
+  <p class="muted">Only approve if you just ran <span class="mono">sap login</span> yourself.</p>
+  <form method="post" action="/cli/authorize" class="row">
+    <input type="hidden" name="port" value="{{.CLI.Port}}">
+    <input type="hidden" name="state" value="{{.CLI.State}}">
+    <button type="submit">Approve</button>
+    <a href="/"><button type="button" class="link">Cancel</button></a>
+  </form>
+</section>
+</main>
+</body>
+</html>

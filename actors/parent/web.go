@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -63,6 +64,8 @@ func (w *Web) Handler() http.Handler {
 		w.Login.ClearCookie(rw)
 		http.Redirect(rw, r, "/", http.StatusSeeOther)
 	})
+	mux.HandleFunc("GET /cli/authorize", w.page(w.cliAuthorize))
+	mux.HandleFunc("POST /cli/authorize", w.page(w.cliAuthorize))
 
 	// HTML
 	mux.HandleFunc("GET /{$}", w.page(w.index))
@@ -112,8 +115,14 @@ func (w *Web) page(h handler) http.HandlerFunc {
 
 // api gates a JSON route: no principal ⇒ 401; mutations must be
 // same-origin.
+// A bearer token (cmd/sap) is the cookie carried by hand — no cookie,
+// so no cross-site rule to apply.
 func (w *Web) api(h handler) http.HandlerFunc {
 	return func(rw http.ResponseWriter, r *http.Request) {
+		if p, ok := w.Login.FromBearer(r); ok {
+			h(rw, r, p)
+			return
+		}
 		p, ok := w.Login.FromRequest(r)
 		if !ok {
 			writeJSON(rw, http.StatusUnauthorized, map[string]string{"error": "login required"})
@@ -221,6 +230,38 @@ type pageData struct {
 	Query    string
 	Hits     []Hit
 	Error    string
+	CLI      cliAsk
+}
+
+// cliAsk is what /cli/authorize shows: the local port and nonce the
+// CLI is waiting on.
+type cliAsk struct {
+	Port  int
+	State string
+}
+
+// cliState is the nonce shape cmd/sap mints (url-safe base64).
+var cliState = regexp.MustCompile(`^[A-Za-z0-9_-]{16,128}$`)
+
+// cliAuthorize hands a logged-in browser's principal to a CLI waiting
+// on 127.0.0.1 (cmd/sap login). GET asks; POST (same-origin, so a
+// cross-site link cannot push a token at a stranger's local port)
+// mints a Token and redirects to the CLI's callback with the nonce it
+// chose. The token is the cookie's twin: same signer, same TTL.
+func (w *Web) cliAuthorize(rw http.ResponseWriter, r *http.Request, p Principal) {
+	port, _ := strconv.Atoi(r.FormValue("port"))
+	state := r.FormValue("state")
+	if port < 1 || port > 65535 || !cliState.MatchString(state) {
+		http.Error(rw, "cli/authorize: want port=1..65535 and state=[A-Za-z0-9_-]{16,128}", http.StatusBadRequest)
+		return
+	}
+	if r.Method == http.MethodGet {
+		w.render(rw, "cli.html", pageData{Me: p, CLI: cliAsk{Port: port, State: state}})
+		return
+	}
+	q := url.Values{"state": {state}, "token": {w.Login.Token(p)}}
+	w.Log.Info("web: cli token", "wallet", p.Wallet, "user", p.Username, "port", port)
+	http.Redirect(rw, r, fmt.Sprintf("http://127.0.0.1:%d/?%s", port, q.Encode()), http.StatusSeeOther)
 }
 
 func (w *Web) render(rw http.ResponseWriter, name string, d pageData) {

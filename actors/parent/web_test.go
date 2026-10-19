@@ -481,3 +481,100 @@ func TestWebTasks(t *testing.T) {
 	}
 	waitFor(t, "framer session", func() bool { x, _ := r.store.Task(id); return x.Session != "" })
 }
+
+// TestWebCLI: the bearer path (cmd/sap). A logged-in browser approves
+// /cli/authorize and the token lands on the CLI's 127.0.0.1 callback
+// with its nonce; the token reads the API without a cookie or Origin,
+// a forged one is 401, a bad port/state is 400, and a cross-site POST
+// to /cli/authorize is refused.
+func TestWebCLI(t *testing.T) {
+	r := setup(t, false)
+	r.listen(t)
+	is := newIssuer(t)
+	ui := r.web(t, is)
+	me := browser(t, is, ui, owner)
+
+	// The CLI's callback.
+	got := make(chan url.Values, 1)
+	cb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		got <- req.URL.Query()
+		w.Write([]byte("ok"))
+	}))
+	t.Cleanup(cb.Close)
+	port := cb.URL[strings.LastIndex(cb.URL, ":")+1:]
+	state := strings.Repeat("s", 24)
+
+	// GET asks.
+	resp, err := me.Get(ui.URL + "/cli/authorize?port=" + port + "&state=" + state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.Contains(string(b), "127.0.0.1:"+port) || !strings.Contains(string(b), `name="state" value="`+state) {
+		t.Fatalf("authorize page: %d %s", resp.StatusCode, b)
+	}
+	// Bad asks.
+	for _, q := range []string{"port=0&state=" + state, "port=" + port + "&state=short", "port=" + port + "&state=" + strings.Repeat("s", 24) + "!"} {
+		if resp, _ := me.Get(ui.URL + "/cli/authorize?" + q); resp.StatusCode != 400 {
+			t.Fatalf("authorize %q: %d", q, resp.StatusCode)
+		}
+	}
+	// Cross-site POST is refused.
+	form := url.Values{"port": {port}, "state": {state}}
+	req, _ := http.NewRequest(http.MethodPost, ui.URL+"/cli/authorize", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://evil.example")
+	if resp, _ := me.Do(req); resp.StatusCode != 403 {
+		t.Fatalf("cross-site authorize: %d", resp.StatusCode)
+	}
+	// Approve: the browser follows the 303 to the callback.
+	req, _ = http.NewRequest(http.MethodPost, ui.URL+"/cli/authorize", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", ui.URL)
+	if resp, err := me.Do(req); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("approve: %v %d", err, resp.StatusCode)
+	}
+	var q url.Values
+	select {
+	case q = <-got:
+	case <-time.After(5 * time.Second):
+		t.Fatal("callback never hit")
+	}
+	if q.Get("state") != state || q.Get("token") == "" {
+		t.Fatalf("callback: %v", q)
+	}
+
+	// The token reads the API without a cookie or Origin.
+	cli := &http.Client{Timeout: 10 * time.Second}
+	bearer := func(method, u, tok string, body string) (int, []byte) {
+		req, _ := http.NewRequest(method, u, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := cli.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b
+	}
+	code, b := bearer(http.MethodGet, ui.URL+"/api/me", q.Get("token"), "")
+	var p parent.Principal
+	if code != 200 || json.Unmarshal(b, &p) != nil || p.Wallet != owner {
+		t.Fatalf("bearer /api/me: %d %s", code, b)
+	}
+	// A mutation by bearer needs no Origin.
+	code, b = bearer(http.MethodPost, ui.URL+"/api/sessions", q.Get("token"), `{"prompt":"from the cli"}`)
+	if code != 201 && code != 200 {
+		t.Fatalf("bearer submit: %d %s", code, b)
+	}
+	// Forged / expired are 401.
+	for _, bad := range []string{q.Get("token") + "x", "nope", ""} {
+		if code, _ := bearer(http.MethodGet, ui.URL+"/api/me", bad, ""); code != 401 {
+			t.Fatalf("bearer %q: %d", bad, code)
+		}
+	}
+}
