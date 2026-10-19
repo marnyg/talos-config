@@ -26,6 +26,12 @@ spec:
       # cluster reaches a k8s version where ImageVolume works (≥1.35).
       disabledFeatureGates:
         - ImageVolume
+      # Still gated in v1.9: without it the VM webhook refuses any
+      # devices.hostDevices ("Host Devices feature gate is not enabled
+      # in kubevirt-config", 2026-10-19). Pairs with permittedHostDevices
+      # below.
+      featureGates:
+        - HostDevices
     # PCI passthrough (spike dsuj, 2026-10-19): w2's RTX 3070 and its HDA
     # function are bound to vfio-pci by the node's hardware layer
     # (talos/hardware/asus-tuf-b550-pro.yaml). Listing them here makes
