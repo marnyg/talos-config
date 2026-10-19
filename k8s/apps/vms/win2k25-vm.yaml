@@ -11,9 +11,17 @@
 #     would be reverted by the next sync — start/stop is a git edit of
 #     this field (Always ↔ Halted), consistent with git-is-truth.
 #
-# Sizing: 4 cores / 8Gi against cp1's 16 vCPU / 28Gi, beside etcd and
-# the media stack. Guest memory is not reclaimable; don't grow this
-# casually (deployed-state.md notes the contention concern).
+# Sizing (2026-10-19, on w2): 8 cores / 24Gi of w2's 12 threads / 48Gi
+# — the node exists for this VM and the GPU it holds, and the rest is
+# left for Longhorn and whatever AI pods take the GPU when the VM is
+# Halted (dsuj). Guest memory is not reclaimable; was 4 / 8Gi on cp1
+# (16 vCPU / 28Gi beside etcd and the media stack).
+#
+# The transfer share (k8s/apps/files, \\samba.files.svc.cluster.local\transfer)
+# is mapped as T: by the answer file's FirstLogonCommands (cmdkey +
+# net use /persistent:yes, Administrator's Credential Manager) — a
+# reinstall comes up with it; the first install got the same two
+# commands by hand through the guest agent.
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:
@@ -55,9 +63,9 @@ spec:
     spec:
       domain:
         cpu:
-          cores: 4
+          cores: 8
         memory:
-          guest: 8Gi
+          guest: 24Gi
         firmware:
           bootloader:
             efi:
