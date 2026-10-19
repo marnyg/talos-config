@@ -31,6 +31,7 @@ func (w *Web) taskRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/projects", w.api(w.apiCreateProject))
 	mux.HandleFunc("GET /api/projects/{id}", w.api(w.withProject(w.apiProject)))
 	mux.HandleFunc("PUT /api/projects/{id}/goals", w.api(w.withProject(w.apiPutGoals)))
+	mux.HandleFunc("PUT /api/projects/{id}/flow", w.api(w.withProject(w.apiPutFlow)))
 	mux.HandleFunc("GET /api/tasks", w.api(w.apiTasks))
 	mux.HandleFunc("POST /api/tasks", w.api(w.apiCreateTask))
 	mux.HandleFunc("GET /api/tasks/{id}", w.api(w.withTask(w.apiTask)))
@@ -376,6 +377,33 @@ func (w *Web) apiProject(rw http.ResponseWriter, _ *http.Request, _ Principal, p
 		Project
 		Goals []Goal `json:"goals"`
 	}{pr, goals})
+}
+
+// apiPutFlow: {"flow": "default", "version": 0} — version 0 is the
+// flow's latest; "" keeps the project's flow and only moves the version.
+func (w *Web) apiPutFlow(rw http.ResponseWriter, r *http.Request, _ Principal, pr Project) {
+	var req struct {
+		Flow    string `json:"flow"`
+		Version int    `json:"version"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(rw, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(rw, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := w.Store.SetProjectFlow(pr.ID, req.Flow, req.Version); err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, ErrNoFlow) {
+			code = http.StatusBadRequest
+		}
+		writeJSON(rw, code, map[string]string{"error": err.Error()})
+		return
+	}
+	moved, err := w.Store.Project(pr.ID)
+	if err != nil {
+		writeJSON(rw, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(rw, http.StatusOK, moved)
 }
 
 func (w *Web) apiPutGoals(rw http.ResponseWriter, r *http.Request, _ Principal, pr Project) {

@@ -315,9 +315,19 @@ func (s *Store) Projects(v Viewer) ([]Project, error) {
 	return out, rows.Err()
 }
 
-// SetProjectFlow moves a project to a flow version for tasks created
-// from now on; running tasks keep theirs.
+// SetProjectFlow moves a project to flow/version (version 0 ⇒ the
+// flow's latest; flow "" keeps the project's) for the tasks filed from
+// now on; tasks already filed keep the version they were filed under
+// (engine.go reads the task's). This is how a project picks up a
+// bumped DefaultFlow — CreateProject pins the version current then.
 func (s *Store) SetProjectFlow(id, flow string, version int) error {
+	if flow == "" {
+		p, err := s.Project(id)
+		if err != nil {
+			return err
+		}
+		flow = p.Flow
+	}
 	f, err := s.Flow(flow, version)
 	if err != nil {
 		return err

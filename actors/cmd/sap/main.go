@@ -5,6 +5,8 @@
 //
 //	sap login [-server URL]          browser approves, token lands here
 //	sap me
+//	sap projects
+//	sap project ID [-flow F] [-version N]   show; with -flow/-version, move it
 //	sap tasks [-project P]            the board
 //	sap task ID                       state, exits, log, sessions
 //	sap move TASK STATE [-note TEXT]  one transition
@@ -190,6 +192,19 @@ type session struct {
 	File    string `json:"file"`
 }
 
+type project struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Owner       string `json:"owner"`
+	Flow        string `json:"flow"`
+	FlowVersion int    `json:"flow_version"`
+	Created     int64  `json:"created"`
+	Goals       []struct {
+		ID   string `json:"id"`
+		Text string `json:"text"`
+	} `json:"goals"`
+}
+
 type task struct {
 	ID      string `json:"id"`
 	Project string `json:"project"`
@@ -263,6 +278,10 @@ func main() {
 	switch cmd {
 	case "me":
 		err = me(ctx, c, args)
+	case "projects":
+		err = projects(ctx, c, args)
+	case "project":
+		err = projectCmd(ctx, c, args)
 	case "tasks":
 		err = tasks(ctx, c, args)
 	case "task":
@@ -295,6 +314,8 @@ func usage() {
 
   sap login [-server URL]
   sap me [-json]
+  sap projects [-json]
+  sap project ID [-flow F] [-version N] [-json]
   sap tasks [-project P] [-json]
   sap task ID [-json]
   sap move TASK STATE [-note TEXT] [-json]
@@ -435,6 +456,52 @@ func me(ctx context.Context, c *client, args []string) error {
 		return err
 	}
 	fmt.Printf("%s %s groups=%s exp=%s\n", p.Username, p.Wallet, strings.Join(p.Groups, ","), time.Unix(p.Exp, 0).Format(time.RFC3339))
+	return nil
+}
+
+func projects(ctx context.Context, c *client, args []string) error {
+	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
+	raw := fs.Bool("json", false, "print the API's body")
+	flags(fs, args, 0, "")
+	var ps []project
+	if err := c.get(ctx, "/api/projects", *raw, &ps); err != nil || *raw {
+		return err
+	}
+	for _, p := range ps {
+		fmt.Printf("%-16s %s/v%d  %s\n", p.ID, p.Flow, p.FlowVersion, p.Name)
+	}
+	return nil
+}
+
+// projectCmd shows a project; with -flow or -version it first moves
+// the project to that flow version (PUT /api/projects/{id}/flow) —
+// tasks filed from then on run it, filed ones keep theirs.
+func projectCmd(ctx context.Context, c *client, args []string) error {
+	fs := flag.NewFlagSet("project", flag.ContinueOnError)
+	raw := fs.Bool("json", false, "print the API's body")
+	flow := fs.String("flow", "", "move to this flow (\"\" keeps the project's)")
+	version := fs.Int("version", -1, "move to this version (0: the flow's latest)")
+	pos := flags(fs, args, 1, "ID")
+	path := "/api/projects/" + url.PathEscape(pos[0])
+	if *flow != "" || *version >= 0 {
+		v := *version
+		if v < 0 {
+			v = 0
+		}
+		resp, err := c.do(ctx, http.MethodPut, path+"/flow", map[string]any{"flow": *flow, "version": v})
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+	}
+	var p project
+	if err := c.get(ctx, path, *raw, &p); err != nil || *raw {
+		return err
+	}
+	fmt.Printf("%s  %s  flow=%s/v%d owner=%s created=%s\n", p.ID, p.Name, p.Flow, p.FlowVersion, short(p.Owner), ago(p.Created))
+	for _, g := range p.Goals {
+		fmt.Printf("  %s: %s\n", g.ID, g.Text)
+	}
 	return nil
 }
 

@@ -112,8 +112,10 @@ func main() {
 }
 
 // taskOptions reads SAP_PI, SAP_PI_ARGS, SAP_WORKDIR and FORGEJO_*
-// (the last scrubbed from the environment) and binds the
-// Dialer to iroh: one connection to the parent's agent-events facet,
+// and binds the Dialer to iroh. FORGEJO_* is unset from Go's copy of
+// the environment so pi and git do not inherit it; the kernel's copy
+// (/proc/1/environ) is what hideProc covers — os.Unsetenv never
+// touches it (62a0ec24, 2026-10-19). The Dialer: one connection to the parent's agent-events facet,
 // admitted on the preamble, kept for the process's lifetime and
 // re-dialled when it is gone; each Dial call is one stream on it.
 func taskOptions(ep *irohtransport.Endpoint) child.TaskOptions {

@@ -172,8 +172,13 @@ func getJSON(t *testing.T, c *http.Client, u string, v any) int {
 
 func postJSON(t *testing.T, c *http.Client, u string, body any, v any) int {
 	t.Helper()
+	return sendJSON(t, c, http.MethodPost, u, body, v)
+}
+
+func sendJSON(t *testing.T, c *http.Client, method, u string, body any, v any) int {
+	t.Helper()
 	b, _ := json.Marshal(body)
-	req, _ := http.NewRequest(http.MethodPost, u, strings.NewReader(string(b)))
+	req, _ := http.NewRequest(method, u, strings.NewReader(string(b)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", u[:strings.Index(u[8:], "/")+8])
 	resp, err := c.Do(req)
@@ -421,6 +426,32 @@ func TestWebTasks(t *testing.T) {
 	if code := postJSON(t, me, ui.URL+"/api/tasks", map[string]any{"project": pr.ID, "title": "first", "goal": "g1", "why": "because"}, &tk); code != 201 || tk.State != "captured" {
 		t.Fatalf("create task: %d %+v", code, tk)
 	}
+
+	// PUT /flow moves the project's version for tasks filed from now
+	// on; the one already filed keeps its own. A stranger cannot; an
+	// unknown flow is 400.
+	next := parent.DefaultFlow()
+	next.Version++
+	if err := r.store.PutFlow(next); err != nil {
+		t.Fatal(err)
+	}
+	var moved parent.Project
+	if code := sendJSON(t, me, http.MethodPut, pu+"/flow", map[string]any{"flow": "", "version": 0}, &moved); code != 200 || moved.FlowVersion != next.Version {
+		t.Fatalf("put flow: %d %+v", code, moved)
+	}
+	if code := sendJSON(t, stranger, http.MethodPut, pu+"/flow", map[string]any{"version": 0}, nil); code != 404 {
+		t.Fatalf("stranger put flow: %d", code)
+	}
+	if code := sendJSON(t, me, http.MethodPut, pu+"/flow", map[string]any{"flow": "nope"}, nil); code != 400 {
+		t.Fatalf("bad flow: %d", code)
+	}
+	var t2 parent.Task
+	if code := postJSON(t, me, ui.URL+"/api/tasks", map[string]any{"project": pr.ID, "title": "second"}, &t2); code != 201 || t2.FlowVersion != next.Version {
+		t.Fatalf("task on moved project: %d %+v", code, t2)
+	}
+	if old, _ := r.store.Task(tk.ID); old.FlowVersion != tk.FlowVersion {
+		t.Fatalf("filed task moved: %+v", old)
+	}
 	if code := postJSON(t, stranger, ui.URL+"/api/tasks", map[string]any{"project": pr.ID, "title": "no"}, nil); code != 404 {
 		t.Fatalf("stranger files: %d", code)
 	}
@@ -446,7 +477,7 @@ func TestWebTasks(t *testing.T) {
 		t.Fatalf("reject: %d %+v", code, tk)
 	}
 	var list []parent.Task
-	if code := getJSON(t, admin, ui.URL+"/api/tasks?project="+pr.ID, &list); code != 200 || len(list) != 1 {
+	if code := getJSON(t, admin, ui.URL+"/api/tasks?project="+pr.ID, &list); code != 200 || len(list) != 2 {
 		t.Fatalf("admin tasks: %d %+v", code, list)
 	}
 	if getJSON(t, stranger, ui.URL+"/api/tasks", &list); len(list) != 0 {
