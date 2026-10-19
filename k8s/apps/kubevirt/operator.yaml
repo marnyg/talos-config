@@ -1,5 +1,10 @@
 # Vendored from:
-#   https://github.com/kubevirt/kubevirt/releases/download/v1.9.0/kubevirt-operator.yaml
+#   https://github.com/kubevirt/kubevirt/releases/download/v1.9.1/kubevirt-operator.yaml
+# (1.9.0 → 1.9.1 on 2026-10-19 for kubevirt#18895: v1.9.0's device plugin
+# handed every vfio PCI device a /dev/vfio/devices/vfioN cdev path that
+# the Talos 6.18 kernel never creates — no CONFIG_VFIO_DEVICE_CDEV — so
+# virt-launcher died in containerd with `lstat …/vfio0: no such file`.
+# Upstream's 1.9.0→1.9.1 manifest diff is the three version strings.)
 # One local modification: the kubevirts.kubevirt.io CRD carries
 #   argocd.argoproj.io/sync-options: ServerSideApply=true
 # because it is ~470KB — client-side apply dies on the 256KB
@@ -8344,14 +8349,14 @@ spec:
             - virt-operator
           env:
             - name: VIRT_OPERATOR_IMAGE
-              value: quay.io/kubevirt/virt-operator:v1.9.0
+              value: quay.io/kubevirt/virt-operator:v1.9.1
             - name: WATCH_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.annotations['olm.targetNamespaces']
             - name: KUBEVIRT_VERSION
-              value: v1.9.0
-          image: quay.io/kubevirt/virt-operator:v1.9.0
+              value: v1.9.1
+          image: quay.io/kubevirt/virt-operator:v1.9.1
           imagePullPolicy: IfNotPresent
           livenessProbe:
             httpGet:
