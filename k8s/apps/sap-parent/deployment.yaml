@@ -45,7 +45,8 @@ metadata:
   namespace: sap
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn
+  storageClassName: longhorn-encrypted
+  volumeName: pvc-3f071613-7774-4674-9acf-09b59def3c67
   resources:
     requests:
       storage: 2Gi
