@@ -87,7 +87,8 @@ G="curl -fsS -u sysadmin:$ADMIN_PW -H 'Content-Type: application/json' http://gi
 eval $G/orgs -d '{"username":"agents","visibility":"private","repo_admin_change_team_access":false}'
 eval $G/orgs -d '{"username":"mirrors","visibility":"public"}'   # public = anyone past the mesh gate; agents stays private
 # (If it was created private: PATCH /orgs/mirrors {"visibility":"public"} is a
-# no-op on Forgejo 11.0.16 — flip it in the UI: org settings → Visibility.)
+# no-op on Forgejo 11.0.16 — flip it in the UI: org settings → Visibility;
+# re-check on the next bump, talos-config-gnoc.)
 ```
 
 Pull-mirrors are added per repo in the UI (New migration → mirror) or
