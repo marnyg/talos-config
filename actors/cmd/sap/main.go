@@ -8,6 +8,7 @@
 //	sap projects
 //	sap project ID [-flow F] [-version N]   show; with -flow/-version, move it
 //	sap tasks [-project P]            the board
+//	sap new PROJECT TITLE [-desc ...] [-goal G] [-why ...] [-repo R] [-ref REF] [-start]
 //	sap task ID                       state, exits, log, sessions
 //	sap move TASK STATE [-note TEXT]  one transition
 //	sap sessions [-limit N]
@@ -286,6 +287,8 @@ func main() {
 		err = tasks(ctx, c, args)
 	case "task":
 		err = taskCmd(ctx, c, args)
+	case "new":
+		err = newTask(ctx, c, args)
 	case "move":
 		err = move(ctx, c, args)
 	case "sessions":
@@ -317,6 +320,7 @@ func usage() {
   sap projects [-json]
   sap project ID [-flow F] [-version N] [-json]
   sap tasks [-project P] [-json]
+  sap new PROJECT TITLE [-desc TEXT] [-goal G] [-why TEXT] [-repo R] [-ref REF] [-start] [-json]
   sap task ID [-json]
   sap move TASK STATE [-note TEXT] [-json]
   sap sessions [-limit N] [-json]
@@ -881,6 +885,35 @@ func textOf(content json.RawMessage) string {
 }
 
 // ---- writes ----------------------------------------------------------------
+
+// newTask is POST /api/tasks: the UI's form from the shell. -start
+// enters the flow at once (captured "started on creation" "framed"),
+// without it the task waits in the initial state for a move. The
+// -desc is the brief the framer reads; -goal is a goal id on the
+// project (`sap project P` lists them).
+func newTask(ctx context.Context, c *client, args []string) error {
+	fs := flag.NewFlagSet("new", flag.ContinueOnError)
+	raw := fs.Bool("json", false, "print the API's body")
+	desc := fs.String("desc", "", "description: the brief")
+	goal := fs.String("goal", "", "goal id on the project")
+	why := fs.String("why", "", "why this, now")
+	repo := fs.String("repo", "", "owner/name on the forge")
+	ref := fs.String("ref", "", "branch to clone (with -repo)")
+	start := fs.Bool("start", false, "enter the flow at once")
+	pos := flags(fs, args, 2, "PROJECT TITLE")
+	body := map[string]any{"project": pos[0], "title": strings.Join(pos[1:], " "), "start": *start}
+	for k, v := range map[string]string{"description": *desc, "goal": *goal, "why": *why, "repo": *repo, "ref": *ref} {
+		if v != "" {
+			body[k] = v
+		}
+	}
+	var t task
+	if err := c.post(ctx, "/api/tasks", body, *raw, &t); err != nil || *raw {
+		return err
+	}
+	fmt.Printf("%s  %s  [%s/%s]\n", t.ID, t.Title, t.Flow, t.State)
+	return nil
+}
 
 func move(ctx context.Context, c *client, args []string) error {
 	fs := flag.NewFlagSet("move", flag.ContinueOnError)

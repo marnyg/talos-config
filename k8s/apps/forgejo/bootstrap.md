@@ -137,11 +137,14 @@ this token deliberately lacks — ask for a repo it can write instead;
 the pod must satisfy PSS restricted, hence the overrides):
 
 ```sh
-T=$(kubectl -n ai get secret forgejo-agent -o jsonpath='{.data.FORGEJO_TOKEN}' | base64 -d)
-kubectl -n ai run --rm -i tokcheck --image=curlimages/curl --restart=Never --env="T=$T" \
+T=$(kubectl -n sap get secret forgejo-agent -o jsonpath='{.data.FORGEJO_TOKEN}' | base64 -d)
+kubectl -n sap run --rm -i tokcheck --image=curlimages/curl --restart=Never --env="T=$T" \
   --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":100,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"tokcheck","image":"curlimages/curl","env":[{"name":"T","value":"'"$T"'"}],"command":["sh","-c","curl -sS -o /dev/null -w \"%{http_code}\\n\" -H \"Authorization: token $T\" http://forgejo.forgejo.svc:3000/api/v1/repos/agents/scratch"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
 ```
 
-Expect `200` (verified 2026-10-11). The `ai` namespace has the Secret
+Expect `200` (verified 2026-10-11; 2026-10-20 after the 97rz rotation,
+which also deleted the old token through the admin API using the sealed
+`forgejo/forgejo-sysadmin` credentials from inside the pod). The `sap`
+namespace has the Secret
 only once the sealed-secrets controller has unsealed the committed file
 (ArgoCD polls ~3 min; do not hand-apply — notes.md 2026-10-10).

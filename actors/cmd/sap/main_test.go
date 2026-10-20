@@ -89,6 +89,36 @@ func TestLoginAndBearer(t *testing.T) {
 	}
 }
 
+// TestNewTask: `sap new` posts the UI's create body — project,
+// title from the rest of the positionals, only the flags given, and
+// start — and prints the task the parent returns (201).
+func TestNewTask(t *testing.T) {
+	var got map[string]any
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/api/tasks" || r.Header.Get("Authorization") != "Bearer tok" {
+			w.WriteHeader(404)
+			return
+		}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(201)
+		json.NewEncoder(w).Encode(task{ID: "t1", Title: got["title"].(string), Flow: "default", State: "framed"})
+	}))
+	t.Cleanup(fake.Close)
+	c := &client{server: fake.URL, token: "tok", http: fake.Client()}
+	if err := newTask(context.Background(), c, []string{"test", "Add", "hello.txt", "-repo", "agents/scratch", "-start", "-desc", "one line"}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"project": "test", "title": "Add hello.txt", "repo": "agents/scratch", "start": true, "description": "one line"}
+	if len(got) != len(want) {
+		t.Fatalf("body %v", got)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("body[%s] = %v, want %v", k, got[k], v)
+		}
+	}
+}
+
 // TestWatchRenders: watch against a fake stream prints the rendered
 // lines and returns at `end`; -raw prints one line per event.
 func TestWatchRenders(t *testing.T) {
