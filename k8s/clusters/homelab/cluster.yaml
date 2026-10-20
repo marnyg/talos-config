@@ -44,6 +44,16 @@ spec:
   # are meant to go.
   syncPolicy:
     preserveResourcesOnDeletion: false
+  # Let a child's automation be switched off by hand and STAY off: the
+  # controller otherwise re-applies the template on every reconcile and
+  # undid `kubectl patch app ... remove /spec/syncPolicy/automated`
+  # within seconds (2026-10-23, caught by scripts/encrypt-pvc.sh when
+  # selfHeal scaled samba back up mid-migration). A paused child stays
+  # paused until the template itself changes; resume by patching
+  # `automated` back (the script's `finish`).
+  ignoreApplicationDifferences:
+    - jsonPointers:
+        - /spec/syncPolicy/automated
   generators:
     - list:
         elements:
