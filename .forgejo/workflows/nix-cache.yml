@@ -2,10 +2,10 @@
 # cache.gw.mesh.internal, spike kyiy). Runs on the in-cluster runner
 # (k8s/apps/forgejo-runner, label `nix` = host mode: these steps are
 # processes in the runner's container, root, nix single-user, no
-# sandbox), which reaches this repo through Forgejo's pull-mirror
-# `mirrors/talos-config` — a mirror sync is a push event here, so a
-# push to GitHub's main lands in the cache within the mirror interval.
-# Nightly on top, for the nixos repo's drift and a missed sync.
+# sandbox). This repo lives here as `mar/talos-config` (decision
+# z15k: Forgejo is the source of truth, GitHub a push-mirror replica),
+# so a push to main fires this directly. Nightly on top, for the
+# nixos repo's drift.
 #
 # What is built, all x86_64-linux:
 #   - every package of this flake (`nix eval` lists them; devenv's
@@ -32,8 +32,7 @@
 # scoped to the Forgejo Service URL (no other host ever sees it) —
 # nix's git fetcher runs `git fetch`, which reads GIT_CONFIG_*; nothing
 # lands in /root/.gitconfig, shared by every run. Without it the fetch
-# depends on the `mirrors` org being public to anonymous readers,
-# which it is not (forgejo/bootstrap.md step 3).
+# depends on the repo being public to anonymous readers.
 name: nix-cache
 on:
   push:

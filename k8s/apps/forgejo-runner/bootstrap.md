@@ -1,11 +1,11 @@
 # forgejo-runner bootstrap — one-time steps after the first ArgoCD sync
 
 The manifests are declarative; what follows is the state Forgejo keeps
-in its database (the runner row, the mirror repo) and the two sealed
-secrets. Run once, by hand, from the laptop (on the mesh, with cluster
-access). Forgejo's own bootstrap (`k8s/apps/forgejo/bootstrap.md`)
-must have happened — steps 1 and 3 there (the `sysadmin` account, the
-`mirrors` org).
+in its database (the runner row) and the two sealed secrets. Run
+once, by hand, from the laptop (on the mesh, with cluster access).
+Forgejo's own bootstrap (`k8s/apps/forgejo/bootstrap.md`) must have
+happened — steps 1 and 6 there (the `sysadmin` account, this repo
+migrated in as `mar/talos-config`).
 
 ```sh
 F="kubectl -n forgejo exec deploy/forgejo -- forgejo"
@@ -50,31 +50,16 @@ $A make-token --sub ci --validity 2y --pull main --push main \
 Commit both sealed files (signed). The pod starts once the sealed-
 secrets controller has unsealed them (ArgoCD polls ~3 min).
 
-## 3. The mirror that carries the workflow
+## 3. The repo that carries the workflow
 
-`.forgejo/workflows/nix-cache.yml` lives in this repo; Forgejo runs it
-from the pull-mirror `mirrors/talos-config`. (Decision z15k moves the
-source of truth to Forgejo itself, see forgejo/bootstrap.md section 6;
-once the migrated repo exists, point the runner at it and drop the
-pull-mirror.) A mirror sync is a push event,
-so the workflow fires within `mirror_interval` of a push to main (the
-initial import fires nothing — `POST …/mirror-sync` or "Run workflow"
-for a first run). `private: false`, but the repo is only as visible as
-its org, and `mirrors` is not public (forgejo/bootstrap.md step 3), so
-anonymous reads 404; the workflow fetches with the run's own token and
-does not care.
-
-```sh
-read -rs ADMIN_PW   # kubectl -n forgejo get secret forgejo-sysadmin -o jsonpath='{.data.password}' | base64 -d
-curl -fsS -u "sysadmin:$ADMIN_PW" -H 'Content-Type: application/json' \
-  http://git.gw.mesh.internal/api/v1/repos/migrate -d '{
-    "clone_addr": "https://github.com/marnyg/talos-config.git",
-    "repo_owner": "mirrors", "repo_name": "talos-config",
-    "mirror": true, "mirror_interval": "10m", "private": false,
-    "service": "github", "description": "pull-mirror of github.com/marnyg/talos-config"
-  }'
-unset ADMIN_PW
-```
+`.forgejo/workflows/nix-cache.yml` lives in this repo, and this repo
+lives on Forgejo as `mar/talos-config` (decision z15k, forgejo/
+bootstrap.md section 6), so a push to main fires the workflow
+directly. Until 2026-10-20 it ran from a 10-min pull-mirror
+`mirrors/talos-config` of GitHub; that mirror was deleted when the
+migrated repo took over — running both meant every push built twice.
+The workflow reads `$GITHUB_REPOSITORY`, so nothing in it names the
+owner.
 
 Actions are on for new repos by default (`repository.DEFAULT_REPO_UNITS`
 includes `repo.actions`); if the Actions tab is missing: repo Settings
@@ -86,9 +71,9 @@ includes `repo.actions`); if the Actions tab is missing: repo Settings
 kubectl -n forgejo-runner logs deploy/forgejo-runner | head      # "runner: cluster-nix → …", then "declared labels"
 ```
 
-Site administration → Actions → Runners shows `cluster-nix` idle. The
-mirror's Actions tab shows a `nix-cache` run after the next sync (or
-"Run workflow" on it). First run is cold: iroh-ffi and three NixOS
+Site administration → Actions → Runners shows `cluster-nix` idle.
+`mar/talos-config`'s Actions tab shows a `nix-cache` run after the next
+push to main (or "Run workflow" on it). First run is cold: iroh-ffi and three NixOS
 closures, an hour or two; the next is minutes. Then from any mesh
 machine with the cache in `nix.conf` (nix-cache/bootstrap.md §3):
 

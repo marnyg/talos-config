@@ -221,9 +221,11 @@ history and, where the numbers still matter, in ADR-0006 and
   Service ClusterIP pinned `10.103.91.1`). ns `forgejo-runner`: one
   host-mode runner `cluster-nix` on w1 (image `b60f951`, PSS baseline,
   nixbld build users, credentials on memory emptyDirs) runs
-  `.forgejo/workflows/nix-cache.yml` from the pull-mirror
-  `mirrors/talos-config` (10 min) on push, nightly 03:00 and
-  dispatch. Attic holds every x86_64-linux package of this flake and
+  `.forgejo/workflows/nix-cache.yml` from `mar/talos-config` on push,
+  nightly 03:00 and dispatch (since 2026-10-20, decision `z15k`: all
+  86 owner repos live on Forgejo under `mar/` with push mirrors back
+  to GitHub, interval 0 + sync-on-commit; the `mirrors/talos-config`
+  pull-mirror is gone). Attic holds every x86_64-linux package of this flake and
   the desktop/laptop/wsl toplevels of `marnyg/nixos` (HIT from the Mac,
   run #9). Cold run on a fresh pod about 1.5 h; warm about 1 min.
 - Provenance of the image line: 2026-09-15 cp1 first booted an
