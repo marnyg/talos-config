@@ -30,23 +30,25 @@
 # Stopping it (`replicas: 0`) keeps the PVC and its data but breaks
 # every VM's T:. Grow it by raising the request — up only.
 #
-# On the default `longhorn` class since 2026-10-23 (two replicas on
-# different nodes' NVMe, like app state); the `longhorn-user` class it
-# had under ADR-0031 was that minus the tier fence, and one replica had
-# drifted onto a nas1 SATA bay. volumeName pins the claim to the PV
-# that move kept: storageClassName is immutable on a PVC, so the PV was
-# relabeled and the PVC deleted and rebound rather than copied. The PV
-# is still `Retain` from its first provisioning; a claim recreated
-# WITHOUT volumeName would be a new, empty, `Delete` volume.
+# On `longhorn-encrypted` since 2026-10-23 (the first volume moved
+# there; scripts/encrypt-pvc.sh, one rsync of 15.4 G): two replicas on
+# different nodes' NVMe, dm-crypt under the cluster passphrase, nightly
+# ciphertext backup to Tigris via the `backup` group the class joins.
+# Earlier that day it had gone from the `longhorn-user` class ADR-0031
+# made for it to the plain default, by PV relabel. volumeName pins the
+# claim to the encrypted PV: storageClassName is immutable, so every
+# move is delete-and-rebind, and a claim recreated WITHOUT volumeName
+# would be a new, empty volume. The previous, unencrypted PV
+# (pvc-3355e94b…, Retain, label encrypt-pvc/old) is the safety net
+# until the first Tigris backup is verified, then deleted.
 #
-# This claim is the only copy of those bytes, so (2026-10-23):
+# This claim is the only live copy of those bytes, so:
 #   - ArgoCD may never prune or delete it (sync-options below); a
 #     renamed directory or a bad manifest leaves it standing.
 #   - The `transfer` recurring-job group gets daily Longhorn snapshots
-#     (k8s/apps/storage/recurringjob.yaml) 
-#     an undo for a wrong delete over SMB. Snapshots live inside the
-#     volume's replicas: they do not survive the volume's loss. A
-#     copy OFF Longhorn is bsj (backup target), still open.
+#     (k8s/apps/storage/recurringjob.yaml) — an undo for a wrong delete
+#     over SMB, inside the volume. The off-site copy is the `backup`
+#     group's nightly job to Tigris (bsj).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -58,8 +60,8 @@ metadata:
     recurring-job-group.longhorn.io/transfer: enabled
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn
-  volumeName: pvc-3355e94b-9c64-488e-a3d7-7bc394f572ef
+  storageClassName: longhorn-encrypted
+  volumeName: pvc-e74ad799-7000-4e27-a2a2-640bf7f4cc62
   resources:
     requests:
       storage: 100Gi
