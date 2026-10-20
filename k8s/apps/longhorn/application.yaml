@@ -96,6 +96,14 @@ spec:
           # restore test's runtime (k8s/apps/backup-verify). Backups stay
           # at the default: they are uplink-bound (~4-5 MB/s) regardless.
           restoreConcurrentLimit: 8
+          # Back up detached volumes too: Longhorn attaches them for the
+          # job and detaches after. Default false skips them silently —
+          # media/libation-db (mounted only while its CronJob runs) got no
+          # backup from the first backup-nightly run; LonghornBackupStale
+          # would have paged a day later (2026-10-20). Same for any app
+          # scaled to 0, which is exactly when its state is idle and must
+          # still be in the bucket.
+          allowRecurringJobWhileVolumeDetached: true
           # Keep a replica on whichever node runs the pod: this is what
           # makes the read path local and removes the hostPath
           # nodeAffinity hazard (bug 0b374653) by design rather than by
