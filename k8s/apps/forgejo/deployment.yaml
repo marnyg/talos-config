@@ -1,9 +1,11 @@
 # Forgejo: the in-cluster git host for agent work (ADR-0037, epic
 # talos-config-ivof; ivof.1). Agents push result branches here, PRs are
-# reviewed here for `agents/*` repos, and `mirrors/*` holds read-only
-# pull-mirrors (talos-config itself stays on GitHub — decision 4la8:
-# ArgoCD and the hub tip read it, and hosting it here would make the
-# cluster its own bootstrap).
+# reviewed here for `agents/*` repos, `mirrors/*` holds read-only
+# pull-mirrors, and the owner's repos (talos-config included) live here
+# as the source of truth with a push mirror back to GitHub (decision
+# z15k, amending 4la8: ArgoCD and the hub tip still read the GitHub
+# replica, so the cluster never reads its own definition from itself —
+# bootstrap.md §6).
 #
 # One volume on the default longhorn class (ADR-0029) holds everything:
 # the repositories (git/repositories), the sqlite3 database (data/

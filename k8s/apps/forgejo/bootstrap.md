@@ -77,9 +77,9 @@ deployment.yaml.
 ## 3. Orgs `agents` and `mirrors`
 
 Via the API with the admin from step 1 (basic auth is accepted for
-API calls by a local account). `mirrors` holds pull-mirrors
-(talos-config included — read-only copies; decision 4la8 keeps the
-source of truth on GitHub); `agents` holds the repos agents write to.
+API calls by a local account). `mirrors` holds pull-mirrors of
+third-party repos (read-only copies); `agents` holds the repos agents
+write to. The owner's own repos live under the owner's user — §6.
 
 ```sh
 read -rs ADMIN_PW   # paste the step-1 password
@@ -148,3 +148,66 @@ which also deleted the old token through the admin API using the sealed
 namespace has the Secret
 only once the sealed-secrets controller has unsealed the committed file
 (ArgoCD polls ~3 min; do not hand-apply — notes.md 2026-10-10).
+
+## 6. Owner repos: Forgejo is the source of truth, GitHub the replica
+
+Decision `z15k` (amends `4la8`): every GitHub repo of the owner,
+talos-config included, is migrated here in full and push-mirrored back
+to GitHub. Nothing the cluster *reads* moves — ArgoCD, the hub's signed
+tip, Go module paths and flake inputs keep fetching
+`github.com/marnyg/...`, so the cluster is still rebuildable from zero
+without itself. Only the human push target changes.
+
+The push mirror needs a credential Forgejo can use unattended. Not
+`gh auth token` — that is the CLI's login and dies with it. Create a PAT on
+GitHub (classic, scope `repo`; or fine-grained, Contents: read+write on
+all repos — GitHub has no API for this, UI only) and seal it as the vault
+entry, same arrangement as `sysadmin.sealed.yaml`: no pod mounts it, the
+script reads it through the wallet-gated kubeconfig.
+
+```sh
+read -rs GH_MIRROR_TOKEN
+kubectl -n forgejo create secret generic github-mirror-token \
+  --from-literal=token="$GH_MIRROR_TOKEN" --from-literal=username=marnyg \
+  --dry-run=client -o yaml \
+  | kubeseal --cert talos/clusters/homelab/sealed-secrets.crt -o yaml \
+  > k8s/apps/forgejo/github-mirror-token.sealed.yaml
+unset GH_MIRROR_TOKEN
+```
+
+Commit it (signed). Rotation: new PAT, reseal, then
+`PATCH /repos/<you>/<repo>/push_mirrors/<name>` is not a thing — delete
+and re-add each mirror (rerun the script after
+`DELETE .../push_mirrors/<name>`). Forgejo keeps its own encrypted copy
+per mirror; the sealed secret is for the next repo and the next rotation.
+
+```sh
+gh auth login                                     # repo scope; import side only
+./migrate-from-github.sh -n -o <you>              # dry run, lists what it would do
+./migrate-from-github.sh -o <you> > /tmp/migrate.log 2>&1 &   # blocks per repo; poll the log
+```
+
+`<you>` is the wallet-registered user (step 2). With no `FORGEJO_TOKEN`
+the script authenticates as `sysadmin` from the sealed secret and an
+admin may migrate into any owner; the two kubectl reads are the only
+reason it needs cluster access. (Set `FORGEJO_TOKEN` to a PAT of `<you>`
+to skip the admin path; `-o` then defaults to the token's user.)
+
+Then per clone: `git remote set-url origin http://git.gw.mesh.internal/<you>/<repo>.git`
+(and `bd dolt remote add forgejo git+<that url>` + `bd config set sync.remote forgejo`
+where beads is in use — `refs/dolt/data` rides the `--mirror` push to GitHub too).
+`mirrors/talos-config` and `.forgejo/workflows/nix-cache.yml` should be
+repointed at the migrated repo; the pull-mirror is then redundant.
+
+**DR runbook — Forgejo is down and the fix is a talos-config change.**
+Push the fix straight to GitHub; ArgoCD and the hub pick it up as
+usual. The push mirror is `interval: 0` + `sync_on_commit`, so Forgejo
+coming back does *not* fire a sync on its own. First thing once it is
+up, from the clone that has the fix: `git push forgejo main` — that
+commit triggers the mirror and GitHub ends up consistent. Pushing
+anything else to Forgejo first force-pushes the stale tip over the fix
+and ArgoCD rolls the cluster back into the broken state.
+
+What the replica does **not** carry: issues, PRs, releases, wiki. A PR
+opened on GitHub is stranded there. Forgejo's sqlite + repo PVC are the
+only full copy — the `bsj` backup thread is required, not optional.

@@ -52,9 +52,11 @@ secrets controller has unsealed them (ArgoCD polls ~3 min).
 
 ## 3. The mirror that carries the workflow
 
-`.forgejo/workflows/nix-cache.yml` lives in this repo on GitHub
-(decision 4la8: GitHub is the source of truth); Forgejo runs it from
-the pull-mirror `mirrors/talos-config`. A mirror sync is a push event,
+`.forgejo/workflows/nix-cache.yml` lives in this repo; Forgejo runs it
+from the pull-mirror `mirrors/talos-config`. (Decision z15k moves the
+source of truth to Forgejo itself, see forgejo/bootstrap.md section 6;
+once the migrated repo exists, point the runner at it and drop the
+pull-mirror.) A mirror sync is a push event,
 so the workflow fires within `mirror_interval` of a push to main (the
 initial import fires nothing — `POST …/mirror-sync` or "Run workflow"
 for a first run). `private: false`, but the repo is only as visible as

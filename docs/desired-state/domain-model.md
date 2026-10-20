@@ -1232,8 +1232,11 @@ provisioning or recovery path may depend on it.
   **person-gated** `-client` that sends S256 PKCE; tokens for bots).
   Orgs: `agents` (bot `agent` writes via team `bots`) and `mirrors`
   (pull-mirrors, read-only). Pods reach it as `forgejo.forgejo.svc`;
-  browsers through ingress-nginx. `talos-config` itself stays on
-  GitHub (decision `4la8`); break-glass local admin is `sysadmin`.
+  browsers through ingress-nginx. The owner's repos, `talos-config`
+  included, live here as source of truth with a push mirror to GitHub;
+  ArgoCD, the hub tip and flake inputs keep reading the GitHub replica
+  (decision `z15k`, amending `4la8`); break-glass local admin is
+  `sysadmin`.
 
 ## Relation to the sovereign-actor sketch
 
