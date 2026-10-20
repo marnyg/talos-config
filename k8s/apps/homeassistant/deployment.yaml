@@ -40,7 +40,8 @@ metadata:
   namespace: homeassistant
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn
+  storageClassName: longhorn-encrypted
+  volumeName: pvc-c7fd57f4-bc1c-458c-b783-2cbbd49305ae
   resources:
     requests:
       storage: 10Gi
