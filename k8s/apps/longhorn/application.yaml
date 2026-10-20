@@ -23,8 +23,10 @@
 # Deletion hazard: removing this Application (or renaming the directory)
 # cascades to the CRDs, and the Volume/Replica CRs are the only record of
 # where replica data lives. Invariant 2 classifies that bookkeeping as
-# data-plane state whose durability is a backup problem — so until a
-# backup target exists, do not delete this Application casually.
+# data-plane state whose durability is a backup problem. Since
+# 2026-10-23 that backup exists (defaultBackupStore below, bsj) for the
+# encrypted class only; a volume still on the plain class has no copy
+# outside the cluster. Do not delete this Application casually.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -58,6 +60,18 @@ spec:
         metrics:
           serviceMonitor:
             enabled: true
+        # Off-site backups (bsj, 2026-10-23): a Tigris bucket on fly,
+        # S3 API. `auto` is Tigris's region; AWS_ENDPOINTS in the secret
+        # points the SDK at fly.storage.tigris.dev. Longhorn 1.9+ keeps
+        # the target as a BackupTarget CR named `default`; the chart
+        # writes these into it. What gets backed up is decided by the
+        # RecurringJob in k8s/apps/storage/recurringjob.yaml (group
+        # `backup` = the longhorn-encrypted class), so the bucket only
+        # ever holds ciphertext (9io). Poll 300 s = the default.
+        defaultBackupStore:
+          backupTarget: s3://talos-longhorn-backup@auto/
+          backupTargetCredentialSecret: tigris-backup
+          pollInterval: 300
         defaultSettings:
           # Talos user volumes mount at /var/mnt/<name>; Longhorn's own
           # default (/var/lib/longhorn) would land on EPHEMERAL.
@@ -95,7 +109,12 @@ spec:
           # instead, k8s/apps/argocd/controller-patch.yaml).
           nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
         persistence:
-          defaultClass: true
+          # Not the cluster default since 2026-10-23: that is
+          # `longhorn-encrypted` (k8s/apps/storage/storageclass.yaml).
+          # This plain class is the opt-in for bytes that want neither
+          # encryption nor an off-site copy (VM ISOs, caches). The
+          # replica/locality/selector settings below still define it.
+          defaultClass: false
           # Two replicas for app state on the default (nvme) class, across
           # the three nodes: one node loss keeps the data and leaves a
           # third node to rebuild onto (w1 does go away; `9l67`). Three

@@ -140,6 +140,15 @@ spec:
                 // containerd's CRI format: "<ts> <stdout|stderr> <F|P> <line>",
                 // reassembling partial (P) lines.
                 stage.cri {}
+                // longhorn-csi-plugin logs the volume-encryption
+                // passphrase verbatim (NodePublishVolume req dump,
+                // Longhorn 1.12.0; k8s/apps/longhorn/crypto.sealed.yaml).
+                // Drop any line carrying it before it reaches Loki 
+                // Loki's own volume is encrypted under that same key, but
+                // Grafana shows logs to every admin.
+                stage.drop {
+                  expression = "CRYPTO_KEY_VALUE"
+                }
                 forward_to = [loki.write.default.receiver]
               }
 

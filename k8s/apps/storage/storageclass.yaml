@@ -90,3 +90,64 @@ parameters:
   # share-manager currently runs would be either a no-op or a request
   # Longhorn cannot satisfy. The NFS hop is the accepted cost.
   dataLocality: "disabled"
+---
+# The encrypted app-state class (talos-config-9io, 2026-10-23), and the
+# cluster DEFAULT from this date: a PVC that names no class gets
+# encryption and an off-site backup; the chart's plain `longhorn` class
+# stays for bytes that want neither (VM ISOs, caches) and must be named
+# to be used. Same placement as the plain class — two replicas on
+# different nodes' NVMe, read path local — plus:
+#
+#   encrypted: dm-crypt/LUKS on the node, opened by the CSI plugin with
+#   the ONE cluster-wide passphrase in longhorn-system/longhorn-crypto
+#   (k8s/apps/longhorn/crypto.sealed.yaml; age copy in
+#   talos/clusters/homelab/). Replicas on disk and every backup of the
+#   volume are ciphertext under it; the plain class's volumes sit
+#   unencrypted on the Longhorn user volumes, which the hub does not
+#   derive keys for. First attach of a new volume takes ~90 s (LUKS
+#   format + argon2 keyslot); later attaches are fast. Proven on w2
+#   2026-10-23 (Talos ships cryptsetup; dm-crypt is built in).
+#
+#   recurringJobSelector: every volume provisioned here is labeled into
+#   the `backup` recurring-job group, which recurringjob.yaml ships to
+#   Tigris nightly. This is the whole exclusion mechanism: the bulk and
+#   plain classes never join, so nothing re-downloadable and nothing
+#   plaintext leaves the cluster. The label is set at provisioning —
+#   a volume moved here by hand (the 2026-10 migration) is labeled by
+#   hand.
+#
+#   Retain, unlike the plain class's Delete: ArgoCD prunes (prune: true
+#   everywhere), so a renamed directory or a bad manifest must cost a
+#   manual PV cleanup, never the volume. The backup covers the
+#   catastrophic case; Retain covers the clumsy one.
+#
+# Parameters are immutable: a change here means deleting the class so
+# ArgoCD recreates it (bound PVs unaffected). Moving an existing PVC
+# onto this class is a copy: PVC class is immutable and the LUKS layer
+# cannot be added under a live filesystem — see scripts/encrypt-pvc.sh.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-encrypted
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+reclaimPolicy: Retain
+parameters:
+  numberOfReplicas: "2"
+  diskSelector: "nvme"
+  dataLocality: "best-effort"
+  staleReplicaTimeout: "30"
+  fsType: "ext4"
+  encrypted: "true"
+  csi.storage.k8s.io/provisioner-secret-name: longhorn-crypto
+  csi.storage.k8s.io/provisioner-secret-namespace: longhorn-system
+  csi.storage.k8s.io/node-publish-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-publish-secret-namespace: longhorn-system
+  csi.storage.k8s.io/node-stage-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-stage-secret-namespace: longhorn-system
+  csi.storage.k8s.io/node-expand-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-expand-secret-namespace: longhorn-system
+  recurringJobSelector: '[{"name":"backup","isGroup":true}]'

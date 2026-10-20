@@ -1,0 +1,31 @@
+# Credentials for the Longhorn backup target (talos-config-bsj,
+# 2026-10-23): a Tigris bucket on fly (`talos-longhorn-backup`, org
+# personal, S3 API at fly.storage.tigris.dev — AWS_ENDPOINTS is what
+# Longhorn's backupstore reads for a non-AWS endpoint). The target URL
+# itself is in application.yaml (defaultBackupStore). Sealed like every
+# other secret here; the plaintext was piped from `fly storage create`
+# straight into kubeseal and never written down.
+#
+# `fly storage create` attached the bucket to the hub app (the org's
+# only app) and set these as fly secrets there, redeploying it; they
+# were unset again the same minute — the hub holds no fly secrets.
+# Rotate: Tigris console → new key pair → reseal here.
+#
+# What lands in the bucket is ONLY ciphertext: the backup RecurringJob
+# (k8s/apps/storage/recurringjob.yaml) targets the `backup` group,
+# which only the `longhorn-encrypted` class joins.
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: tigris-backup
+  namespace: longhorn-system
+spec:
+  encryptedData:
+    AWS_ACCESS_KEY_ID: AgBh9OZO2NYFrsb0z8kCvVrxmlKA6+PNFuu6I6dm9i5rIEmwFqGQn3J+hRmcu+1KlPniTUmVBnpgPvhhs2I3lwTt8NmKSD8v0IkeU9gcFnYM6/dRWtQ0YuI0Ixj6gVeqtAolMPC/zpB9vagL7/0RkuDL7oprw8IL4tJABaBcR2kHeGrOMGLGMKNh5QW1rDJ3tEoXuKUkDeOFs1zdkl5uiY5Jcrmamx9gF9UjZ4GHwlUErbquKuZ7NDzgBkUWyLzKfeh1QD2uAqLmH1CftCwUhbVohrgTGh7YIbY9O7S81PrV1du2CQFMG16v8bjusIswjFtTGKycGlEu+UiA7ezGK87kCzamEk+h1KT/DjXbe2H0nRXEIzKZ+dX06Zfy9nI0+UWB2qvWoqjFF0Sl+iwCs8JJ0rrD5ZO+I8gfmGWhDwjRWEwTu2sAV4lCR9cnEfsMl0vsdSlFrEDhQvMba/es/JKhsodigsKIJu6RE+PUZtTr9gr0qV9jGgrRH7Ik+wDkWVCSEGLLptZJ741G7jIteeyzOf7O6oNNerxv0VGyzdjD6LQpAL72E0OiyLkF6Dc4mhbl1a5C+Ym9gEVGv9NFrluxwiuOomcvFsn7RU0SsaX356gF3l7oVN7DltvZFGrT9W7apQoqG5adaAGtF/Eypk2exH6QxEmx0o7gCIOIau4HxtHqSNrNGCO/2xnZtOljhvZjIPbKZRfU9qPoLmzHTmuwA+x9FzDTVshQIq/+NUssNPGf+Hw07aswuXtOiBMSxLivOkCq/HE=
+    AWS_ENDPOINTS: AgBgf2+YKyGdBcUErCKAUVon9XmRwYKfqmGcZLASocl/2L+25ziBd4adiRJ6ZBZLCtHcPcZ3iZ6QAHbqMb47Xn7l1eHjKK1InZLzQJNOmN4VFSEWziKKySMuCDZfaHhcK1HXtEXt15E6MIBKTn2q/52/dxE2m6iQuG29XRmouvDU1/qY/ztPWuwjWIo58KUZ6Yq12fnTVZ8tj0j/NcvLdPKVGkp0HfN9Zi2e/9vD0XWVCOUidPkV7Ok1V2tT5E8aG0CAnhEE3DntJ0I468xo3UB8SZOnimDMUsEAp6QoeWABxJuRthLb8yDVjMNey/WnfW/XyqUZt4wpa7RLgs8dZsWYD+gQ9evl4jsgDt7R3R+8PzEHUpVKbhRNapLa6BbrZbH586pSxCctNg+Bm641j36RatBWRpt/ThVlKFBrLa7QbxrMXXaUY0VPB6jGuwl1iAOVmNg+xv4VMfWA+bDHfOCOu3pQli+jGhfSke23UbnmtoXYFHRAiEb8OoHv7n0N7oTeNg+UzazPgPnUEyU7q2EE6CKzd4jwoQrA70hwCyPj8x60THsVszYoV8WJXKdWAkYGfw8MMAF7x4CQRkyS5vPgVyrJOBbLPf2/hj5Hou8qiQHnV+VCUKKTV73tG6rLGGZ7DAZleC19rC0tGa2oVYog3XbAPpD7a13eI/X7bK8rTrC8NHKukaRFfa7Ul1DLzb8fx2i6lWT74pEp2m8OADIx25DJgFc+tDWJCBeb/HQ=
+    AWS_SECRET_ACCESS_KEY: AgA2PLSl+Rt+oYCYNK0Vn6E8+HJOMNpo7ssour3MxGK8hIkU/N4yiRqwTGA9s6Evz7iuo62fOpbDQb4FP7eUXRouLefIhTYlTeNlUz9O1pnfN24xhyHddPH68pwos3HmQ8XME8r+x1FTY1Yr9UFVZ78qC1lHU1XmLoimb5lzkr7lr/AS/4vL5YksDlFNLs3uszZatCMuoWNw/cdTzh2YtPvggiPELJ2FKQ7MP2zZ2V2e/ZCZRk9omlkliunLU5Ly3omn7zbpQp6duLNt9spK8zb5BJ5iLXyUEsskj7MWRvuo4CPBG7CKiAsuMaogtHUvzYiz0cgzuH1qPUb3LMFNQBXhe/AcjfCRxW1ulG2OwZqGab8dW7P0EXR7mlHmcOL5TNSKFJrz7ZM7O+CXgMyue1yk9cfR+ZmMd7IRfa8q+pM/Te8DRv3Ya1QAb2Rq8tXnKVTQj+tc0W5nomfkhMgxSeefsMB4Gc2EsszS59amwVm12XnDfQckW7PZwdU93wNSkb0vO23IgefF49EKpfpdLRWOv0EDwzk6NJUlcTXD20MlMrphjkFpxz+PPi1nPyZDxP1MgImrqlgFkAHV+xvDJ9DZ4cXJTYGecZw2iXjI9yWSdlVAHnbr/f7tHFzQrbAoxjh9PUiABPK3rpWcSr/49RhkJc+qg97H2c8wTAJj2uYynZiKfCOrfc05Q62pg5RPCGN5MH4qnUiVuqpqDRmouNYO23SUX2RBD0dwc9Xu9O1YkXLF5JCH9zodHK4tT7/qXyOSb5s9fdrZYqPQNrfmS6X9g/wduPxTaL8f+Jw=
+  template:
+    metadata:
+      name: tigris-backup
+      namespace: longhorn-system

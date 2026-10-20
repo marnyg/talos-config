@@ -32,3 +32,30 @@ spec:
   groups:
     - transfer
   labels: {}
+---
+# Nightly off-site backup to Tigris (bsj, 2026-10-23). Group `backup`
+# is joined by every volume the `longhorn-encrypted` class provisions
+# (its recurringJobSelector) and by nothing else, so this ships only
+# ciphertext and never the library. A backup is a snapshot plus an
+# incremental upload of the blocks that changed since the last one
+# (~85 GB app state → a few hundred MB a night); retain 14 keeps two
+# weeks of nightly points in the bucket and prunes older ones. Runs
+# after the transfer snapshot above so the two do not race on that
+# volume. Restore: Longhorn UI → Backup → restore to a new PVC, or a PVC
+# with `fromBackup` on a class — on this cluster or a rebuilt one with
+# the same sealed-secrets key (crypto.sealed.yaml unseals to the same
+# passphrase, which is what makes the ciphertext readable).
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: backup-nightly
+  namespace: longhorn-system
+spec:
+  name: backup-nightly
+  task: backup
+  cron: "45 3 * * *"
+  retain: 14
+  concurrency: 2
+  groups:
+    - backup
+  labels: {}
