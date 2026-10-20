@@ -47,7 +47,8 @@ metadata:
   namespace: forgejo
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn
+  storageClassName: longhorn-encrypted
+  volumeName: pvc-fbae1577-36cc-467b-a4ac-7c1a916ae926
   resources:
     requests:
       storage: 20Gi
