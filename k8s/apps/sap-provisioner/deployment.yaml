@@ -80,10 +80,11 @@ metadata:
   namespace: sap
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn
+  storageClassName: longhorn-encrypted
+  volumeName: pvc-385f9a2f-9cf1-4ef5-8123-23dc45fb7bf9
   resources:
     requests:
-      storage: 16Mi
+      storage: 64Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
