@@ -218,7 +218,7 @@ EOF
   echo
   echo "NEXT: commit the manifest for $ns/$pvc with storageClassName: $ENC_CLASS (or no class),"
   echo "      push, then: $0 finish $ns $pvc"
-  [ ${#wl[@]} -gt 0 ] && echo "      (workloads at 0 until then: ${wl[*]})"
+  [ ${#wl[@]} -gt 0 ] && echo "      (workloads at 0 until then: ${wl[*]})" || true
   ;;
 
 finish)
