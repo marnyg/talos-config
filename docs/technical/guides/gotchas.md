@@ -206,6 +206,19 @@ these are properties of the tools, not current weather (that lives in
   `NodePublishVolume is called with req … secrets:{key:"CRYPTO_KEY_VALUE"
   value:"…"}` line is verbatim (1.12.0). Alloy drops it before Loki;
   anyone reading the plugin's pod logs directly sees it.
+- **Longhorn skips recurring backups of DETACHED volumes by default.**
+  `allow-recurring-job-while-volume-detached: false` logs a warning and
+  moves on; a volume only mounted by a CronJob (libation-db), or an app
+  scaled to 0, never gets backed up. Set true (application.yaml);
+  `LonghornBackupStale` is the net if a volume slips again.
+- **Longhorn exports no backup timestamps.** `longhorn_backup_state`
+  says Completed/Error, not when; freshness comes from kube-state-metrics'
+  custom-resource metrics over BackupVolume `status.lastBackupAt`
+  (RFC3339 strings parse to unix seconds in ksm v2.20).
+- **Restores from Tigris are latency-bound.** At the default
+  `restore-concurrent-limit: 2` a restore pulled ~6 MB/s; 8 helped
+  ~1.5x. A full restore of 19 GB is tens of minutes, not seconds — plan
+  disaster recovery around that.
 - **GNU `sed -i ''` is not BSD `sed -i ''`.** On this laptop `sed` is
   GNU (nix); `-i ''` takes the next argument as the file and silently
   edits nothing. A "nothing to commit" after an in-place edit is this.

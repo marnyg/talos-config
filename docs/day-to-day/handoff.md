@@ -28,9 +28,15 @@
   `automated` (hand-pause sticks). Alloy drops the CSI line that logs
   `CRYPTO_KEY_VALUE`. `origin` is Forgejo → GitHub lags a push-mirror
   hop; Argo reads GitHub.
-- **Next**: verify a restore from Tigris into a scratch PVC; after the
-  first nightly, delete the old PVs (`kubectl get pv -l
-  encrypt-pvc/old`); gateway-state over LAN.
+- **Backup health** (same session): ntfy alerts (`longhorn-backups`
+  PrometheusRule: target down, backup Error, >30 h stale, metrics
+  missing, restore test >8 d) over ksm custom-resource metrics; weekly
+  restore test `k8s/apps/backup-verify` (Sun 05:45: restore every
+  volume from Tigris into a scratch encrypted PVC, hash every file).
+  First manual run of backup-nightly put all 20 volumes in Tigris —
+  after fixing the skip of detached volumes (libation-db).
+- **Next**: after the restore test is green, delete the old PVs
+  (`kubectl get pv -l encrypt-pvc/old`); gateway-state over LAN.
 
 ## Last session (2026-10-20, token rotated; flow v2 proven and found two harness gaps)
 

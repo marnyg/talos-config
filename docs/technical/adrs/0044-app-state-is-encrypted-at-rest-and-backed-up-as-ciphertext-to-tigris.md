@@ -107,6 +107,24 @@ was wrong and withdrawn.
   carry `encrypt-pvc/old=<date>` and are deleted once the first
   backups are verified.
 
+- **Health and verification** (same day):
+  - *Alerts* (`k8s/apps/monitoring/longhorn-backup-rules.yaml` → ntfy):
+    target unavailable, a backup in Error, a backup-group volume with
+    no backup newer than 30 h, the timestamp metrics missing, and the
+    restore test not passing for 8 days. Longhorn's exporter has no
+    backup timestamps, so kube-state-metrics' custom-resource metrics
+    lift `lastBackupAt` (BackupVolume), creation time + group label
+    (Volume) and `available` (BackupTarget) off the CRs.
+  - *Restore test* (`k8s/apps/backup-verify`, Sundays 05:45): for each
+    volume in the group, restore the newest backup from Tigris into a
+    scratch encrypted volume, hash every file through the LUKS layer,
+    delete it. Any miss fails the Job (`KubeJobFailed`). This exercises
+    the whole recovery chain — bucket, credentials, per-block
+    checksums, the passphrase, the filesystem — not just "an upload
+    finished".
+  - `restoreConcurrentLimit: 8`: restores are latency-bound to Tigris
+    (2 parallel blocks ran ~6 MB/s).
+
 ### Consequences
 
 - Fly/Tigris holds ciphertext under a key it never sees; the trust
