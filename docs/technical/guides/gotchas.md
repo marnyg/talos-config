@@ -173,6 +173,42 @@ these are properties of the tools, not current weather (that lives in
   the VMI; with `runStrategy: Always`, `kubectl delete vmi <name>` is
   the restart (graceful via the guest agent). ArgoCD syncs the VM
   object, never the running instance.
+- **ApplicationSet children un-pause themselves.** Removing
+  `spec.syncPolicy.automated` from a `platform-*` Application by hand
+  held for seconds: the ApplicationSet re-applies its template on every
+  reconcile, and selfHeal scaled a workload back up mid-migration
+  (2026-10-20). `ignoreApplicationDifferences` on the ApplicationSet
+  (`k8s/clusters/homelab/cluster.yaml`) now keeps a hand-paused child
+  paused; `scripts/encrypt-pvc.sh finish` is the resume.
+- **A resumed ArgoCD app syncs the revision it last fetched, not
+  HEAD.** Push, then resume automation at once, and selfHeal runs the
+  *previous* commit against the live state; against a recreated PVC
+  that is an immutable-field patch that fails and retries for
+  minutes, and a hard refresh does not cancel it. Wait for
+  `.status.sync.revision == HEAD` before re-enabling automation; a
+  stuck op is cleared with `patch app --type=json remove /operation`.
+- **A PVC moved by `kubectl apply` with `volumeName` must have
+  `volumeName` in git too.** ArgoCD's three-way diff reads the field
+  from last-applied, sees it absent in the manifest, and tries to
+  remove it (immutable → sync error). Pinning it is also what makes a
+  recreated claim rebind to its data instead of provisioning empty.
+- **A Completed pod still pins its PVC.** `pvc-protection` counted a
+  finished Job pod (kept by `ttlSecondsAfterFinished`) and a
+  CronJob's 9-hour-old Completed run as users; the claim sat
+  `Terminating` until the pod was deleted. Delete the Job, not just
+  wait for it.
+- **`fly storage create` attaches to the org's only app.** Even with
+  `-o personal` and no `-a`, flyctl picked the hub app, set five
+  `AWS_*` fly secrets on it and rolled the machine — the hub came back
+  sealed. Unset the secrets (another roll) and unseal. Create the
+  bucket with a throwaway app, or expect it.
+- **`longhorn-csi-plugin` logs the encryption passphrase.** The
+  `NodePublishVolume is called with req … secrets:{key:"CRYPTO_KEY_VALUE"
+  value:"…"}` line is verbatim (1.12.0). Alloy drops it before Loki;
+  anyone reading the plugin's pod logs directly sees it.
+- **GNU `sed -i ''` is not BSD `sed -i ''`.** On this laptop `sed` is
+  GNU (nix); `-i ''` takes the next argument as the file and silently
+  edits nothing. A "nothing to commit" after an in-place edit is this.
 
 ## OAuth / OIDC
 

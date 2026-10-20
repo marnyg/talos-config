@@ -20,7 +20,7 @@
 #
 # files/transfer, the irreplaceable tenant this tier briefly had, moved
 # off it the same day — first to a `longhorn-user` class (two replicas,
-# no tier selector), then on 2026-10-23 onto the default `longhorn`
+# no tier selector), then on 2026-10-20 onto the default `longhorn`
 # class, which gives the same two-node mirror plus the NVMe fence;
 # the extra class said nothing the default did not.
 #
@@ -91,7 +91,7 @@ parameters:
   # Longhorn cannot satisfy. The NFS hop is the accepted cost.
   dataLocality: "disabled"
 ---
-# The encrypted app-state class (talos-config-9io, 2026-10-23), and the
+# The encrypted app-state class (talos-config-9io, 2026-10-20), and the
 # cluster DEFAULT from this date: a PVC that names no class gets
 # encryption and an off-site backup; the chart's plain `longhorn` class
 # stays for bytes that want neither (VM ISOs, caches) and must be named
@@ -106,7 +106,7 @@ parameters:
 #   unencrypted on the Longhorn user volumes, which the hub does not
 #   derive keys for. First attach of a new volume takes ~90 s (LUKS
 #   format + argon2 keyslot); later attaches are fast. Proven on w2
-#   2026-10-23 (Talos ships cryptsetup; dm-crypt is built in).
+#   2026-10-20 (Talos ships cryptsetup; dm-crypt is built in).
 #
 #   recurringJobSelector: every volume provisioned here is labeled into
 #   the `backup` recurring-job group, which recurringjob.yaml ships to

@@ -1,5 +1,5 @@
 # Longhorn volume-encryption passphrase, sealed to the cluster's
-# sealed-secrets key pair (talos-config-9io, 2026-10-23). Source of
+# sealed-secrets key pair (talos-config-9io, 2026-10-20). Source of
 # truth is talos/clusters/homelab/longhorn-crypto-secrets.yaml (age in
 # git, plaintext gitignored); this file is `kubeseal --cert
 # talos/clusters/homelab/sealed-secrets.crt < that`. The
@@ -13,7 +13,7 @@
 # LUKS keyslots are per volume, a new value opens nothing.
 #
 # Hygiene: longhorn-csi-plugin logs CRYPTO_KEY_VALUE verbatim in its
-# NodePublishVolume line (seen 2026-10-23, Longhorn 1.12.0). Alloy drops
+# NodePublishVolume line (seen 2026-10-20, Longhorn 1.12.0). Alloy drops
 # that line before Loki (k8s/apps/monitoring); node-local container
 # logs sit on the encrypted EPHEMERAL partition.
 ---

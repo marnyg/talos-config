@@ -30,7 +30,7 @@
 # Stopping it (`replicas: 0`) keeps the PVC and its data but breaks
 # every VM's T:. Grow it by raising the request — up only.
 #
-# On `longhorn-encrypted` since 2026-10-23 (the first volume moved
+# On `longhorn-encrypted` since 2026-10-20 (the first volume moved
 # there; scripts/encrypt-pvc.sh, one rsync of 15.4 G): two replicas on
 # different nodes' NVMe, dm-crypt under the cluster passphrase, nightly
 # ciphertext backup to Tigris via the `backup` group the class joins.

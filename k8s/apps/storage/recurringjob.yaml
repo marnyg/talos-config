@@ -1,8 +1,8 @@
 # Daily Longhorn snapshots for volumes that are the only copy of their
-# bytes (2026-10-23). Opt-in by label, not cluster-wide: a PVC that
+# bytes (2026-10-20). Opt-in by label, not cluster-wide: a PVC that
 # carries `recurring-job-group.longhorn.io/transfer: enabled` is
 # snapshotted. Today that is files/transfer alone. Longhorn is meant to
-# copy that label onto the Volume CR; on 2026-10-23 it did not for the
+# copy that label onto the Volume CR; on 2026-10-20 it did not for the
 # existing, bound claim, and the label was set on the Volume by hand
 # (`kubectl -n longhorn-system label volumes.longhorn.io <pv>
 # recurring-job-group.longhorn.io/transfer=enabled`). Check the Volume
@@ -33,7 +33,7 @@ spec:
     - transfer
   labels: {}
 ---
-# Nightly off-site backup to Tigris (bsj, 2026-10-23). Group `backup`
+# Nightly off-site backup to Tigris (bsj, 2026-10-20). Group `backup`
 # is joined by every volume the `longhorn-encrypted` class provisions
 # (its recurringJobSelector) and by nothing else, so this ships only
 # ciphertext and never the library. A backup is a snapshot plus an

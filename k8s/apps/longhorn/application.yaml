@@ -24,7 +24,7 @@
 # cascades to the CRDs, and the Volume/Replica CRs are the only record of
 # where replica data lives. Invariant 2 classifies that bookkeeping as
 # data-plane state whose durability is a backup problem. Since
-# 2026-10-23 that backup exists (defaultBackupStore below, bsj) for the
+# 2026-10-20 that backup exists (defaultBackupStore below, bsj) for the
 # encrypted class only; a volume still on the plain class has no copy
 # outside the cluster. Do not delete this Application casually.
 apiVersion: argoproj.io/v1alpha1
@@ -60,7 +60,7 @@ spec:
         metrics:
           serviceMonitor:
             enabled: true
-        # Off-site backups (bsj, 2026-10-23): a Tigris bucket on fly,
+        # Off-site backups (bsj, 2026-10-20): a Tigris bucket on fly,
         # S3 API. `auto` is Tigris's region; AWS_ENDPOINTS in the secret
         # points the SDK at fly.storage.tigris.dev. Longhorn 1.9+ keeps
         # the target as a BackupTarget CR named `default`; the chart
@@ -109,7 +109,7 @@ spec:
           # instead, k8s/apps/argocd/controller-patch.yaml).
           nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
         persistence:
-          # Not the cluster default since 2026-10-23: that is
+          # Not the cluster default since 2026-10-20: that is
           # `longhorn-encrypted` (k8s/apps/storage/storageclass.yaml).
           # This plain class is the opt-in for bytes that want neither
           # encryption nor an off-site copy (VM ISOs, caches). The
@@ -125,7 +125,7 @@ spec:
           # this. The other classes decide their own count
           # (k8s/apps/storage/storageclass.yaml): longhorn-bulk runs the
           # media library at one replica (ADR-0031, amending 0029).
-          # files/transfer is on this class too (2026-10-23; the
+          # files/transfer is on this class too (2026-10-20; the
           # longhorn-user class ADR-0031 made for it is gone).
           defaultClassReplicaCount: 2
           defaultDataLocality: best-effort

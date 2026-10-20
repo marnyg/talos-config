@@ -1014,19 +1014,20 @@ provisioning or recovery path may depend on it.
   shares its payload's fate).
 - **Storage tier / data class**: workload storage is split twice.
   The **data class** says what the bytes are worth. **App state** is
-  small and irreplaceable, so it lives on the default `longhorn`
-  class (RWO, 2 replicas across nodes). The **library** is large and
-  re-downloadable, so it lives on `longhorn-bulk`. **User files** —
-  the transfer dump in `files/transfer`, copied off a machine being
-  retired — are irreplaceable and small, so they take the app-state
-  posture on the default `longhorn` class (since 2026-10-23; ADR-0031
-  had given them their own `longhorn-user` class, which was the default
-  minus the NVMe fence and is gone). They sat on `longhorn-bulk` for a
-  day as a knowing mismatch. `transfer`'s PV keeps the `Retain` policy
-  it was born with, which is what stands between those bytes and an
-  ArgoCD prune; a claim recreated on `longhorn` would be `Delete`
-  (`ch74`, `9io` still own the open questions of sharing and
-  encryption). Access mode belongs to the
+  small and irreplaceable, so it lives on the default
+  `longhorn-encrypted` class (RWO, 2 replicas across nodes, dm-crypt
+  under one sealed cluster passphrase, `Retain`) and is **backed up**
+  nightly as ciphertext to a Tigris bucket on fly (ADR-0044). The
+  **library** is large and re-downloadable, so it lives on
+  `longhorn-bulk` and never leaves the cluster. **User files** — the
+  transfer dump in `files/transfer`, copied off a machine being retired
+  — are irreplaceable and small, so they take the app-state posture
+  (ADR-0031's own `longhorn-user` class is gone). **Disposable state**
+  — VM ISOs and system disks rebuilt from git, metrics, logs — stays
+  on the plain `longhorn` class: mirrored, unencrypted, no off-site
+  copy, and must be named to be used. The **backup group** is the
+  membership that decides what leaves: the encrypted class joins it at
+  provisioning, nothing else does (`ch74` still owns sharing). Access mode belongs to the
   claim, not the class: the library's claims are RWX (share-manager
   NFS, so six pods on any node share three directories); the
   transfer claim is RWO. The **storage tier** says which disks hold the bytes, as a Longhorn disk

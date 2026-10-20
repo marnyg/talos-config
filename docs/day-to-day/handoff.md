@@ -3,6 +3,35 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
+## Also 2026-10-20 (separate session): app state encrypted + backed up to Tigris (ADR-0044; `9io`, `bsj`)
+
+- **`longhorn-encrypted` is the default class**: dm-crypt under one
+  cluster passphrase (sealed `longhorn-system/longhorn-crypto`; age
+  copy `talos/clusters/homelab/longhorn-crypto-secrets.yaml.age`),
+  `Retain`, auto-joins recurring-job group `backup`. **20 volumes
+  migrated** with `scripts/encrypt-pvc.sh` (copy once, keep the claim
+  name, old PV kept `Retain` + label `encrypt-pvc/old=2026-10-20`).
+  Plain `longhorn` stays for VM disks/ISOs, kps/loki/alertmanager/
+  grafana — and **`gateway-state`, not done**: the gateway fronts
+  `cp1.mesh.internal:6443`, so scaling it to 0 cut kubectl (restored
+  over LAN in ~2 min, nothing changed). Needs a LAN-only run.
+- **Backups**: Tigris bucket `talos-longhorn-backup` (fly, personal),
+  sealed creds, `backup-nightly` 03:45 retain 14 on group `backup`.
+  `transfer`'s first backup **completed** (19 GB). The first nightly
+  run covers all 20.
+- **`longhorn-user` folded into the default** earlier the same session
+  (decision `pp9h`); `transfer` got Prune/Delete=false + daily
+  snapshots (`transfer-daily-snapshot`, retain 7).
+- **Collateral**: `fly storage create` attached the bucket to the hub
+  app and rolled it → **hub sealed, needs your unseal** (fly secrets
+  unset again). ApplicationSet now `ignoreApplicationDifferences` on
+  `automated` (hand-pause sticks). Alloy drops the CSI line that logs
+  `CRYPTO_KEY_VALUE`. `origin` is Forgejo → GitHub lags a push-mirror
+  hop; Argo reads GitHub.
+- **Next**: verify a restore from Tigris into a scratch PVC; after the
+  first nightly, delete the old PVs (`kubectl get pv -l
+  encrypt-pvc/old`); gateway-state over LAN.
+
 ## Last session (2026-10-20, token rotated; flow v2 proven and found two harness gaps)
 
 - **`97rz` closed**: Forgejo bot token `sandbox` → `sandbox-20261020`,

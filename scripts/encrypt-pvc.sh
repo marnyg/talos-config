@@ -7,7 +7,7 @@
 #
 # A PVC's storageClassName is immutable and LUKS cannot be slid under a
 # live filesystem, so "encrypting" a volume is a copy. The trick that
-# keeps the claim name (2026-10-23, from the files/transfer rebind):
+# keeps the claim name (2026-10-20, from the files/transfer rebind):
 #
 #   migrate:
 #     1. pause the owning ArgoCD app's automation (selfHeal would undo
