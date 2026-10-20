@@ -9,7 +9,8 @@ metadata:
   namespace: media
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn
+  storageClassName: longhorn-encrypted
+  volumeName: pvc-fcb963f9-7346-4c2f-9760-619794c4dba9
   resources:
     requests:
       storage: 1Gi
