@@ -19,7 +19,8 @@ metadata:
   namespace: workouts
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn
+  storageClassName: longhorn-encrypted
+  volumeName: pvc-57010675-f921-4269-8e55-dea765ca9ebb
   resources:
     requests:
       storage: 2Gi
