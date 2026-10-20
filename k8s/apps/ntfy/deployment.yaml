@@ -36,7 +36,8 @@ metadata:
   namespace: ntfy
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn
+  storageClassName: longhorn-encrypted
+  volumeName: pvc-1403ac2c-edcb-49f0-aeb4-d5637ccf7743
   resources:
     requests:
       storage: 1Gi
