@@ -56,11 +56,22 @@ pause_app() {
 }
 
 resume_app() {
-  local app=$1
+  local app=$1 head
+  # Resume only once ArgoCD has fetched the commit that carries the
+  # new storageClassName: otherwise selfHeal syncs the cached revision
+  # against the recreated PVC, fails on the immutable field, and the
+  # retry loop keeps that stale operation alive past the next refresh.
+  head=$(git rev-parse HEAD)
+  kubectl -n argocd annotate app "$app" argocd.argoproj.io/refresh=hard --overwrite >/dev/null
+  for i in $(seq 1 30); do
+    [ "$(kubectl -n argocd get app "$app" -o jsonpath='{.status.sync.revision}')" = "$head" ] && break
+    sleep 3
+  done
+  # Drop any operation still retrying an older revision.
+  kubectl -n argocd patch app "$app" --type=json -p '[{"op":"remove","path":"/operation"}]' >/dev/null 2>&1 || true
   kubectl -n argocd patch app "$app" --type=merge \
     -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}' >/dev/null
-  kubectl -n argocd annotate app "$app" argocd.argoproj.io/refresh=normal --overwrite >/dev/null
-  echo "resumed argocd app $app"
+  echo "resumed argocd app $app at $(git rev-parse --short HEAD)"
 }
 
 workloads_using() {
