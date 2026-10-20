@@ -24,10 +24,12 @@ taken first); retries back off, a provider refusal parks at once
 (`1a38490`); **2026-10-19 the first real task ran to a PR** (`kmlg`).
 Same day `cmd/sap` (`hp79`) — the terminal client — and reading that
 run with it found the worker reading the forge token out of
-`/proc/1/environ` (child non-dumpable + flow v2, `87966ea`; rotate the
-token: `97rz`). Next: `97rz`, a v2 run; then `bsj`
-(backup) — blocking, since flows and goals are policy the store alone
-holds.
+`/proc/1/environ` (child non-dumpable + flow v2, `87966ea`; token
+rotated 2026-10-20, `97rz`). **2026-10-20 the first v2 run**: the worker
+behaves, but the harness dropped committed work (fixed, `d0f3214`) and
+the reviewer never sees the result branch (`6bvk`, P1 — the branch
+model). Next: `6bvk`, then `bsj` (backup) — blocking, since flows and
+goals are policy the store alone holds.
 Epic `ivof`. **Side effect:** the relay gate
 (`5gz`) is observe-only until sovereign actors have an admission
 story (spike `qx5c`). **Detour landed 2026-10-13:** root

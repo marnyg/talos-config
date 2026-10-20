@@ -19,6 +19,12 @@
 
 ## Read first
 
+- 2026-10-20 — **A flow-v2 task loops executing ⇄ reviewing without bound**
+  until `6bvk` lands: the reviewer clones `main`, never the result
+  branch, and review bounces are not `retries`. Each bounce is a fresh
+  kata child (~10 s, OpenRouter credits). Stop it with `sap abort <live
+  session>` — the task parks at `needs-human`. Task `1d1c85ac` sits
+  there with PR 8.
 - 2026-10-19 — **win2k25 is pinned to w2 by its GPU** (`hostDevices`):
   it cannot schedule on cp1/w1/nas1 any more, and a w2 shutdown takes
   the VM down with it (no live migration — it never was migratable).
