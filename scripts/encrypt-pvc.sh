@@ -147,6 +147,49 @@ EOF
 
   job="encrypt-$pvc"
   kubectl -n "$ns" delete job "$job" --ignore-not-found >/dev/null
+  # Two copiers. Baseline/privileged namespaces: root rsync, which keeps
+  # every owner. PSS-restricted namespaces (sap, 2026-10-20) refuse root
+  # and capabilities: copy as the workload's own uid/gid with busybox
+  # cp -a (owners are that uid already, fsGroup makes /dst writable),
+  # verify with diff -r. lost+found (root 0700) is skipped in both.
+  enforce=$(kubectl get ns "$ns" -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}')
+  if [ "$enforce" = restricted ]; then
+    [ ${#wl[@]} -gt 0 ] || { echo "refusing: restricted namespace, no workload to take the uid from"; exit 1; }
+    psc=$(kubectl -n "$ns" get "${wl[0]}" -o jsonpath='{.spec.template.spec.securityContext}')
+    uid=$(jq -r '.runAsUser // empty' <<<"$psc"); gid=$(jq -r '.runAsGroup // .fsGroup // empty' <<<"$psc")
+    [ -n "$uid" ] && [ -n "$gid" ] || { echo "refusing: ${wl[0]} sets no runAsUser/runAsGroup"; exit 1; }
+    echo "restricted namespace: copying as $uid:$gid"
+    podsc="{runAsNonRoot: true, runAsUser: $uid, runAsGroup: $gid, fsGroup: $gid, seccompProfile: {type: RuntimeDefault}}"
+    image=busybox:1.36
+    csc="{allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}"
+    script='
+for e in /src/* /src/.[!.]* /src/..?*; do
+  [ -e "$e" ] || continue; [ "$e" = /src/lost+found ] && continue
+  cp -a "$e" /dst/
+done
+sync
+echo "--- verify (must be empty) ---"
+for e in /src/* /src/.[!.]* /src/..?*; do
+  [ -e "$e" ] || continue; [ "$e" = /src/lost+found ] && continue
+  diff -r "$e" "/dst/${e#/src/}"
+done
+echo "--- ok: $(find /dst -xdev | wc -l) entries, $(du -sh /dst | cut -f1)"'
+  else
+    # root with default caps: rsync -aHAX needs chown/xattr rights on
+    # /dst. Baseline PSS allows this (no privilege, no host).
+    podsc="{}"
+    image=alpine:3.20
+    csc="{allowPrivilegeEscalation: false, seccompProfile: {type: RuntimeDefault}}"
+    script='
+apk add --no-cache rsync >/dev/null
+rsync -aHAX --numeric-ids --delete --exclude=/lost+found /src/ /dst/
+sync
+echo "--- verify (must be empty) ---"
+rsync -aHAXn --numeric-ids --delete --exclude=/lost+found --itemize-changes /src/ /dst/ | tee /tmp/diff
+[ ! -s /tmp/diff ]
+echo "--- ok: $(find /dst -xdev | wc -l) entries, $(du -sh /dst | cut -f1)"'
+  fi
+  kubectl create configmap "$job" -n "$ns" --from-literal=copy.sh="$script" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   kubectl apply -f - <<EOF >/dev/null
 apiVersion: batch/v1
 kind: Job
@@ -157,28 +200,20 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      securityContext: $podsc
       containers:
-        - name: rsync
-          image: alpine:3.20
-          command: ["sh","-ec"]
-          args:
-            - |
-              apk add --no-cache rsync >/dev/null
-              rsync -aHAX --numeric-ids --delete --exclude=/lost+found /src/ /dst/
-              sync
-              echo "--- verify (must be empty) ---"
-              rsync -aHAXn --numeric-ids --delete --exclude=/lost+found --itemize-changes /src/ /dst/ | tee /tmp/diff
-              [ ! -s /tmp/diff ]
-              echo "--- ok: \$(find /dst -xdev | wc -l) entries, \$(du -sh /dst | cut -f1)"
+        - name: copy
+          image: $image
+          command: ["sh","-ec",". /script/copy.sh"]
           volumeMounts:
             - {name: src, mountPath: /src, readOnly: true}
             - {name: dst, mountPath: /dst}
-          # root with default caps: rsync -aHAX needs chown/xattr rights
-          # on /dst. Baseline PSS allows this (no privilege, no host).
-          securityContext: {allowPrivilegeEscalation: false, seccompProfile: {type: RuntimeDefault}}
+            - {name: script, mountPath: /script, readOnly: true}
+          securityContext: $csc
       volumes:
         - {name: src, persistentVolumeClaim: {claimName: $pvc, readOnly: true}}
         - {name: dst, persistentVolumeClaim: {claimName: $tmp}}
+        - {name: script, configMap: {name: $job}}
 EOF
   echo "copying (job $job; first attach of an encrypted volume takes ~90 s)..."
   if ! kubectl -n "$ns" wait job/"$job" --for=condition=complete --timeout=45m 2>/dev/null; then
@@ -192,6 +227,7 @@ EOF
   # The Completed pod still counts for pvc-protection: remove the Job
   # (and so the pod) first or the temp PVC sits Terminating forever.
   kubectl -n "$ns" delete job "$job" --wait=true >/dev/null
+  kubectl -n "$ns" delete configmap "$job" --ignore-not-found >/dev/null
   kubectl -n "$ns" delete pvc "$tmp" --timeout=120s >/dev/null
   kubectl patch pv "$newpv" --type=json -p '[{"op":"remove","path":"/spec/claimRef"}]' >/dev/null
   kubectl label pv "$oldpv" "encrypt-pvc/old=$TODAY" "encrypt-pvc/claim=$ns.$pvc" --overwrite >/dev/null
