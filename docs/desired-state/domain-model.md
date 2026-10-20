@@ -1018,13 +1018,15 @@ provisioning or recovery path may depend on it.
   class (RWO, 2 replicas across nodes). The **library** is large and
   re-downloadable, so it lives on `longhorn-bulk`. **User files** —
   the transfer dump in `files/transfer`, copied off a machine being
-  retired — are a third class, `longhorn-user` (ADR-0031): neither
-  app state nor re-downloadable, small enough to mirror across nodes,
-  so two replicas with hard node anti-affinity and no tier selector.
-  They sat on `longhorn-bulk` for a day as a knowing mismatch; the
-  `Retain` policy both classes share is what stands between those
-  bytes and an ArgoCD prune (`ch74`, `9io` still own the open
-  questions of sharing and encryption). Access mode belongs to the
+  retired — are irreplaceable and small, so they take the app-state
+  posture on the default `longhorn` class (since 2026-10-23; ADR-0031
+  had given them their own `longhorn-user` class, which was the default
+  minus the NVMe fence and is gone). They sat on `longhorn-bulk` for a
+  day as a knowing mismatch. `transfer`'s PV keeps the `Retain` policy
+  it was born with, which is what stands between those bytes and an
+  ArgoCD prune; a claim recreated on `longhorn` would be `Delete`
+  (`ch74`, `9io` still own the open questions of sharing and
+  encryption). Access mode belongs to the
   claim, not the class: the library's claims are RWX (share-manager
   NFS, so six pods on any node share three directories); the
   transfer claim is RWO. The **storage tier** says which disks hold the bytes, as a Longhorn disk

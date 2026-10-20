@@ -105,8 +105,9 @@ spec:
           # map in 1.10 and only affects UI-created volumes; PVCs take
           # this. The other classes decide their own count
           # (k8s/apps/storage/storageclass.yaml): longhorn-bulk runs the
-          # media library at one replica (ADR-0031, amending 0029),
-          # longhorn-user keeps two on different nodes.
+          # media library at one replica (ADR-0031, amending 0029).
+          # files/transfer is on this class too (2026-10-23; the
+          # longhorn-user class ADR-0031 made for it is gone).
           defaultClassReplicaCount: 2
           defaultDataLocality: best-effort
           # Fence app state to the NVMe tier (jx78). Since nas1's SATA

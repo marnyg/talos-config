@@ -7,6 +7,11 @@
   the tier ADR-0029 chose.
 - Related: invariant 2's corollary (no disk is exempt from a wipe),
   task `k8sd`, bug `cnb5`, backup target `bsj`.
+- Amended 2026-10-23: the `longhorn-user` class is gone; `transfer`
+  moved to the default `longhorn` class (same two-node mirror plus the
+  NVMe fence "jx78" added after this ADR 
+  one of its replicas had landed on a nas1 SATA bay). The PV kept its
+  `Retain`; the PVC was rebound via `volumeName`, not copied.
 
 ## Context and Problem Statement
 

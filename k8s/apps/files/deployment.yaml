@@ -27,13 +27,17 @@
 # as), so a pod can read them later without a chown. Strategy Recreate:
 # RWO + hostPort both forbid two pods at once.
 #
-# Stopping it (`replicas: 0`) keeps the PVC and its data (longhorn-user
-# is Retain) but breaks every VM's T:. Grow it by raising the request —
-# up only.
+# Stopping it (`replicas: 0`) keeps the PVC and its data but breaks
+# every VM's T:. Grow it by raising the request — up only.
 #
-# storageClassName is immutable on a PVC: to move the claim between
-# classes, commit the new class, then delete the PVC so ArgoCD
-# recreates it (the old PV is Retained; copy from it, then delete it).
+# On the default `longhorn` class since 2026-10-23 (two replicas on
+# different nodes' NVMe, like app state); the `longhorn-user` class it
+# had under ADR-0031 was that minus the tier fence, and one replica had
+# drifted onto a nas1 SATA bay. volumeName pins the claim to the PV
+# that move kept: storageClassName is immutable on a PVC, so the PV was
+# relabeled and the PVC deleted and rebound rather than copied. The PV
+# is still `Retain` from its first provisioning; a claim recreated
+# WITHOUT volumeName would be a new, empty, `Delete` volume.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -41,7 +45,8 @@ metadata:
   namespace: files
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn-user
+  storageClassName: longhorn
+  volumeName: pvc-3355e94b-9c64-488e-a3d7-7bc394f572ef
   resources:
     requests:
       storage: 100Gi
