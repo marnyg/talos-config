@@ -87,6 +87,7 @@ type workspace struct {
 	repo   string // owner/name
 	dir    string
 	base   string // the branch cloned (PR base)
+	head   string // the commit cloned; HEAD still here after the run ⇒ nothing to push
 	branch string // agent/<task-id>
 	log    *slog.Logger
 }
@@ -120,8 +121,21 @@ func clone(ctx context.Context, f Forge, root, repo, ref, id string, log *slog.L
 		return nil, fmt.Errorf("clone: %w", err)
 	}
 	w.base = strings.TrimSpace(base)
-	head, _ := w.git(ctx, dir, "rev-parse", "--short", "HEAD")
-	log.Info("child: workspace", "dir", dir, "repo", repo, "base", w.base, "head", strings.TrimSpace(head), "branch", w.branch)
+	head, err := w.git(ctx, dir, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, fmt.Errorf("clone: %w", err)
+	}
+	w.head = strings.TrimSpace(head)
+	// The agent commits as it goes (flow v2) with pi's own git, which
+	// has no identity of its own: give the clone one, so the worker is
+	// not stopped by "Author identity unknown" and does not invent one.
+	// Local to the clone; no credential travels with it.
+	for k, v := range map[string]string{"user.name": w.f.user(), "user.email": w.f.user() + "@mesh.internal"} {
+		if _, err := w.git(ctx, dir, "config", k, v); err != nil {
+			return nil, fmt.Errorf("clone: %w", err)
+		}
+	}
+	log.Info("child: workspace", "dir", dir, "repo", repo, "base", w.base, "head", w.head[:12], "branch", w.branch)
 	return w, nil
 }
 
@@ -178,26 +192,33 @@ type Pointer struct {
 	PR     string `json:"pr,omitempty"`
 }
 
-// result commits everything, pushes the branch (plain, never forced:
-// a retry colliding on agent/<id> fails loudly) and opens the PR with
-// body as its description. No diff ⇒ nothing pushed, zero Pointer.
+// result commits whatever the agent left uncommitted, pushes the
+// branch (plain, never forced: a retry colliding on agent/<id> fails
+// loudly) and opens the PR with body as its description. The agent
+// may have committed itself (flow v2 tells it to), so "did the run
+// change anything" is HEAD having moved off the cloned commit, not
+// the index: a clean tree with the agent's commits on top still
+// pushes. HEAD unmoved ⇒ nothing pushed, zero Pointer.
 func (w *workspace) result(ctx context.Context, title, body string) (Pointer, error) {
 	p := Pointer{Repo: w.repo}
 	if _, err := w.git(ctx, w.dir, "add", "-A"); err != nil {
 		return p, err
 	}
-	if _, err := w.git(ctx, w.dir, "diff", "--cached", "--quiet"); err == nil {
-		w.log.Info("child: result: no changes; nothing pushed", "dir", w.dir)
-		return p, nil
-	}
-	if _, err := w.git(ctx, w.dir, "commit", "--quiet", "-m", "agent: "+w.branch[len("agent/"):], "-m", title); err != nil {
-		return p, err
+	if _, err := w.git(ctx, w.dir, "diff", "--cached", "--quiet"); err != nil {
+		if _, err := w.git(ctx, w.dir, "commit", "--quiet", "-m", "agent: "+w.branch[len("agent/"):], "-m", title); err != nil {
+			return p, err
+		}
 	}
 	head, err := w.git(ctx, w.dir, "rev-parse", "HEAD")
 	if err != nil {
 		return p, err
 	}
 	p.Head = strings.TrimSpace(head)
+	if p.Head == w.head {
+		w.log.Info("child: result: HEAD unmoved; nothing pushed", "dir", w.dir, "head", w.head[:12])
+		p.Head = ""
+		return p, nil
+	}
 	if _, err := w.git(ctx, w.dir, "push", "--quiet", "origin", "HEAD:refs/heads/"+w.branch); err != nil {
 		return p, err
 	}

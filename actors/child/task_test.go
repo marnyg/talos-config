@@ -92,6 +92,14 @@ func fakeMain() {
 				if os.Getenv("CHILD_FAKE_WRITE") == "1" {
 					_ = os.WriteFile("done.txt", []byte(cmd.Message+"\n"), 0o644)
 				}
+				// CHILD_FAKE_COMMIT: write and commit it too, as a flow-v2
+				// worker does ("edit and commit as you go") — with pi's own
+				// git, no identity env: the clone's config has to carry it.
+				if os.Getenv("CHILD_FAKE_COMMIT") == "1" {
+					_ = os.WriteFile("done.txt", []byte(cmd.Message+"\n"), 0o644)
+					_ = exec.Command("git", "add", "done.txt").Run()
+					_ = exec.Command("git", "commit", "-q", "-m", "worker: done.txt").Run()
+				}
 				emit(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hi, done"}]}}`)
 				emit(`{"type":"turn_end"}`)
 				emit(`{"type":"agent_end","messages":[],"willRetry":false}`)
@@ -397,37 +405,7 @@ func TestTaskRepoResultIsBranchAndPR(t *testing.T) {
 	}
 	r, p := agentRig(t, false)
 	t.Setenv("CHILD_FAKE_WRITE", "1")
-
-	// origin: bare agents/scratch.git with one commit on main.
-	forge := t.TempDir()
-	bare := filepath.Join(forge, "agents", "scratch.git")
-	gitRun(t, "", "init", "-q", "--bare", "-b", "main", bare)
-	seed := t.TempDir()
-	gitRun(t, "", "clone", "-q", bare, seed)
-	if err := os.WriteFile(filepath.Join(seed, "README"), []byte("seed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gitRun(t, seed, "add", "README")
-	gitRun(t, seed, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "seed")
-	gitRun(t, seed, "push", "-q", "origin", "HEAD:main")
-
-	// the API: one POST /pulls → 201, the request kept for the checks.
-	var prMu sync.Mutex
-	var prReq map[string]string
-	var prAuth string
-	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.Method != http.MethodPost || req.URL.Path != "/api/v1/repos/agents/scratch/pulls" {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		prMu.Lock()
-		defer prMu.Unlock()
-		prAuth = req.Header.Get("Authorization")
-		_ = json.NewDecoder(req.Body).Decode(&prReq)
-		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, `{"html_url":"http://forge/agents/scratch/pulls/1"}`)
-	}))
-	defer api.Close()
+	forge, bare, api, pr := scratchForge(t)
 
 	ws := t.TempDir()
 	r.drv.opts.Task.Dir = ws
@@ -467,8 +445,7 @@ func TestTaskRepoResultIsBranchAndPR(t *testing.T) {
 		t.Fatalf("commit on %s:\n%s", s.Branch, log)
 	}
 	// The PR: title from the prompt, base from the clone, body = final message + trailer.
-	prMu.Lock()
-	defer prMu.Unlock()
+	prReq, prAuth := pr()
 	if prAuth != "token tok" {
 		t.Fatalf("PR auth %q", prAuth)
 	}
@@ -482,6 +459,104 @@ func TestTaskRepoResultIsBranchAndPR(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(ws, "scratch", "done.txt")); err != nil {
 		t.Fatalf("workspace: %v", err)
 	}
+}
+
+// TestTaskRepoAgentCommitsStillPushed: the flow-v2 worker commits as
+// it goes and leaves a clean tree. The harness must still push its
+// commits and open the PR — "nothing changed" is HEAD unmoved from
+// the clone, not an empty index (the first v2 run pushed nothing and
+// the reviewer found main untouched, 2026-10-20). The agent's commit
+// goes through with the clone's identity: pi's git has none of its own.
+func TestTaskRepoAgentCommitsStillPushed(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	r, p := agentRig(t, false)
+	t.Setenv("CHILD_FAKE_COMMIT", "1")
+	forge, bare, api, pr := scratchForge(t)
+
+	ws := t.TempDir()
+	r.drv.opts.Task.Dir = ws
+	r.drv.opts.Task.Forge = child.Forge{URL: api.URL, Token: "tok", CloneBase: forge}
+	b := r.spawn(t, spawn.Spec{Image: image, Outfit: agentOutfit(r)})
+	p.peer = b.ID
+	r.pingUntilUp(t, b.ID)
+
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+	rep, err := r.parent.Send(ctx, b.ID, child.FacetTask, []byte(`{"prompt":"commit done.txt","repo":"agents/scratch","ref":"main","title":"hello file"}`))
+	if err != nil {
+		t.Fatalf("#task: %v", err)
+	}
+	var ack struct{ Session string }
+	_ = json.Unmarshal(rep.Payload, &ack)
+	var s child.Settled
+	waitFor(t, "child_settled", func() bool {
+		var ok bool
+		s, ok = p.settled(ack.Session)
+		return ok
+	})
+	if s.Status != "settled" || s.Reason != "" {
+		t.Fatalf("settled %+v", s)
+	}
+	if s.Branch != "agent/"+ack.Session || s.Head == "" || s.PR == "" {
+		t.Fatalf("pointer %+v (agent's own commit not pushed)", s.Pointer)
+	}
+	// Exactly the worker's commit on top of the seed, as the bot: no
+	// harness commit on a clean tree, no invented identity.
+	log := strings.TrimSpace(gitRun(t, "", "--git-dir", bare, "log", "--format=%s|%an|%ae", "main.."+s.Branch))
+	if log != "worker: done.txt|agent|agent@mesh.internal" {
+		t.Fatalf("commits on %s: %q", s.Branch, log)
+	}
+	if head := strings.TrimSpace(gitRun(t, "", "--git-dir", bare, "rev-parse", s.Branch)); head != s.Head {
+		t.Fatalf("origin %s = %s, pointer head %s", s.Branch, head, s.Head)
+	}
+	if prReq, _ := pr(); prReq["head"] != s.Branch || prReq["base"] != "main" {
+		t.Fatalf("PR request %v", prReq)
+	}
+}
+
+// scratchForge is the forge the repo tests clone from and push to: a
+// bare agents/scratch.git with one commit on main (the clone base)
+// and an httptest API answering POST /pulls with 201. pr() returns
+// the request it saw and its Authorization header.
+func scratchForge(t *testing.T) (forge, bare string, api *httptest.Server, pr func() (map[string]string, string)) {
+	t.Helper()
+	forge = t.TempDir()
+	bare = filepath.Join(forge, "agents", "scratch.git")
+	gitRun(t, "", "init", "-q", "--bare", "-b", "main", bare)
+	seed := t.TempDir()
+	gitRun(t, "", "clone", "-q", bare, seed)
+	if err := os.WriteFile(filepath.Join(seed, "README"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, seed, "add", "README")
+	gitRun(t, seed, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "seed")
+	gitRun(t, seed, "push", "-q", "origin", "HEAD:main")
+
+	// the API: one POST /pulls → 201, the request kept for the checks.
+	var prMu sync.Mutex
+	var prReq map[string]string
+	var prAuth string
+	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodPost || req.URL.Path != "/api/v1/repos/agents/scratch/pulls" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		prMu.Lock()
+		defer prMu.Unlock()
+		prAuth = req.Header.Get("Authorization")
+		_ = json.NewDecoder(req.Body).Decode(&prReq)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"html_url":"http://forge/agents/scratch/pulls/1"}`)
+	}))
+	t.Cleanup(api.Close)
+	pr = func() (map[string]string, string) {
+		prMu.Lock()
+		defer prMu.Unlock()
+		return prReq, prAuth
+	}
+	return forge, bare, api, pr
 }
 
 // TestTaskRepoWithoutForgeRefused: a #task naming a repo on a child
