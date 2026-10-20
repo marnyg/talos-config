@@ -63,7 +63,7 @@ resume_app() {
   # retry loop keeps that stale operation alive past the next refresh.
   head=$(git rev-parse HEAD)
   kubectl -n argocd annotate app "$app" argocd.argoproj.io/refresh=hard --overwrite >/dev/null
-  for i in $(seq 1 30); do
+  for i in $(seq 1 60); do
     [ "$(kubectl -n argocd get app "$app" -o jsonpath='{.status.sync.revision}')" = "$head" ] && break
     sleep 3
   done
@@ -108,14 +108,19 @@ migrate)
   [ -n "$app" ] && pause_app "$app"
   mapfile -t wl < <(workloads_using)
   for w in "${wl[@]}"; do kubectl -n "$ns" scale "$w" --replicas=0 >/dev/null; echo "scaled $w -> 0"; done
+  # Finished pods (a CronJob's Completed run, a failed Job) reference
+  # the claim but hold nothing — ignore them here, delete them below so
+  # pvc-protection does not hang the claim's deletion.
+  live_users='.items[] | select(.metadata.namespace==$ns and (.spec.volumes[]?.persistentVolumeClaim.claimName==$p) and (.status.phase!="Succeeded" and .status.phase!="Failed"))'
   for i in $(seq 1 60); do
-    kubectl get pods -A -o json | jq -e --arg ns "$ns" --arg p "$pvc" \
-      '.items[] | select(.metadata.namespace==$ns and (.spec.volumes[]?.persistentVolumeClaim.claimName==$p))' >/dev/null 2>&1 || break
+    kubectl -n "$ns" get pods -o json | jq -e --arg ns "$ns" --arg p "$pvc" "$live_users" >/dev/null 2>&1 || break
     sleep 3
   done
-  kubectl get pods -A -o json | jq -e --arg ns "$ns" --arg p "$pvc" \
-    '.items[] | select(.metadata.namespace==$ns and (.spec.volumes[]?.persistentVolumeClaim.claimName==$p))' >/dev/null 2>&1 \
+  kubectl -n "$ns" get pods -o json | jq -e --arg ns "$ns" --arg p "$pvc" "$live_users" >/dev/null 2>&1 \
     && { echo "pods still mount $pvc; aborting (app paused, workloads at 0)"; exit 1; }
+  kubectl -n "$ns" get pods -o json | jq -r --arg p "$pvc" \
+    '.items[] | select((.spec.volumes[]?.persistentVolumeClaim.claimName==$p) and (.status.phase=="Succeeded" or .status.phase=="Failed")) | .metadata.name' \
+    | xargs -r kubectl -n "$ns" delete pod >/dev/null
 
   # --- 2. old PV to Retain -------------------------------------------
   kubectl patch pv "$oldpv" --type=merge -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}' >/dev/null
