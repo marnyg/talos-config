@@ -1158,11 +1158,19 @@ provisioning or recovery path may depend on it.
   **outfit** dresses the image in (SealedSecret `forgejo-agent` in
   `sap`); the child reads it once, scrubs it from pi's environment,
   and hands it to git as an HTTP header per subprocess — no file, no
-  argv, and the agent cannot read it. The result is the branch
-  `agent/<task-id>` and a PR whose body is pi's final message, pushed
-  after settle on every status (an aborted run's partial work too);
-  never force-pushed; the pointer `{repo, branch, head, pr}` rides
-  `child_settled`. A run with no diff pushes nothing (empty pointer).
+  argv, and the agent cannot read it. The result is **one branch per
+  task** — `#task.branch`, the parent's `agent/<task-id>`; `""` ⇒
+  `agent/<session-id>` for a bare `spawn -prompt` — and one PR against
+  `ref` whose body is pi's final message. The child clones `ref`, then
+  checks the branch out from the origin when an earlier session of the
+  task pushed it (the reviewer sees the worker's commits; a sent-back
+  worker continues them), else cuts it at `ref`; a 409 on the PR
+  resolves to the task's. Pushed after settle on every status (an
+  aborted run's partial work too); never force-pushed; the pointer
+  `{repo, branch, head, pr}` rides `child_settled`. "Nothing to push"
+  is HEAD unmoved from the clone, not an empty index: the flow-v2
+  worker commits as it goes (decision `talos-config-m3x4`, 2026-10-20;
+  until then the branch was per run and a committed tree pushed nothing).
   The batch/interactive `agent.yaml` runs have no workspace any more
   (the shell clone-and-PR path went with `e6pu.3`). First live runs:
   PR #1 on `agents/scratch` (shell, `agent-scratch-1`), PR #2 (a
