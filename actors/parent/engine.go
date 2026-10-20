@@ -227,8 +227,23 @@ func (p *Parent) spawnFor(ctx context.Context, t Task, f Flow) {
 		last := log[len(log)-1]
 		in.Last = &last
 	}
-	prompt := f.RenderPrompt(t.State, in)
-	sess, err := p.submit(ctx, t.Owner, child.TaskRequest{Prompt: prompt, Repo: t.Repo, Ref: t.Ref, Title: t.Title}, t.ID)
+	var req child.TaskRequest
+	if t.Repo != "" {
+		// One branch per task (decision talos-config-m3x4): every
+		// session of this task — worker, reviewer, worker again — lands
+		// in it, and the PR an earlier session opened is the task's.
+		req.Repo, req.Ref, req.Branch = t.Repo, t.Ref, TaskBranch(t.ID)
+		in.Branch = req.Branch
+		if sessions, err := p.store.SessionsOfTask(t.ID); err == nil {
+			for _, s := range sessions {
+				if s.PR != "" {
+					in.PR = s.PR
+				}
+			}
+		}
+	}
+	req.Prompt, req.Title = f.RenderPrompt(t.State, in), t.Title
+	sess, err := p.submit(ctx, t.Owner, req, t.ID)
 	if err != nil {
 		// Counted like a run that failed (a refused #spawn already is:
 		// run settles the session failed and sessionEnded retries), so a
@@ -328,6 +343,15 @@ func (p *Parent) sessionEnded(ctx context.Context, session string) {
 			p.retry(ctx, t, f, err.Error())
 			return
 		}
+		// A bounce — an agent sending the task back along an edge an
+		// agent already took (reviewing → executing, again) — is bounded
+		// like attempts are: Retries of them, then a person. Without
+		// this a worker and a reviewer that disagree loop for ever, a
+		// child per turn (task 1d1c85ac, 2026-10-20: eight in two minutes).
+		if n := p.bounces(t.ID, t.State, tr.To); n >= p.retries {
+			p.park(ctx, t, f, session, fmt.Sprintf("sent %s → %s by an agent for the %d%s time: %s", t.State, tr.To, n+1, ordinal(n+1), clip(tr.Note, 200)))
+			return
+		}
 		if _, err := p.apply(ctx, t, f, "session:"+session, session, tr); err != nil {
 			p.retry(ctx, t, f, err.Error())
 		}
@@ -337,6 +361,50 @@ func (p *Parent) sessionEnded(ctx context.Context, session string) {
 		p.retry(ctx, t, f, sess.Status+": "+sess.Reason)
 	}
 }
+
+// bounces counts the task's agent-driven moves along from → to so
+// far, when that edge goes backward — to was first entered before
+// from was (reviewing → executing). A forward edge taken again on the
+// way round (executing → reviewing) is the consequence, not the
+// bounce, and counts 0.
+func (p *Parent) bounces(task, from, to string) int {
+	log, err := p.store.Log(task)
+	if err != nil {
+		return 0
+	}
+	first := map[string]int64{}
+	n := 0
+	for _, e := range log {
+		if _, ok := first[e.To]; !ok {
+			first[e.To] = e.Seq
+		}
+		if e.From == from && e.To == to && strings.HasPrefix(e.By, "session:") {
+			n++
+		}
+	}
+	if ft, ok := first[to]; !ok || ft > first[from] {
+		return 0
+	}
+	return n
+}
+
+func ordinal(n int) string {
+	switch {
+	case n%100 >= 11 && n%100 <= 13:
+		return "th"
+	case n%10 == 1:
+		return "st"
+	case n%10 == 2:
+		return "nd"
+	case n%10 == 3:
+		return "rd"
+	}
+	return "th"
+}
+
+// TaskBranch is the one result branch all of a task's sessions share
+// on the forge (decision talos-config-m3x4).
+func TaskBranch(task string) string { return "agent/" + task }
 
 // fatalModelErr matches a provider refusal no retry can change: the
 // HTTP status pi prefixes (401 unauthenticated, 402 payment required,

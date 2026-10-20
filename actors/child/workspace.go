@@ -76,6 +76,9 @@ func (f Forge) cloneURL(repo string) string {
 // that could escape it (no dots-only segments, no slashes beyond one).
 var repoRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
+// branchRe is a result branch name: path-like, no refspec characters.
+var branchRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$`)
+
 // resultTimeout bounds the commit/push/PR after pi is done — the
 // deadline may already have passed (an aborted run still pushes what
 // it has, as the shell entrypoint did on SIGTERM).
@@ -92,8 +95,11 @@ type workspace struct {
 	log    *slog.Logger
 }
 
-// clone checks the request and clones repo@ref into root/<name>.
-func clone(ctx context.Context, f Forge, root, repo, ref, id string, log *slog.Logger) (*workspace, error) {
+// clone checks the request and clones repo@ref into root/<name>, then
+// puts the working tree on branch: the origin's copy when there is one
+// (an earlier session of the same task pushed it), else a new branch
+// at ref. The PR base stays ref either way.
+func clone(ctx context.Context, f Forge, root, repo, ref, branch string, log *slog.Logger) (*workspace, error) {
 	if !repoRe.MatchString(repo) || strings.Contains(repo, "..") {
 		return nil, fmt.Errorf("repo %q: want owner/name", repo)
 	}
@@ -107,7 +113,10 @@ func clone(ctx context.Context, f Forge, root, repo, ref, id string, log *slog.L
 	if _, err := os.Stat(dir); err == nil {
 		return nil, fmt.Errorf("%s exists", dir)
 	}
-	w := &workspace{f: f, repo: repo, dir: dir, branch: "agent/" + id, log: log}
+	if branch == "" || !branchRe.MatchString(branch) || strings.Contains(branch, "..") {
+		return nil, fmt.Errorf("branch %q: want a plain ref name", branch)
+	}
+	w := &workspace{f: f, repo: repo, dir: dir, branch: branch, log: log}
 	args := []string{"clone", "--quiet"}
 	if ref != "" {
 		args = append(args, "--branch", ref)
@@ -121,6 +130,17 @@ func clone(ctx context.Context, f Forge, root, repo, ref, id string, log *slog.L
 		return nil, fmt.Errorf("clone: %w", err)
 	}
 	w.base = strings.TrimSpace(base)
+	if w.base == w.branch {
+		return nil, fmt.Errorf("branch %q is the ref itself", branch)
+	}
+	// Continue the branch where the last session left it, or cut it.
+	if _, err := w.git(ctx, dir, "fetch", "--quiet", "origin", "+refs/heads/"+w.branch+":refs/remotes/origin/"+w.branch); err == nil {
+		if _, err := w.git(ctx, dir, "checkout", "--quiet", "-b", w.branch, "origin/"+w.branch); err != nil {
+			return nil, fmt.Errorf("clone: %w", err)
+		}
+	} else if _, err := w.git(ctx, dir, "checkout", "--quiet", "-b", w.branch); err != nil {
+		return nil, fmt.Errorf("clone: %w", err)
+	}
 	head, err := w.git(ctx, dir, "rev-parse", "HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("clone: %w", err)
@@ -135,7 +155,7 @@ func clone(ctx context.Context, f Forge, root, repo, ref, id string, log *slog.L
 			return nil, fmt.Errorf("clone: %w", err)
 		}
 	}
-	log.Info("child: workspace", "dir", dir, "repo", repo, "base", w.base, "head", w.head[:12], "branch", w.branch)
+	log.Info("child: workspace", "dir", dir, "repo", repo, "base", w.base, "branch", w.branch, "head", w.head[:12])
 	return w, nil
 }
 
@@ -205,7 +225,7 @@ func (w *workspace) result(ctx context.Context, title, body string) (Pointer, er
 		return p, err
 	}
 	if _, err := w.git(ctx, w.dir, "diff", "--cached", "--quiet"); err != nil {
-		if _, err := w.git(ctx, w.dir, "commit", "--quiet", "-m", "agent: "+w.branch[len("agent/"):], "-m", title); err != nil {
+		if _, err := w.git(ctx, w.dir, "commit", "--quiet", "-m", "agent: "+strings.TrimPrefix(w.branch, "agent/"), "-m", title); err != nil {
 			return p, err
 		}
 	}

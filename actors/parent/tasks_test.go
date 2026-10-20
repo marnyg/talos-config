@@ -211,3 +211,22 @@ func TestStoreProjectsAndTasks(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// TestPromptNamesBranchAndPR: a task with a repo is framed with its
+// one result branch (decision m3x4) and, once a session opened the
+// PR, with the PR — the reviewer reads the diff there, not the tree.
+func TestPromptNamesBranchAndPR(t *testing.T) {
+	f := DefaultFlow()
+	in := promptInput{Task: Task{ID: "t1", Title: "x", Repo: "agents/scratch", Ref: "main"}, Attempt: 1, Branch: TaskBranch("t1")}
+	got := f.RenderPrompt("reviewing", in)
+	if !strings.Contains(got, "Repo: agents/scratch@main (cloned as your working directory)\nBranch: agent/t1 (checked out;") || strings.Contains(got, "PR:") {
+		t.Fatalf("prompt without PR:\n%s", got)
+	}
+	in.PR = "http://forge/agents/scratch/pulls/8"
+	if got := f.RenderPrompt("reviewing", in); !strings.Contains(got, "Branch: agent/t1 (checked out; every session of this task commits here, the harness pushes it)\nPR: http://forge/agents/scratch/pulls/8 (this task's") {
+		t.Fatalf("prompt with PR:\n%s", got)
+	}
+	if got := f.RenderPrompt("reviewing", promptInput{Task: Task{ID: "t2", Title: "no repo"}, Attempt: 1}); strings.Contains(got, "Branch:") {
+		t.Fatalf("branch line without a repo:\n%s", got)
+	}
+}

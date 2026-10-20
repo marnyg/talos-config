@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/actors/child"
+	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/facethttp"
 	"github.com/marnyg/talos-config/protocol/spawn"
@@ -455,9 +456,9 @@ func TestTaskRepoResultIsBranchAndPR(t *testing.T) {
 	if !strings.HasPrefix(prReq["body"], "hi, done\n\n---\nTask "+ack.Session+", settled, ") {
 		t.Fatalf("PR body %q", prReq["body"])
 	}
-	// pi ran in the clone.
-	if _, err := os.Stat(filepath.Join(ws, "scratch", "done.txt")); err != nil {
-		t.Fatalf("workspace: %v", err)
+	// The clone is gone once the result is on the forge.
+	if _, err := os.Stat(filepath.Join(ws, "scratch")); !os.IsNotExist(err) {
+		t.Fatalf("workspace after the run: %v", err)
 	}
 }
 
@@ -516,6 +517,79 @@ func TestTaskRepoAgentCommitsStillPushed(t *testing.T) {
 	}
 }
 
+// TestTaskBranchContinues (decision m3x4): two #tasks naming the same
+// branch — a task's worker, then its reviewer or a second worker —
+// land in the same branch: the second clones ref, checks the branch
+// out from the origin with the first's commit in it, pushes on top,
+// and the PR resolves to the one already open (409). The base stays
+// ref, never the branch.
+func TestTaskBranchContinues(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	r, p := agentRig(t, false)
+	t.Setenv("CHILD_FAKE_COMMIT", "1")
+	forge, bare, api, pr := scratchForge(t)
+	r.drv.opts.Task.Forge = child.Forge{URL: api.URL, Token: "tok", CloneBase: forge}
+	r.drv.opts.Task.Dir = t.TempDir()
+	b := r.spawn(t, spawn.Spec{Image: image, Outfit: agentOutfit(r)})
+	p.peer = b.ID
+	r.pingUntilUp(t, b.ID)
+
+	// One child, two #tasks in turn (the parent uses a child per
+	// session; the clone is per run either way).
+	run := func(prompt string) child.Settled {
+		ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+		defer cancel()
+		// child_settled goes out just before the child frees its slot:
+		// retry the #task that lands in that gap.
+		var rep *actor.Reply
+		var err error
+		for i := 0; i < 50; i++ {
+			rep, err = r.parent.Send(ctx, b.ID, child.FacetTask, []byte(`{"prompt":"`+prompt+`","repo":"agents/scratch","ref":"main","branch":"agent/task-1","title":"hello file"}`))
+			if err == nil || !strings.Contains(err.Error(), "one task per child") {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if err != nil {
+			t.Fatalf("#task: %v", err)
+		}
+		var ack struct{ Session string }
+		_ = json.Unmarshal(rep.Payload, &ack)
+		var s child.Settled
+		waitFor(t, "child_settled", func() bool {
+			var ok bool
+			s, ok = p.settled(ack.Session)
+			return ok
+		})
+		if s.Status != "settled" || s.Reason != "" {
+			t.Fatalf("settled %+v", s)
+		}
+		return s
+	}
+	first := run("first")
+	if first.Branch != "agent/task-1" || first.PR != "http://forge/agents/scratch/pulls/1" {
+		t.Fatalf("first pointer %+v", first.Pointer)
+	}
+	second := run("second")
+	if second.Branch != "agent/task-1" || second.PR != first.PR || second.Head == first.Head {
+		t.Fatalf("second pointer %+v (first %+v)", second.Pointer, first.Pointer)
+	}
+	// Both commits, in order, on the one branch; the second's clone
+	// started from the first's head, not from main.
+	log := strings.TrimSpace(gitRun(t, "", "--git-dir", bare, "log", "--format=%s", "main..agent/task-1"))
+	if log != "worker: done.txt\nworker: done.txt" {
+		t.Fatalf("commits on agent/task-1: %q", log)
+	}
+	if got := gitRun(t, "", "--git-dir", bare, "show", "agent/task-1:done.txt"); !strings.Contains(got, "second") {
+		t.Fatalf("done.txt: %q", got)
+	}
+	if prReq, _ := pr(); prReq["head"] != "agent/task-1" || prReq["base"] != "main" {
+		t.Fatalf("PR request %v", prReq)
+	}
+}
+
 // scratchForge is the forge the repo tests clone from and push to: a
 // bare agents/scratch.git with one commit on main (the clone base)
 // and an httptest API answering POST /pulls with 201. pr() returns
@@ -534,21 +608,37 @@ func scratchForge(t *testing.T) (forge, bare string, api *httptest.Server, pr fu
 	gitRun(t, seed, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "seed")
 	gitRun(t, seed, "push", "-q", "origin", "HEAD:main")
 
-	// the API: one POST /pulls → 201, the request kept for the checks.
+	// the API: POST /pulls → 201 the first time per head, 409 after
+	// (Forgejo's shape); GET ?state=all lists them. The last POST is
+	// kept for the checks.
 	var prMu sync.Mutex
 	var prReq map[string]string
 	var prAuth string
+	heads := map[string]int{}
 	api = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.Method != http.MethodPost || req.URL.Path != "/api/v1/repos/agents/scratch/pulls" {
+		if req.URL.Path != "/api/v1/repos/agents/scratch/pulls" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		prMu.Lock()
 		defer prMu.Unlock()
+		if req.Method == http.MethodGet {
+			var prs []map[string]any
+			for h, n := range heads {
+				prs = append(prs, map[string]any{"html_url": fmt.Sprintf("http://forge/agents/scratch/pulls/%d", n), "head": map[string]string{"ref": h}})
+			}
+			_ = json.NewEncoder(w).Encode(prs)
+			return
+		}
 		prAuth = req.Header.Get("Authorization")
 		_ = json.NewDecoder(req.Body).Decode(&prReq)
+		if _, ok := heads[prReq["head"]]; ok {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		heads[prReq["head"]] = len(heads) + 1
 		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, `{"html_url":"http://forge/agents/scratch/pulls/1"}`)
+		fmt.Fprintf(w, `{"html_url":"http://forge/agents/scratch/pulls/%d"}`, heads[prReq["head"]])
 	}))
 	t.Cleanup(api.Close)
 	pr = func() (map[string]string, string) {

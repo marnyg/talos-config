@@ -181,6 +181,13 @@ type TaskRequest struct {
 	Prompt string `json:"prompt"`
 	Repo   string `json:"repo,omitempty"`
 	Ref    string `json:"ref,omitempty"`
+	// Branch is the result branch: checked out from the origin when it
+	// exists there, else cut from Ref; pushed to, PR'd against Ref. ""
+	// ⇒ agent/<session id>, one branch per run. A parent that runs one
+	// task through several sessions (worker, reviewer, worker again)
+	// names one branch for all of them, so each sees the last's work
+	// and the task has one PR for its life (decision talos-config-m3x4).
+	Branch string `json:"branch,omitempty"`
 	// Title names the task on the forge (commit body, PR title); ""
 	// ⇒ the prompt's first line.
 	Title string `json:"title,omitempty"`
@@ -398,13 +405,20 @@ func (ag *agent) execute(rctx context.Context, r *run, req TaskRequest, preamble
 	dir := ag.o.Dir
 	var ws *workspace
 	if req.Repo != "" {
-		if ws, err = clone(rctx, ag.o.Forge, ag.o.Dir, req.Repo, req.Ref, r.id, log); err != nil {
+		branch := req.Branch
+		if branch == "" {
+			branch = "agent/" + r.id
+		}
+		if ws, err = clone(rctx, ag.o.Forge, ag.o.Dir, req.Repo, req.Ref, branch, log); err != nil {
 			settled.Reason = err.Error()
 			up.finish(settled, nil, log)
 			return
 		}
 		dir = ws.dir
 		settled.Repo = req.Repo
+		// The clone is this run's; what it produced is on the forge
+		// once result ran. The next #task on this child clones afresh.
+		defer os.RemoveAll(ws.dir)
 	}
 
 	// pi's lifetime is ours to end (pctx), not the run's: the deadline

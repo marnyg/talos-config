@@ -15,17 +15,19 @@ func testFlow() parent.Flow {
 	return parent.Flow{
 		ID: "test", Version: 1, Initial: "captured", Leaf: "work", Stuck: "stuck",
 		States: map[string]parent.State{
-			"captured":  {Driver: parent.DriverHuman, Next: []string{"work", "split", "rejected"}},
-			"split":     {Driver: parent.DriverAgent, Persona: "splitter", Next: []string{"delegated", "stuck"}},
-			"delegated": {Driver: parent.DriverChildren, Next: []string{"done"}},
-			"work":      {Driver: parent.DriverAgent, Persona: "worker", Next: []string{"review", "stuck"}},
-			"review":    {Driver: parent.DriverAgent, Persona: "reviewer", Next: []string{"done", "work", "stuck"}},
-			"flaky":     {Driver: parent.DriverAgent, Persona: "plain", Next: []string{"done", "stuck"}},
-			"broke":     {Driver: parent.DriverAgent, Persona: "broke", Next: []string{"done", "stuck"}},
-			"throttled": {Driver: parent.DriverAgent, Persona: "throttled", Next: []string{"done", "stuck"}},
-			"stuck":     {Driver: parent.DriverHuman, Next: []string{"work", "flaky", "broke", "throttled", "rejected"}},
-			"done":      {Driver: parent.DriverHuman},
-			"rejected":  {Driver: parent.DriverHuman},
+			"captured":   {Driver: parent.DriverHuman, Next: []string{"work", "split", "rejected"}},
+			"split":      {Driver: parent.DriverAgent, Persona: "splitter", Next: []string{"delegated", "stuck"}},
+			"delegated":  {Driver: parent.DriverChildren, Next: []string{"done"}},
+			"work":       {Driver: parent.DriverAgent, Persona: "worker", Next: []string{"review", "stuck"}},
+			"review":     {Driver: parent.DriverAgent, Persona: "reviewer", Next: []string{"done", "work", "stuck"}},
+			"flaky":      {Driver: parent.DriverAgent, Persona: "plain", Next: []string{"done", "stuck"}},
+			"broke":      {Driver: parent.DriverAgent, Persona: "broke", Next: []string{"done", "stuck"}},
+			"throttled":  {Driver: parent.DriverAgent, Persona: "throttled", Next: []string{"done", "stuck"}},
+			"pingwork":   {Driver: parent.DriverAgent, Persona: "pinger", Next: []string{"pingreview", "stuck"}},
+			"pingreview": {Driver: parent.DriverAgent, Persona: "bouncer", Next: []string{"pingwork", "done", "stuck"}},
+			"stuck":      {Driver: parent.DriverHuman, Next: []string{"work", "flaky", "broke", "throttled", "pingwork", "rejected"}},
+			"done":       {Driver: parent.DriverHuman},
+			"rejected":   {Driver: parent.DriverHuman},
 		},
 		Personas: map[string]string{
 			"worker":    "You are the worker. fake:to=review",
@@ -34,6 +36,8 @@ func testFlow() parent.Flow {
 			"plain":     "You say nothing useful.",
 			"broke":     "The provider refuses you. fake:error=402",
 			"throttled": "The provider throttles you. fake:error=429",
+			"pinger":    "You work. fake:to=pingreview",
+			"bouncer":   "You never approve. fake:to=pingwork",
 		},
 	}
 }
@@ -162,6 +166,42 @@ func TestTaskRetriesThenParks(t *testing.T) {
 	}
 	if _, err := r.p.Transition(r.pctx, tk2.ID, owner, parent.Transition{To: "work"}); err == nil {
 		t.Fatal("moved a terminal task")
+	}
+}
+
+// TestTaskBouncesThenParks: a reviewer that keeps sending the task
+// back is bounded like failed attempts are — Retries bounces along the
+// same edge, then the task is parked for a person with the count and
+// the reviewer's note. The human's own re-sends are not counted.
+func TestTaskBouncesThenParks(t *testing.T) {
+	r := setupWith(t, false, 1)
+	r.listen(t)
+	r.project(t)
+	tk := r.stuckAt(t, "ping-pong", "pingwork")
+	waitFor(t, "parked", func() bool { return r.taskState(tk.ID) == "stuck" })
+	log, _ := r.store.Log(tk.ID)
+	var path []string
+	for _, e := range log {
+		path = append(path, e.From+">"+e.To)
+	}
+	if got := strings.Join(path, " "); got != ">captured captured>stuck stuck>pingwork pingwork>pingreview pingreview>pingwork pingwork>pingreview pingreview>stuck" {
+		t.Fatalf("log path %s", got)
+	}
+	last := log[len(log)-1]
+	if last.By != "parent" || !strings.Contains(last.Note, "sent pingreview → pingwork by an agent for the 2nd time: fake moved on") {
+		t.Fatalf("park entry %+v", last)
+	}
+	// A person sending it round again starts the count afresh only in
+	// the sense that their move is not a bounce: the agents' two are
+	// still on the log, so the next agent bounce parks it at once.
+	if _, err := r.p.Transition(r.pctx, tk.ID, owner, parent.Transition{To: "pingwork", Note: "once more"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "pingreview", func() bool { return r.taskState(tk.ID) == "pingreview" })
+	waitFor(t, "parked again", func() bool { return r.taskState(tk.ID) == "stuck" })
+	sessions, _ := r.store.SessionsOfTask(tk.ID)
+	if len(sessions) != 6 {
+		t.Fatalf("%d sessions, want 6", len(sessions))
 	}
 }
 

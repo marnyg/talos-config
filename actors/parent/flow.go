@@ -216,6 +216,8 @@ type promptInput struct {
 	Parent  *Task
 	Last    *LogEntry // the transition that brought the task here
 	Attempt int
+	Branch  string // the task's result branch, when it has a repo
+	PR      string // the PR an earlier session opened on it, if any
 }
 
 // RenderPrompt is the whole prompt for one agent session: the state's
@@ -254,6 +256,12 @@ func (f Flow) RenderPrompt(state string, in promptInput) string {
 			fmt.Fprintf(&b, "@%s", in.Task.Ref)
 		}
 		b.WriteString(" (cloned as your working directory)\n")
+		if in.Branch != "" {
+			fmt.Fprintf(&b, "Branch: %s (checked out; every session of this task commits here, the harness pushes it)\n", in.Branch)
+		}
+		if in.PR != "" {
+			fmt.Fprintf(&b, "PR: %s (this task's, opened by an earlier session; the diff to review is there)\n", in.PR)
+		}
 	}
 	fmt.Fprintf(&b, "State: %s (attempt %d)\n", state, in.Attempt)
 	if in.Task.Error != "" {
