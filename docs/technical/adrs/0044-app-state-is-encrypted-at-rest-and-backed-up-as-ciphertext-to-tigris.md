@@ -1,7 +1,7 @@
 # ADR-0044: App state is encrypted at rest and backed up as ciphertext to Tigris
 
-- Status: Accepted 2026-10-20 (owner). Built the same day; first
-  backup confirmation pending (see Confirmation).
+- Status: Accepted 2026-10-20 (owner). Built and restore-verified the
+  same day (see Confirmation).
 - Date: 2026-10-20
 - Related: ADR-0011 (Longhorn; "durability belongs on app state"),
   ADR-0031 (the library runs on one replica and never leaves the
@@ -158,6 +158,13 @@ was wrong and withdrawn.
   `available: true` against Tigris with the sealed credentials.
 - `transfer`'s first manual backup completed (19 GB block copy of
   15.4 G of files, ~1 h at the house's ~4–5 MB/s uplink); BackupVolume
-  recorded in the bucket. **Pending:** a restore of one backup
-  into a fresh PVC on this cluster, and the first `backup-nightly` run
-  covering every migrated volume.
+  recorded in the bucket. A manual `backup-nightly` run the same
+  afternoon put all 20 volumes in Tigris (after
+  `allowRecurringJobWhileVolumeDetached`: libation-db was skipped).
+- **Restored and verified 2026-10-20** with `backup-verify`:
+  `files/transfer` came back from Tigris through LUKS **bit-identical
+  to the live volume** — 46,977 files, the same sorted sha256 manifest
+  (`6a10b1e2…`), 0 diff lines; ~29 min restore at ~12 MB/s + 4 min
+  read. `sap/sap-parent-state` (restricted uid), `vaultwarden`,
+  `forgejo` (3,365 files) and `media/libation-db` restored and read
+  clean. All five `longhorn-backups` alerts inactive.

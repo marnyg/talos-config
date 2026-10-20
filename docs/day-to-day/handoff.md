@@ -35,7 +35,8 @@
   volume from Tigris into a scratch encrypted PVC, hash every file).
   First manual run of backup-nightly put all 20 volumes in Tigris —
   after fixing the skip of detached volumes (libation-db).
-- **Next**: after the restore test is green, delete the old PVs
+- Restore test **green** (transfer bit-identical to live; 4 more volumes clean).
+- **Next**: delete the old plaintext PVs
   (`kubectl get pv -l encrypt-pvc/old`); gateway-state over LAN.
 
 ## Last session (2026-10-20, token rotated; flow v2 proven and found two harness gaps)
