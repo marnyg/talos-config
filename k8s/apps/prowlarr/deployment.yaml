@@ -8,6 +8,7 @@ metadata:
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: longhorn-encrypted
+  volumeName: pvc-8d77a827-0487-405a-9227-54d421f4985e
   resources:
     requests:
       storage: 2Gi
