@@ -38,11 +38,24 @@
 # relabeled and the PVC deleted and rebound rather than copied. The PV
 # is still `Retain` from its first provisioning; a claim recreated
 # WITHOUT volumeName would be a new, empty, `Delete` volume.
+#
+# This claim is the only copy of those bytes, so (2026-10-23):
+#   - ArgoCD may never prune or delete it (sync-options below); a
+#     renamed directory or a bad manifest leaves it standing.
+#   - The `transfer` recurring-job group gets daily Longhorn snapshots
+#     (k8s/apps/storage/recurringjob.yaml) 
+#     an undo for a wrong delete over SMB. Snapshots live inside the
+#     volume's replicas: they do not survive the volume's loss. A
+#     copy OFF Longhorn is bsj (backup target), still open.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: transfer
   namespace: files
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+  labels:
+    recurring-job-group.longhorn.io/transfer: enabled
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: longhorn

@@ -1,0 +1,30 @@
+# Daily Longhorn snapshots for volumes that are the only copy of their
+# bytes (2026-10-23). Opt-in by label, not cluster-wide: a PVC that
+# carries `recurring-job-group.longhorn.io/transfer: enabled` is
+# snapshotted (Longhorn copies the label onto its Volume CR). Today that
+# is files/transfer alone.
+#
+# What this is: an undo button for a wrong delete or overwrite inside
+# the share — restore by cloning the snapshot into a new PVC
+# (Longhorn UI, or a PVC with dataSource of kind VolumeSnapshot).
+# What it is not: a backup. Snapshots are part of the volume's replica
+# chain, on the same disks; losing the volume loses them. A copy off
+# Longhorn is bsj (backup target), which this does not replace.
+#
+# Retain 7 at concurrency 1; `snapshot` (not `snapshot-cleanup`) so the
+# chain is purged of nothing it did not create. Cost: snapshot deltas
+# on an ~15 GB volume, negligible.
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: transfer-daily-snapshot
+  namespace: longhorn-system
+spec:
+  name: transfer-daily-snapshot
+  task: snapshot
+  cron: "15 3 * * *"
+  retain: 7
+  concurrency: 1
+  groups:
+    - transfer
+  labels: {}
