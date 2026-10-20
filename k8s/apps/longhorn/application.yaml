@@ -89,6 +89,13 @@ spec:
           # filling it completely.
           storageReservedPercentageForDefaultDisk: 0
           storageMinimalAvailablePercentage: 10
+          # Blocks pulled in parallel per restore from Tigris (default 2).
+          # A restore is latency-bound, not bandwidth-bound: at 2 the first
+          # restore test ran ~6 MB/s, ~50 min for transfer's 19 GB
+          # (2026-10-20). This is disaster-recovery time and the weekly
+          # restore test's runtime (k8s/apps/backup-verify). Backups stay
+          # at the default: they are uplink-bound (~4-5 MB/s) regardless.
+          restoreConcurrentLimit: 8
           # Keep a replica on whichever node runs the pod: this is what
           # makes the read path local and removes the hostPath
           # nodeAffinity hazard (bug 0b374653) by design rather than by
