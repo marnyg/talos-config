@@ -20,7 +20,8 @@ metadata:
   namespace: ai
 spec:
   accessModes: [ReadWriteOnce]
-  storageClassName: longhorn
+  storageClassName: longhorn-encrypted
+  volumeName: pvc-6711a1f7-9b8f-40cf-a587-95067bbf1f1d
   resources:
     requests:
       storage: 10Gi
