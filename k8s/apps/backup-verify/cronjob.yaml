@@ -1,0 +1,196 @@
+# Weekly restore test of the off-site backups (ADR-0044). A backup that
+# has never been restored is a hope, not a backup: this proves, every
+# Sunday, for every volume in the `backup` recurring-job group, that
+#   1. its newest backup is Completed and younger than MAX_AGE_H,
+#   2. Longhorn can pull it back from Tigris (the per-block checksums
+#      are checked on the way in),
+#   3. the cluster passphrase still opens its LUKS header (the restored
+#      blocks are ciphertext; a wrong key = a pod stuck at mount), and
+#   4. the filesystem reads end to end: every file is hashed.
+# Each restore goes to a scratch volume (1 replica, nvme) in this
+# namespace and is deleted straight after. A volume younger than
+# MAX_AGE_H with no backup yet is SKIPped (LonghornBackupStale covers it
+# once it is old enough); anything else that is not OK fails the Job,
+# which pages through kube-prometheus-stack's KubeJobFailed, and
+# BackupVerifyStale (longhorn-backup-rules.yaml) pages if no run has
+# succeeded for 8 days.
+#
+# Run it now:   kubectl -n backup-verify create job --from=cronjob/backup-verify verify-$(date +%s)
+# One volume:   …then `kubectl -n backup-verify set env job/<name> VOLUME=<ns>/<pvc>` is too late
+#               (the pod exists); instead copy the CronJob's job template
+#               with VOLUME set, or edit the env here for a one-off.
+# MANIFEST=1 prints each restored volume's sorted sha256 manifest, to
+# diff by hand against the live volume (done for files/transfer on
+# 2026-10-20: identical).
+#
+# Cost: downloads every volume once a week (~25 GB; Tigris has no
+# egress fee), ~20–30 min.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-verify
+  namespace: backup-verify
+data:
+  verify.sh: |
+    #!/bin/bash
+    set -uo pipefail
+    NS=backup-verify
+    MAX_AGE_H=${MAX_AGE_H:-30}
+    ONLY=${VOLUME:-}
+    MANIFEST=${MANIFEST:-0}
+    now=$(date +%s)
+    ok=0; skip=0; fail=0; report=""
+
+    note() { echo "$(date -u +%H:%M:%S) $*"; }
+    result() { report+="$1"$'\n'; note "$1"; }
+
+    cleanup() {
+      local id=$1
+      kubectl -n "$NS" delete pod "$id" --ignore-not-found --wait=true >/dev/null 2>&1
+      kubectl -n "$NS" delete pvc "$id" --ignore-not-found --wait=true --timeout=5m >/dev/null 2>&1
+      kubectl delete storageclass "verify-$id" --ignore-not-found >/dev/null 2>&1
+    }
+
+    vols=$(kubectl -n longhorn-system get volumes.longhorn.io \
+      -l recurring-job-group.longhorn.io/backup=enabled -o json)
+    for row in $(jq -r '.items[] | [.metadata.name, (.status.kubernetesStatus.namespace // "-"), (.status.kubernetesStatus.pvcName // "-"), (.metadata.creationTimestamp | fromdateiso8601)] | @tsv | @base64' <<<"$vols"); do
+      IFS=$'\t' read -r vol pns pvc created < <(base64 -d <<<"$row")
+      who="$pns/$pvc ($vol)"
+      if [ -n "$ONLY" ] && [ "$ONLY" != "$vol" ] && [ "$ONLY" != "$pns/$pvc" ]; then continue; fi
+
+      bv=$(kubectl -n longhorn-system get backupvolumes.longhorn.io -l "backup-volume=$vol" -o json | jq '.items[0] // empty')
+      last=$(jq -r '.status.lastBackupName // empty' <<<"$bv")
+      if [ -z "$last" ]; then
+        age_h=$(( (now - created) / 3600 ))
+        if [ "$age_h" -lt "$MAX_AGE_H" ]; then result "SKIP $who: no backup yet, volume ${age_h}h old"; skip=$((skip+1))
+        else result "FAIL $who: no backup at all, volume ${age_h}h old"; fail=$((fail+1)); fi
+        continue
+      fi
+      b=$(kubectl -n longhorn-system get backups.longhorn.io "$last" -o json 2>/dev/null)
+      state=$(jq -r '.status.state // "?"' <<<"$b"); url=$(jq -r '.status.url // empty' <<<"$b")
+      size=$(jq -r '.status.volumeSize // empty' <<<"$b"); at=$(jq -r '.status.backupCreatedAt // empty | fromdateiso8601' <<<"$b")
+      if [ "$state" != Completed ] || [ -z "$url" ] || [ -z "$size" ]; then
+        result "FAIL $who: newest backup $last is $state"; fail=$((fail+1)); continue
+      fi
+      bage_h=$(( (now - at) / 3600 ))
+      [ "$bage_h" -ge "$MAX_AGE_H" ] && { result "FAIL $who: newest backup $last is ${bage_h}h old"; fail=$((fail+1)); continue; }
+
+      id="v-${vol:4:8}"
+      cleanup "$id"
+      note "restoring $who from $last (${bage_h}h old, $((size/1024/1024/1024)) GiB)"
+      kubectl apply -f - >/dev/null <<EOF
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: verify-$id
+      labels: {app.kubernetes.io/managed-by: backup-verify}
+    provisioner: driver.longhorn.io
+    reclaimPolicy: Delete
+    volumeBindingMode: Immediate
+    parameters:
+      fromBackup: "$url"
+      numberOfReplicas: "1"
+      diskSelector: "nvme"
+      dataLocality: "disabled"
+      staleReplicaTimeout: "30"
+      fsType: "ext4"
+      encrypted: "true"
+      csi.storage.k8s.io/provisioner-secret-name: longhorn-crypto
+      csi.storage.k8s.io/provisioner-secret-namespace: longhorn-system
+      csi.storage.k8s.io/node-publish-secret-name: longhorn-crypto
+      csi.storage.k8s.io/node-publish-secret-namespace: longhorn-system
+      csi.storage.k8s.io/node-stage-secret-name: longhorn-crypto
+      csi.storage.k8s.io/node-stage-secret-namespace: longhorn-system
+    ---
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata: {name: $id, namespace: $NS}
+    spec:
+      accessModes: [ReadWriteOnce]
+      storageClassName: verify-$id
+      resources: {requests: {storage: "$size"}}
+    ---
+    apiVersion: v1
+    kind: Pod
+    metadata: {name: $id, namespace: $NS}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: read
+          image: alpine:3.20
+          env: [{name: MANIFEST, value: "$MANIFEST"}]
+          command: ["sh", "-ec"]
+          args:
+            - |
+              set -o pipefail
+              cd /r
+              find . -xdev -path ./lost+found -prune -o -type f -exec sha256sum {} + | sort > /tmp/m
+              echo "files=\$(wc -l < /tmp/m) kib=\$(du -sk . | cut -f1) manifest=\$(sha256sum < /tmp/m | cut -c1-16)"
+              [ "\$MANIFEST" = 1 ] && sed 's/^/M /' /tmp/m || true
+          volumeMounts: [{name: r, mountPath: /r, readOnly: true}]
+          securityContext: {allowPrivilegeEscalation: false, seccompProfile: {type: RuntimeDefault}}
+      volumes: [{name: r, persistentVolumeClaim: {claimName: $id, readOnly: true}}]
+    EOF
+      # Restore + LUKS open + full read. Waits on the pod, whose mount
+      # blocks until Longhorn has finished pulling the backup.
+      phase=""
+      for i in $(seq 1 360); do
+        phase=$(kubectl -n "$NS" get pod "$id" -o jsonpath='{.status.phase}' 2>/dev/null)
+        case "$phase" in Succeeded|Failed) break;; esac
+        sleep 10
+      done
+      if [ "$phase" = Succeeded ]; then
+        summary=$(kubectl -n "$NS" logs "$id" | head -1)
+        [ "$MANIFEST" = 1 ] && kubectl -n "$NS" logs "$id" | tail -n +2
+        result "OK   $who: $last restored, $summary"; ok=$((ok+1))
+      else
+        why=$(kubectl -n "$NS" get events --field-selector "involvedObject.name=$id" -o json \
+              | jq -r '[.items[] | select(.type=="Warning") | .message] | last // "timeout"' | cut -c1-200)
+        result "FAIL $who: restore/read ${phase:-not started}: $why"; fail=$((fail+1))
+      fi
+      cleanup "$id"
+    done
+
+    echo; echo "=== backup-verify: ok=$ok skip=$skip fail=$fail"; printf '%s' "$report"
+    [ "$fail" -eq 0 ]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-verify
+  namespace: backup-verify
+spec:
+  # Sundays, after the 03:45 backup-nightly has had two hours.
+  schedule: "45 5 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 14400
+      template:
+        spec:
+          serviceAccountName: backup-verify
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: verify
+              # kubectl + jq + bash in one image.
+              image: alpine/k8s:1.32.3
+              command: ["bash", "/script/verify.sh"]
+              env:
+                - {name: MAX_AGE_H, value: "30"}
+                - {name: VOLUME, value: ""}
+                - {name: MANIFEST, value: "0"}
+              volumeMounts: [{name: script, mountPath: /script, readOnly: true}]
+              securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+              resources:
+                requests: {cpu: 10m, memory: 64Mi}
+                limits: {memory: 256Mi}
+          volumes:
+            - {name: script, configMap: {name: backup-verify}}

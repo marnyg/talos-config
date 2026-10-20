@@ -1,0 +1,15 @@
+# `backup-verify`: the weekly restore test of the Tigris backups
+# (ADR-0044). Every restored volume lands here, is read end to end, and
+# is deleted — nothing in this namespace outlives one run.
+#
+# PSS baseline, not the cluster's restricted default: the reader pod
+# runs as root (default capabilities, no privilege, no host access) so
+# it can read every file whatever uid owns it — the sap volumes are
+# 65534's, transfer is 1000's, forgejo's repos are 0700. The driver pod
+# runs restricted-compatible anyway.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backup-verify
+  labels:
+    pod-security.kubernetes.io/enforce: baseline

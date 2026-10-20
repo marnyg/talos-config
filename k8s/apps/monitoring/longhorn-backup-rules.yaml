@@ -1,0 +1,76 @@
+# Backup health pages (ADR-0044), to ntfy through the existing
+# Alertmanager route. Inputs: Longhorn's own exporter
+# (longhorn_backup_state) and the custom-resource metrics
+# kube-state-metrics lifts off Longhorn's CRs (kube-prometheus-stack.yaml:
+# longhorn_backupvolume_*, longhorn_volume_cr_*, longhorn_backuptarget_*).
+#
+# What each rule catches:
+#   TargetUnavailable   Tigris unreachable or the credentials broke —
+#                       every backup after this fails.
+#   BackupFailed        a backup ended in Error (the CR stays until
+#                       deleted or rotated out by retain; delete it once
+#                       understood to resolve).
+#   BackupStale         a volume in the `backup` group (the encrypted
+#                       class) older than 30 h whose newest backup is
+#                       older than 30 h, or that has none — the nightly
+#                       did not run, skipped it, or the volume was moved
+#                       in by hand without the group label.
+#   MetricsMissing      the timestamps above vanished (kube-state-metrics
+#                       down, CRD renamed by an upgrade) — without it the
+#                       stale rule would go silent instead of firing.
+#   VerifyStale         the weekly restore test (k8s/apps/backup-verify)
+#                       has not succeeded for 8 days. A FAILED run pages
+#                       separately through the chart's KubeJobFailed.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: longhorn-backups
+  namespace: monitoring
+spec:
+  groups:
+    - name: longhorn-backups
+      rules:
+        - alert: LonghornBackupTargetUnavailable
+          expr: longhorn_backuptarget_available == 0
+          for: 30m
+          labels: {severity: critical}
+          annotations:
+            summary: "Longhorn backup target {{ $labels.target }} unavailable"
+            description: "Longhorn cannot reach the Tigris bucket (talos-longhorn-backup); nightly backups will fail. Check the BackupTarget CR's conditions and the tigris-backup secret."
+
+        - alert: LonghornBackupFailed
+          expr: longhorn_backup_state == 4
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "Backup {{ $labels.backup }} failed"
+            description: "Longhorn backup {{ $labels.backup }} of {{ $labels.volume }} is in Error. kubectl -n longhorn-system get backups.longhorn.io {{ $labels.backup }} -o yaml; delete the CR once understood."
+
+        - alert: LonghornBackupStale
+          expr: |
+            (longhorn_volume_cr_created_timestamp_seconds{backup_group="enabled"} < time() - 30 * 3600)
+            unless on (volume)
+            (longhorn_backupvolume_last_backup_timestamp_seconds > time() - 30 * 3600)
+          for: 30m
+          labels: {severity: warning}
+          annotations:
+            summary: "No fresh backup of {{ $labels.pvc_namespace }}/{{ $labels.pvc }}"
+            description: "Volume {{ $labels.volume }} is in the backup group but has no backup newer than 30 h in Tigris. Check the backup-nightly job in longhorn-system."
+
+        - alert: LonghornBackupMetricsMissing
+          expr: absent(longhorn_backuptarget_available) or absent(longhorn_volume_cr_created_timestamp_seconds)
+          for: 1h
+          labels: {severity: warning}
+          annotations:
+            summary: "Backup health metrics are missing"
+            description: "kube-state-metrics no longer exports the Longhorn custom-resource metrics; LonghornBackupStale cannot fire. Check kube-state-metrics' customResourceState config and RBAC."
+
+        - alert: BackupVerifyStale
+          expr: |
+            (time() - kube_cronjob_status_last_successful_time{namespace="backup-verify", cronjob="backup-verify"} > 8 * 86400)
+            or absent(kube_cronjob_status_last_successful_time{namespace="backup-verify", cronjob="backup-verify"})
+          for: 1h
+          labels: {severity: warning}
+          annotations:
+            summary: "Backup restore test has not passed for 8 days"
+            description: "The weekly restore test (backup-verify CronJob) has not succeeded in 8 days, or never. Run it: kubectl -n backup-verify create job --from=cronjob/backup-verify verify-$(date +%s)"

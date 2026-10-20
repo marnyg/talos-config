@@ -127,6 +127,71 @@ spec:
               memory: 64Mi
             limits:
               memory: 256Mi
+          # Backup health (ADR-0044). Longhorn's own exporter gives a
+          # backup's state (longhorn_backup_state: 3 Completed, 4 Error)
+          # but no time, so "is the newest backup fresh" is unanswerable
+          # from it. The timestamps live on Longhorn's CRs; these
+          # custom-resource metrics lift them out for the rules in
+          # k8s/apps/monitoring/longhorn-backup-rules.yaml:
+          #   longhorn_backupvolume_last_backup_timestamp_seconds{volume}
+          #   longhorn_volume_cr_created_timestamp_seconds{volume,backup_group,pvc,pvc_namespace}
+          #   longhorn_backuptarget_available{target}
+          #   longhorn_backuptarget_last_synced_timestamp_seconds{target}
+          # RFC3339 strings become unix seconds; a bool becomes 0/1.
+          rbac:
+            extraRules:
+              - apiGroups: [longhorn.io]
+                resources: [volumes, backupvolumes, backuptargets]
+                verbs: [list, watch]
+          customResourceState:
+            enabled: true
+            config:
+              kind: CustomResourceStateMetrics
+              spec:
+                resources:
+                  - groupVersionKind: {group: longhorn.io, version: v1beta2, kind: BackupVolume}
+                    metricNamePrefix: longhorn_backupvolume
+                    labelsFromPath:
+                      volume: [spec, volumeName]
+                    metrics:
+                      - name: last_backup_timestamp_seconds
+                        help: Time of the newest backup of this volume in the backup target.
+                        each:
+                          type: Gauge
+                          gauge:
+                            path: [status, lastBackupAt]
+                  - groupVersionKind: {group: longhorn.io, version: v1beta2, kind: Volume}
+                    metricNamePrefix: longhorn_volume_cr
+                    labelsFromPath:
+                      volume: [metadata, name]
+                      backup_group: [metadata, labels, recurring-job-group.longhorn.io/backup]
+                      pvc: [status, kubernetesStatus, pvcName]
+                      pvc_namespace: [status, kubernetesStatus, namespace]
+                    metrics:
+                      - name: created_timestamp_seconds
+                        help: Creation time of the Longhorn volume (a new volume is not stale before its first nightly).
+                        each:
+                          type: Gauge
+                          gauge:
+                            path: [metadata, creationTimestamp]
+                  - groupVersionKind: {group: longhorn.io, version: v1beta2, kind: BackupTarget}
+                    metricNamePrefix: longhorn_backuptarget
+                    labelsFromPath:
+                      target: [metadata, name]
+                    metrics:
+                      - name: available
+                        help: 1 when Longhorn can reach the backup target (Tigris).
+                        each:
+                          type: Gauge
+                          gauge:
+                            path: [status, available]
+                            nilIsZero: true
+                      - name: last_synced_timestamp_seconds
+                        help: Last time Longhorn listed the backup target.
+                        each:
+                          type: Gauge
+                          gauge:
+                            path: [status, lastSyncedAt]
 
         prometheusOperator:
           resources:

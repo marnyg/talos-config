@@ -1,0 +1,71 @@
+# What the restore-test driver may touch. A restore needs a StorageClass
+# carrying `fromBackup` (Longhorn's restore path for a PVC), and
+# StorageClasses are cluster-scoped: RBAC cannot narrow `create` to a
+# name, so this SA can create any StorageClass. The driver only creates
+# `verify-*` classes and deletes them in the same run; the blast radius
+# of the grant is "a class appears", not access to any existing volume —
+# no PV, no Secret, no other namespace's PVC. Reads of Longhorn's
+# backup records are confined to longhorn-system.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-verify
+  namespace: backup-verify
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backup-verify
+rules:
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backup-verify
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: backup-verify}
+subjects:
+  - {kind: ServiceAccount, name: backup-verify, namespace: backup-verify}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-verify-read
+  namespace: longhorn-system
+rules:
+  - apiGroups: [longhorn.io]
+    resources: [volumes, backupvolumes, backups]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-verify-read
+  namespace: longhorn-system
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: backup-verify-read}
+subjects:
+  - {kind: ServiceAccount, name: backup-verify, namespace: backup-verify}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backup-verify
+  namespace: backup-verify
+rules:
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims, pods]
+    verbs: [get, list, watch, create, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backup-verify
+  namespace: backup-verify
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: backup-verify}
+subjects:
+  - {kind: ServiceAccount, name: backup-verify, namespace: backup-verify}

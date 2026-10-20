@@ -66,9 +66,13 @@ spec:
           - {name: sealed-secrets}
           # Longhorn (ADR-0011): nested Helm Application + the UI Ingress.
           - {name: longhorn}
-          # StorageClasses (nvme / bulk / user tiers) + the shared RWX
+          # StorageClasses (encrypted / plain / bulk tiers), recurring jobs,
+          # + the shared RWX
           # PVCs the media apps mount.
           - {name: storage}
+          # Weekly restore test of the Tigris backups (ADR-0044): restores
+          # every backed-up volume into a scratch PVC and reads it.
+          - {name: backup-verify}
           # ingress-nginx (ADR-0009): nested Helm Application; the admins
           # gate is its global-auth-url.
           - {name: ingress-nginx}
