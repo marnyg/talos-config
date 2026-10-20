@@ -76,7 +76,7 @@ spec:
             - name: agent
               # k8s/apps/sandbox/build.sh prints the @digest to pin here (the same
               # string as the sap-provisioner -outfit and sap-parent -image pins).
-              image: ghcr.io/marnyg/sandbox-agent@sha256:d16a0c182da68b8899ce35885152c1ec7a1caef80a78d5451de826f070fd1153
+              image: ghcr.io/marnyg/sandbox-agent@sha256:f50fe10e9ed67e61e62d11c339bbbda6f6262ffb404dfa8950f2481d1d5cbad6
               env:
                 - name: AGENT_MODEL
                   value: anthropic/claude-sonnet-4.6
