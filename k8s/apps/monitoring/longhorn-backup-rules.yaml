@@ -73,4 +73,4 @@ spec:
           labels: {severity: warning}
           annotations:
             summary: "Backup restore test has not passed for 8 days"
-            description: "The weekly restore test (backup-verify CronJob) has not succeeded in 8 days, or never. Run it: kubectl -n backup-verify create job --from=cronjob/backup-verify verify-$(date +%s)"
+            description: "The weekly restore test (backup-verify CronJob) has not succeeded in 8 days, or never. Run it: scripts/verify-backup.sh"

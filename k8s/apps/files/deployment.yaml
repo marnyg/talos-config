@@ -27,8 +27,11 @@
 # as), so a pod can read them later without a chown. Strategy Recreate:
 # RWO + hostPort both forbid two pods at once.
 #
-# Stopping it (`replicas: 0`) keeps the PVC and its data but breaks
-# every VM's T:. Grow it by raising the request — up only.
+# Stopping it means committing `replicas: 0` here: a live `kubectl
+# scale` is undone by ArgoCD's selfHeal within seconds (or pause the
+# app first, as scripts/encrypt-pvc.sh does). Either way the PVC and its
+# data stay, and every VM's T: breaks. Grow it by raising the request —
+# up only.
 #
 # On `longhorn-encrypted` since 2026-10-20 (the first volume moved
 # there; scripts/encrypt-pvc.sh, one rsync of 15.4 G): two replicas on

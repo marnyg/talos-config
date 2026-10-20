@@ -130,18 +130,18 @@ spec:
           # encryption nor an off-site copy (VM ISOs, caches). The
           # replica/locality/selector settings below still define it.
           defaultClass: false
-          # Two replicas for app state on the default (nvme) class, across
-          # the three nodes: one node loss keeps the data and leaves a
-          # third node to rebuild onto (w1 does go away; `9l67`). Three
-          # would put a copy on every node and make the smallest disk the
-          # fleet's capacity ceiling. Set here rather than via
-          # defaultSettings.defaultReplicaCount, which became a per-engine
-          # map in 1.10 and only affects UI-created volumes; PVCs take
-          # this. The other classes decide their own count
-          # (k8s/apps/storage/storageclass.yaml): longhorn-bulk runs the
-          # media library at one replica (ADR-0031, amending 0029).
-          # files/transfer is on this class too (2026-10-20; the
-          # longhorn-user class ADR-0031 made for it is gone).
+          # Two replicas for this plain class (VM disks/ISOs, metrics,
+          # logs — app state moved to longhorn-encrypted, which keeps the
+          # same count in its own parameters). Two, across the four
+          # `nvme` nodes (cp1 321G, w1 751G, nas1 911G, w2 999G + 959G on
+          # 2026-10-20): one node loss keeps the data and leaves others to
+          # rebuild onto (w1 and w2 do go away; `9l67`). More would make
+          # the smallest disk (cp1) the fleet's capacity ceiling. Set here
+          # rather than via defaultSettings.defaultReplicaCount, which
+          # became a per-engine map in 1.10 and only affects UI-created
+          # volumes; PVCs take this. The other classes decide their own
+          # count (k8s/apps/storage/storageclass.yaml): longhorn-bulk runs
+          # the media library at one replica (ADR-0031, amending 0029).
           defaultClassReplicaCount: 2
           defaultDataLocality: best-effort
           # Fence app state to the NVMe tier (jx78). Since nas1's SATA

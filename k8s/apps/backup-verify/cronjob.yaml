@@ -15,10 +15,8 @@
 # BackupVerifyStale (longhorn-backup-rules.yaml) pages if no run has
 # succeeded for 8 days.
 #
-# Run it now:   kubectl -n backup-verify create job --from=cronjob/backup-verify verify-$(date +%s)
-# One volume:   …then `kubectl -n backup-verify set env job/<name> VOLUME=<ns>/<pvc>` is too late
-#               (the pod exists); instead copy the CronJob's job template
-#               with VOLUME set, or edit the env here for a one-off.
+# Run it now:   scripts/verify-backup.sh                 (all volumes, waits for the verdict)
+# One volume:   scripts/verify-backup.sh <ns>/<pvc> [--manifest]
 # MANIFEST=1 prints each restored volume's sorted sha256 manifest, to
 # diff by hand against the live volume (done for files/transfer on
 # 2026-10-20: identical).
