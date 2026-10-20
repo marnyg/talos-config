@@ -90,6 +90,10 @@ migrate)
   mode_=$(jq -r '.spec.volumeMode // "Filesystem"' <<<"$json")
   access=$(jq -r '.spec.accessModes|join(",")' <<<"$json")
   size=$(jq -r .spec.resources.requests.storage <<<"$json")
+  # Longhorn refuses an encrypted volume of <= 16 MiB (the LUKS2 header
+  # alone is 16 MiB). Floor tiny claims at 64Mi; the manifest must say
+  # the same or the next sync tries to shrink the claim.
+  case "$size" in *Ki|[0-9]*Mi) n=${size%%[KM]i}; [ "${size%Ki}" != "$size" ] && n=$(( n / 1024 )); [ "$n" -lt 64 ] && { echo "size $size -> 64Mi (encrypted floor)"; size=64Mi; } ;; esac
   oldpv=$(jq -r .spec.volumeName <<<"$json")
   oldsc=$(jq -r .spec.storageClassName <<<"$json")
   tracking=$(jq -r '.metadata.annotations["argocd.argoproj.io/tracking-id"] // ""' <<<"$json")
