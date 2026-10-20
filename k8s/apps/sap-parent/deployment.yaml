@@ -82,7 +82,7 @@ spec:
         - name: parent
           # actors/build.sh prints the tag@digest to pin here (keep in
           # step with sap-provisioner's and sap-lighthouse's).
-          image: ghcr.io/marnyg/sap-actors:d498a68@sha256:156693a7d9bb373696ee2061939bae9ee25e1886b46a42da34c80042690b55c4
+          image: ghcr.io/marnyg/sap-actors:b8bc661@sha256:8ea50a39e68a424462af381a67507dba0cf9a54db220f7a912de8f72cdda928f
           command: ["/usr/local/bin/parent"]
           args:
             - -state=/var/lib/sap-parent
@@ -93,7 +93,7 @@ spec:
             - -provisioner-id=ed:9c3ae5ecc9a7eeacc4138fb91977d0e2fe6318bdde8429a12198b814ebb41c86
             # The agent child image (k8s/apps/sandbox/build.sh), by the
             # digest the provisioner's -outfit dresses.
-            - -image=ghcr.io/marnyg/sandbox-agent@sha256:f50fe10e9ed67e61e62d11c339bbbda6f6262ffb404dfa8950f2481d1d5cbad6
+            - -image=ghcr.io/marnyg/sandbox-agent@sha256:d227fcd6e4b36d5e55a0e9d3e23bd60a3d145acb0455bdd2424b276ea330daec
             - -listen=:8080
             - -issuer=http://auth.gw.mesh.internal
             - -client-id=agents
