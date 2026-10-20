@@ -169,7 +169,10 @@ EOF
   kubectl -n "$ns" logs job/"$job" | tail -3
 
   # --- 4. release both claims ----------------------------------------
-  kubectl -n "$ns" delete pvc "$tmp" --timeout=60s >/dev/null
+  # The Completed pod still counts for pvc-protection: remove the Job
+  # (and so the pod) first or the temp PVC sits Terminating forever.
+  kubectl -n "$ns" delete job "$job" --wait=true >/dev/null
+  kubectl -n "$ns" delete pvc "$tmp" --timeout=120s >/dev/null
   kubectl patch pv "$newpv" --type=json -p '[{"op":"remove","path":"/spec/claimRef"}]' >/dev/null
   kubectl label pv "$oldpv" "encrypt-pvc/old=$TODAY" "encrypt-pvc/claim=$ns.$pvc" --overwrite >/dev/null
   kubectl -n "$ns" delete pvc "$pvc" --timeout=60s >/dev/null
