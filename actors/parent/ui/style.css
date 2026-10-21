@@ -23,7 +23,7 @@ td a { display: block; max-width: 28rem; overflow: hidden; text-overflow: ellips
 input, textarea, select, button { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: .3rem; padding: .35rem .5rem; }
 textarea { width: 100%; }
 form .row { display: flex; gap: .5rem; margin: .4rem 0; flex-wrap: wrap; }
-form .row input { flex: 1 1 10rem; }
+form .row input, form .row select.repo-pick { flex: 1 1 10rem; }
 button { cursor: pointer; }
 button.link { border: 0; background: none; padding: 0; text-decoration: underline; color: var(--muted); }
 button.danger { color: var(--bad); border-color: var(--bad); }

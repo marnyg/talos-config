@@ -44,13 +44,12 @@
         <select name="goal"><option value="">goal (the framer picks one if unset)</option>{{range .Goals}}<option value="{{.ID}}">{{.ID}}: {{.Text}}</option>{{end}}</select>
       </div>
       <div class="row">
-        <input name="repo" list="repos" placeholder="repo (owner/name on git.gw, optional)">
+        {{template "repos.html" .Repos}}
         <input name="ref" placeholder="ref (default branch)">
       </div>
       <label><input type="checkbox" name="start" value="1"> start right away (skip {{.Flow.Initial}})</label>
       <button type="submit">file</button>
     </form>
-    {{template "repos.html" .Repos}}
   </details>
 
   <p class="muted small">drag a card onto a highlighted column to move it; agent columns take a card only while no session holds it.</p>

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -120,17 +121,49 @@ func TestWebRepoPicker(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		s := string(body)
-		if resp.StatusCode != 200 || !strings.Contains(s, `<input name="repo" list="repos"`) ||
-			!strings.Contains(s, `<datalist id="repos"><option value="agents/r000">main</option><option value="agents/r001">main</option></datalist>`) {
+		if resp.StatusCode != 200 || !strings.Contains(s, `<select name="repo" class="repo-pick">`) ||
+			!strings.Contains(s, `<option value="agents/r000" data-default="main">agents/r000</option><option value="agents/r001" data-default="main">agents/r001</option>`) ||
+			!strings.Contains(s, `<option value="other">other…</option>`) || !strings.Contains(s, `<input name="repo_other"`) {
 			t.Fatalf("page %s: %d\n%s", u, resp.StatusCode, s)
 		}
 	}
 
+	// The form reads the picker: a listed repo as is, "other" as the
+	// free-text input beside it.
+	me.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	file := func(form url.Values) parent.Task {
+		t.Helper()
+		form.Set("project", pr.ID)
+		req, _ := http.NewRequest(http.MethodPost, ui.URL+"/tasks", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", ui.URL)
+		resp, err := me.Do(req)
+		if err != nil || resp.StatusCode != 303 {
+			t.Fatalf("form: %v %d", err, resp.StatusCode)
+		}
+		resp.Body.Close()
+		tk, err := r.store.Task(strings.TrimPrefix(resp.Header.Get("Location"), "/t/"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tk
+	}
+	if tk := file(url.Values{"title": {"listed"}, "repo": {"agents/r001"}}); tk.Repo != "agents/r001" {
+		t.Fatalf("listed: %+v", tk)
+	}
+	if tk := file(url.Values{"title": {"other"}, "repo": {"other"}, "repo_other": {" agents/new "}}); tk.Repo != "agents/new" {
+		t.Fatalf("other: %+v", tk)
+	}
+	if tk := file(url.Values{"title": {"none"}, "repo": {""}, "repo_other": {"ignored/x"}}); tk.Repo != "" {
+		t.Fatalf("none: %+v", tk)
+	}
+
+	// No forge: the plain input, free text.
 	w.Forge = nil
 	resp, _ := me.Get(ui.URL + "/")
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !strings.Contains(string(body), `<datalist id="repos"></datalist>`) {
-		t.Fatalf("no forge: %s", body)
+	if s := string(body); !strings.Contains(s, `<input name="repo" placeholder=`) || strings.Contains(s, "repo-pick") {
+		t.Fatalf("no forge: %s", s)
 	}
 }

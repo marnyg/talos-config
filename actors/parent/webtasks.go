@@ -255,7 +255,7 @@ func (w *Web) taskForm(rw http.ResponseWriter, r *http.Request, p Principal) {
 		return
 	}
 	spec := TaskSpec{Title: r.FormValue("title"), Description: strings.TrimSpace(r.FormValue("description")),
-		Goal: r.FormValue("goal"), Why: strings.TrimSpace(r.FormValue("why")), Repo: strings.TrimSpace(r.FormValue("repo")), Ref: strings.TrimSpace(r.FormValue("ref"))}
+		Goal: r.FormValue("goal"), Why: strings.TrimSpace(r.FormValue("why")), Repo: formRepo(r), Ref: strings.TrimSpace(r.FormValue("ref"))}
 	t, err := w.P.CreateTask(context.WithoutCancel(r.Context()), p.Wallet, project, spec, r.FormValue("start") != "")
 	if err != nil {
 		http.Redirect(rw, r, "/tasks?project="+project+"&error="+queryEscape(err.Error()), http.StatusSeeOther)

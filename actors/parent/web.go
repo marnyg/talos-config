@@ -310,6 +310,17 @@ func (w *Web) session(rw http.ResponseWriter, r *http.Request, p Principal) {
 	w.render(rw, "session.html", d)
 }
 
+// formRepo reads the repo field as repos.html lays it out: the picker's
+// "other" means the free-text input beside it. A real repo is
+// owner/name, so "other" cannot collide with one.
+func formRepo(r *http.Request) string {
+	repo := strings.TrimSpace(r.FormValue("repo"))
+	if repo == "other" {
+		repo = strings.TrimSpace(r.FormValue("repo_other"))
+	}
+	return repo
+}
+
 func (w *Web) submitForm(rw http.ResponseWriter, r *http.Request, p Principal) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -317,7 +328,7 @@ func (w *Web) submitForm(rw http.ResponseWriter, r *http.Request, p Principal) {
 	}
 	sess, err := w.P.Submit(context.WithoutCancel(r.Context()), p.Wallet, child.TaskRequest{
 		Prompt: strings.TrimSpace(r.FormValue("prompt")),
-		Repo:   strings.TrimSpace(r.FormValue("repo")),
+		Repo:   formRepo(r),
 		Ref:    strings.TrimSpace(r.FormValue("ref")),
 		Title:  strings.TrimSpace(r.FormValue("title")),
 	})
