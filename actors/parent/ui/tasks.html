@@ -54,27 +54,29 @@
   </details>
 
   <p class="muted small">drag a card onto a highlighted column to move it; agent columns take a card only while no session holds it.</p>
-  <div class="board" id="board">
+  <div class="board" id="board" data-project="{{.Project.ID}}" data-cap="50">
   {{range $state := .States}}
     {{$st := index $.Flow.States $state}}
     {{/* Drop targets for this column's cards: its exits, minus children
          states (entering one needs a child list only an agent writes). */}}
-    <section class="column drv-{{$st.Driver}}" data-state="{{$state}}" data-driver="{{$st.Driver}}" data-doc="{{$st.Doc}}"
+    <section class="column drv-{{$st.Driver}}" data-state="{{$state}}" data-driver="{{$st.Driver}}" data-doc="{{$st.Doc}}"{{if $st.Terminal}} data-terminal="1"{{end}}
       data-next="{{range $st.Next}}{{if ne (index $.Flow.States .).Driver "children"}}{{.}} {{end}}{{end}}">
-      <h3>{{$state}} <span class="badge {{$st.Driver}}">{{$st.Driver}}</span> <span class="muted small">{{index $.Count $state}}</span></h3>
+      <h3>{{$state}} <span class="badge {{$st.Driver}}">{{$st.Driver}}</span> <span class="muted small count">{{index $.Count $state}}</span></h3>
       {{if $st.Doc}}<p class="muted small">{{$st.Doc}}</p>{{end}}
       <ul>
       {{range index $.ByState $state}}
         {{$movable := and (not $st.Terminal) (ne $st.Driver "children") (or (eq $st.Driver "human") (not .Session))}}
-        <li class="card{{if $movable}} movable{{end}}" data-id="{{.ID}}" data-title="{{.Title}}"{{if $movable}} draggable="true"{{end}}>
+        {{/* data-rev is what board.js compares a polled task against: a
+             card is rebuilt only when it changed or moved column. */}}
+        <li class="card{{if $movable}} movable{{end}}" data-id="{{.ID}}" data-title="{{.Title}}" data-rev="{{.Updated}}|{{.Session}}|{{.Retries}}"{{if $movable}} draggable="true"{{end}}>
           <a href="/t/{{.ID}}" draggable="false">{{.Title}}</a>
           {{if .Repo}}<span class="mono small">{{.Repo}}</span>{{end}}
-          <span class="muted small">{{ago .Updated}}</span>
+          <span class="muted small ago" data-t="{{.Updated}}">{{ago .Updated}}</span>
           {{if .Session}}<span class="badge running">live</span>{{end}}
           {{if .Retries}}<span class="badge failed">retry {{.Retries}}</span>{{end}}
         </li>
       {{end}}
-      {{with index $.Hidden $state}}<li class="muted small">+{{.}} older not shown</li>{{end}}
+      {{with index $.Hidden $state}}<li class="muted small hidden-count">+{{.}} older not shown</li>{{end}}
       </ul>
     </section>
   {{end}}

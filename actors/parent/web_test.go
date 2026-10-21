@@ -14,6 +14,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -505,10 +506,14 @@ func TestWebTasks(t *testing.T) {
 			`data-next="framed rejected "`,
 			`data-state="groomed" data-driver="agent"`,
 			`data-next="executing needs-human "`,
-			`data-id="` + t2.ID + `" data-title="second" draggable="true"`,
-			`data-id="` + tk.ID + `" data-title="first">`,
+			`data-id="` + t2.ID + `" data-title="second" data-rev="` + strconv.FormatInt(t2.Updated, 10) + `||0" draggable="true"`,
+			`data-id="` + tk.ID + `" data-title="first" data-rev="` + strconv.FormatInt(tk.Updated, 10) + `||0">`,
 			`/static/board.js`,
-			`<span class="badge human">human</span> <span class="muted small">1</span></h3>`,
+			`<span class="badge human">human</span> <span class="muted small count">1</span></h3>`,
+			// What board.js's poll (sgk9) reads: the project, the cap,
+			// and which columns are terminal.
+			`id="board" data-project="` + pr.ID + `" data-cap="50"`,
+			`data-state="rejected" data-driver="human" data-doc="not doing this" data-terminal="1"`,
 		} {
 			if !strings.Contains(b, want) {
 				t.Fatalf("board lacks %q\n%s", want, b)

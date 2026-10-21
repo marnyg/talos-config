@@ -4,6 +4,14 @@
 // allows (data-next on the column, .movable on the card); the parent
 // still decides — a refused move shows its error and moves nothing.
 // Without JS the board is read-only and the task page moves a task.
+//
+// The board also follows the server (talos-config-sgk9): every few
+// seconds it polls /api/tasks?project=… and reconciles the columns —
+// a card is rebuilt only when its rev (updated|session|retries) or
+// column changed, added when new, dropped when gone; untouched cards
+// keep their DOM node. The poll holds off while a drag is in flight or
+// the move dialog is open, so a redraw cannot pull a card out from
+// under the pointer, and while the tab is hidden.
 (() => {
   const board = document.getElementById('board');
   const dlg = document.getElementById('move');
@@ -105,4 +113,117 @@
     }
   });
   dlg.addEventListener('close', () => { pending = null; });
+
+  // ---- live refresh ----------------------------------------------------
+
+  const project = board.dataset.project;
+  const cap = Number(board.dataset.cap) || 50;
+  const pollEvery = 4000;
+
+  // ago mirrors the server's template func (web.go ago).
+  const ago = (t) => {
+    if (!t) return '—';
+    const s = Math.max(0, Math.round(Date.now() / 1000 - t));
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 48 * 3600) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  };
+  const rev = (t) => `${t.updated}|${t.session || ''}|${t.retries || 0}`;
+  const movable = (col, t) => {
+    const drv = col.dataset.driver;
+    return !col.dataset.terminal && drv !== 'children' && (drv === 'human' || !t.session);
+  };
+
+  // card builds a node the way tasks.html renders one.
+  const card = (col, t) => {
+    const li = document.createElement('li');
+    const mv = movable(col, t);
+    li.className = 'card' + (mv ? ' movable' : '');
+    li.dataset.id = t.id;
+    li.dataset.title = t.title;
+    li.dataset.rev = rev(t);
+    if (mv) li.draggable = true;
+    const a = document.createElement('a');
+    a.href = `/t/${encodeURIComponent(t.id)}`;
+    a.draggable = false;
+    a.textContent = t.title;
+    li.append(a);
+    const span = (cls, text) => {
+      const s = document.createElement('span');
+      s.className = cls;
+      s.textContent = text;
+      li.append(' ', s);
+    };
+    if (t.repo) span('mono small', t.repo);
+    span('muted small ago', ago(t.updated));
+    if (t.session) span('badge running', 'live');
+    if (t.retries) span('badge failed', `retry ${t.retries}`);
+    return li;
+  };
+
+  // reconcile puts the server's list into the columns: per column, in
+  // the server's order (updated desc), reusing a card whose rev and
+  // column are unchanged.
+  const reconcile = (tasks) => {
+    const byState = new Map(columns.map(c => [c.dataset.state, []]));
+    for (const t of tasks) {
+      const l = byState.get(t.state);
+      if (l) l.push(t); // a state the flow no longer has: not shown
+    }
+    const have = new Map([...board.querySelectorAll('.card')].map(li => [li.dataset.id, li]));
+    for (const col of columns) {
+      const list = byState.get(col.dataset.state);
+      const ul = col.querySelector('ul');
+      const shown = list.slice(0, cap);
+      let cursor = null; // last placed card; the next goes after it
+      for (const t of shown) {
+        let li = have.get(t.id);
+        if (!li || li.dataset.rev !== rev(t) || li.closest('.column') !== col) {
+          const fresh = card(col, t);
+          if (li) li.replaceWith(fresh); else have.set(t.id, fresh);
+          li = fresh;
+        }
+        const at = li.querySelector('.ago');
+        if (at) at.textContent = ago(t.updated);
+        const want = cursor ? cursor.nextSibling : ul.firstChild;
+        if (li !== want) ul.insertBefore(li, want);
+        cursor = li;
+      }
+      // Whatever follows the last placed card is stale: older cards
+      // beyond the cap, cards that moved away or went, the old hidden
+      // line.
+      let n = cursor ? cursor.nextSibling : ul.firstChild;
+      while (n) { const next = n.nextSibling; n.remove(); n = next; }
+      if (list.length > shown.length) {
+        const h = document.createElement('li');
+        h.className = 'muted small hidden-count';
+        h.textContent = `+${list.length - shown.length} older not shown`;
+        ul.append(h);
+      }
+      const count = col.querySelector('h3 .count');
+      if (count) count.textContent = String(list.length);
+    }
+  };
+
+  let inFlight = false;
+  const poll = async () => {
+    if (inFlight || drag || dlg.open || document.hidden) return;
+    inFlight = true;
+    try {
+      const r = await fetch(`/api/tasks?project=${encodeURIComponent(project)}`, { headers: { Accept: 'application/json' } });
+      if (!r.ok) return; // a logged-out tab shows what it had; the next click will redirect
+      const tasks = await r.json();
+      if (drag || dlg.open) return; // a drag began during the fetch: this round is dropped
+      reconcile(tasks);
+    } catch (_) {
+      // network blip: try again next tick
+    } finally {
+      inFlight = false;
+    }
+  };
+  if (project) {
+    setInterval(poll, pollEvery);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+  }
 })();
