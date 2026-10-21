@@ -133,17 +133,49 @@ func (f Flow) Validate() error {
 	return nil
 }
 
-// StateNames is the states in a stable order: Initial first, then the
-// rest alphabetically.
+// StateNames is the states in board order — the columns a task walks
+// left to right: breadth-first from Initial (then Leaf) following each
+// state's Next in order, with the side exits pushed right: Stuck, then
+// the terminal states. Anything the walk misses (Validate forbids it)
+// trails alphabetically, so the order is total and stable.
 func (f Flow) StateNames() []string {
-	names := make([]string, 0, len(f.States))
-	for n := range f.States {
-		if n != f.Initial {
-			names = append(names, n)
+	var walk []string
+	seen := map[string]bool{}
+	for _, root := range []string{f.Initial, f.Leaf} {
+		queue := []string{root}
+		for len(queue) > 0 {
+			n := queue[0]
+			queue = queue[1:]
+			st, ok := f.States[n]
+			if !ok || seen[n] {
+				continue
+			}
+			seen[n] = true
+			walk = append(walk, n)
+			queue = append(queue, st.Next...)
 		}
 	}
-	sort.Strings(names)
-	return append([]string{f.Initial}, names...)
+	var main, terminal []string
+	for _, n := range walk {
+		switch {
+		case n == f.Stuck && n != f.Initial:
+		case f.States[n].Terminal() && n != f.Initial:
+			terminal = append(terminal, n)
+		default:
+			main = append(main, n)
+		}
+	}
+	if _, ok := f.States[f.Stuck]; ok && f.Stuck != f.Initial {
+		main = append(main, f.Stuck)
+	}
+	var rest []string
+	for n := range f.States {
+		if !seen[n] && n != f.Stuck {
+			rest = append(rest, n)
+		}
+	}
+	sort.Strings(rest)
+	return append(append(main, terminal...), rest...)
 }
 
 // ---- the transition an agent asks for ---------------------------------------

@@ -514,6 +514,41 @@ func (s *Store) Tasks(v Viewer, project string, limit int) ([]Task, error) {
 	return s.queryTasks(`WHERE `+where+` ORDER BY updated DESC LIMIT ?`, append(args, limit)...)
 }
 
+// BoardTasks is the board's read of one project: the tasks v may see,
+// at most perState per state (newest change first), and how many each
+// state holds. A cap per state rather than overall keeps a column that
+// only grows (done, rejected) from pushing the live ones off the board,
+// and the counts say what the cap left out.
+func (s *Store) BoardTasks(v Viewer, project string, perState int) ([]Task, map[string]int, error) {
+	where, args := `project = ?`, []any{project}
+	if !v.Admin() {
+		w := strings.ToLower(v.Wallet)
+		where += ` AND (owner = ? OR project IN (SELECT id FROM projects WHERE owner = ?))`
+		args = append(args, w, w)
+	}
+	ts, err := s.queryTasks(`WHERE id IN (SELECT id FROM (
+		SELECT id, ROW_NUMBER() OVER (PARTITION BY state ORDER BY updated DESC, id) AS n FROM tasks WHERE `+where+`
+	) WHERE n <= ?) ORDER BY updated DESC, id`, append(append([]any{}, args...), perState)...)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := s.db.Query(`SELECT state, COUNT(*) FROM tasks WHERE `+where+` GROUP BY state`, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var st string
+		var n int
+		if err := rows.Scan(&st, &n); err != nil {
+			return nil, nil, err
+		}
+		counts[st] = n
+	}
+	return ts, counts, rows.Err()
+}
+
 // TasksInStates lists every task sitting in a state match picks, by
 // walking the flows once and asking for those (flow, version, state)
 // triples — what the beat reconciles.

@@ -492,6 +492,29 @@ func TestWebTasks(t *testing.T) {
 			t.Fatalf("page %s: %d\n%s", u, resp.StatusCode, body)
 		}
 	}
+	// The board is a Kanban: a column carries its exits as drop
+	// targets (children states left out), a human-state card is
+	// draggable, a terminal one is not.
+	{
+		resp, _ := me.Get(ui.URL + "/tasks?project=" + pr.ID)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		b := string(body)
+		for _, want := range []string{
+			`data-state="captured" data-driver="human"`,
+			`data-next="framed rejected "`,
+			`data-state="groomed" data-driver="agent"`,
+			`data-next="executing needs-human "`,
+			`data-id="` + t2.ID + `" data-title="second" draggable="true"`,
+			`data-id="` + tk.ID + `" data-title="first">`,
+			`/static/board.js`,
+			`<span class="badge human">human</span> <span class="muted small">1</span></h3>`,
+		} {
+			if !strings.Contains(b, want) {
+				t.Fatalf("board lacks %q\n%s", want, b)
+			}
+		}
+	}
 	if resp, _ := stranger.Get(ui.URL + "/t/" + tk.ID); resp.StatusCode != 404 {
 		t.Fatalf("stranger task page: %d", resp.StatusCode)
 	}

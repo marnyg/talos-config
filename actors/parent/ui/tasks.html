@@ -7,7 +7,7 @@
   <span class="me" title="{{.Me.Wallet}}">{{.Me.Username}}</span>
   <form method="post" action="/logout"><button class="link">log out</button></form>
 </header>
-<main>
+<main class="wide">
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 
 <details class="new" {{if not .Projects}}open{{end}}>
@@ -52,25 +52,46 @@
     </form>
   </details>
 
-  <div class="board">
+  <p class="muted small">drag a card onto a highlighted column to move it; agent columns take a card only while no session holds it.</p>
+  <div class="board" id="board">
   {{range $state := .States}}
     {{$st := index $.Flow.States $state}}
-    <section class="column drv-{{$st.Driver}}">
-      <h3>{{$state}} <span class="badge {{$st.Driver}}">{{$st.Driver}}</span></h3>
+    {{/* Drop targets for this column's cards: its exits, minus children
+         states (entering one needs a child list only an agent writes). */}}
+    <section class="column drv-{{$st.Driver}}" data-state="{{$state}}" data-driver="{{$st.Driver}}" data-doc="{{$st.Doc}}"
+      data-next="{{range $st.Next}}{{if ne (index $.Flow.States .).Driver "children"}}{{.}} {{end}}{{end}}">
+      <h3>{{$state}} <span class="badge {{$st.Driver}}">{{$st.Driver}}</span> <span class="muted small">{{index $.Count $state}}</span></h3>
       {{if $st.Doc}}<p class="muted small">{{$st.Doc}}</p>{{end}}
       <ul>
       {{range index $.ByState $state}}
-        <li><a href="/t/{{.ID}}">{{.Title}}</a>
+        {{$movable := and (not $st.Terminal) (ne $st.Driver "children") (or (eq $st.Driver "human") (not .Session))}}
+        <li class="card{{if $movable}} movable{{end}}" data-id="{{.ID}}" data-title="{{.Title}}"{{if $movable}} draggable="true"{{end}}>
+          <a href="/t/{{.ID}}" draggable="false">{{.Title}}</a>
           {{if .Repo}}<span class="mono small">{{.Repo}}</span>{{end}}
           <span class="muted small">{{ago .Updated}}</span>
           {{if .Session}}<span class="badge running">live</span>{{end}}
           {{if .Retries}}<span class="badge failed">retry {{.Retries}}</span>{{end}}
         </li>
-      {{else}}<li class="muted small">—</li>{{end}}
+      {{end}}
+      {{with index $.Hidden $state}}<li class="muted small">+{{.}} older not shown</li>{{end}}
       </ul>
     </section>
   {{end}}
   </div>
+
+  <dialog id="move">
+    <form method="dialog">
+      <p><b class="title"></b><br><span class="mono route"></span></p>
+      <p class="muted small doc"></p>
+      <input name="note" placeholder="note for the next step (optional)" autocomplete="off">
+      <p class="error" hidden></p>
+      <div class="row">
+        <button value="move">move</button>
+        <button value="cancel">cancel</button>
+      </div>
+    </form>
+  </dialog>
+  <script src="/static/board.js"></script>
 </section>
 {{else}}
 <p class="muted">no projects yet — make one above.</p>

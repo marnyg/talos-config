@@ -142,9 +142,14 @@ type boardData struct {
 	Flow     Flow
 	States   []string
 	ByState  map[string][]Task
+	Count    map[string]int // tasks in the state, shown or not
+	Hidden   map[string]int // of those, cut by boardPerState
 	Error    string
 	Session  Session // for head.html's title
 }
+
+// boardPerState caps each column; the rest is counted, not listed.
+const boardPerState = 50
 
 type taskData struct {
 	Me      Principal
@@ -154,7 +159,7 @@ type taskData struct {
 }
 
 func (w *Web) board(rw http.ResponseWriter, r *http.Request, p Principal) {
-	d := boardData{Me: p, ByState: map[string][]Task{}, Error: r.URL.Query().Get("error")}
+	d := boardData{Me: p, ByState: map[string][]Task{}, Hidden: map[string]int{}, Error: r.URL.Query().Get("error")}
 	var err error
 	if d.Projects, err = w.Store.Projects(p.Viewer()); err != nil {
 		d.Error = err.Error()
@@ -170,12 +175,18 @@ func (w *Web) board(rw http.ResponseWriter, r *http.Request, p Principal) {
 		if d.Flow, err = w.Store.Flow(d.Project.Flow, d.Project.FlowVersion); err == nil {
 			d.States = d.Flow.StateNames()
 		}
-		tasks, err := w.Store.Tasks(p.Viewer(), d.Project.ID, 500)
+		tasks, count, err := w.Store.BoardTasks(p.Viewer(), d.Project.ID, boardPerState)
 		if err != nil {
 			d.Error = err.Error()
 		}
+		d.Count = count
 		for _, t := range tasks {
 			d.ByState[t.State] = append(d.ByState[t.State], t)
+		}
+		for st, n := range count {
+			if h := n - len(d.ByState[st]); h > 0 {
+				d.Hidden[st] = h
+			}
 		}
 	}
 	w.renderAny(rw, "tasks.html", d)

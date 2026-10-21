@@ -295,7 +295,20 @@ func (r *rig) up(t *testing.T) {
 	r.srv, r.ln = facethttp.Server(child.FacetAgentEvents, r.p.Handler())
 	go func() { _ = r.srv.Serve(r.ln) }()
 	r.pctx, r.pstop = context.WithCancel(r.ctx)
-	t.Cleanup(func() { r.srv.Close() })
+	// Teardown order (t.Cleanup is LIFO, so this runs before the store
+	// closes and the TempDir is swept): stop the rig, then let in-flight
+	// handlers finish. A child's PUT /session writes sessions/<id>.jsonl
+	// into the store's dir; Close does not wait for it, and a file that
+	// lands mid-sweep fails the test with "directory not empty".
+	srv := r.srv
+	t.Cleanup(func() {
+		r.cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			srv.Close()
+		}
+	})
 }
 
 func (r *rig) consentProvisioner(t *testing.T) {

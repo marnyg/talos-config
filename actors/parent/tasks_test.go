@@ -3,6 +3,7 @@ package parent
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,6 +52,61 @@ func TestMigrateSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	s2.Close()
+}
+
+// TestStateNamesBoardOrder: the board's columns follow the flow left to
+// right, the side exits (stuck, then terminals) pushed to the right.
+func TestStateNamesBoardOrder(t *testing.T) {
+	f := DefaultFlow()
+	got := strings.Join(f.StateNames(), " ")
+	want := "captured framed groomed executing delegated reviewing ready landed needs-human rejected done"
+	if got != want {
+		t.Fatalf("order:\n got %s\nwant %s", got, want)
+	}
+	if n := len(f.StateNames()); n != len(f.States) {
+		t.Fatalf("%d names for %d states", n, len(f.States))
+	}
+}
+
+// TestBoardTasksCapsPerState: the board's read caps each state, not
+// the whole project, so a pile of finished tasks cannot push a live one
+// off; the counts still say how many each state holds, and a stranger
+// sees none of it.
+func TestBoardTasksCapsPerState(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.CreateProject(Project{ID: "p", Name: "P", Owner: "0xab"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("d%d", i)
+		if _, err := s.InsertTask(Task{ID: id, Project: "p", Owner: "0xab", Title: id, State: "captured"}, "0xab", "filed"); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.Move(id, "captured", "rejected", "0xab", "", Transition{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.InsertTask(Task{ID: "live", Project: "p", Owner: "0xab", Title: "live", State: "captured"}, "0xab", "filed"); err != nil {
+		t.Fatal(err)
+	}
+	ts, count, err := s.BoardTasks(Viewer{Wallet: "0xAB"}, "p", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]int{}
+	for _, x := range ts {
+		by[x.State]++
+	}
+	if by["rejected"] != 2 || by["captured"] != 1 || count["rejected"] != 5 || count["captured"] != 1 {
+		t.Fatalf("board %v counts %v", by, count)
+	}
+	if ts, count, _ := s.BoardTasks(Viewer{Wallet: "0x1111111111111111111111111111111111111111"}, "p", 2); len(ts) != 0 || len(count) != 0 {
+		t.Fatalf("stranger sees %v %v", ts, count)
+	}
 }
 
 func TestFlowValidateAndParse(t *testing.T) {
