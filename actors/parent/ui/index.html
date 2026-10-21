@@ -15,12 +15,13 @@
   <form method="post" action="/sessions">
     <textarea name="prompt" rows="5" required placeholder="what should the agent do?"></textarea>
     <div class="row">
-      <input name="repo" placeholder="repo (owner/name on git.gw, optional)">
+      <input name="repo" list="repos" placeholder="repo (owner/name on git.gw, optional)">
       <input name="ref" placeholder="ref (default branch)">
     </div>
     <input name="title" placeholder="PR title (default: first line of the prompt)">
     <button type="submit">run</button>
   </form>
+  {{template "repos.html" .Repos}}
 </details>
 
 {{if .Query}}

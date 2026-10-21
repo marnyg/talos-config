@@ -1,0 +1,27 @@
+# The parent's read-only Forgejo token (talos-config-rpxe): bot user
+# `agent`, token-name parent-ro, scopes read:repository,read:user —
+# enough for GET /api/v1/user/repos, which feeds the repo picker on the
+# new-session/new-task forms with the repos the bot can push to. The
+# write token stays with the provisioner's -outfit (ADR-0037: the
+# parent names repos, children carry the credential); this one cannot
+# push, open PRs or issues (POST → 403, checked at minting). FORGEJO_URL
+# is the in-cluster Service: pods cannot resolve the mesh name.
+#
+# Rotate: k8s/apps/forgejo/bootstrap.md step 5b with a new --token-name,
+# DELETE the old one as sysadmin; reseal with
+# kubeseal --cert talos/clusters/homelab/sealed-secrets.crt.
+# Minted 2026-10-21.
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: forgejo-parent
+  namespace: sap
+spec:
+  encryptedData:
+    FORGEJO_TOKEN: AgANLehOBgocmNsvxYCKgxpKt9AnwjphUMHx2MDAJPFQPh0PZIGXrk8+XVuGtIEv3pi5tyc8scXCGNatrpxRKfsZZknKFL0ZcVIGOwue7uKUdeU1A9fXTYERN0fzIW6npRgOwx/XqAxM7fc1Yizrc1W8URU3zSWXBdyV0SP1kjfFm3A6TFcbiMrv7aJlSpq7jpdK/r8Uxr2ezMHEabOM1OchYRbMrL8lt8p2QzpUn54Bv8V1DRhj/IIEGNeIm+hyBRRRmbaUusGOeHa25uQYFVydBpcDTBipqoiXDVC55MPvLvpPOl9o/nJaoBqN1Q0bMzWj/LyelTwIY6/rJaroOfZ7XbfMIykW7aHyI99JLQa/kYR3KcMioGXlBo1AvYZJUpn7xkVV85ZtyJ8T0LwnwKIgiuzWS8Rhukq5WugpulPnJXmzl+6JDEe8KcCMmVnC5eJGLetRa6RvvB9Z5dfvfO1JTCAw4fuf7V1F339LjZ4ailwqObDoGTuJ4RxRJi7uMUiPPUOkkmyj0GSM/P1RLJrtTVWJhd4LnIWkI3DToglj7Pe6QG7x9KT/ulS1to1+AUFgvwWAdYGyApsuN7wJkp4+Kpf7T9CwBGu7CqaX8LV6UX+4pj3PJzIRrtwoCwUnDyD0jG+xkv+2WQu9liIaWM5pqQLThDAYjvnW1LcQHBCKCRA6q142gnR/8Y73uJ8wyzruOjGdmTfBDAsT7a6D1YFfgBkVIDM/Jmi3YQuCyqM0zngYpAOptsLK
+    FORGEJO_URL: AgBue7Ik6SSaKfX+J0B7vTVp7VzSaQ2EmDEwsJBJMFQPjoreMY4zXtz9vNFiIyOT2EhNXtjB2Ht3djtD0nqcnJaCmAgCW2jO9Kd2tK7RzYYQz3aFCzd7bZC0eC44+l9n0ejtvMdYoXwOR0LN4OFfSSH44i3iVAWLFrIz+tYR3WK97lH7eixBx5LFdFGNPn7z8GOWazgUcEc8Lm63LXCtdSDJ4b36napP3O8fxtiAs2s7e4nX67tA/j/4Jyayotzzf/b35MTs7BPHX9gLVHwM7NNdroLXW5zNhZ36VMoTWMGILooXu9B7ADTJXZEHc9NoOz5/zjF2x7TKWEdwym3whG0p3UfUAD4Msw+9rq9pBCGiuDa7XF99djTvYtWJXWvW3ULkcdG7dxMXaIB+NNBNnzdhZyLtdR3RiV8JCrkvd9fVLyFz71I0YVAwEkxnTZoCvtjWrBVO+ST5bj3O6cAVzTzgSr1K0zFeYO9u06s4IkAv9yuCuL4UNavWyRdsqzTzowFYC9ak3hWv4vfj1AAPbJeA0RoNml0Lmh7qXgXCivxiecs3NNq5x6JdIZlBOnSvJXTpk5olFaI60A6Lst87lLsaDt/5DjYz4vJTycWJ6zPMREoTvfbqK49lfmCeFRYhwHZadIIzAquzVRNL1hjzRAhJfzgdl6UsiObc2a8BVUQk18pTVtLPPdJJ5hKICcdY9hXlwIUVvAwKkYG6hWPSqRmSLSxXRsumzCjPJzSg5TFz
+  template:
+    metadata:
+      name: forgejo-parent
+      namespace: sap

@@ -150,6 +150,31 @@ namespace has the Secret
 only once the sealed-secrets controller has unsealed the committed file
 (ArgoCD polls ~3 min; do not hand-apply — notes.md 2026-10-10).
 
+### 5b. The parent's read-only token (repo picker, `rpxe`)
+
+The parent lists the bot's repos (`GET /api/v1/user/repos`, which
+needs `read:user` on top of `read:repository`) to offer them on the
+new-session/new-task forms. A second token on the same bot, read-only,
+sealed beside the parent — the write token above never leaves the
+provisioner's outfit.
+
+```sh
+TOKEN=$($F admin user generate-access-token --username agent \
+  --token-name parent-ro --scopes read:repository,read:user --raw)
+kubectl -n sap create secret generic forgejo-parent \
+  --from-literal=FORGEJO_TOKEN="$TOKEN" \
+  --from-literal=FORGEJO_URL=http://forgejo.forgejo.svc:3000 \
+  --dry-run=client -o yaml \
+  | kubeseal --cert talos/clusters/homelab/sealed-secrets.crt -o yaml \
+  > k8s/apps/sap-parent/forgejo-parent.sealed.yaml
+unset TOKEN
+```
+
+Check as in step 5 with `secret forgejo-parent` and the URL
+`/api/v1/user/repos?limit=5`: expect `200` with `agents/scratch` in it,
+and `403` on any POST (verified 2026-10-21). Rotation as step 5
+(`DELETE /api/v1/users/agent/tokens/parent-ro`).
+
 ## 6. Owner repos: Forgejo is the source of truth, GitHub the replica
 
 Decision `z15k` (amends `4la8`): every GitHub repo of the owner,

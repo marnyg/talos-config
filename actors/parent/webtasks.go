@@ -146,6 +146,7 @@ type boardData struct {
 	Hidden   map[string]int // of those, cut by boardPerState
 	Error    string
 	Session  Session // for head.html's title
+	Repos    []Repo  // the picker's options
 }
 
 // boardPerState caps each column; the rest is counted, not listed.
@@ -188,6 +189,7 @@ func (w *Web) board(rw http.ResponseWriter, r *http.Request, p Principal) {
 				d.Hidden[st] = h
 			}
 		}
+		d.Repos = w.Forge.Repos(r.Context())
 	}
 	w.renderAny(rw, "tasks.html", d)
 }

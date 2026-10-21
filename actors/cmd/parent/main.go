@@ -25,6 +25,11 @@
 // The agent-events facet (child.FacetAgentEvents): every connection is
 // decided by parent.Admit (VerifyChain over the preamble, the protocol's
 // own rule) and served by parent.Handler through facethttp.
+//
+// FORGEJO_URL + FORGEJO_TOKEN (env, read-only token: a credential is not
+// a flag) feed the repo picker on the new-session/new-task forms with
+// the repos the agent bot can push to (talos-config-rpxe). Unset ⇒ the
+// forms take free text only.
 package main
 
 import (
@@ -140,6 +145,10 @@ func main() {
 	// The UI.
 	login := &parent.Login{Issuer: *issuer, ClientID: *clientID, RedirectURL: *publicURL + "/callback", Key: cookieKey.Seed(), TTL: *cookieTTL}
 	web := &parent.Web{P: p, Store: store, Login: login}
+	if u, tok := os.Getenv("FORGEJO_URL"), os.Getenv("FORGEJO_TOKEN"); u != "" && tok != "" {
+		web.Forge = &parent.Forge{URL: u, Token: tok}
+		slog.Info("parent: repo picker on", "forge", u)
+	}
 	hs := &http.Server{Addr: *listen, Handler: web.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

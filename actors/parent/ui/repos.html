@@ -1,0 +1,4 @@
+{{/* The repo picker's options (Web.Forge): the repos the agent bot can
+     push to, each carrying its default branch. Empty when the parent
+     has no forge token or the forge is down; the input stays free text. */}}
+<datalist id="repos">{{range .}}<option value="{{.Name}}">{{.Default}}</option>{{end}}</datalist>

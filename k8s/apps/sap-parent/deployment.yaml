@@ -102,6 +102,11 @@ spec:
           env:
             - name: SAP_LOG
               value: warn
+          # FORGEJO_URL + FORGEJO_TOKEN: the read-only token behind the
+          # repo picker (forgejo-parent.sealed.yaml); unset ⇒ free text.
+          envFrom:
+            - secretRef:
+                name: forgejo-parent
           ports:
             - containerPort: 8080
           readinessProbe:

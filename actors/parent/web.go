@@ -33,6 +33,9 @@ type Web struct {
 	Store *Store
 	Login *Login
 	Log   *slog.Logger
+	// Forge feeds the repo picker on the new-session/new-task forms;
+	// nil ⇒ free text only.
+	Forge *Forge
 
 	tpl *template.Template
 }
@@ -231,6 +234,7 @@ type pageData struct {
 	Hits     []Hit
 	Error    string
 	CLI      cliAsk
+	Repos    []Repo // the picker's options
 }
 
 // cliAsk is what /cli/authorize shows: the local port and nonce the
@@ -283,6 +287,7 @@ func (w *Web) index(rw http.ResponseWriter, r *http.Request, p Principal) {
 	if err != nil {
 		d.Error = err.Error()
 	}
+	d.Repos = w.Forge.Repos(r.Context())
 	w.render(rw, "index.html", d)
 }
 
