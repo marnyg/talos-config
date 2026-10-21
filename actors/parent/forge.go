@@ -15,9 +15,12 @@ import (
 )
 
 // Forge lists the repos a task may name (talos-config-rpxe): GET
-// /api/v1/user/repos on Forgejo as the agent bot, so the list is
-// exactly what a child's #task can clone and push to — the `agents`
-// org through the bots team plus whatever the bot was added to. The
+// /api/v1/repos/search on Forgejo as the agent bot — everything the
+// bot can see, each marked with whether it can push there (the
+// `agents` org through the bots team, plus repos it was added to;
+// public repos are visible but not pushable until then). The picker
+// shows the pushable ones first and the rest under their own heading:
+// a task on a read-only repo clones but cannot land its branch. The
 // parent holds a read-only token for this (the write token stays
 // provisioner policy, ADR-0037); the picker is a hint, the form still
 // takes free text. Nil ⇒ no list.
@@ -47,6 +50,18 @@ type Repo struct {
 	Name string `json:"full_name"`
 	// Default is the default branch (the ref a task takes when unset).
 	Default string `json:"default_branch"`
+	// Push: the bot can push here, so a task's result branch and PR
+	// can land. Off for repos the bot merely sees.
+	Push bool `json:"push"`
+}
+
+// searchRepo is Forgejo's repository shape, the fields read.
+type searchRepo struct {
+	Name        string `json:"full_name"`
+	Default     string `json:"default_branch"`
+	Permissions struct {
+		Push bool `json:"push"`
+	} `json:"permissions"`
 }
 
 // repoName is `owner/name` as the child accepts it (child.repoRe);
@@ -94,7 +109,7 @@ func (f *Forge) fetch(ctx context.Context) ([]Repo, error) {
 	}
 	var all []Repo
 	for page := 1; page <= forgePages; page++ {
-		u := fmt.Sprintf("%s/api/v1/user/repos?limit=%d&page=%d", strings.TrimSuffix(f.URL, "/"), forgePage, page)
+		u := fmt.Sprintf("%s/api/v1/repos/search?limit=%d&page=%d", strings.TrimSuffix(f.URL, "/"), forgePage, page)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
 			return nil, err
@@ -110,20 +125,32 @@ func (f *Forge) fetch(ctx context.Context) ([]Repo, error) {
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("%s: %d %s", u, resp.StatusCode, strings.TrimSpace(string(raw)))
 		}
-		var got []Repo
+		var got struct {
+			OK   bool         `json:"ok"`
+			Data []searchRepo `json:"data"`
+		}
 		if err := json.Unmarshal(raw, &got); err != nil {
 			return nil, fmt.Errorf("%s: decode: %w", u, err)
 		}
-		for _, r := range got {
+		if !got.OK {
+			return nil, fmt.Errorf("%s: ok=false", u)
+		}
+		for _, r := range got.Data {
 			if repoName.MatchString(r.Name) {
-				all = append(all, r)
+				all = append(all, Repo{Name: r.Name, Default: r.Default, Push: r.Permissions.Push})
 			}
 		}
-		if len(got) < forgePage {
+		if len(got.Data) < forgePage {
 			break
 		}
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
+	// Pushable first, then by name.
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Push != all[j].Push {
+			return all[i].Push
+		}
+		return all[i].Name < all[j].Name
+	})
 	return all, nil
 }
 

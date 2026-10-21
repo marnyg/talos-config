@@ -1,15 +1,22 @@
 {{/* The repo field of the new-session/new-task forms (Web.Forge,
      talos-config-rpxe). With a list: a <select> of the repos the agent
-     bot can push to (each option carries its default branch) plus
-     "other…", which the server reads as the free-text repo_other input
-     beside it; repos.js hides that input until "other…" is chosen and
-     mirrors the default branch into ref's placeholder. Without a list
-     (no forge token, or the forge is down and nothing cached): the
-     free-text input alone. */}}
+     bot can see — the ones it can push to first, the rest under their
+     own heading (a task there clones but cannot land its branch: add
+     the bot as a collaborator to move a repo up) — each carrying its
+     default branch, plus "other…", which the server reads as the
+     free-text repo_other input beside it; repos.js hides that input
+     until "other…" is chosen and mirrors the default branch into ref's
+     placeholder. Without a list (no forge token, or the forge is down
+     and nothing cached): the free-text input alone. */}}
 {{if .}}
 <select name="repo" class="repo-pick">
   <option value="">no repo</option>
-  {{range .}}<option value="{{.Name}}" data-default="{{.Default}}">{{.Name}}</option>{{end}}
+  <optgroup label="agent can push">
+  {{range .}}{{if .Push}}<option value="{{.Name}}" data-default="{{.Default}}">{{.Name}}</option>{{end}}{{end}}
+  </optgroup>
+  <optgroup label="read-only for the agent (its PR cannot land)">
+  {{range .}}{{if not .Push}}<option value="{{.Name}}" data-default="{{.Default}}">{{.Name}}</option>{{end}}{{end}}
+  </optgroup>
   <option value="other">other…</option>
 </select>
 <input name="repo_other" class="repo-other" placeholder="owner/name on git.gw">

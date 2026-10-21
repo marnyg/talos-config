@@ -17,8 +17,8 @@ import (
 	"github.com/marnyg/talos-config/actors/parent"
 )
 
-// forgejo is a stub of GET /api/v1/user/repos: n repos, paged at 50,
-// token-checked; `down` makes it 503.
+// forgejo is a stub of GET /api/v1/repos/search: n repos, paged at
+// 50, token-checked, every other one pushable; `down` makes it 503.
 type forgejo struct {
 	srv   *httptest.Server
 	n     int
@@ -31,7 +31,7 @@ func newForgejo(t *testing.T, n int) *forgejo {
 	f := &forgejo{n: n}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		f.calls.Add(1)
-		if r.URL.Path != "/api/v1/user/repos" || r.Header.Get("Authorization") != "token ro" {
+		if r.URL.Path != "/api/v1/repos/search" || r.Header.Get("Authorization") != "token ro" {
 			http.Error(rw, "nope", http.StatusUnauthorized)
 			return
 		}
@@ -41,22 +41,24 @@ func newForgejo(t *testing.T, n int) *forgejo {
 		}
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-		var out []map[string]string
+		var out []map[string]any
 		for i := (page - 1) * limit; i < f.n && i < page*limit; i++ {
-			out = append(out, map[string]string{"full_name": fmt.Sprintf("agents/r%03d", f.n-1-i), "default_branch": "main"})
+			k := f.n - 1 - i
+			out = append(out, map[string]any{"full_name": fmt.Sprintf("agents/r%03d", k), "default_branch": "main",
+				"permissions": map[string]bool{"push": k%2 == 0}})
 		}
-		out = append(out, map[string]string{"full_name": "bad name/with space", "default_branch": "x"})
+		out = append(out, map[string]any{"full_name": "bad name/with space", "default_branch": "x"})
 		if page > 1 {
 			out = out[:len(out)-1]
 		}
-		json.NewEncoder(rw).Encode(out)
+		json.NewEncoder(rw).Encode(map[string]any{"ok": true, "data": out})
 	}))
 	t.Cleanup(f.srv.Close)
 	return f
 }
 
 // TestForgeRepos: the walk pages at 50, drops names a #task would
-// refuse, sorts; a second call inside TTL does not hit the forge; a
+// refuse, sorts pushable first then by name; a second call inside TTL does not hit the forge; a
 // forge that is down past TTL serves the last good list once and the
 // cache cadence holds; a wrong token yields nothing, not an error.
 func TestForgeRepos(t *testing.T) {
@@ -65,7 +67,8 @@ func TestForgeRepos(t *testing.T) {
 	ctx := context.Background()
 
 	got := f.Repos(ctx)
-	if len(got) != 120 || got[0].Name != "agents/r000" || got[119].Name != "agents/r119" || got[0].Default != "main" {
+	if len(got) != 120 || got[0].Name != "agents/r000" || !got[0].Push || got[59].Name != "agents/r118" ||
+		got[60].Name != "agents/r001" || got[60].Push || got[119].Name != "agents/r119" || got[0].Default != "main" {
 		t.Fatalf("repos: %d %+v…", len(got), got[:min(3, len(got))])
 	}
 	if c := fj.calls.Load(); c != 3 {
@@ -122,7 +125,12 @@ func TestWebRepoPicker(t *testing.T) {
 		resp.Body.Close()
 		s := string(body)
 		if resp.StatusCode != 200 || !strings.Contains(s, `<select name="repo" class="repo-pick">`) ||
-			!strings.Contains(s, `<option value="agents/r000" data-default="main">agents/r000</option><option value="agents/r001" data-default="main">agents/r001</option>`) ||
+			!strings.Contains(s, `<optgroup label="agent can push">
+  <option value="agents/r000" data-default="main">agents/r000</option>
+  </optgroup>
+  <optgroup label="read-only for the agent (its PR cannot land)">
+  <option value="agents/r001" data-default="main">agents/r001</option>
+  </optgroup>`) ||
 			!strings.Contains(s, `<option value="other">other…</option>`) || !strings.Contains(s, `<input name="repo_other"`) {
 			t.Fatalf("page %s: %d\n%s", u, resp.StatusCode, s)
 		}
