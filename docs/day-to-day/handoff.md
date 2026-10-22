@@ -24,11 +24,16 @@
 - **Your two steps**: reseal `sealed-secret.yaml` with the real guest
   creds (`k8s/apps/guacamole/bootstrap.md`), then delete the pod
   (subPath never refreshes), then open it from the phone.
-- **Next in line** (`f0jl`, blocked on `ey3a`): `vmpower` — a
-  start/stop page + idle auto-stop keyed off Guacamole's
-  `activeConnections`, which first needs a decision record: it makes
-  git not the whole truth for `/spec/runStrategy` (`ignoreDifferences`
-  on `platform-vms`).
+- **Also shipped the same session** (`f0jl`): `vmpower` at
+  `win.gw.mesh.internal` — Start/Stop over `spec.runStrategy`, stdlib
+  Go, RBAC = get+patch on that one VM in `vms`. Live state for that one
+  field (decision `4440`) via `ignoreDifferences` on
+  `kubevirt.io/VirtualMachine`; git keeps the rest. Verified: state
+  read, same-value patch accepted, gate 401s without a token. **Not
+  verified: a real stop→start** (guest was in use) — first click is the
+  test. **Still open on `f0jl`: idle auto-stop**, deliberately not
+  built (no honest in-pod idle signal; a wrong guess kills a 24 GiB
+  session).
 
 ## Also 2026-10-20 (separate session): app state encrypted + backed up to Tigris (ADR-0044; `9io`, `bsj`)
 

@@ -253,6 +253,18 @@ these are properties of the tools, not current weather (that lives in
   chart purge 404'd `bitnami-labs.github.io/sealed-secrets` and silently
   killed the controller. Vendor release manifests instead.
 
+- **A brand-new GHCR package is private**, and the pull failure looks
+  like a cluster problem: `failed to fetch anonymous token: 401` →
+  `ImagePullBackOff`. Nothing is wrong with the pod — flip it at
+  `github.com/users/<owner>/packages/container/package/<name>` →
+  Package settings → Change visibility. The API route (`PATCH
+  /user/packages/container/<name>` with `visibility=public`) answered
+  **404** with both the gh OAuth token and the ghcr docker token, even
+  though `GET` on the same URL returned 200; the change did apply, so
+  retry-then-check-visibility rather than trusting the status code
+  (2026-10-22, `marnyg/vmpower`). Every other image here is public, so
+  this only ever bites the first push of a new one.
+
 ## Operational
 
 - **`fly logs` replays old buffered history** — filter by timestamp or

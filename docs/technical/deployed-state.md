@@ -186,6 +186,21 @@ history and, where the numbers still matter, in ADR-0006 and
   behind the gate's 401, guacd reaches `:3389`. **Unverified: the
   WebSocket tunnel end to end and NLA to Server 2025** — first browser
   session is the test.
+- **The VM's power switch** _(2026-10-22, `f0jl`)_: ns `vmpower`
+  (PSS `restricted`), Deployment `vmpower` (`ghcr.io/marnyg/vmpower`,
+  stdlib Go, 32Mi) at `win.gw.mesh.internal` behind the default admins
+  gate. It patches `spec.runStrategy` (`Always` ⇄ `Halted`) through a
+  Role in `vms` that allows **get+patch on that one VirtualMachine and
+  nothing else** (no list, no delete, nothing cluster-wide — verified).
+  This works only because `argocd-cm` now carries
+  `ignoreDifferences.kubevirt.io_VirtualMachine: /spec/runStrategy`
+  (decision `4440`), i.e. **live state for that one field, git for
+  everything else**; deleting that pointer restores the 2026-08-11
+  stance on the next sync. Verified: `/state` reports the live VM
+  (`Running`/`Always`), the SA's merge-patch is accepted, the gate
+  answers 401 without a mesh token. **Not verified: a real stop→start
+  cycle** (only a same-value patch — the guest was in use). No idle
+  auto-stop: the signal for "nobody is using it" lives outside the pod.
 - Media stack pods split across both nodes on Longhorn RWX volumes;
   SealedSecrets (`newshosting`, `nzbgeek`) unseal via the
   inlineManifest-provisioned key pair. **Reinstall**:
