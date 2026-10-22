@@ -32,14 +32,14 @@
   Go, RBAC = get+patch on `resourceNames: [win2k25]` in `vms`. Live
   state for that one field (decision `4440`): `ignoreDifferences` on
   `kubevirt.io/VirtualMachine` **plus `RespectIgnoreDifferences=true`
-  on the children** (review 2026-10-23: the pointer alone only hides
+  on the children** (review 2026-10-22: the pointer alone only hides
   the diff; a sync of `platform-vms` would have written git's value
   back). **Not verified: a real stop→start** (guest was in use) —
   first click is the test; `terminationGracePeriodSeconds: 300` is on
   the VM for it (needs a VMI restart to take). **Still open on `f0jl`:
   idle auto-stop**, deliberately not built (no honest in-pod idle
   signal; a wrong guess kills a 24 GiB session).
-- **Review fixes 2026-10-23** (post-`b145dc8`): CSRF guard on
+- **Review fixes 2026-10-22** (post-`b145dc8`): CSRF guard on
   `/start`+`/stop` (`Sec-Fetch-Site` + `X-Vmpower` header — the gate is
   ambient, so a cross-site fetch from any page on an admin device could
   park the VM), `confirm()` on Stop, `X-Mesh-Name` in the action log,
