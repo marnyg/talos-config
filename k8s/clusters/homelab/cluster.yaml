@@ -174,3 +174,12 @@ spec:
             maxDuration: 3m
         syncOptions:
           - SkipDryRunOnMissingResource=true
+          # ignoreDifferences alone only hides the diff: a real sync still
+          # applies the whole manifest from git, and kubectl's three-way
+          # merge compares against *live*, so an ignored field is written
+          # back on the next sync. This option makes the apply omit the
+          # ignored fields too. Today exactly one is ignored —
+          # /spec/runStrategy on VirtualMachines, the vmpower button
+          # (k8s/apps/argocd/config.yaml, decision 4440) — so this is the
+          # other half of that decision, not a general loosening.
+          - RespectIgnoreDifferences=true

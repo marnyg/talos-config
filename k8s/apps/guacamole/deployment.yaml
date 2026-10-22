@@ -133,6 +133,15 @@ spec:
               value: guacd
             - name: GUACD_PORT
               value: "4822"
+            # No IP ban. Guacamole bans a source address after 5 failed
+            # logins, but every browser here arrives as ONE address: the
+            # gateway drops X-Forwarded-For (it has a key, not an IP, to
+            # forward) and nginx adds its own pod IP. So the ban could
+            # only ever lock every device out together (it did, on
+            # 2026-10-22), and it protects nothing the device gate in
+            # front and Windows' own account lockout do not already.
+            - name: BAN_ENABLED
+              value: "false"
             # WEBAPP_CONTEXT stays the image default (`guacamole`): the
             # app is served at /guacamole/, and the Ingress sends `/`
             # there. Naming it ROOT would collide with Tomcat's own

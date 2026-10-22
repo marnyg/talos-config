@@ -51,6 +51,12 @@ this list is the checkable form.
    That bookkeeping is not recomputable from git and is not required to
    be; it shares the fate of the payload it describes, so its
    durability is a replication-and-backup problem, not a git problem.
+   **A workload's power state is data plane** _(2026-10-22, decision
+   `4440`)_: `/spec/runStrategy` on the win2k25 VirtualMachine is live
+   state, flipped by `vmpower` and ignored by ArgoCD
+   (`ignoreDifferences` + `RespectIgnoreDifferences`); git's value is
+   what a from-scratch cluster boots with. One field, one kind; a
+   second such carve-out should be argued, not copied.
    **Git is compiler input, never verifier input** _(2026-09-03,
    spike `359.2`)_: the hub compiles declared roles and policy into
    certs; a verifier (node agent, gateway, any receiver) decides from

@@ -389,8 +389,11 @@
   `k8s/apps/argocd/server-patch.yaml`).
 - ArgoCD-managed Jobs: never set `ttlSecondsAfterFinished` (prune-
   recreate loop); Jobs are immutable — bump the name on script change.
-  `virtctl stop/start` is futile under selfHeal — VM state is a git
-  edit of `runStrategy`.
+  VM power is live state since 2026-10-22 (decision `4440`):
+  `/spec/runStrategy` is in `ignoreDifferences` **and** the children
+  sync with `RespectIgnoreDifferences=true` — both are needed, the
+  first only hides the diff and a sync still writes git's value back.
+  `vmpower` patches it; `virtctl stop/start` would now stick too.
 - siwe-oidc: a bridge restart rotates the JWKS → ArgoCD sessions die;
   the group gate (`/authz`, ADR-0032) has no session to lose. The image
   is `:latest` + `imagePullPolicy: Always` — CI push changes nothing

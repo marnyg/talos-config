@@ -7,9 +7,20 @@
 #     deliberate perf step.
 #   - EFI without SecureBoot (SecureBoot needs SMM; nothing here needs
 #     attestation theater on an eval guest).
-#   - runStrategy Always: with ArgoCD selfHeal, `virtctl stop/start`
-#     would be reverted by the next sync — start/stop is a git edit of
-#     this field (Always ↔ Halted), consistent with git-is-truth.
+#   - runStrategy is LIVE state, not git state (decision 4440,
+#     2026-10-22): ArgoCD ignores /spec/runStrategy on VirtualMachines
+#     (k8s/apps/argocd/config.yaml + RespectIgnoreDifferences in
+#     k8s/clusters/homelab/cluster.yaml), and `vmpower`
+#     (win.gw.mesh.internal, k8s/apps/vmpower) patches it. The value
+#     here is only what a from-scratch cluster boots with. Before that
+#     it was the other way round — `virtctl stop/start` was reverted by
+#     selfHeal and power was a git edit of this field.
+#   - terminationGracePeriodSeconds 300: a Stop is runStrategy Halted →
+#     VMI deleted → ACPI shutdown, and the guest is killed when the
+#     grace period runs out. KubeVirt's default is 30 s; Server 2025
+#     with 24 GiB of dirty pages, or mid-update, can take longer, and a
+#     forced kill means a dirty NTFS or a half-applied update. Costs
+#     nothing when shutdown is quick.
 #
 # Sizing (2026-10-19, on w2): 8 cores / 24Gi of w2's 12 threads / 48Gi
 # — the node exists for this VM and the GPU it holds, and the rest is
@@ -65,6 +76,7 @@ spec:
       labels:
         vm.kubevirt.io/name: win2k25
     spec:
+      terminationGracePeriodSeconds: 300
       domain:
         cpu:
           cores: 8

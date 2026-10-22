@@ -87,6 +87,8 @@
             packages.actors-bin = actors.bin;
             # nix build .#workouts-bin   — bin/workouts + the module's go test
             packages.workouts-bin = workouts.bin;
+            # nix build .#vmpower-bin    — bin/vmpower + the module's go test
+            packages.vmpower-bin = vmpower.bin;
 
             # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go
             #                               package, drift-checked against iroh-go/iroh

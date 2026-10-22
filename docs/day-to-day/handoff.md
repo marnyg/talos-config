@@ -15,25 +15,36 @@
   tunnel dies there. Over `:80` the Upgrade rides ingress-http exactly
   as Vaultwarden's websocket does. Sessions are capped at 1 h by the
   gateway's `ConnMaxAge`, not by nginx.
-- **Verified live**: pods Ready, `user-mapping.xml` actually read (the
-  entrypoint symlinks `/etc/guacamole` into a throwaway
-  `/tmp/guacamole-home.*`), placeholder login returns a token,
-  `/guacamole/` 200 behind the gate's 401, guacd → `:3389` open.
-  **Not verified: the ws tunnel end to end, NLA to Server 2025, audio
-  in the browser** — the first real session is the test.
-- **Your two steps**: reseal `sealed-secret.yaml` with the real guest
-  creds (`k8s/apps/guacamole/bootstrap.md`), then delete the pod
-  (subPath never refreshes), then open it from the phone.
+- **Verified live, end to end** (`5c2b432`, `45734b4`): real guest
+  creds sealed, a browser session through gateway → nginx → Tomcat →
+  guacd, NLA to Server 2025 as-is, audio. The `user-mapping.xml` is
+  read via the entrypoint's symlink of `/etc/guacamole` into a
+  throwaway `/tmp/guacamole-home.*` (subPath never refreshes: pod
+  delete after a reseal). The Guacamole login's password is still the
+  bootstrap placeholder (second gate; rotate on request).
+- **Two traps written down in `bootstrap.md`**: Server 2025's account
+  lockout (10 tries / ~10 min; a locked account says "access denied"
+  for the right password too, and the page's auto-reconnect burns the
+  tries), and Guacamole's IP ban, now `BAN_ENABLED=false` because every
+  device arrives as the gateway's address.
 - **Also shipped the same session** (`f0jl`): `vmpower` at
   `win.gw.mesh.internal` — Start/Stop over `spec.runStrategy`, stdlib
-  Go, RBAC = get+patch on that one VM in `vms`. Live state for that one
-  field (decision `4440`) via `ignoreDifferences` on
-  `kubevirt.io/VirtualMachine`; git keeps the rest. Verified: state
-  read, same-value patch accepted, gate 401s without a token. **Not
-  verified: a real stop→start** (guest was in use) — first click is the
-  test. **Still open on `f0jl`: idle auto-stop**, deliberately not
-  built (no honest in-pod idle signal; a wrong guess kills a 24 GiB
-  session).
+  Go, RBAC = get+patch on `resourceNames: [win2k25]` in `vms`. Live
+  state for that one field (decision `4440`): `ignoreDifferences` on
+  `kubevirt.io/VirtualMachine` **plus `RespectIgnoreDifferences=true`
+  on the children** (review 2026-10-23: the pointer alone only hides
+  the diff; a sync of `platform-vms` would have written git's value
+  back). **Not verified: a real stop→start** (guest was in use) —
+  first click is the test; `terminationGracePeriodSeconds: 300` is on
+  the VM for it (needs a VMI restart to take). **Still open on `f0jl`:
+  idle auto-stop**, deliberately not built (no honest in-pod idle
+  signal; a wrong guess kills a 24 GiB session).
+- **Review fixes 2026-10-23** (post-`b145dc8`): CSRF guard on
+  `/start`+`/stop` (`Sec-Fetch-Site` + `X-Vmpower` header — the gate is
+  ambient, so a cross-site fetch from any page on an admin device could
+  park the VM), `confirm()` on Stop, `X-Mesh-Name` in the action log,
+  httptest suite (`nix build .#vmpower-bin` runs it), stale
+  "power is a git edit" comments retired.
 
 ## Also 2026-10-20 (separate session): app state encrypted + backed up to Tigris (ADR-0044; `9io`, `bsj`)
 
@@ -121,8 +132,9 @@
   edges; `tmm5`, `88uq`, ntfy first page; `dsuj` GPU hand-off + CP
   question; RDP with sound from the laptop untried (Guacamole's
   in-browser audio is the cheapest way to test it).
-- `ey3a`: NLA and the ws tunnel unproven; `vmpower` (`f0jl`) needs the
-  `runStrategy`/selfHeal decision recorded before code.
+- `f0jl`: first real stop→start untested; idle auto-stop undecided.
+  Guacamole mesh login (drop the second gate) is a front proxy +
+  `guacamole-auth-json`, the `jellyfinqc` shape — not started.
 
 ## Suggested next steps
 

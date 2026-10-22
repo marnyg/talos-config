@@ -12,11 +12,13 @@ Two pods, no database:
 | `guacd` | RDP client: dials `win2k25-rdp.vms.svc.cluster.local:3389` |
 | `guacamole` | web app: login, connection list, the WebSocket tunnel |
 
-## 1. Seal the real credentials (only manual step)
+## 1. Reseal the credentials (the only manual step)
 
-This commit carries **placeholder** values in `sealed-secret.yaml`
-(`REPLACE-with-…`). Until it is re-sealed, the pods are healthy but the
-Windows login fails. The plaintext template:
+`sealed-secret.yaml` carries the real guest credentials (since
+`5c2b432`); the Guacamole login's own password is still the bootstrap
+placeholder string, which is fine behind the device gate but rotates
+the same way. Without a valid seal the pods are healthy and the Windows
+login fails. The plaintext template:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -78,9 +80,9 @@ guest desktop appears fitted to the browser viewport.
   connection at `ConnMaxAge` (1 h); the page shows the disconnect and
   reconnecting is one click. Not an nginx timeout (those are 3600 s).
 - **A halted VM shows as a connection error**, not a prompt — guacd
-  just gets a refused socket. Until `vmpower` (`talos-config-f0jl`)
-  exists, starting the VM is still a git edit of `runStrategy` in
-  `k8s/apps/vms/win2k25-vm.yaml`.
+  just gets a refused socket. Start it from
+  <http://win.gw.mesh.internal/> (`vmpower`, `talos-config-f0jl`) and
+  wait for `Running`.
 
 ## 3. When something is wrong
 
@@ -95,7 +97,7 @@ kubectl -n guacamole logs deploy/guacd     # per-session FreeRDP output
 | 403 / 401 from the browser | not an `admins` device on the mesh — the gate is the device cert, not this app |
 | login page, then "Log in failed" | guest creds wrong. `guacd`'s log says which: `Authentication failure (invalid credentials?)` is the password, a TLS/NLA complaint is the security mode (then try `<param name="security">any</param>`) |
 | tunnel drops every 60 s | the Ingress lost its `proxy-read/send-timeout` annotations (ingress.yaml) |
-| "Address banned" / login refused for a while | 5 failed logins ban the source IP for 300 s — and every browser arrives from the gateway pod's address, so a few typos lock every device out. Wait it out, or set `BAN_ENABLED=false` (webapp env) while debugging |
+| "Address banned" / login refused for a while | should not happen any more: `BAN_ENABLED=false` (deployment.yaml), because every browser arrives from the gateway pod's address (the gateway forwards a key, not an IP) and the ban could only lock every device out at once. If it appears, the env var was lost |
 | page loads, tunnel never connects | it must be `http://`: ADR-0033's `:443` device front has no Upgrade path, so `wss://` dies there |
 | sluggish desktop | expected — guacd software-decodes. **`color-depth` is a no-op**: the RDP graphics pipeline forces 32 bpp whatever you ask for (`WARNING: Ignoring requested color depth of 16 bpp` in the `guacd` log, 2026-10-22). Cheaper levers: disable the graphics pipeline, or use the native client over `rdp.gw.mesh.internal:3389` |
 

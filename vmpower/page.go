@@ -102,9 +102,13 @@ async function refresh() {
 }
 
 async function act(which) {
+  // One mis-tap on a phone must not end a 24 GiB session.
+  if (which === "stop" && !confirm("Stop {{.VM}}? Open sessions end and the guest shuts down.")) return;
   el("start").disabled = el("stop").disabled = true;
   try {
-    const r = await fetch(which, {method: "POST"});
+    // The header is the CSRF guard (main.go sameSite): a cross-site
+    // fetch cannot send it without a preflight nothing answers.
+    const r = await fetch(which, {method: "POST", headers: {"X-Vmpower": "1"}});
     render(await r.json());
   } catch (e) {
     el("err").hidden = false;

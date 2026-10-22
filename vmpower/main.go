@@ -186,6 +186,45 @@ func snippet(b []byte) string {
 	return s
 }
 
+// Identity headers the gateway sets on every proxied request
+// (config-server/gateway: anything a caller sent under them is
+// stripped first). HeaderName is the device's durable name: the
+// only honest answer to "who clicked".
+const meshNameHeader = "X-Mesh-Name"
+
+// actionHeader is what the page's fetch sends with every POST. A
+// cross-origin fetch cannot add it without a CORS preflight, and
+// nothing here answers OPTIONS, so a cross-site POST never reaches the
+// patch. Belt to the Sec-Fetch-Site braces in sameSite.
+const actionHeader = "X-Vmpower"
+
+// sameSite is the CSRF guard. The mesh gate is ambient (an admin
+// device opens this page as it is, no cookie, no login), so without
+// this any web page open in a browser on such a device could POST
+// /stop with a cross-site fetch. Two independent checks, either of
+// which refuses: Sec-Fetch-Site (every current browser sends it; only
+// same-origin / none are the page itself or a typed URL) and the
+// custom header above.
+func sameSite(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none", "":
+		// "" is a non-browser caller (curl); the header check below
+		// still applies to it.
+	default:
+		return false
+	}
+	return r.Header.Get(actionHeader) != ""
+}
+
+// who names the caller for the log: the device name the gateway set,
+// or the socket peer when the request did not come through it.
+func who(r *http.Request) string {
+	if n := r.Header.Get(meshNameHeader); n != "" {
+		return n
+	}
+	return r.RemoteAddr
+}
+
 type server struct {
 	api *api
 	rdp string
@@ -217,6 +256,11 @@ func (s *server) act(want string) http.HandlerFunc {
 			http.Error(w, "POST only", http.StatusMethodNotAllowed)
 			return
 		}
+		if !sameSite(r) {
+			log.Printf("%s: refused cross-site %s (Sec-Fetch-Site=%q)", who(r), want, r.Header.Get("Sec-Fetch-Site"))
+			http.Error(w, "forbidden: not from the page", http.StatusForbidden)
+			return
+		}
 		ctx := r.Context()
 		cur, err := s.api.read(ctx)
 		if err != nil {
@@ -234,7 +278,7 @@ func (s *server) act(want string) http.HandlerFunc {
 			s.stateJSON(w, cur, http.StatusBadGateway)
 			return
 		}
-		log.Printf("%s: runStrategy -> %s (was %s, status %s)", r.RemoteAddr, want, cur.Strategy, cur.Status)
+		log.Printf("%s: runStrategy -> %s (was %s, status %s)", who(r), want, cur.Strategy, cur.Status)
 		// The operator reacts asynchronously; re-read so the page shows
 		// Starting/Stopping instead of the state it asked from.
 		if next, err := s.api.read(ctx); err == nil {
@@ -280,6 +324,11 @@ func main() {
 		Addr:              *listen,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
+		// Every request is one short JSON round trip (the kube client
+		// itself gives up at 20 s); nginx keeps upstream connections
+		// open between the page's 3 s polls.
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	log.Printf("vmpower: %s/%s, listening on %s", *namespace, *name, *listen)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

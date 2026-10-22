@@ -5,18 +5,28 @@
 # `runStrategy` in k8s/apps/vms/win2k25-vm.yaml and pushing — fine at a
 # desk, useless from a phone.
 #
-# Authority is deliberately tiny and named: three verbs on ONE object in
-# the `vms` namespace, granted to this ServiceAccount by the Role below.
-# No list (the page reads the VM by name), no delete, no subresource
-# vocabulary, nothing cluster-wide. The token is the pod's own projected
-# SA token, which the binary re-reads on every call because kubelet
-# rotates it.
+# Authority is deliberately tiny and named: two verbs (get, patch) on
+# ONE object, granted to this ServiceAccount by the Role below;
+# `resourceNames` pins it to win2k25, so a second VM in `vms` is out of
+# reach. No list (the page reads the VM by name), no delete, no
+# subresource vocabulary, nothing cluster-wide.
+#
+# The page has no login of its own; the mesh gate is ambient (an admin
+# device opens it as it is, no cookie), so the binary refuses a POST
+# that did not come from its own page (Sec-Fetch-Site + a custom
+# header): otherwise any web page open on an admin device could park
+# the VM with a cross-site fetch.
+#
+# The token is the pod's own projected SA token, which the binary
+# re-reads on every call because kubelet rotates it.
 #
 # Live state, not git state: ArgoCD ignores /spec/runStrategy for
-# VirtualMachines (k8s/apps/argocd/config.yaml, decision 4440). Without
-# that one jsonPointer, selfHeal would revert every click within
-# seconds — the same way it reverted a hand-applied secret on
-# 2026-10-22. Everything else about the VM is still git's to change, and
+# VirtualMachines (k8s/apps/argocd/config.yaml, decision 4440) AND
+# applies with RespectIgnoreDifferences (k8s/clusters/homelab/
+# cluster.yaml) — both halves are needed: without the jsonPointer
+# selfHeal reverts every click within seconds (the same way it reverted
+# a hand-applied secret on 2026-10-22); without the sync option the
+# next sync of platform-vms writes git's value back. Everything else about the VM is still git's to change, and
 # a VM spec change still needs a VMI restart (guides/gotchas.md).
 #
 # Not wired (a separate decision, see f0jl): auto-stop when idle. The
@@ -38,6 +48,7 @@ metadata:
 rules:
   - apiGroups: ["kubevirt.io"]
     resources: ["virtualmachines"]
+    resourceNames: ["win2k25"]
     verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

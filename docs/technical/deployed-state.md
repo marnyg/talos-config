@@ -181,22 +181,29 @@ history and, where the numbers still matter, in ADR-0006 and
   admins gate, credentials in the sealed `user-mapping.xml`
   (`k8s/apps/guacamole/bootstrap.md`). **http only**: ADR-0033's `:443`
   front has no Upgrade path, so the tunnel cannot be `wss`; the
-  gateway's `ConnMaxAge` cuts a session at 1 h. Verified live:
-  pods Ready, placeholder login issues a token, `/guacamole/` 200
-  behind the gate's 401, guacd reaches `:3389`. **Unverified: the
-  WebSocket tunnel end to end and NLA to Server 2025** — first browser
-  session is the test.
+  gateway's `ConnMaxAge` cuts a session at 1 h. Verified live
+  (2026-10-22): a real browser session through gateway → nginx → Tomcat
+  → guacd, NLA to Server 2025, audio. Guacamole's IP ban is off
+  (`BAN_ENABLED=false`): every device arrives as the gateway's address,
+  so it could only lock all of them out together.
 - **The VM's power switch** _(2026-10-22, `f0jl`)_: ns `vmpower`
   (PSS `restricted`), Deployment `vmpower` (`ghcr.io/marnyg/vmpower`,
   stdlib Go, 32Mi) at `win.gw.mesh.internal` behind the default admins
   gate. It patches `spec.runStrategy` (`Always` ⇄ `Halted`) through a
-  Role in `vms` that allows **get+patch on that one VirtualMachine and
-  nothing else** (no list, no delete, nothing cluster-wide — verified).
-  This works only because `argocd-cm` now carries
+  Role in `vms` that allows **get+patch on `resourceNames: [win2k25]`
+  and nothing else** (no list, no delete, nothing cluster-wide —
+  verified). This works only because `argocd-cm` carries
   `ignoreDifferences.kubevirt.io_VirtualMachine: /spec/runStrategy`
-  (decision `4440`), i.e. **live state for that one field, git for
-  everything else**; deleting that pointer restores the 2026-08-11
-  stance on the next sync. Verified: `/state` reports the live VM
+  **and** the ApplicationSet children sync with
+  `RespectIgnoreDifferences=true` (decision `4440`; the pointer alone
+  only hides the diff, a sync still applies git's value), i.e. **live
+  state for that one field, git for everything else**; deleting both
+  restores the 2026-08-11 stance on the next sync. POSTs are refused
+  unless they come from the page itself (`Sec-Fetch-Site` + `X-Vmpower`
+  — the gate is ambient, so this is the CSRF guard); the action log
+  names the device (`X-Mesh-Name`). The VM carries
+  `terminationGracePeriodSeconds: 300` so a Stop is an ACPI shutdown
+  with room for 24 GiB of dirty pages, not a 30 s kill. Verified: `/state` reports the live VM
   (`Running`/`Always`), the SA's merge-patch is accepted, the gate
   answers 401 without a mesh token. **Not verified: a real stop→start
   cycle** (only a same-value patch — the guest was in use). No idle
