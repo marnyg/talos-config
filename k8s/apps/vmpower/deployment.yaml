@@ -90,7 +90,7 @@ spec:
       containers:
         - name: vmpower
           # vmpower/build.sh prints this line; bump it after a rebuild.
-          image: ghcr.io/marnyg/vmpower:dbe4374@sha256:aec8d190c9d6c1261216b8b15eb375810bf4dc5a0ff1c8946df3fb1443cdaaf4
+          image: ghcr.io/marnyg/vmpower:ead71fe@sha256:29d5dfc60f07a5d27bacd68ee9c251db536ed371bd7fc208d0e02abaaf968406
           args:
             - -namespace=vms
             - -vm=win2k25
