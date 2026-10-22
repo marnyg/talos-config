@@ -50,6 +50,15 @@ data:
   # ordering, so ArgoCD must see an importing DataVolume as Progressing
   # until CDI reports Succeeded. Settings ConfigMap changes are picked
   # up live — no controller restart needed (unlike cmd-params-cm).
+  # `/spec/runStrategy` is the VM's power switch, and live state, not git
+  # state (decision 4440, talos-config-f0jl): `vmpower` patches it from a
+  # page behind the mesh, and without this pointer selfHeal reverts every
+  # click within seconds. Deliberately ONE field on ONE kind — everything
+  # else about a VirtualMachine stays git-owned, and deleting this block
+  # restores "stop/start is a git edit" on the next sync.
+  resource.customizations.ignoreDifferences.kubevirt.io_VirtualMachine: |
+    jsonPointers:
+      - /spec/runStrategy
   resource.customizations.health.cdi.kubevirt.io_DataVolume: |
     hs = {}
     if obj.status ~= nil and obj.status.phase ~= nil then

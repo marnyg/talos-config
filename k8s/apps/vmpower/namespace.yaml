@@ -1,0 +1,7 @@
+# `vmpower`: the win2k25 power switch (talos-config-f0jl). Inherits the
+# cluster-wide PSS restricted default; the image is 65534 and needs
+# nothing wider.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vmpower

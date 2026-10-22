@@ -1,0 +1,40 @@
+# win.gw.mesh.internal — the power page (talos-config-f0jl). Access is
+# the controller's default gate, so this is `group: admins` by device
+# cert (k8s/apps/media/ingress.yaml explains the mechanism): a device
+# that may open the guest is exactly a device that may park it. No new
+# mesh-policy row — `gateway: ingress-http` already covers admins.
+#
+# http:// like the rest; there is nothing here that needs a secure
+# context, and the ws/wss asymmetry (ADR-0033's :443 front has no
+# Upgrade path) does not apply to plain fetches anyway.
+#
+# No long timeouts: every request is one short JSON round trip. The page
+# polls /state every 3 s, which is also what keeps the mesh connection
+# count sane — one browser, one stream at a time.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vmpower
+  namespace: vmpower
+  annotations:
+    # Dashboard tile, next to the Guacamole one (Apps).
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Windows VM power
+    gethomepage.dev/group: Apps
+    gethomepage.dev/icon: mdi-power
+    gethomepage.dev/description: start / stop win2k25
+    gethomepage.dev/pod-selector: app=vmpower
+    gethomepage.dev/weight: "21"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: win.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vmpower
+                port:
+                  number: 8080

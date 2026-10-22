@@ -107,6 +107,9 @@ spec:
           # ClusterIP the VM already has, so this child can sync while
           # the VM is Halted or mid-reinstall.
           - {name: guacamole}
+          # The power switch (f0jl): start/stop at win.gw.mesh.internal,
+          # plus the Role it holds in vms/.
+          - {name: vmpower}
           # --- media
           # media namespace, Ingress for the *arr stack, shared secrets.
           - {name: media}

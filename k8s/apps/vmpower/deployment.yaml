@@ -1,0 +1,126 @@
+# The win2k25 power switch: two buttons over spec.runStrategy, exposed
+# at win.gw.mesh.internal (talos-config-f0jl). Why it exists at all:
+# parking the guest returns 24 GiB and the whole passed-through RTX 3070
+# to the cluster (spike dsuj), and until now that meant editing
+# `runStrategy` in k8s/apps/vms/win2k25-vm.yaml and pushing — fine at a
+# desk, useless from a phone.
+#
+# Authority is deliberately tiny and named: three verbs on ONE object in
+# the `vms` namespace, granted to this ServiceAccount by the Role below.
+# No list (the page reads the VM by name), no delete, no subresource
+# vocabulary, nothing cluster-wide. The token is the pod's own projected
+# SA token, which the binary re-reads on every call because kubelet
+# rotates it.
+#
+# Live state, not git state: ArgoCD ignores /spec/runStrategy for
+# VirtualMachines (k8s/apps/argocd/config.yaml, decision 4440). Without
+# that one jsonPointer, selfHeal would revert every click within
+# seconds — the same way it reverted a hand-applied secret on
+# 2026-10-22. Everything else about the VM is still git's to change, and
+# a VM spec change still needs a VMI restart (guides/gotchas.md).
+#
+# Not wired (a separate decision, see f0jl): auto-stop when idle. The
+# only honest idle signals live outside this process — Guacamole's
+# active-connection count needs Guacamole's own login, the guest has no
+# agent API — and a wrong guess terminates a 24 GiB session mid-work.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vmpower
+  namespace: vmpower
+---
+# In the VM's namespace, because that is where the object it touches is.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vmpower
+  namespace: vms
+rules:
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachines"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vmpower
+  namespace: vms
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vmpower
+subjects:
+  - kind: ServiceAccount
+    name: vmpower
+    namespace: vmpower
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vmpower
+  namespace: vmpower
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vmpower
+  template:
+    metadata:
+      labels:
+        app: vmpower
+    spec:
+      serviceAccountName: vmpower
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vmpower
+          # vmpower/build.sh prints this line; bump it after a rebuild.
+          image: ghcr.io/marnyg/vmpower:dbe4374@sha256:aec8d190c9d6c1261216b8b15eb375810bf4dc5a0ff1c8946df3fb1443cdaaf4
+          args:
+            - -namespace=vms
+            - -vm=win2k25
+            # The page's footer link; the RDP door itself is
+            # k8s/apps/guacamole (ey3a).
+            - -rdp-url=http://guac.gw.mesh.internal/
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vmpower
+  namespace: vmpower
+spec:
+  selector:
+    app: vmpower
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
