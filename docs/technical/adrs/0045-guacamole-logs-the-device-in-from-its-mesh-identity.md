@@ -1,6 +1,8 @@
 # ADR-0045: Guacamole logs the device in from its mesh identity
 
-- Status: Proposed 2026-10-22 (design session; not built)
+- Status: Accepted 2026-10-22 (owner). Built and verified the same day
+  (`ea6cbe8`, `2965fae`): the owner's device landed on the connection
+  list as `marius-mac` with no form and opened the desktop.
 - Date: 2026-10-22
 - Related: ADR-0032 (the group gate; `X-Mesh-Token` as the app seam),
   ADR-0033 (`:443` device front has no Upgrade path — why Guacamole is
@@ -90,12 +92,13 @@ Consequences, deliberately:
 - **Keeping `user-mapping.xml` as break-glass.** Ruled out: a parallel
   password path is the surface being removed.
 
-## Open at implementation start (verify, then promote to Accepted)
+## Confirmation (verified from source and live before building)
 
-- The client POSTs `api/tokens` on load with the URL's query params —
-  the hook's premise.
-- The blob format (HMAC-SHA256 over the JSON prepended to AES-128-CBC
-  ciphertext, zero IV, base64) against the extension's README.
-- Whether a body that already carries a `token` plus an added `data`
-  re-authenticates cleanly; if not, inject only when `token` is absent
-  and accept one login-form flash after Guacamole's idle timeout.
+- The client POSTs `api/tokens` on every route it resolves, with the
+  URL's query params (`indexRouteConfig.js` → `updateCurrentToken`).
+- Blob format from `UserDataService`/`CryptoService`: signature
+  *inside* the ciphertext; `guacjson.Encode` matches openssl
+  byte-for-byte. Blobs are `singleUse` with a 2 min `expires`.
+- `token` + `data` with a live session keeps the session (providers'
+  default `updateAuthenticatedUser`); with a dead one it is a fresh
+  login — so idle-timeout re-login is silent too.
