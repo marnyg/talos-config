@@ -208,3 +208,52 @@ ADR-0035):
   ADR-0026's header injection. Landed on: nothing until an app forces
   it, then **device-local termination + name-constrained per-device CA**
   (the daemon that already fakes DNS/IPs fakes the server too).
+
+## win2k25 idle signal for auto-stop (2026-10-22, `f0jl`)
+
+Pinned: the guest agent's `userlist` subresource
+(`subresources.kubevirt.io … /virtualmachineinstances/win2k25/userlist`)
+empty for N minutes, **plus** a Windows disconnect limit
+(`MaxDisconnectionTime`, `win2k25-provision.yaml`) so a session nobody
+is connected to is logged off after M minutes and the list actually
+empties. Verified 2026-10-22: `userlist` reports a session three days
+old with no RDP connection live — without the Windows limit it never
+goes empty. Covers Guacamole, `xfreerdp` over the raw `rdp` facet and
+the console alike.
+
+- **Ruled out: counting Guacamole tunnels in a front proxy.** Blind
+  to the raw `rdp` facet (`xfreerdp`), so "no tunnel" is not "nobody
+  connected". The proxy is still the right shape for the mesh login
+  (`5is2`), just not an idle signal.
+- **Ruled out: VMI CPU metrics from virt-handler.** No scrape path
+  until the observability epic (`xhk3`); and low CPU is not "unused"
+  for a desktop anyway.
+- **Ruled out: a guest exec probe (`quser`).** KubeVirt exposes no
+  guest-exec through the API.
+- **Ruled out: hibernate instead of power-off** (Windows power-button
+  action = Hibernate, same ACPI signal). A ~10 GiB hiberfil over
+  SATA-emulated Longhorn can outlive the grace period and be killed
+  mid-write, and resume with a passed-through GPU is the classic
+  glitch. Halted is a power-off; the disk persists, the apps do not.
+
+## Guacamole on the mesh login (2026-10-22, `5is2`)
+
+Pinned: a sidecar front proxy (`config-server/guacjson`, the
+`jellyfinqc` shape) that intercepts the client's own `POST api/tokens`
+and, when the body carries no credentials, verifies `X-Mesh-Token`
+and adds a `guacamole-auth-json` `data` blob. The webapp's bundled
+JSON extension (`/opt/guacamole/extensions/guacamole-auth-json`,
+enabled by `JSON_SECRET_KEY`) does the rest; no login form ever.
+
+- **Ruled out: `guacamole-auth-header` on `X-Mesh-Name`.** The gate
+  is at nginx; the Service is reachable from any pod with a forged
+  header. `meshtoken` exists for exactly this.
+- **Ruled out: OIDC via siwe-oidc.** It is the person gate (wallet
+  per login, heavier than today), Guacamole's OpenID extension wants
+  the implicit flow, and it still needs a connection backend —
+  `user-mapping.xml` only serves users it password-checked itself.
+- **Ruled out: a proxy-served landing page writing
+  `localStorage.GUAC_AUTH`.** Works, but couples to the client's
+  storage format; intercepting the token POST is one hook and no HTML.
+- **Ruled out: folding the login into `vmpower`.** Different
+  volatility (login vs power); vmpower's no-deps property would go.
