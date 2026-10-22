@@ -1,6 +1,7 @@
 # Static, FROM-scratch image for one C-free config-server/cmd binary —
-# the in-cluster Go services: the SIWE→OIDC bridge (cmd/siweoidc) and
-# the Jellyfin front proxy (cmd/jellyfinqc). Built and pushed to ghcr
+# the in-cluster Go services: the SIWE→OIDC bridge (cmd/siweoidc), the
+# Jellyfin front proxy (cmd/jellyfinqc) and the Guacamole front proxy
+# (cmd/guacjson). Built and pushed to ghcr
 # by .github/workflows/<name>-image.yml with `--build-arg CMD=<name>`.
 # These services hold no secrets of their own beyond what the env
 # hands them, read no files and need no shell, so the image is the
