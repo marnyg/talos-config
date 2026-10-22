@@ -39,6 +39,17 @@
   the VM for it (needs a VMI restart to take). **Still open on `f0jl`:
   idle auto-stop**, deliberately not built (no honest in-pod idle
   signal; a wrong guess kills a 24 GiB session).
+- **Guacamole login is gone** (`5is2`, ADR-0045 Proposed→verify, `2965fae`):
+  `guacjson` sidecar (`config-server/guacjson`, `cmd/guacjson`,
+  `.github/workflows/guacjson-image.yml`) adds the auth-json blob to
+  the client's own token POST from the verified `X-Mesh-Token`;
+  `user-mapping.xml` and its subPath trap deleted; one sealed
+  `guacamole-auth`. Live: the owner's tab re-authed as `marius-mac`
+  "authenticated by json"; in-cluster no-token POST → "Permission
+  denied". Blob format checked against openssl. Design session
+  (exploration-log, ADR-0045) also pinned auto-stop for `f0jl`:
+  `userlist` empty 10 min + Windows `MaxDisconnectionTime` 15 min,
+  8 h hold button, fail-safe resets — not built yet.
 - **Review fixes 2026-10-22** (post-`b145dc8`): CSRF guard on
   `/start`+`/stop` (`Sec-Fetch-Site` + `X-Vmpower` header — the gate is
   ambient, so a cross-site fetch from any page on an admin device could

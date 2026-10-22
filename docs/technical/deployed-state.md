@@ -177,9 +177,17 @@ history and, where the numbers still matter, in ADR-0006 and
   uid 1000, webapp 1001), Deployment `guacd` (FreeRDP; dials
   `win2k25-rdp.vms.svc.cluster.local:3389`, so the guest and the raw
   `rdp` facet are untouched) + Deployment `guacamole` (Tomcat, app at
-  `/guacamole/`), Ingress `guac.gw.mesh.internal` behind the default
-  admins gate, credentials in the sealed `user-mapping.xml`
-  (`k8s/apps/guacamole/bootstrap.md`). **http only**: ADR-0033's `:443`
+  `/guacamole/`) **with the `guacjson` front sidecar** _(2026-10-22,
+  `5is2`, ADR-0045; `config-server/guacjson`,
+  `ghcr.io/marnyg/guacjson`)_: the Service lands on the sidecar, which
+  signs the device into the webapp by adding a `guacamole-auth-json`
+  blob to the client's own credential-less `POST api/tokens` after
+  verifying `X-Mesh-Token` (pinned gateway id, group `admins`). The
+  device name is the Guacamole user; no login form, no user list.
+  Secrets: sealed `guacamole-auth` {`json-secret-key` both
+  containers, `guest-password` sidecar}; RDP parameters are `-param`
+  args in the manifest. Ingress `guac.gw.mesh.internal` behind the
+  default admins gate (`k8s/apps/guacamole/bootstrap.md`). **http only**: ADR-0033's `:443`
   front has no Upgrade path, so the tunnel cannot be `wss`; the
   gateway's `ConnMaxAge` cuts a session at 1 h. Verified live
   (2026-10-22): a real browser session through gateway → nginx → Tomcat
