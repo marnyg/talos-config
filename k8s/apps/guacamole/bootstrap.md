@@ -95,6 +95,7 @@ kubectl -n guacamole logs deploy/guacd     # per-session FreeRDP output
 | 403 / 401 from the browser | not an `admins` device on the mesh — the gate is the device cert, not this app |
 | login page, then "Log in failed" | guest creds wrong. `guacd`'s log says which: `Authentication failure (invalid credentials?)` is the password, a TLS/NLA complaint is the security mode (then try `<param name="security">any</param>`) |
 | tunnel drops every 60 s | the Ingress lost its `proxy-read/send-timeout` annotations (ingress.yaml) |
+| "Address banned" / login refused for a while | 5 failed logins ban the source IP for 300 s — and every browser arrives from the gateway pod's address, so a few typos lock every device out. Wait it out, or set `BAN_ENABLED=false` (webapp env) while debugging |
 | page loads, tunnel never connects | it must be `http://`: ADR-0033's `:443` device front has no Upgrade path, so `wss://` dies there |
 | sluggish desktop | expected — guacd software-decodes. **`color-depth` is a no-op**: the RDP graphics pipeline forces 32 bpp whatever you ask for (`WARNING: Ignoring requested color depth of 16 bpp` in the `guacd` log, 2026-10-22). Cheaper levers: disable the graphics pipeline, or use the native client over `rdp.gw.mesh.internal:3389` |
 
