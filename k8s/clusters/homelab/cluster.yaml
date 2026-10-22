@@ -102,6 +102,11 @@ spec:
           # Its own Application now, so a stuck import no longer holds
           # the rest of the repo (1ova).
           - {name: vms}
+          # Apache Guacamole (ey3a): browser RDP to the guest at
+          # guac.gw.mesh.internal. Independent of vms/ — guacd dials the
+          # ClusterIP the VM already has, so this child can sync while
+          # the VM is Halted or mid-reinstall.
+          - {name: guacamole}
           # --- media
           # media namespace, Ingress for the *arr stack, shared secrets.
           - {name: media}

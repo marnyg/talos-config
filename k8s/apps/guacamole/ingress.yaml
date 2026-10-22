@@ -1,0 +1,57 @@
+# guac.gw.mesh.internal — the browser RDP door (talos-config-ey3a).
+#
+# Access: the controller's default gate applies (no opt-out annotation),
+# so this is `group: admins` by device cert, decided by siwe-oidc's
+# /authz on the gateway-signed X-Mesh-Token (k8s/apps/media/ingress.yaml
+# explains the mechanism). No second policy row was needed: the mesh
+# recipe already grants `gateway: ingress-http` to admins. Guacamole's
+# own login is the *second* gate, the same shape as the guest's own
+# login behind the raw `rdp` facet — the mesh says which device may
+# knock, not who may open the Windows session.
+#
+# http:// on purpose, and this is not sloppiness: Guacamole's browser
+# half is a WebSocket tunnel. ADR-0033's :443 device front (meshtls.
+# Front) terminates TLS and hands on plain HTTP per request — it has no
+# hijack/Upgrade path, so a wss:// tunnel would die there. Over :80 the
+# Upgrade rides the ingress-http facet exactly as Vaultwarden's
+# /notifications/hub does (both hops in front of nginx are stdlib
+# reverse proxies, which forward it). Hence no `gethomepage.dev/href:
+# https://…` either: Homepage should link the host as http.
+#
+# The long timeouts are what keep nginx from cutting an idle tunnel at
+# 60 s — an RDP session is silent whenever nothing on screen moves.
+# Note the ceiling is not nginx: the gateway bounds an admitted
+# connection at ConnMaxAge (1 h), so a browser session is dropped after
+# an hour and the page reconnects. That is a feature of the plane, not
+# a bug here; see bootstrap.md.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: guacamole
+  namespace: guacamole
+  annotations:
+    # Dashboard tile. The app is served at /guacamole/; app-root sends
+    # a bare host hit there instead of Tomcat's 404.
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Windows VM
+    gethomepage.dev/group: Apps
+    gethomepage.dev/icon: guacamole.png
+    gethomepage.dev/description: browser RDP to win2k25
+    gethomepage.dev/pod-selector: app=guacamole
+    gethomepage.dev/weight: "20"
+    nginx.ingress.kubernetes.io/app-root: /guacamole/
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: guac.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: guacamole
+                port:
+                  number: 8080

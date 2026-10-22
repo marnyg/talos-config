@@ -1,0 +1,195 @@
+# Apache Guacamole: RDP to the win2k25 guest from any browser on the
+# mesh (talos-config-ey3a). Two pods, each with one job:
+#
+#   guacd      — the RDP *client*. FreeRDP dials the guest and re-encodes
+#                its framebuffer into Guacamole's drawing protocol. It
+#                dials the ClusterIP the VM already has
+#                (k8s/apps/vms/win2k25-rdp.yaml), so the guest, that
+#                Service and the raw `rdp` facet are untouched:
+#                `xfreerdp /v:rdp.gw.mesh.internal` keeps working.
+#   guacamole  — the web app: login, the connection list, and the
+#                WebSocket tunnel the browser drives. Tomcat + a WAR;
+#                the connections live in one sealed user-mapping.xml
+#                (no database on purpose — one user, no state to keep).
+#
+# Why Guacamole and not the console: KubeVirt's VNC is the *console* —
+# no audio, no clipboard, no dynamic resolution, and it fights any
+# concurrent RDP session. This is a real RDP session, so the phone gets
+# audio and a resize-to-viewport desktop, which is what "use the
+# Windows VM without a client" has to mean. The price is guacd:
+# software decode of the whole framebuffer, no GPU (the colour depth
+# and visual-effect toggles in the connection parameters are about
+# that, not about taste).
+#
+# Rootless upstream images: guacd is uid/gid 1000 (`guacd`), the webapp
+# 1001 (`guacamole`), both from the upstream Dockerfiles. The UIDs are
+# pinned explicitly — kubelet cannot verify `runAsNonRoot` against a
+# non-numeric image USER, and a wrong UID means the entrypoint cannot
+# write GUACAMOLE_HOME. With them set, both pods satisfy the
+# namespace's inherited `restricted` PSS.
+#
+# One replica each. guacd is per-connection child processes and could
+# scale, but the webapp keeps sessions in Tomcat memory, so a second
+# replica would need sticky routing to be worth anything — not for a
+# one-person tool. Neither pod is on the mesh; only the Ingress is.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacd
+  namespace: guacamole
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guacd
+  template:
+    metadata:
+      labels:
+        app: guacd
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: guacd
+          # Docker Hub tag@digest; bump both images together — guacd and
+          # the webapp share one protocol version (GUACAMOLE_HANDSHAKE).
+          image: guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f
+          env:
+            # LOG_LEVEL, not the older GUACD_LOG_LEVEL: the image warns
+            # that the latter is deprecated (verified 2026-10-22).
+            - name: LOG_LEVEL
+              value: info
+          ports:
+            - name: guacd
+              containerPort: 4822
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            tcpSocket:
+              port: 4822
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            # Generous: every live session is a forked child holding a
+            # decoded 16-bit framebuffer. Two sessions stay well under.
+            limits:
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacd
+  namespace: guacamole
+spec:
+  selector:
+    app: guacd
+  ports:
+    - name: guacd
+      port: 4822
+      targetPort: 4822
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guacamole
+  namespace: guacamole
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: one user, and a rolling replace would
+  # run two Tomcats against the same secret for no gain.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: guacamole
+  template:
+    metadata:
+      labels:
+        app: guacamole
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: guacamole
+          image: guacamole/guacamole:1.6.0@sha256:f344085e618bb05e22b964b0208dbd06d3468275bac70206f93805245e067b40
+          env:
+            - name: GUACD_HOSTNAME
+              value: guacd
+            - name: GUACD_PORT
+              value: "4822"
+            # WEBAPP_CONTEXT stays the image default (`guacamole`): the
+            # app is served at /guacamole/, and the Ingress sends `/`
+            # there. Naming it ROOT would collide with Tomcat's own
+            # default webapp.
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # No `exec` probes: the image is a Tomcat distro and running
+          # another JVM for a probe would be worse than nothing.
+          readinessProbe:
+            httpGet:
+              path: /guacamole/
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /guacamole/
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          volumeMounts:
+            # One file, mounted *under* /etc/guacamole — not at some
+            # other path — because the entrypoint does not use that
+            # directory directly: it builds a throwaway GUACAMOLE_HOME
+            # under /tmp and symlinks each /etc/guacamole entry into it
+            # (verified 2026-10-22; the log says `GUACAMOLE_HOME is
+            # "/tmp/guacamole-home.XXXX"`). Consequence of subPath:
+            # kubelet NEVER updates this mount, so a re-sealed secret
+            # needs a pod delete (bootstrap.md).
+            - name: user-mapping
+              mountPath: /etc/guacamole/user-mapping.xml
+              subPath: user-mapping.xml
+              readOnly: true
+      volumes:
+        - name: user-mapping
+          secret:
+            secretName: guacamole-user-mapping
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guacamole
+  namespace: guacamole
+spec:
+  selector:
+    app: guacamole
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

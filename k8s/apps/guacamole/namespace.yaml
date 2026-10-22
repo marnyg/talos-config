@@ -1,0 +1,8 @@
+# `guacamole`: browser RDP to the win2k25 guest (talos-config-ey3a).
+# Inherits the cluster-wide PSS restricted default, and the pods meet
+# it on their own merits — the upstream images are rootless (guacd uid
+# 1000, webapp uid 1001), so nothing here needs baseline/privileged.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: guacamole
