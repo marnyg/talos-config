@@ -5,74 +5,43 @@ Browser RDP to the win2k25 guest (`talos-config-ey3a`): open
 runs the mesh tun. Nothing else changes — `xfreerdp /v:rdp.gw.mesh.internal`
 keeps working, the guest is untouched.
 
-Two pods, no database:
+Two pods, no database, no Guacamole login (ADR-0045):
 
 | | |
 |---|---|
 | `guacd` | RDP client: dials `win2k25-rdp.vms.svc.cluster.local:3389` |
-| `guacamole` | web app: login, connection list, the WebSocket tunnel |
+| `guacamole` | web app (`guacamole` container): connection list, the WebSocket tunnel; its only auth extension is `guacamole-auth-json` |
+| ↳ `front` sidecar | `guacjson` (config-server/guacjson): the Service lands here; it signs the device into the webapp from the gateway's X-Mesh-Token |
 
 ## 1. Reseal the credentials (the only manual step)
 
-`sealed-secret.yaml` carries the real guest credentials (since
-`5c2b432`); the Guacamole login's own password is still the bootstrap
-placeholder string, which is fine behind the device gate but rotates
-the same way. Without a valid seal the pods are healthy and the Windows
-login fails. The plaintext template:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<user-mapping>
-  <authorize username="marius" password="<guacamole login>">
-    <connection name="win2k25">
-      <protocol>rdp</protocol>
-      <param name="hostname">win2k25-rdp.vms.svc.cluster.local</param>
-      <param name="port">3389</param>
-      <param name="username">Administrator</param>
-      <param name="password">&lt;guest Administrator password&gt;</param>
-      <param name="security">nla</param>
-      <param name="ignore-cert">true</param>
-      <param name="resize-method">display-update</param>
-      <param name="color-depth">16</param>
-      <param name="server-layout">en-us-qwerty</param>
-      <param name="enable-audio">true</param>
-      <param name="enable-wallpaper">false</param>
-      <param name="enable-theming">false</param>
-      <param name="enable-font-smoothing">false</param>
-      <param name="enable-full-window-drag">false</param>
-      <param name="enable-desktop-composition">false</param>
-      <param name="enable-menu-animations">false</param>
-    </connection>
-  </authorize>
-</user-mapping>
-```
-
-Seal it (the cert is public, no cluster access needed — the same recipe
-the other apps use, e.g. `k8s/apps/forgejo/bootstrap.md`):
+`sealed-secret.yaml` holds `guacamole-auth` with two keys:
+`json-secret-key` (16 random bytes, hex; both containers) and
+`guest-password` (the guest's Administrator password; sidecar only).
+To rotate either:
 
 ```sh
-printf 'apiVersion: v1\nkind: Secret\nmetadata:\n  name: guacamole-user-mapping\n  namespace: guacamole\nstringData:\n  user-mapping.xml: |\n' > /tmp/secret.yaml
-sed 's/^/    /' /tmp/user-mapping.xml >> /tmp/secret.yaml
-kubeseal --cert talos/clusters/homelab/sealed-secrets.crt \
-  --namespace guacamole --name guacamole-user-mapping \
-  --format yaml < /tmp/secret.yaml > /tmp/sealed.yaml
-# keep the header comment of k8s/apps/guacamole/sealed-secret.yaml,
-# replace the document body with /tmp/sealed.yaml, commit, push.
-rm -f /tmp/secret.yaml /tmp/user-mapping.xml
+KEY=$(openssl rand -hex 16)            # or keep the current one
+kubectl create secret generic guacamole-auth -n guacamole --dry-run=client -o yaml \
+  --from-literal=json-secret-key="$KEY" --from-literal=guest-password="$PW" \
+| kubeseal --cert talos/clusters/homelab/sealed-secrets.crt --format yaml
+# keep the header comment of sealed-secret.yaml, replace the document
+# body, commit, push. Env from a Secret needs a rollout:
+kubectl -n guacamole rollout restart deploy/guacamole
 ```
 
-Then **recreate the pod** — `user-mapping.xml` is mounted with
-`subPath`, and kubelet never updates a `subPath` mount:
-
-```sh
-kubectl -n guacamole delete pod -l app=guacamole
-```
+The RDP parameters (host, port, user, the visual-effect switches) are
+`-param` args on the sidecar in `deployment.yaml` — change them there.
 
 ## 2. First login
 
 `http://guac.gw.mesh.internal/` → nginx `app-root` sends `/` to
-`/guacamole/`. The connection list shows `win2k25`; click it, and the
-guest desktop appears fitted to the browser viewport.
+`/guacamole/`. No form: the client's own `POST api/tokens` carries no
+credentials, the sidecar verifies the gateway token, requires `admins`,
+and adds the extension's `data` blob — the device name is the Guacamole
+user, the one connection is `win2k25`. Click it and the guest desktop
+appears fitted to the browser viewport. The sidecar logs
+`device … logged in as guacamole user "<name>"` per login.
 
 - **Audio** needs one click on the page first (browser autoplay rules)
   — the RDP audio policies are already provisioned on the guest.
@@ -88,16 +57,18 @@ guest desktop appears fitted to the browser viewport.
 
 ```sh
 kubectl -n guacamole get pods
-kubectl -n guacamole logs deploy/guacamole | tail -30
+kubectl -n guacamole logs deploy/guacamole -c guacamole | tail -30
+kubectl -n guacamole logs deploy/guacamole -c front       # who was signed in, or why not
 kubectl -n guacamole logs deploy/guacd     # per-session FreeRDP output
 ```
 
 | symptom | cause |
 |---|---|
 | 403 / 401 from the browser | not an `admins` device on the mesh — the gate is the device cert, not this app |
-| login page, then "Log in failed" | guest creds wrong. `guacd`'s log says which: `Authentication failure (invalid credentials?)` is the password, a TLS/NLA complaint is the security mode (then try `<param name="security">any</param>`) |
+| **a Guacamole login form** | the sidecar did not mint: `kubectl -n guacamole logs deploy/guacamole -c front` says why (no gateway token = request did not come through the gateway; token refused = the pinned `-gateway` id is stale, compare siwe-oidc's; "not admins" = the device's groups). The form itself authenticates nobody — there is no user list |
+| connection shows, then "Log in failed" / invalid credentials | guest password wrong (`guest-password` in the secret) or the extension key mismatched between the two containers (`JSON_SECRET_KEY` vs `GUACJSON_SECRET_KEY` — same secret key, so only after a partial rollout). `guacd`'s log says which: `Authentication failure (invalid credentials?)` is the password, a TLS/NLA complaint is the security mode (then add `-param=security=any`) |
 | tunnel drops every 60 s | the Ingress lost its `proxy-read/send-timeout` annotations (ingress.yaml) |
-| "Address banned" / login refused for a while | should not happen any more: `BAN_ENABLED=false` (deployment.yaml), because every browser arrives from the gateway pod's address (the gateway forwards a key, not an IP) and the ban could only lock every device out at once. If it appears, the env var was lost |
+| "Address banned" | should not happen: `BAN_ENABLED=false` (deployment.yaml), and there is no password to fail any more. If it appears, the env var was lost |
 | page loads, tunnel never connects | it must be `http://`: ADR-0033's `:443` device front has no Upgrade path, so `wss://` dies there |
 | sluggish desktop | expected — guacd software-decodes. **`color-depth` is a no-op**: the RDP graphics pipeline forces 32 bpp whatever you ask for (`WARNING: Ignoring requested color depth of 16 bpp` in the `guacd` log, 2026-10-22). Cheaper levers: disable the graphics pipeline, or use the native client over `rdp.gw.mesh.internal:3389` |
 
