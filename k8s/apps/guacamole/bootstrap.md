@@ -99,6 +99,26 @@ kubectl -n guacamole logs deploy/guacd     # per-session FreeRDP output
 | page loads, tunnel never connects | it must be `http://`: ADR-0033's `:443` device front has no Upgrade path, so `wss://` dies there |
 | sluggish desktop | expected — guacd software-decodes. **`color-depth` is a no-op**: the RDP graphics pipeline forces 32 bpp whatever you ask for (`WARNING: Ignoring requested color depth of 16 bpp` in the `guacd` log, 2026-10-22). Cheaper levers: disable the graphics pipeline, or use the native client over `rdp.gw.mesh.internal:3389` |
 
+### The lockout trap (cost 20 minutes on 2026-10-22)
+
+Guacamole's page auto-reconnects every ~13 s. **Every reconnect is an RDP
+logon attempt**, and Windows Server 2025 ships with account lockout
+enabled (threshold 10, duration ~10 min). So a wrong password behind an
+open tab locks `Administrator` out in about two and a half minutes — and
+a *locked* account answers `Access denied by server (account locked or
+disabled?)` for **every** later attempt, correct password included. The
+error moves from "invalid credentials" to "access denied" and stays
+there, which reads like a permissions problem and is not.
+
+- Queue of failures, in the `guacd` log: 10× `Authentication failure`
+  ⇒ then `Access denied by server`. That transition *is* the lockout.
+- Response: close the tab, wait ~10 min, load it fresh, try **once**.
+- `xfreerdp` hits the same lockout, so "it works from the laptop" stops
+  being true at the same moment.
+- Durability of the trap is a policy choice: raising the threshold (or
+  shortening the duration) belongs in `win2k25-provision.yaml`, not in
+  Guacamole — nothing on the client side can stop the loop.
+
 Two things the first real session proved (2026-10-22): the WebSocket tunnel
 survives the whole path (browser → gateway → nginx → Tomcat → guacd), and
 `security: nla` negotiates with Server 2025 as-is — no `any` fallback needed.
