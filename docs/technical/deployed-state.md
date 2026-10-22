@@ -172,6 +172,20 @@ history and, where the numbers still matter, in ADR-0006 and
   replica by design** (per-pod signing key and auth codes, `4ze8`)
   with 30 s unreachable/not-ready tolerations so it fails over in
   about a minute _(2026-09-30, `9l67` slice 2)_.
+- **Browser RDP to the Windows guest** _(2026-10-22, `ey3a`)_: ns
+  `guacamole` (PSS `restricted`, both upstream images rootless — guacd
+  uid 1000, webapp 1001), Deployment `guacd` (FreeRDP; dials
+  `win2k25-rdp.vms.svc.cluster.local:3389`, so the guest and the raw
+  `rdp` facet are untouched) + Deployment `guacamole` (Tomcat, app at
+  `/guacamole/`), Ingress `guac.gw.mesh.internal` behind the default
+  admins gate, credentials in the sealed `user-mapping.xml`
+  (`k8s/apps/guacamole/bootstrap.md`). **http only**: ADR-0033's `:443`
+  front has no Upgrade path, so the tunnel cannot be `wss`; the
+  gateway's `ConnMaxAge` cuts a session at 1 h. Verified live:
+  pods Ready, placeholder login issues a token, `/guacamole/` 200
+  behind the gate's 401, guacd reaches `:3389`. **Unverified: the
+  WebSocket tunnel end to end and NLA to Server 2025** — first browser
+  session is the test.
 - Media stack pods split across both nodes on Longhorn RWX volumes;
   SealedSecrets (`newshosting`, `nzbgeek`) unseal via the
   inlineManifest-provisioned key pair. **Reinstall**:

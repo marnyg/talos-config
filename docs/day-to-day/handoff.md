@@ -3,6 +3,33 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
+## 2026-10-22: browser RDP shipped — Guacamole in front of win2k25 (`ey3a`)
+
+- **`k8s/apps/guacamole` is live and Synced** (`platform-guacamole`,
+  revision `9c33e30`): guacd + webapp, both rootless, `restricted`
+  PSS, Ingress `guac.gw.mesh.internal` behind the default admins gate.
+  guacd dials the ClusterIP the VM already has, so the raw `rdp` facet
+  and `xfreerdp` keep working; no mesh-policy row was needed.
+- **`http://`, not `https://` — do not "fix" this**: ADR-0033's `:443`
+  device front (meshtls.Front) has no hijack/Upgrade path, so a `wss`
+  tunnel dies there. Over `:80` the Upgrade rides ingress-http exactly
+  as Vaultwarden's websocket does. Sessions are capped at 1 h by the
+  gateway's `ConnMaxAge`, not by nginx.
+- **Verified live**: pods Ready, `user-mapping.xml` actually read (the
+  entrypoint symlinks `/etc/guacamole` into a throwaway
+  `/tmp/guacamole-home.*`), placeholder login returns a token,
+  `/guacamole/` 200 behind the gate's 401, guacd → `:3389` open.
+  **Not verified: the ws tunnel end to end, NLA to Server 2025, audio
+  in the browser** — the first real session is the test.
+- **Your two steps**: reseal `sealed-secret.yaml` with the real guest
+  creds (`k8s/apps/guacamole/bootstrap.md`), then delete the pod
+  (subPath never refreshes), then open it from the phone.
+- **Next in line** (`f0jl`, blocked on `ey3a`): `vmpower` — a
+  start/stop page + idle auto-stop keyed off Guacamole's
+  `activeConnections`, which first needs a decision record: it makes
+  git not the whole truth for `/spec/runStrategy` (`ignoreDifferences`
+  on `platform-vms`).
+
 ## Also 2026-10-20 (separate session): app state encrypted + backed up to Tigris (ADR-0044; `9io`, `bsj`)
 
 - **`longhorn-encrypted` is the default class**: dm-crypt under one
@@ -87,7 +114,10 @@
 - `xt40`'s other half (token revocation) stays open.
 - Carried: `bsj` (Longhorn backup) blocks real task-layer use; `pd5c`
   edges; `tmm5`, `88uq`, ntfy first page; `dsuj` GPU hand-off + CP
-  question; RDP with sound from the laptop untried.
+  question; RDP with sound from the laptop untried (Guacamole's
+  in-browser audio is the cheapest way to test it).
+- `ey3a`: NLA and the ws tunnel unproven; `vmpower` (`f0jl`) needs the
+  `runStrategy`/selfHeal decision recorded before code.
 
 ## Suggested next steps
 
