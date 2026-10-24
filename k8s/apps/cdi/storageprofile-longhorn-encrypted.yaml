@@ -1,0 +1,39 @@
+# StorageProfile override for `longhorn-encrypted`, the cluster's
+# default StorageClass since 2026-10-20 (ADR-0044). Same reason as
+# storageprofile-longhorn.yaml: CDI's capability table for
+# driver.longhorn.io says RWO + copy, so the new default class read as
+# degraded and CDIDefaultStorageClassDegraded fired from the moment the
+# default moved (no class carries the virt-default annotation, so the
+# default is what the alert checks).
+#
+# Unlike the plain class, encryption made both capabilities an open
+# question, so they were probed before being claimed (2026-10-24,
+# scratch namespace, 64 Mi volumes, deleted after):
+#   - RWX Filesystem: a share-manager opened the LUKS volume and two
+#     pods on different nodes (w1, cp1) read each other's writes over
+#     NFS; the Longhorn volume reported encrypted=true.
+#   - csi-clone: a PVC with dataSource PVC of an encrypted source came
+#     up as an encrypted Longhorn volume (dataSource vol://…) holding
+#     the source's file — the clone opens under the same cluster-wide
+#     passphrase (longhorn-system/longhorn-crypto).
+# Block is not listed: never exercised on an encrypted volume, and
+# CDI's importer cannot use Block on Longhorn anyway (see the plain
+# profile). RWO/Filesystem stays first for the same reason it is first
+# there — a DataVolume naming no volumeMode gets the first set.
+#
+# CRD arrives via cdi-operator after the CDI CR, hence the wave and
+# SkipDryRunOnMissingResource (see cluster.yaml).
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: StorageProfile
+metadata:
+  name: longhorn-encrypted
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  cloneStrategy: csi-clone
+  claimPropertySets:
+    - accessModes: [ReadWriteOnce]
+      volumeMode: Filesystem
+    - accessModes: [ReadWriteMany]
+      volumeMode: Filesystem
