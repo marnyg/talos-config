@@ -450,6 +450,14 @@
               workouts = workouts.static;
             };
             packages.tasks-static = tasks.static;
+            # nix build .#tasks-image — the task app's pod image
+            # (tasks/image.nix; driver: tasks/build.sh).
+            packages.tasks-image = import ./tasks/image.nix {
+              inherit pkgs lib;
+              self = inputs.self;
+              nix2container = inputs'.nix2container.packages.nix2container;
+              tasks = tasks.static;
+            };
             packages.vmpower-static = vmpower.static;
             # nix build .#vmpower-image — the power switch's pod image
             # (vmpower/image.nix; driver: vmpower/build.sh).
