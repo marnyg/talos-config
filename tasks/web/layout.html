@@ -5,24 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{block "title" .}}tasks{{end}}</title>
 <style>
-  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-  body { max-width: 40rem; margin: 0 auto; padding: 1rem; line-height: 1.4; }
+  :root {
+    color-scheme: dark;
+    --bg: #0f1115; --fg: #d9dde3; --muted: #8b93a1; --line: #262b35;
+    --card: #161a21; --accent: #7aa2f7; --accent-fg: #0f1115;
+    font-family: system-ui, sans-serif;
+  }
+  body { max-width: 40rem; margin: 0 auto; padding: 1rem; line-height: 1.4; background: var(--bg); color: var(--fg); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
   nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; font-size: .9rem; }
-  nav a { text-decoration: none; opacity: .8; }
-  .card { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: .75rem; padding: 1.25rem; margin: 1rem 0; }
+  nav a { color: var(--muted); }
+  nav a:hover { color: var(--fg); text-decoration: none; }
+  h1, h2 { font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: .75rem; padding: 1.25rem; margin: 1rem 0; }
   .card h2 { margin-top: 0; }
   .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
   .actions form { display: inline-flex; gap: .25rem; align-items: center; }
-  button { padding: .5rem 1rem; border-radius: .5rem; border: 1px solid currentColor; background: transparent; color: inherit; cursor: pointer; }
-  button.primary { background: color-mix(in srgb, currentColor 85%, transparent); color: Canvas; }
-  .muted { opacity: .6; font-size: .85rem; }
-  .tag { font-size: .75rem; padding: .1rem .4rem; border-radius: .3rem; border: 1px solid currentColor; opacity: .7; margin-left: .3rem; }
+  button { padding: .5rem 1rem; border-radius: .5rem; border: 1px solid var(--line); background: #1e232c; color: var(--fg); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .tag { font-size: .75rem; padding: .1rem .4rem; border-radius: .3rem; border: 1px solid var(--line); color: var(--muted); margin-left: .3rem; }
   ul.tasks { list-style: none; padding: 0; }
-  ul.tasks li { padding: .5rem 0; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
-  ul.tasks li.done { opacity: .5; text-decoration: line-through; }
-  input[type=text], textarea, select, input[type=date] { width: 100%; box-sizing: border-box; padding: .4rem; border-radius: .4rem; border: 1px solid currentColor; background: transparent; color: inherit; }
+  ul.tasks li { padding: .5rem 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+  ul.tasks li.done { opacity: .45; text-decoration: line-through; }
+  input[type=text], textarea, select, input[type=date] { width: 100%; box-sizing: border-box; padding: .4rem; border-radius: .4rem; border: 1px solid var(--line); background: #0b0d11; color: var(--fg); }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
   textarea { min-height: 6rem; }
-  label { display: block; margin: .5rem 0 .2rem; font-size: .85rem; opacity: .8; }
+  label { display: block; margin: .5rem 0 .2rem; font-size: .85rem; color: var(--muted); }
+  code { color: var(--muted); }
   pre { white-space: pre-wrap; }
 </style>
 </head>
