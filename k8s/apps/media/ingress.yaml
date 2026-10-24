@@ -252,6 +252,63 @@ spec:
                 port:
                   number: 13378
 ---
+# Navidrome is gated like Audiobookshelf: admins-only reachability, its
+# own accounts underneath (see navidrome/deployment.yaml). The Subsonic
+# apps work through the gate since it decides on the gateway's token.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: navidrome
+  namespace: media
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Navidrome
+    gethomepage.dev/group: Media
+    gethomepage.dev/icon: navidrome.png
+    gethomepage.dev/description: music
+    gethomepage.dev/pod-selector: app=navidrome
+    gethomepage.dev/weight: "25"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: navidrome.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: navidrome
+                port:
+                  number: 4533
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lidarr
+  namespace: media
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Lidarr
+    gethomepage.dev/group: Downloads
+    gethomepage.dev/icon: lidarr.png
+    gethomepage.dev/description: music
+    gethomepage.dev/pod-selector: app=lidarr
+    gethomepage.dev/weight: "35"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: lidarr.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lidarr
+                port:
+                  number: 8686
+---
 # Seerr is ungated like Jellyfin, not like the *arr apps: its users are
 # household members signing in with their Jellyfin account (seerr
 # authenticates against jellyfin server-side), who have no wallet.

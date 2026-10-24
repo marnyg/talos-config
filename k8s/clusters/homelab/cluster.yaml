@@ -123,6 +123,9 @@ spec:
           - {name: libation}
           - {name: chaptarr}
           - {name: audiobookshelf}
+          # Music (7e6b): Lidarr fills the music library, Navidrome plays it.
+          - {name: lidarr}
+          - {name: navidrome}
           # --- apps
           - {name: homeassistant}
           - {name: vaultwarden}

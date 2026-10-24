@@ -65,3 +65,6 @@ data:
     Category3.DestDir=
     Category4.Name=Ebooks
     Category4.DestDir=
+    # Lidarr's (lidarr/configmap.yaml).
+    Category5.Name=Music
+    Category5.DestDir=

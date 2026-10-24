@@ -1,0 +1,199 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lidarr-configurator
+  namespace: media
+data:
+  # Same shape as radarr's configure.sh, on Lidarr's v1 API, minus what
+  # Lidarr lacks:
+  # - no Allowed Hosts: Lidarr's HostConfigResource has no allowedHosts
+  #   field (v3.1.0.4875), so no DNS-rebinding guard and no restart.
+  # The root folder carries default profile ids, which exist only after
+  # first start, so they are looked up by name: quality "Any" (music is
+  # scarcer than film on these indexers; reach beats bitrate, and the
+  # player transcodes anyway), metadata "Standard". Monitoring defaults
+  # to none for both existing and new albums: an artist added because of
+  # one liked song must not pull its whole discography — the Spotify
+  # import list (first run) picks albums one by one.
+  # Download clients: nzbget's "Music" category is declared in
+  # nzbget/configmap.yaml; transmission makes a "lidarr" subdirectory.
+  # Both land under /downloads/completed/<category>, the same path in
+  # every pod, so no remote path mappings.
+  configure.sh: |
+    #!/bin/sh
+    set -e
+
+    LIDARR_URL="http://localhost:8686"
+    # NZBGEEK_API_KEY, PROWLARR_API_KEY come from the env (sealed secrets).
+
+    # id of the top-level object named $1 in the pretty-printed JSON
+    # array on stdin (the awk the other configurators use inline).
+    id_of() {
+      awk -v n="$1" '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }'
+    }
+
+    echo "Waiting for Lidarr to start..."
+    until curl -sf "$LIDARR_URL/ping" > /dev/null 2>&1; do
+      sleep 5
+    done
+
+    # Wait for config.xml to have an API key
+    while [ ! -f /config/config.xml ] || ! grep -q '<ApiKey>' /config/config.xml; do
+      sleep 2
+    done
+
+    API_KEY=$(sed -n 's/.*<ApiKey>\(.*\)<\/ApiKey>.*/\1/p' /config/config.xml)
+    echo "Lidarr API key: $API_KEY"
+    AUTH="X-Api-Key: $API_KEY"
+
+    # Wait for dependency services
+    echo "Waiting for NZBget..."
+    until curl -sf "http://nzbget:6789" > /dev/null 2>&1; do sleep 5; done
+
+    echo "Waiting for Transmission..."
+    until curl -sf "http://transmission:9091/transmission/web/" > /dev/null 2>&1; do sleep 5; done
+
+    # Root folder /music
+    existing=$(curl -sf -H "$AUTH" "$LIDARR_URL/api/v1/rootfolder")
+    if ! echo "$existing" | grep -q '"/music"'; then
+      qp=$(curl -sf -H "$AUTH" "$LIDARR_URL/api/v1/qualityprofile" | id_of "Any")
+      mp=$(curl -sf -H "$AUTH" "$LIDARR_URL/api/v1/metadataprofile" | id_of "Standard")
+      if [ -n "$qp" ] && [ -n "$mp" ]; then
+        echo "Adding root folder /music (quality $qp, metadata $mp)..."
+        curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+          "name": "Music",
+          "path": "/music",
+          "defaultQualityProfileId": '"$qp"',
+          "defaultMetadataProfileId": '"$mp"',
+          "defaultMonitorOption": "none",
+          "defaultNewItemMonitorOption": "none",
+          "defaultTags": []
+        }' "$LIDARR_URL/api/v1/rootfolder" || echo "WARN: root folder failed"
+      else
+        echo "WARN: default profiles not found (quality '$qp', metadata '$mp'), root folder skipped"
+      fi
+    fi
+
+    # Add NZBget download client
+    existing=$(curl -sf -H "$AUTH" "$LIDARR_URL/api/v1/downloadclient")
+    if ! echo "$existing" | grep -q "NZBget"; then
+      echo "Adding NZBget download client..."
+      curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enable": true,
+        "protocol": "usenet",
+        "priority": 1,
+        "name": "NZBget",
+        "implementation": "Nzbget",
+        "configContract": "NzbgetSettings",
+        "fields": [
+          {"name": "host", "value": "nzbget"},
+          {"name": "port", "value": 6789},
+          {"name": "username", "value": ""},
+          {"name": "password", "value": ""},
+          {"name": "musicCategory", "value": "Music"},
+          {"name": "useSsl", "value": false}
+        ]
+      }' "$LIDARR_URL/api/v1/downloadclient" || echo "WARN: NZBget client failed"
+    fi
+
+    # Add Transmission download client
+    if ! echo "$existing" | grep -q "Transmission"; then
+      echo "Adding Transmission download client..."
+      curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+        "enable": true,
+        "protocol": "torrent",
+        "priority": 1,
+        "name": "Transmission",
+        "implementation": "Transmission",
+        "configContract": "TransmissionSettings",
+        "fields": [
+          {"name": "host", "value": "transmission"},
+          {"name": "port", "value": 9091},
+          {"name": "musicCategory", "value": "lidarr"},
+          {"name": "useSsl", "value": false}
+        ]
+      }' "$LIDARR_URL/api/v1/downloadclient" || echo "WARN: Transmission client failed"
+    fi
+
+    # NZBgeek indexer (Newznab/usenet) — PUT-or-POST as in
+    # sonarr/configmap.yaml, so a rotated key in the secret reaches the
+    # persisted DB. Audio categories: 3000 all, 3010 MP3, 3040 lossless.
+    existing=$(curl -sf -H "$AUTH" "$LIDARR_URL/api/v1/indexer")
+    if [ -n "$NZBGEEK_API_KEY" ]; then
+      name="NZBgeek"
+      body='{
+        "enableRss": true,
+        "enableAutomaticSearch": true,
+        "enableInteractiveSearch": true,
+        "protocol": "usenet",
+        "priority": 10,
+        "name": "'"$name"'",
+        "implementation": "Newznab",
+        "configContract": "NewznabSettings",
+        "fields": [
+          {"name": "baseUrl", "value": "https://api.nzbgeek.info"},
+          {"name": "apiPath", "value": "/api"},
+          {"name": "apiKey", "value": "'"$NZBGEEK_API_KEY"'"},
+          {"name": "categories", "value": [3000, 3010, 3040]}
+        ]
+      }'
+      eid=$(printf '%s\n' "$existing" | id_of "$name")
+      if [ -n "$eid" ]; then
+        echo "Refreshing $name indexer (id $eid)..."
+        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+          -d "${body%\}}, \"id\": $eid}" "$LIDARR_URL/api/v1/indexer/$eid" || echo "WARN: $name refresh failed"
+      else
+        echo "Adding $name indexer..."
+        curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$body" "$LIDARR_URL/api/v1/indexer" || echo "WARN: $name indexer failed"
+      fi
+    fi
+
+    # Register with Prowlarr as an application; see sonarr/configmap.yaml
+    # for the reasoning (only this pod knows Lidarr's key).
+    # syncCategories: 3000 Audio, 3010 MP3, 3040 Lossless, 3050 Other —
+    # not 3020 Video, nor 3030 Audiobook (Chaptarr's).
+    if [ -n "$PROWLARR_API_KEY" ]; then
+      PROWLARR_URL="http://prowlarr:9696"
+      PAUTH="X-Api-Key: $PROWLARR_API_KEY"
+      name="Lidarr"
+      body='{
+        "name": "'"$name"'",
+        "syncLevel": "fullSync",
+        "implementation": "Lidarr",
+        "configContract": "LidarrSettings",
+        "fields": [
+          {"name": "prowlarrUrl", "value": "'"$PROWLARR_URL"'"},
+          {"name": "baseUrl", "value": "http://lidarr:8686"},
+          {"name": "apiKey", "value": "'"$API_KEY"'"},
+          {"name": "syncCategories", "value": [3000, 3010, 3040, 3050]}
+        ],
+        "tags": []
+      }'
+      n=0
+      until apps=$(curl -sf -H "$PAUTH" "$PROWLARR_URL/api/v1/applications"); do
+        n=$((n + 1))
+        if [ "$n" -ge 18 ]; then echo "WARN: Prowlarr unreachable, pairing skipped"; break; fi
+        sleep 10
+      done
+      if [ "$n" -lt 18 ]; then
+        eid=$(printf '%s\n' "$apps" | id_of "$name")
+        if [ -n "$eid" ]; then
+          echo "Refreshing Prowlarr application $name (id $eid)..."
+          curl -sf -o /dev/null -X PUT -H "$PAUTH" -H "Content-Type: application/json" \
+            -d "${body%\}}, \"id\": $eid}" "$PROWLARR_URL/api/v1/applications/$eid" || echo "WARN: Prowlarr $name refresh failed"
+        else
+          echo "Registering with Prowlarr as $name..."
+          n=0
+          until curl -sf -o /dev/null -X POST -H "$PAUTH" -H "Content-Type: application/json" \
+            -d "$body" "$PROWLARR_URL/api/v1/applications"; do
+            n=$((n + 1))
+            if [ "$n" -ge 18 ]; then echo "WARN: Prowlarr $name pairing failed"; break; fi
+            sleep 10
+          done
+        fi
+      fi
+    fi
+
+    echo "Lidarr configuration complete!"
+    sleep infinity

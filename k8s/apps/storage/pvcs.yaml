@@ -80,3 +80,22 @@ spec:
   resources:
     requests:
       storage: 500Gi
+---
+# The music library (2026-10-23, talos-config-7e6b): Lidarr imports and
+# renames into it, Navidrome scans and streams it read-only. Same tier
+# and disposability argument as tv/movies/books (ADR-0011): everything
+# in it re-downloads from Lidarr's wanted list. The root is chowned to
+# 1000 by lidarr's init container. ~700 FLAC albums or ~3000 MP3 ones;
+# expandable.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: music
+  namespace: media
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: longhorn-bulk
+  resources:
+    requests:
+      storage: 300Gi

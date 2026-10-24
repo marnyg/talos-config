@@ -1,0 +1,198 @@
+# Lidarr (github.com/Lidarr/Lidarr): the music counterpart of
+# sonarr/radarr/chaptarr (epic talos-config-7e6b). It owns the `music`
+# library volume (storage/pvcs.yaml): grabs through nzbget/transmission
+# into /downloads, imports and renames into /music, where Navidrome
+# (k8s/apps/navidrome) picks it up. Indexers: NZBgeek directly plus
+# whatever Prowlarr pushes, paired by the configurator like the others.
+#
+# Discovery stays on Spotify (free account): an import list on a
+# playlist of the owner's turns liked songs into wanted albums. That
+# list needs Spotify's OAuth dance in the UI, so it is first-run work
+# (7e6b.3), not configurator work.
+#
+# App state (lidarr.db) on longhorn-encrypted, RWO 2 replicas, per
+# ADR-0011.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lidarr-config
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-encrypted
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lidarr
+  namespace: media
+spec:
+  replicas: 1
+  # RWO /config: no rolling update (Multi-Attach), see radarr.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: lidarr
+  template:
+    metadata:
+      labels:
+        app: lidarr
+    spec:
+      # Never on nas1, the node pinned to host this library's NFS servers
+      # (storageclass.yaml shareManagerNodeSelector): a client on the
+      # server's node hangs the node's shutdown (2026-10-05, m1au). See
+      # radarr/deployment.yaml for the full story.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values: [nas1]
+      # PSS restricted, the radarr shape: the linuxserver image's
+      # non-root mode as 1000, s6-overlay gets a 1000-owned /run via the
+      # scratch subdir, fsGroup makes the fresh ext4 /config writable.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: library
+          # The music volume is RWX (NFS from the share-manager), where
+          # fsGroup does not reach: a fresh ext4 root is root:root. One
+          # root chown, the way chaptarr's init does /books; a no-op on
+          # every later start.
+          # Helper pin: one tag across k8s/apps (rg 'image: busybox').
+          image: busybox:1.38
+          command: ["sh", "-c", "chown 1000:1000 /music"]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN"]
+          volumeMounts:
+            - name: music
+              mountPath: /music
+        - name: config
+          image: busybox:1.38
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              mkdir -p /scratch/run
+              # Seed only on a fresh volume: Lidarr owns config.xml after
+              # that. External auth: the ingress group gate is the login
+              # (media/ingress.yaml), same as sonarr/radarr.
+              [ -f /config/config.xml ] && exit 0
+              cat > /config/config.xml << 'XMLEOF'
+              <Config>
+                <Port>8686</Port>
+                <BindAddress>*</BindAddress>
+                <AuthenticationMethod>External</AuthenticationMethod>
+                <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
+              </Config>
+              XMLEOF
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: scratch
+              mountPath: /scratch
+      containers:
+        - name: lidarr
+          # Pinned by digest; 3.1.0.4875-ls45 (== latest) resolved on
+          # 2026-10-23.
+          image: lscr.io/linuxserver/lidarr:3.1.0.4875-ls45@sha256:d8549ff9ea29b4015c32257360652c1000c31ea471a2b3f0835ae77292faf35b
+          env:
+            - name: TZ
+              value: Europe/Oslo
+          ports:
+            - containerPort: 8686
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: scratch
+              mountPath: /run
+              subPath: run
+            - name: music
+              mountPath: /music
+            - name: downloads
+              mountPath: /downloads
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8686
+            initialDelaySeconds: 15
+            periodSeconds: 10
+        - name: configurator
+          # Helper pin: one tag across k8s/apps (rg 'image: curlimages/curl').
+          image: curlimages/curl:8.22.0
+          command: ["/bin/sh", "/scripts/configure.sh"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: NZBGEEK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nzbgeek
+                  key: apiKey
+            # Prowlarr pairing (configure.sh); optional, see sonarr.
+            - name: PROWLARR_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: prowlarr
+                  key: apiKey
+                  optional: true
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: lidarr-config
+        - name: scratch
+          emptyDir: {}
+        - name: scripts
+          configMap:
+            name: lidarr-configurator
+        - name: music
+          persistentVolumeClaim:
+            claimName: music
+        - name: downloads
+          persistentVolumeClaim:
+            claimName: downloads
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lidarr
+  namespace: media
+spec:
+  selector:
+    app: lidarr
+  ports:
+    - port: 8686
+      targetPort: 8686

@@ -174,6 +174,12 @@ data:
         interval: 60s
         conditions: ["[STATUS] == 200"]
         alerts: [{type: ntfy}]
+      - name: navidrome
+        group: media
+        url: http://navidrome.media.svc:4533/ping
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
       - name: seerr
         group: media
         url: http://seerr.media.svc:5055/api/v1/status
@@ -195,6 +201,12 @@ data:
       - name: chaptarr
         group: media
         url: http://chaptarr.media.svc:8789/ping
+        interval: 60s
+        conditions: ["[STATUS] == 200"]
+        alerts: [{type: ntfy}]
+      - name: lidarr
+        group: media
+        url: http://lidarr.media.svc:8686/ping
         interval: 60s
         conditions: ["[STATUS] == 200"]
         alerts: [{type: ntfy}]

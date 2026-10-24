@@ -1,0 +1,147 @@
+# Navidrome (github.com/navidrome/navidrome): the music server — the
+# Spotify replacement's player side (epic talos-config-7e6b). It scans
+# the `music` library Lidarr fills (storage/pvcs.yaml) and serves it
+# over the Subsonic API, so any Subsonic client works: Symfonium/Tempo
+# on Android, Feishin on the PC, all pointed at
+# http://navidrome.gw.mesh.internal.
+#
+# Identity: the Audiobookshelf posture. The admins group gate on the
+# Ingress (media/ingress.yaml) decides reachability on the gateway's
+# token, so the apps get through with no cookie; underneath, Navidrome
+# keeps its own users (play counts, playlists, scrobble settings),
+# created on first visit. Owner-only today. Navidrome's reverse-proxy
+# auth (ND_REVERSEPROXYUSERHEADER) would map a header to a user, but a
+# bare X-Mesh-* header is never authority (invariants, "capability
+# discipline"), and the Subsonic clients log in themselves anyway.
+#
+# One RWO volume for /data (navidrome.db: users, play counts,
+# playlists; plus the transcode and image caches) on longhorn-encrypted
+# — app state, 2 replicas, nightly backup via the class's recurring job.
+# The library is mounted read-only: Navidrome never writes to it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: navidrome
+  namespace: media
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-encrypted
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: navidrome
+  namespace: media
+spec:
+  replicas: 1
+  # RWO volume + sqlite: no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: navidrome
+  template:
+    metadata:
+      labels:
+        app: navidrome
+    spec:
+      # Never on nas1, the node pinned to host this library's NFS servers
+      # (storageclass.yaml shareManagerNodeSelector): a client on the
+      # server's node hangs the node's shutdown (2026-10-05, m1au). See
+      # radarr/deployment.yaml for the full story.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values: [nas1]
+      # 1000 like the rest of the media stack. The image has no USER and
+      # needs none: a static Go binary plus ffmpeg for transcoding.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: navidrome
+          # Pinned by digest; the 0.64.2 tag (latest release) resolved
+          # on 2026-10-23.
+          image: docker.io/deluan/navidrome:0.64.2@sha256:38dc2727bfcfd5ede290f8ada114fc90368146f265ae4701ddddbcbe2a44ee52
+          env:
+            # /data and /music are the image's defaults (ND_DATAFOLDER,
+            # ND_MUSICFOLDER); restated here so the mounts read true.
+            - name: ND_DATAFOLDER
+              value: /data
+            - name: ND_MUSICFOLDER
+              value: /music
+            # The default is no schedule, relying on the fs watcher, and
+            # inotify on an NFS client never sees writes made by another
+            # client (Lidarr, on its own pod). Hourly full scan as the
+            # floor; Lidarr's Subsonic connection (first run, 7e6b.3)
+            # triggers one on every import.
+            - name: ND_SCANNER_SCHEDULE
+              value: "@every 1h"
+            # Off: anonymous usage stats to navidrome.org.
+            - name: ND_ENABLEINSIGHTSCOLLECTOR
+              value: "false"
+            # Off: public share links, unreachable anyway behind the
+            # admins gate.
+            - name: ND_ENABLESHARING
+              value: "false"
+            - name: ND_LOGLEVEL
+              value: info
+            - name: TZ
+              value: Europe/Oslo
+          ports:
+            - containerPort: 4533
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: music
+              mountPath: /music
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 4533
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: navidrome
+        - name: music
+          persistentVolumeClaim:
+            claimName: music
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: navidrome
+  namespace: media
+spec:
+  selector:
+    app: navidrome
+  ports:
+    - port: 4533
+      targetPort: 4533
