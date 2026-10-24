@@ -46,4 +46,10 @@ In monorepos, services/apps/packages may have their own `docs/` mirroring this l
   so far (exercises, workouts/sets, templates, metrics; records are
   derived). Read it before touching `workouts/`.
 
+- [**tasks**](../tasks/docs/) — the single-user task system: an
+  ECS-shaped, event-sourced store with several views (triage deck,
+  DAG, kanban, groom, narrative) over the same entities. Design only
+  so far — [`desired-state/domain-model.md`](../tasks/docs/desired-state/domain-model.md).
+  Manifests go to `k8s/apps/tasks/` once there is something to deploy.
+
 <!-- e.g. - [config-server](../config-server/docs/) -->

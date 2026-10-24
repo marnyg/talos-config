@@ -1,0 +1,25 @@
+{{define "title"}}all tasks{{end}}
+{{define "content"}}
+<h1>All tasks <span class="muted">({{len .Tasks}})</span></h1>
+{{$now := .Now}}
+<ul class="tasks">
+{{range .Tasks}}
+  <li class="{{if .IsDone}}done{{end}}">
+    <span>
+      <a href="/tasks/{{.ID}}">{{.Title}}</a>
+      {{if .Sleeping $now}}<span class="tag">sleeping until {{date .SleepUntil}}</span>{{end}}
+      {{if .NeedsGrooming}}<span class="tag">groom</span>{{end}}
+    </span>
+    <span class="actions">
+      {{if .IsDone}}
+        <form method="post" action="/tasks/{{.ID}}/reopen"><button>reopen</button></form>
+      {{else}}
+        <form method="post" action="/tasks/{{.ID}}/done"><button>done</button></form>
+      {{end}}
+    </span>
+  </li>
+{{else}}
+  <li class="muted">nothing yet — <a href="/tasks/new">add one</a></li>
+{{end}}
+</ul>
+{{end}}

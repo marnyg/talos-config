@@ -1,0 +1,12 @@
+{{define "title"}}new task{{end}}
+{{define "content"}}
+<h1>New task</h1>
+<form method="post" action="/tasks">
+  <input type="hidden" name="back" value="/tasks/new">
+  <label for="title">Title</label>
+  <input type="text" id="title" name="title" required autofocus>
+  <label for="body">Body</label>
+  <textarea id="body" name="body"></textarea>
+  <div class="actions"><button class="primary">Add</button></div>
+</form>
+{{end}}

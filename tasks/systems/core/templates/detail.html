@@ -1,0 +1,60 @@
+{{define "title"}}{{.T.Title}}{{end}}
+{{define "content"}}
+{{$t := .T}}{{$now := .Now}}
+<h1>{{$t.Title}}
+  {{if $t.IsDone}}<span class="tag">done</span>{{end}}
+  {{if $t.Sleeping $now}}<span class="tag">sleeping until {{date $t.SleepUntil}}</span>{{end}}
+  {{if $t.NeedsGrooming}}<span class="tag">needs grooming</span>{{end}}
+</h1>
+<p class="muted">created {{when $t.CreatedAt}} · <code>{{$t.ID}}</code></p>
+
+<div class="card">
+  <form method="post" action="/tasks/{{$t.ID}}/edit">
+    <input type="hidden" name="field" value="title">
+    <label>Title</label>
+    <input type="text" name="value" value="{{$t.Title}}" required>
+    <div class="actions"><button>rename</button></div>
+  </form>
+  <form method="post" action="/tasks/{{$t.ID}}/edit">
+    <input type="hidden" name="field" value="body">
+    <label>Body</label>
+    <textarea name="value">{{$t.Body}}</textarea>
+    <div class="actions"><button>save body</button></div>
+  </form>
+</div>
+
+<div class="actions">
+  {{if $t.IsDone}}
+    <form method="post" action="/tasks/{{$t.ID}}/reopen"><button>reopen</button></form>
+  {{else}}
+    <form method="post" action="/tasks/{{$t.ID}}/done"><button class="primary">done</button></form>
+    {{if $t.Sleeping $now}}
+      <form method="post" action="/tasks/{{$t.ID}}/wake"><button>wake</button></form>
+    {{else}}
+      <form method="post" action="/tasks/{{$t.ID}}/snooze">
+        <select name="until">
+          <option value="tomorrow">until tomorrow</option>
+          <option value="week">for a week</option>
+        </select>
+        <button>sleep</button>
+      </form>
+      <form method="post" action="/tasks/{{$t.ID}}/snooze">
+        <input type="date" name="until" required>
+        <button>sleep until</button>
+      </form>
+    {{end}}
+    {{if $t.NeedsGrooming}}
+      <form method="post" action="/tasks/{{$t.ID}}/groomed"><button>groomed</button></form>
+    {{else}}
+      <form method="post" action="/tasks/{{$t.ID}}/flag"><button>needs grooming</button></form>
+    {{end}}
+  {{end}}
+</div>
+
+<h2>History</h2>
+<ul class="tasks">
+{{range .History}}
+  <li><span><code>{{.Name}}</code> {{if .Payload}}<span class="muted">{{printf "%s" .Payload}}</span>{{end}}</span><span class="muted">{{when .At}}</span></li>
+{{end}}
+</ul>
+{{end}}
