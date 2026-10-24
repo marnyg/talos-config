@@ -1,0 +1,30 @@
+# tasks.gw.mesh.internal, gated behind the wallet like workouts
+# (k8s/apps/media/ingress.yaml explains the mechanism): the app has no
+# auth of its own (single user), so the group gate is what keeps "every
+# exposed service authenticates against the wallet" true.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tasks
+  namespace: tasks
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Tasks
+    gethomepage.dev/group: Apps
+    gethomepage.dev/icon: mdi-cards-outline
+    gethomepage.dev/description: triage deck, graph, board
+    gethomepage.dev/pod-selector: app=tasks
+    gethomepage.dev/weight: "31"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: tasks.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tasks
+                port:
+                  number: 8080

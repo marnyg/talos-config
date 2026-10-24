@@ -1,0 +1,6 @@
+# `tasks`: the single-user task app (epic talos-config-3vp0).
+# Inherits the cluster-wide PSS restricted default.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tasks

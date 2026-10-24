@@ -1,0 +1,88 @@
+# Tasks: the ECS-shaped, event-sourced task app (tasks/, epic 3vp0). One
+# static Go binary; the whole state is one SQLite file holding the event
+# log (component tables are rebuilt in memory at boot) on one Longhorn
+# volume. Data-plane state under invariant 2's exception: payload,
+# backed up with the volume, nothing the control plane depends on.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tasks
+  namespace: tasks
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-encrypted
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tasks
+  namespace: tasks
+spec:
+  replicas: 1
+  # RWO volume + SQLite: no rolling update.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tasks
+  template:
+    metadata:
+      labels:
+        app: tasks
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: tasks
+          # tasks/build.sh prints the digest; pin it here.
+          image: ghcr.io/marnyg/tasks@sha256:e790fcbb9e68f4b2cc420f0eabfcddb06b145fbf6e3ec232b9f72846ce5f0084
+          args: ["-data", "/var/lib/tasks", "-listen", ":8080", "-tz", "Europe/Oslo"]
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/tasks
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: tasks
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tasks
+  namespace: tasks
+spec:
+  selector:
+    app: tasks
+  ports:
+    - port: 8080
+      targetPort: 8080
