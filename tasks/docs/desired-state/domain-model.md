@@ -3,8 +3,8 @@
 <!-- Sub-scope of the root docs (docs/desired-state/). Scope: the
      single-user task system — a data-plane app on Longhorn behind the
      group gate, under invariant 2's exception (payload on a volume,
-     not control-plane state). Source lives here; manifests go to
-     k8s/apps/tasks/ once there is something to deploy. -->
+     not control-plane state). Source lives here; manifests in
+     k8s/apps/tasks/, registered in k8s/clusters/homelab/cluster.yaml. -->
 
 An ECS-shaped, event-sourced task store with several **systems**
 (triage deck, dependency graph, kanban, groom queue, narrative) that

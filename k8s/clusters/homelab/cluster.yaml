@@ -128,6 +128,8 @@ spec:
           - {name: vaultwarden}
           - {name: actual}
           - {name: workouts}
+          # Task app (epic 3vp0): tasks.gw.mesh.internal.
+          - {name: tasks}
           - {name: files}
           - {name: sillytavern}
           - {name: nix-cache}
