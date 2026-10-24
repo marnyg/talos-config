@@ -28,7 +28,8 @@ type EdgeData struct {
 	Kind string       `json:"kind"`
 }
 
-// Event types (namespace dag.*). Both carry the edge entity id.
+// Event types (namespace dag.*). Both carry the edge entity id and an
+// EdgeData payload, so an Unlinked is readable after the edge is gone.
 const (
 	EvLinked   = "Linked"
 	EvUnlinked = "Unlinked"
@@ -80,8 +81,16 @@ func (System) Reduce(ev ecs.Event, r ecs.Reader, w ecs.Writer) error {
 		}
 		return w.Set(ev.Entity, Edge, p)
 	case EvUnlinked:
-		if !r.Has(ev.Entity, Edge) {
+		cur, ok := ecs.Get[EdgeData](r, ev.Entity, Edge)
+		if !ok {
 			return ErrNoSuchEdge
+		}
+		var p EdgeData
+		if err := ev.Decode(&p); err != nil {
+			return err
+		}
+		if p != cur {
+			return fmt.Errorf("dag: Unlinked payload %+v does not match edge %+v", p, cur)
 		}
 		return w.Remove(ev.Entity, Edge)
 	default:
@@ -98,9 +107,17 @@ func Link(w *ecs.World, from, to ecs.EntityID) (ecs.EntityID, error) {
 	return id, err
 }
 
-// Unlink raises dag.Unlinked for an edge entity.
+// Unlink raises dag.Unlinked for an edge entity, echoing its data.
 func Unlink(w *ecs.World, edge ecs.EntityID) error {
-	_, err := w.Raise(Name, EvUnlinked, edge, nil)
+	var (
+		d  EdgeData
+		ok bool
+	)
+	w.Read(func(r ecs.Reader) { d, ok = ecs.Get[EdgeData](r, edge, Edge) })
+	if !ok {
+		return ErrNoSuchEdge
+	}
+	_, err := w.Raise(Name, EvUnlinked, edge, d)
 	return err
 }
 

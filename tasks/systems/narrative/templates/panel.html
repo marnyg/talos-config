@@ -1,0 +1,7 @@
+<ul class="tasks">
+{{range .Lines}}
+  <li><span>{{.Text}}</span><span class="muted" title="{{.Raw}}">{{when .At}}</span></li>
+{{else}}
+  <li class="muted">no story yet</li>
+{{end}}
+</ul>

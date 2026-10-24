@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 
@@ -81,6 +82,8 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 		web.Back(rw, r, "/graph")
 	})
 
+	web.RegisterNarrator(Narrate)
+
 	web.RegisterPanel(web.Panel{Name: "Dependencies", Render: func(w *ecs.World, id ecs.EntityID) (template.HTML, error) {
 		type rel struct {
 			Edge ecs.EntityID
@@ -122,4 +125,30 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 		}
 		return template.HTML(buf.String()), nil
 	}})
+}
+
+// Narrate tells dag events in prose. Titles are resolved against the
+// current state; a task that no longer exists is shown by id.
+func Narrate(ev ecs.Event, r ecs.Reader) (web.Story, bool) {
+	if ev.System != Name {
+		return web.Story{}, false
+	}
+	var p EdgeData
+	if err := ev.Decode(&p); err != nil {
+		return web.Story{}, false
+	}
+	title := func(id ecs.EntityID) string {
+		if t, ok := core.Load(r, id); ok {
+			return "“" + t.Title + "”"
+		}
+		return string(id)
+	}
+	verb := map[string]string{EvLinked: "now blocks", EvUnlinked: "no longer blocks"}[ev.Type]
+	if verb == "" {
+		return web.Story{}, false
+	}
+	return web.Story{
+		Text:     fmt.Sprintf("%s %s %s", title(p.From), verb, title(p.To)),
+		Entities: []ecs.EntityID{p.From, p.To, ev.Entity},
+	}, true
 }

@@ -1,0 +1,36 @@
+{{define "title"}}board{{end}}
+{{define "content"}}
+<style>
+  body { max-width: none; }
+  .board { display: grid; grid-template-columns: repeat(5, minmax(12rem, 1fr)); gap: 1rem; align-items: start; }
+  .col h3 { margin: 0 0 .5rem; font-size: .9rem; text-transform: uppercase; letter-spacing: .05em; opacity: .7; }
+  .col .card { margin: 0 0 .5rem; padding: .75rem; }
+  .col .card .actions { margin-top: .4rem; }
+  .col .card .actions button { padding: .1rem .5rem; font-size: .8rem; }
+</style>
+<div class="board">
+{{$now := .Now}}
+{{range .Columns}}
+  <div class="col">
+    <h3>{{.Name}} <span class="muted">{{len .Entries}}{{if .Hidden}}+{{.Hidden}}{{end}}</span></h3>
+    {{$col := .Name}}
+    {{range .Entries}}
+    <div class="card">
+      <a href="/tasks/{{.ID}}">{{.Title}}</a>
+      {{if eq $col "sleeping"}}<div class="muted">until {{date .SleepUntil}}</div>{{end}}
+      {{if eq $col "done"}}<div class="muted">{{date .Done}}</div>{{end}}
+      {{if ne $col "done"}}
+      <div class="actions">
+        <form method="post" action="/kanban/{{.ID}}/move"><input type="hidden" name="dir" value="up"><input type="hidden" name="back" value="/board"><button title="move up">▲</button></form>
+        <form method="post" action="/kanban/{{.ID}}/move"><input type="hidden" name="dir" value="down"><input type="hidden" name="back" value="/board"><button title="move down">▼</button></form>
+        {{if eq $col "ready"}}<form method="post" action="/tasks/{{.ID}}/done"><input type="hidden" name="back" value="/board"><button>done</button></form>{{end}}
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="muted">—</p>
+    {{end}}
+  </div>
+{{end}}
+</div>
+{{end}}

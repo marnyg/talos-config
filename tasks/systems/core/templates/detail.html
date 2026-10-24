@@ -55,11 +55,4 @@
 <h2>{{.Name}}</h2>
 {{.HTML}}
 {{end}}
-
-<h2>History</h2>
-<ul class="tasks">
-{{range .History}}
-  <li><span><code>{{.Name}}</code> {{if .Payload}}<span class="muted">{{printf "%s" .Payload}}</span>{{end}}</span><span class="muted">{{when .At}}</span></li>
-{{end}}
-</ul>
 {{end}}

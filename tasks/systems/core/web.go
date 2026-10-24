@@ -34,6 +34,8 @@ var (
 //
 // snooze takes until=tomorrow|week|YYYY-MM-DD.
 func (System) Mount(mux *http.ServeMux, w *ecs.World) {
+	web.RegisterNarrator(Narrate)
+
 	mux.HandleFunc("GET /tasks", func(rw http.ResponseWriter, r *http.Request) {
 		var tasks []Task
 		w.Read(func(rd ecs.Reader) { tasks = All(rd) })
@@ -68,11 +70,6 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 			http.NotFound(rw, r)
 			return
 		}
-		var history []ecs.Event
-		if err := w.History(id, func(ev ecs.Event) { history = append(history, ev) }); err != nil {
-			web.Fail(rw, err, http.StatusInternalServerError)
-			return
-		}
 		type panel struct {
 			Name string
 			HTML template.HTML
@@ -86,7 +83,7 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 			}
 			panels = append(panels, panel{p.Name, h})
 		}
-		web.Render(rw, tplDetail, map[string]any{"T": t, "Now": w.Now(), "History": history, "Panels": panels})
+		web.Render(rw, tplDetail, map[string]any{"T": t, "Now": w.Now(), "Panels": panels})
 	})
 
 	mux.HandleFunc("POST /tasks/{id}/edit", func(rw http.ResponseWriter, r *http.Request) {
@@ -131,6 +128,45 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 		}
 		web.Back(rw, r, "/tasks/"+string(id))
 	})
+}
+
+// Narrate tells core events in prose.
+func Narrate(ev ecs.Event, r ecs.Reader) (web.Story, bool) {
+	if ev.System != Name {
+		return web.Story{}, false
+	}
+	var text string
+	switch ev.Type {
+	case EvCreated:
+		var p Created
+		_ = ev.Decode(&p)
+		text = fmt.Sprintf("created as “%s”", p.Title)
+	case EvEdited:
+		var p Edited
+		_ = ev.Decode(&p)
+		if p.Field == "title" {
+			text = fmt.Sprintf("renamed to “%s”", p.Value)
+		} else {
+			text = "rewrote the " + p.Field
+		}
+	case EvDone:
+		text = "marked done"
+	case EvReopened:
+		text = "reopened"
+	case EvSnoozed:
+		var p Snoozed
+		_ = ev.Decode(&p)
+		text = "snoozed until " + p.Until.Local().Format("Mon 2 Jan")
+	case EvWoken:
+		text = "woken early"
+	case EvFlaggedForGrooming:
+		text = "flagged for grooming"
+	case EvGroomed:
+		text = "groomed"
+	default:
+		return web.Story{}, false
+	}
+	return web.Story{Text: text, Entities: []ecs.EntityID{ev.Entity}}, true
 }
 
 // ParseUntil turns a snooze choice into an instant: "tomorrow",

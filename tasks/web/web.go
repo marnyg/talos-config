@@ -39,6 +39,33 @@ func RegisterPanel(p Panel) { panels = append(panels, p) }
 // Panels returns the registered panels in registration order.
 func Panels() []Panel { return panels }
 
+// Story is one event told in prose, plus the entities it touches so a
+// per-task narrative can be filtered without knowing event shapes.
+type Story struct {
+	Text     string
+	Entities []ecs.EntityID
+}
+
+// Narrator turns one of its own system's events into a Story; ok=false
+// for events it does not own.
+type Narrator func(ev ecs.Event, r ecs.Reader) (s Story, ok bool)
+
+var narrators []Narrator
+
+// RegisterNarrator adds a narrator; call from Mount. The event
+// vocabulary stays with the system that owns it.
+func RegisterNarrator(n Narrator) { narrators = append(narrators, n) }
+
+// Tell runs the narrators over ev; falls back to the raw event name.
+func Tell(ev ecs.Event, r ecs.Reader) Story {
+	for _, n := range narrators {
+		if s, ok := n(ev, r); ok {
+			return s
+		}
+	}
+	return Story{Text: ev.Name(), Entities: []ecs.EntityID{ev.Entity}}
+}
+
 // Funcs are available to every page.
 var Funcs = template.FuncMap{
 	"date": func(t time.Time) string { return t.Local().Format("Mon 2 Jan") },

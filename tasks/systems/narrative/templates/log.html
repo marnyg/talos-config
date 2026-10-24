@@ -1,0 +1,14 @@
+{{define "title"}}log{{end}}
+{{define "content"}}
+<h1>Log <span class="muted">({{len .Lines}}{{if gt .Total (len .Lines)}} of {{.Total}}{{end}})</span></h1>
+<ul class="tasks">
+{{range .Lines}}
+  <li>
+    <span>{{if .Subject}}<a href="/tasks/{{.Subject.ID}}">{{.Subject.Title}}</a> — {{end}}{{.Text}}</span>
+    <span class="muted" title="{{.Raw}}">{{when .At}}</span>
+  </li>
+{{else}}
+  <li class="muted">nothing has happened yet</li>
+{{end}}
+</ul>
+{{end}}

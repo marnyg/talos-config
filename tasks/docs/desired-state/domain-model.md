@@ -59,8 +59,8 @@ log is the only truth; everything else is rebuilt from it at boot.
 | system    | owns (components)                                             | canonical events                                                          |
 |-----------|---------------------------------------------------------------|---------------------------------------------------------------------------|
 | core      | Title, Body, CreatedAt, Done, SleepUntil, NeedsGrooming       | Created, Edited{field,value}, Done, Reopened, Snoozed{until}, Woken, FlaggedForGrooming, Groomed |
-| dag       | Edge{from,to,kind} (on edge entities)                         | Linked{from,to,kind}, Unlinked{edge}                                      |
-| kanban    | Position{column?, rank}                                       | Moved{entity, rank}                                                       |
+| dag       | Edge{from,to,kind} (on edge entities)                         | Linked{from,to,kind}, Unlinked{from,to,kind} (both on the edge entity)    |
+| kanban    | Position{rank}                                                | Moved{rank}; reduces core.Done → drop Position                            |
 | triage    | —                                                             | — (raises core.Done / core.Snoozed / core.FlaggedForGrooming)             |
 | groom     | —                                                             | — (raises core.Edited / core.Groomed / dag.Linked)                        |
 | narrative | —                                                             | — (reads the log)                                                         |
@@ -84,15 +84,20 @@ never a sibling owner.
   for an explicit user un-snooze.
 - **blocked / ready** — ready ⇔ no `blocks` edge into the task from a
   non-Done entity.
-- **kanban column** — Done · sleeping · blocked · ready, from the
-  above. `Position` only orders *within* a column.
+- **kanban column** — precedence done > sleeping > blocked > groom >
+  ready. `Position{rank}` only orders *within* a column; an unmoved
+  task's effective rank is its creation time, so explicit and implicit
+  ranks share one number line and a move is a midpoint.
 - **groom queue** — `NeedsGrooming ∧ ¬Done`. (A future "looks
   ungroomed" hint — missing estimate, no edges — would be a
   derivation too, not a flag.)
-- **triage deck** — eligible = `¬Done ∧ ¬sleeping ∧ ¬blocked`; order
+- **triage deck** — eligible = `¬Done ∧ ¬sleeping ∧ ¬blocked ∧ ¬NeedsGrooming`; order
   random, seeded per calendar day. No priority component.
 - **narrative** — the log filtered to an entity plus its edge
   neighbours, rendered as prose. This view is why events carry intent.
+  Each system registers a `web.Narrator` for its own events (prose +
+  touched entities); narrative itself knows no event shapes. Hence
+  `dag.Unlinked` echoes the edge data: events are self-describing.
 
 ## Invariants (local to this scope)
 
