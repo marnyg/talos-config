@@ -88,7 +88,7 @@
   (proven 2026-10-05: 6 s). The "talos/ from git" row on `/status`
   says which tip; `fly logs` shows `git: serving <ref>@<sha>` after
   each swap. A deploy is only for hub code now.
-- 2026-09-22 — **nas1's two 2.5GbE ports are a trap.** `:a8` and `:a9`
+- 2026-09-22 — **nas1's two 2.5GbE ports are a trap.** `:a8` and `:a9` <!-- stale? -->
   are consecutive; Talos reports `${mac}` — the identity the device
   flow selects `talos/machines/<mac>/` by — from the **first** port,
   `:a8`, no matter which one has the cable. Provisioned with the cable
@@ -99,14 +99,14 @@
   is "no route to host", and the install wedges at `Installing` with no
   apid ever appearing. **Keep the cable in `:a8`.** Diagnose from the
   LAN with `arp -n 10.0.0.74`: it shows the MAC that actually answers.
-- 2026-09-22 — **nas1's SMBIOS is the OEM placeholder** (serial
+- 2026-09-22 — **nas1's SMBIOS is the OEM placeholder** (serial <!-- stale? -->
   `Default string`, UUID `03000200-0400-0500-0006-000700080009`). It is
   declared in `meta.yaml` and seal/unseal work, but the UUID is not
   per-unit: a second board from the same OEM would share the KMS
   allowlist entry, so deleting it would revoke both. ADR-0004 already
   says UUID deletion is not access control; this makes that concrete.
   Do not read that UUID as an identity anywhere else.
-- 2026-09-20 — **Changing `cluster.controlPlane.endpoint` rotates the
+- 2026-09-20 — **Changing `cluster.controlPlane.endpoint` rotates the <!-- stale? -->
   service-account issuer.** Talos sets `--service-account-issuer` and
   `--api-audiences` to the endpoint URL. Every projected SA token
   minted before the apiserver restarts with the new flags carries the
@@ -123,7 +123,7 @@
   /var/run/secrets/kubernetes.io/serviceaccount/token | cut -d. -f2 |
   base64 -d`. Bead `etzl` for making the endpoint-change runbook do
   this. Nodes rebooted *after* the flip are fine (w1 was).
-- 2026-09-20 — **w1's static address selects the dongle's MAC, not the
+- 2026-09-20 — **w1's static address selects the dongle's MAC, not the <!-- stale? -->
   directory's.** `talos/machines/98-e7-43-11-97-b8` is the laptop's
   Dell pass-through address; the box has no wired PCI NIC (Wi-Fi only,
   undriven), and the r8152 dongle it runs on is `0c:37:96:5d:26:c4`.
@@ -137,7 +137,7 @@
   stale `public-ip` failure as the rename note below) and expect
   `talosctl -n <hostname>` via cp1 to hang for a while (`hyjv`; use
   the LAN IP).
-- 2026-09-20 — **Phone Wi-Fi→cellular takes minutes to recover, and
+- 2026-09-20 — **Phone Wi-Fi→cellular takes minutes to recover, and <!-- stale? -->
   the phone's cellular at home is unusable for testing.** The tunnel
   re-underlays at once (`advertising <cell ip>`), but the agent's
   hub fetch reuses the Wi-Fi-era h2 connection and times out 30 s per
@@ -157,7 +157,7 @@
   ~3–5 min, so bursts of `stream done … 5m0s` are normal, not a
   reconnect — `cat /proc/net/dev | grep tun0` growing is the
   playback signal.
-- 2026-09-20 — **w1's LAN NIC is a USB adapter and its name is not
+- 2026-09-20 — **w1's LAN NIC is a USB adapter and its name is not <!-- stale? -->
   stable across boots.** It came back from the last reboot as
   `enp0s13f0u1` / `10.0.0.71` (was `enp0s13f0u1u4` / `10.0.0.67`, the
   address the TV's LAN-direct path was verified against). _(Later the
@@ -172,13 +172,13 @@
   `kube-flannel-*` pod; check `kubectl get node w1 -o
   jsonpath='{.metadata.annotations.flannel\.alpha\.coreos\.com/public-ip}'`
   matches the node's INTERNAL-IP after any w1 reboot.
-- 2026-09-20 — **ingress-nginx is no longer on the LAN** (`xnat`): a
+- 2026-09-20 — **ingress-nginx is no longer on the LAN** (`xnat`): a <!-- stale? -->
   ClusterIP Service only, dialed by the gateway. To poke nginx without
   going through the mesh, `kubectl -n ingress-nginx port-forward
   svc/ingress-nginx-controller 8080:80` and send a `Host:` header.
   `curl http://10.0.0.68/` answering anything means someone put
   hostNetwork back.
-- 2026-09-20 — **The gateway's two Jellyfin paths are two origins.**
+- 2026-09-20 — **The gateway's two Jellyfin paths are two origins.** <!-- stale? -->
   `jellyfin.gw.mesh.internal` (:80, `ingress-http` facet, through
   nginx) and `jellyfin.gw.mesh.internal:8096` (the raw `jellyfin`
   facet, no nginx — P2.3's appliance path) are different origins to
@@ -187,13 +187,13 @@
   siwe-oidc's `-client=jellyfin=…` list (they are, since `be0c1d7`);
   an unregistered one fails as a silent bounce in the app, with a 400
   only visible by curling `/authorize` directly.
-- 2026-09-20 — **The Mac cannot test the raw `jellyfin` facet.**
+- 2026-09-20 — **The Mac cannot test the raw `jellyfin` facet.** <!-- stale? -->
   `mesh-policy-v3.yaml` grants `jellyfin` to `group: media` only, and
   the laptop is `admins`, so `curl jellyfin.gw:8096` from the Mac gets
   `irohtransport: refused: not authorized` — the gateway working, not
   a bug. Test that facet from a `media` device (the phone), or use
   `:80`.
-- 2026-09-20 — **The APK is not built by CI any more** (P2.4): the AAR
+- 2026-09-20 — **The APK is not built by CI any more** (P2.4): the AAR <!-- stale? -->
   links `libiroh_ffi.a` cross-built for `aarch64-linux-android`
   (`iroh-go/nix/android.nix` — impure, unfree NDK, ~1 h cold, then
   cached), which a stock GitHub runner cannot produce. Build on the
@@ -202,7 +202,7 @@
   gradle --no-daemon assembleDebug && ./publish.sh`. The workflow still
   exists but is dispatch-only and fails fast without the `.a`.
   `adb` on the Mac: `nix shell nixpkgs#android-tools`.
-- 2026-09-20 — **`--auto-bootstrap` now needs `--iroh-relay`** (P2.2,
+- 2026-09-20 — **`--auto-bootstrap` now needs `--iroh-relay`** (P2.2, <!-- stale? -->
   `49a7bdb`): the hub dials the control plane's `apid` over the
   identity plane, so a hub without a wan endpoint reports
   `no-identity-plane` and `main` refuses the flag combination. fly's
@@ -468,7 +468,7 @@
   `export.auto` is `false`. Session-close check: `git ls-remote origin
   refs/dolt/data` must move after `bd dolt push`. Q-threads that are
   `blocks`-chained need `--force` to close with a reason. <!-- stale? -->
-- 2026-09-20 — **Three `bd` traps found while grooming, all silent.**
+- 2026-09-20 — **Three `bd` traps found while grooming, all silent.** <!-- stale? -->
   (a) `bd ready --exclude-type` is a **no-op** in `1.0.3 (dev)` — it
   is accepted without error and filters nothing, for `epic` and `bug`
   alike, so any type-filtered ready query is wrong without saying so.
@@ -523,7 +523,7 @@
   Fallback without the box: `hub-image.yml` builds on every push;
   `workflow_dispatch` with `push=true` needs a `FLY_API_TOKEN` repo
   secret (not set yet).
-- 2026-09-19 — **Talos restarts an extension service when its
+- 2026-09-19 — **Talos restarts an extension service when its <!-- stale? -->
   ExtensionServiceConfig document is *updated*, but not when it is
   first *created* under a running service.** Corrected on w1 (qb5q):
   `apply-config` at 19:33:38 restarted `ext-p0agent` on its own (the
@@ -533,7 +533,7 @@
   service was already running with no file, and registering v1 left
   the old mount namespace in place. So: after an apply that *adds*
   the doc, restart by hand; after one that *changes* it, don't.
-- 2026-09-19 — **Re-serving a machine config without the mesh, one
+- 2026-09-19 — **Re-serving a machine config without the mesh, one <!-- stale? -->
   browser click**: `curl -X POST …/device/code -d client_id=talos-pxe
   -d mac=<mac> -d uuid=<uuid>` → open `/status?user_code=…`, approve
   (one wallet signature) → poll `POST /token` with the `device_code`
@@ -542,7 +542,7 @@
   enrolls within a second of seeing the file, so upgrade first, then
   serve. Fully headless would need two CLI wallet signatures (SIWE
   login + approval nonce).
-- 2026-09-19 — **`p0agent` extension chain now**: static agent from
+- 2026-09-19 — **`p0agent` extension chain now**: static agent from <!-- stale? -->
   `nix build --store ssh-ng://mar@nixos --eval-store auto
   .#packages.x86_64-linux.config-server-static` (`bin/nodeagent`,
   ~24 MB; `scp` it over — `file` is not on the box, fish shell), then
@@ -552,7 +552,7 @@
   (2026-09-20: `docker buildx imagetools inspect` — no `crane` here).
   Talos version + official extension refs live in
   `talos/extensions/installer.env`, nowhere else.
-- 2026-09-20 — **A machinery `client.New` with ONE endpoint runs
+- 2026-09-20 — **A machinery `client.New` with ONE endpoint runs <!-- stale? -->
   gRPC's DNS resolver** (`dns:///<name>`) before any
   `WithContextDialer`; a name that only the identity plane knows
   fails as `name resolver error: produced zero addresses` — on the
@@ -560,7 +560,7 @@
   admitting the stream. `facetResolver` in `bootstrap.go` shadows the
   scheme per client; any new machinery client over a facet needs the
   same option, and `bootstrap_client_test.go` is the pattern.
-- 2026-09-20 — **Live acceptance of a hub redeploy** reads from
+- 2026-09-20 — **Live acceptance of a hub redeploy** reads from <!-- stale? -->
   `fly logs -a marnyg-talos-config | grep auto-bootstrap` (`/status`
   needs a wallet) and `talosctl -n <node> logs ext-p0agent`: expect
   `connection to hub … lost; beating` → `beat ok` on the node within
@@ -569,7 +569,7 @@
   no CA bundle: Go's HTTPS client needs the `/etc/ssl/certs` bind the
   0.1.1 spec adds (iroh's relay client carries webpki roots itself).
 
-- 2026-09-19 — **`talosctl`/`kubectl` over the identity plane**: run
+- 2026-09-19 — **`talosctl`/`kubectl` over the identity plane**: run <!-- stale? -->
   `irohup` (bridges default to `cp1/apid=127.0.0.1:50000` and
   `cp1/kube-api=127.0.0.1:6443`), then
   `talosctl --talosconfig talos/talosconfig -e talos-wu6-eib:50000 -n
@@ -579,29 +579,29 @@
   API server cert does carry `localhost`). Enrollment state lives in
   `~/.config/talos-mesh/<name>.iroh/` beside nebup's two files; one
   wallet signature enrolls both planes.
-- 2026-09-19 — **After a hub deploy the name map is empty until each
+- 2026-09-19 — **After a hub deploy the name map is empty until each <!-- stale? -->
   member beats** (up to 6 h). Members merge their own last map now, so
   bridges keep working; to reconverge *now*, force a beat on both
   sides: `talosctl service ext-p0agent restart` on the node, restart
   `irohup` on the desktop.
-- 2026-09-19 — **Enrolling a headless member**: `irohup` serves its
+- 2026-09-19 — **Enrolling a headless member**: `irohup` serves its <!-- stale? -->
   signing page on loopback of the machine being enrolled, so from the
   Mac run it over ssh, read the `http://127.0.0.1:PORT/TOKEN` line out
   of its log, then `ssh -N -L PORT:127.0.0.1:PORT mar@nixos` and open
   that URL locally. The NodeId is minted on the box and never travels.
   `mar@nixos` is a member now (`nixos`, `ed:c02908be…`).
-- 2026-09-19 — **Reading iroh paths**: `P0_LOG=debug` and grep
+- 2026-09-19 — **Reading iroh paths**: `P0_LOG=debug` and grep <!-- stale? -->
   `path::selected` — `network_path=Ip(a->b)` is direct,
   `network_path=Relay(url)` is relayed. The hub is always `Relay`
   (relay-only by construction, ADR-0022). `bash -lc` is required for
   anything scripted over ssh to that box (login shell is fish).
-- 2026-09-19 — **`/status` and `/sealed` round runway to the nearest
+- 2026-09-19 — **`/status` and `/sealed` round runway to the nearest <!-- stale? -->
   day** (`issuer.RunwayDays`). Before this, a speak-as signed one second
   ago read "119 d left" for a 120 d cert — the nominal value was
   unreachable, and an exact-equality test flaked on it in the nix
   sandbox. The nag window is still judged on raw seconds, so
   "30 d left, NAG" is possible at the boundary and is not a bug.
-- 2026-09-19 — **The Mac's mesh member is a launchd daemon now**
+- 2026-09-19 — **The Mac's mesh member is a launchd daemon now** <!-- stale? -->
   (`org.nixos.talos-mesh`, `irohup -tun`, user `_talosmesh`, state
   `/var/lib/talos-mesh/marius-mac.iroh` — unreadable as the login
   user by design). Log: `/var/log/talos-mesh.log`. Re-enroll/rekey:
@@ -610,14 +610,14 @@
   system/org.nixos.talos-mesh`. It only runs while `kit.json` exists.
   Don't also run a foreground `irohup` with the same state dir — two
   endpoints on one NodeId.
-- 2026-09-19 — **Probing mesh names on macOS**: `dig cp1.mesh.internal`
+- 2026-09-19 — **Probing mesh names on macOS**: `dig cp1.mesh.internal` <!-- stale? -->
   does NOT go through `/etc/resolver` (dig reads `resolv.conf`) and
   will SERVFAIL; use `dscacheutil -q host -a name cp1.mesh.internal`
   (what CGO clients like talosctl/kubectl see) or `dig @198.18.0.2`
   for the resolver itself. `route -n get 198.18.1.0` misreports `.0`
   hosts as the default route even while the /15 forwards; ask
   `route -n get -net 198.18.0.0/15` (that is what `RouteIntact` does).
-- 2026-09-19 — **`talosctl -n <node>` is dialed BY THE ENDPOINT, never
+- 2026-09-19 — **`talosctl -n <node>` is dialed BY THE ENDPOINT, never <!-- stale? -->
   short-circuited**: on a control plane apid holds a client cert, so
   `director.IsLocalTarget` is never consulted and every `-n X` becomes
   a TLS dial to `X:50000` with SNI `X` from cp1. So `-n` must be a
@@ -627,7 +627,7 @@
   never work (cp1 has no resolver for the zone); `-n cp1` will not
   until `t7b2` pins the hostname — today it is **`talos-wu6-eib`**
   (`meta.yaml hostname:` carries it for `apply`).
-- 2026-09-19 — **Admin paths are nebula-free on the Mac.** talosconfig
+- 2026-09-19 — **Admin paths are nebula-free on the Mac.** talosconfig <!-- stale? -->
   `endpoints: [cp1.mesh.internal]`, `nix run .#kubeconfig`, `nix run
   .#apply` (hub at `http://hub.mesh.internal` over the hub-http facet,
   nodes via `-e cp1.mesh.internal -n <hostname>`). The overlay
@@ -635,12 +635,12 @@
   are on nebula only (`mar@nixos`, no tun yet), you cannot apply. Test
   the facet with `curl http://hub.mesh.internal/config?mac=<mac>`;
   admitted/refused lines are in the hub's fly log as `hub-http:`.
-- 2026-09-19 — **`hub.mesh.internal` is not in the name map** — the
+- 2026-09-19 — **`hub.mesh.internal` is not in the name map** — the <!-- stale? -->
   daemon answers it from `hub.json` (the beat's hub record), so it
   resolves only after the first beat and goes with the hub record's
   expiry. A media member is *admitted* on hub-http (recipe row) and
   gets 403 on `/config`; that is the per-route gate, not a bug.
-- 2026-09-20 — **After a hub redeploy + unseal, the first mesh flow to
+- 2026-09-20 — **After a hub redeploy + unseal, the first mesh flow to <!-- stale? -->
   the hub takes ~15 s** (`DialTimeout` on the dead hubkey, then a
   rebeat: `renewed … at ed:<new>` + `beat ok` in
   `/var/log/talos-mesh.log`), every later flow is instant. If the first
@@ -650,7 +650,7 @@
   will not beat faster. A `dig @198.18.0.2 <unknown>.mesh.internal`
   also kicks a beat (same limit): expect `beat ok` lines in the daemon
   log after typos.
-- 2026-09-20 — **The 09-19 "network dropped during the redeploy" was
+- 2026-09-20 — **The 09-19 "network dropped during the redeploy" was <!-- stale? -->
   the home router's DNS**, not the daemon: `sudo log show` for
   21:36–21:43 shows mDNSResponder's queries to `10.0.0.1` via `en7`
   unanswered 21:40:02–21:40:58 (ICMP/route/resolver config untouched),
@@ -658,58 +658,58 @@
   `ping 1.1.1.1` + `dig @10.0.0.1` + `dig @198.18.0.2` on 09-20 showed
   no loss at all. When "everything is down" during a deploy, check WAN
   DNS separately from mesh names before blaming the tun.
-- 2026-09-20 — **The Mac daemon is built from the nixos flake's
+- 2026-09-20 — **The Mac daemon is built from the nixos flake's <!-- stale? -->
   `talos-config` input** (`github:marnyg/talos-config`, pinned in
   `~/git/nixos/flake.lock`): a talos-config commit reaches the daemon
   only after `git push` **and** `nix flake update talos-config
   --refresh && darwin-rebuild switch` there. Verify with the store
   path in `/Library/LaunchDaemons/org.nixos.talos-mesh.plist` — an
   unchanged path after a rebuild means the input did not move.
-- 2026-09-19 — **Fake IPs are per-daemon-process, not stable.** The
+- 2026-09-19 — **Fake IPs are per-daemon-process, not stable.** The <!-- stale? -->
   table "only grows" within one run, but a restart re-mints from
   `198.18.1.1` in first-lookup order — w1 was `.1.1` before this
   session's restart and the hub took `.1.1` after. The 60 s answer TTL
   bounds the staleness, so never hard-code a fake IP or cache one
   across a daemon restart.
-- 2026-09-19 — **`config-server-bin` vendorHash changes whenever
+- 2026-09-19 — **`config-server-bin` vendorHash changes whenever <!-- stale? -->
   `fakeip` (or anything) imports a new package from an already-required
   module** — the vendor dir is per-package. Recompute with a bogus
   hash; `go.sum` staying identical is not evidence it's unchanged.
-- 2026-09-20 — **The Mac has no nebula plane**: `irohup -tun` runs
+- 2026-09-20 — **The Mac has no nebula plane**: `irohup -tun` runs <!-- stale? -->
   with `-dns-upstream` empty, no nebula process, no `10.42.` address.
   Anything still named `*.cp1.mesh.internal` (only `jellyfin.cp1`, for
   the TV) is unreachable from the Mac — by design, not a fault.
-- 2026-09-20 — **GHCR creates new packages private.** The first push
+- 2026-09-20 — **GHCR creates new packages private.** The first push <!-- stale? -->
   of `ghcr.io/marnyg/gateway` left the pod in `ErrImagePull` until the
   package was made public in the browser (no API for visibility).
   Same for any new `ghcr.io/marnyg/<name>`.
-- 2026-09-20 — **Gateway enrollment lives in the pod log**: with an
+- 2026-09-20 — **Gateway enrollment lives in the pod log**: with an <!-- stale? -->
   empty PVC, `kubectl logs -n gateway deploy/gateway` prints the
   `/status?user_code=…` URL; sign as `gw`, group media, within 10 min
   (an expired flow restarts itself with a fresh code). The PVC
   `gateway-state` is the membership — deleting it costs one wallet act.
-- 2026-09-20 — **Verifying the identity headers**: a throwaway
+- 2026-09-20 — **Verifying the identity headers**: a throwaway <!-- stale? -->
   `traefik/whoami` pod + Service + Ingress `whoami.gw.mesh.internal`
   echoes request headers; `curl http://whoami.gw.mesh.internal/` from
   the Mac shows `X-Mesh-*`, `curl -H Host:… http://<node>/` from the
   LAN must show none. The `media` namespace's PSS warns but admits it.
-- 2026-09-20 — **The TV is driven over network adb, not a remote**:
+- 2026-09-20 — **The TV is driven over network adb, not a remote**: <!-- stale? -->
   `adb connect 10.0.0.2:5555` after Settings → Device Preferences →
   Developer options → Network debugging (the first connect needs the
   on-screen "Allow debugging" accepted once). The Shield's leanback UI
   ignores `input tap` — navigate with `input keyevent DPAD_*` and read
   the focused node from `uiautomator dump`. `DPAD_CENTER` inside an
   EditText types `a` via the leanback IME; use `KEYCODE_ENTER`.
-- 2026-09-20 — **The Shield's toybox has no curl/wget/nslookup**, only
+- 2026-09-20 — **The Shield's toybox has no curl/wget/nslookup**, only <!-- stale? -->
   `nc`, and that `nc` closes the socket on stdin EOF — a piped HTTP
   request reads as `0B in` (looks like the server hung up). Hold stdin:
   `{ printf '...'; sleep 6; } | nc <ip> <port>`.
-- 2026-09-20 — **The mesh app is debuggable, so its log is readable
+- 2026-09-20 — **The mesh app is debuggable, so its log is readable <!-- stale? -->
   without root**: `adb shell run-as dev.marnyg.mesh tail -20
   cache/mesh.log`; membership lives in `files/member/`. Reading the
   log this way does not disturb playback, unlike opening the in-app
   Debug screen.
-- 2026-09-20 — **Jellyfin Quick Connect can be authorized from the
+- 2026-09-20 — **Jellyfin Quick Connect can be authorized from the <!-- stale? -->
   cluster** instead of a browser: auth as `admin` at
   `/Users/AuthenticateByName` inside the pod, then
   `POST /QuickConnect/Authorize?code=<6 digits>&userId=<id>`. Signs
@@ -723,15 +723,15 @@
   negotiates gzip itself and decodes transparently. Found by the TV
   (OkHttp sends gzip; `nc` and curl do not, so the laptop test and
   the unit tests passed).
-- 2026-09-20 — **`android-latest` can lag the real APK.** The AAR
+- 2026-09-20 — **`android-latest` can lag the real APK.** The AAR <!-- stale? -->
   build left CI at P2.4, so the release asset is only as fresh as the
   last manual `android/publish.sh`; check the asset size (v1 ≈ 94 MB,
   v3 ≈ 18 MB) before telling anyone to sideload it.
-- 2026-09-20 — **Reinstalling the app is destructive and one-way**:
+- 2026-09-20 — **Reinstalling the app is destructive and one-way**: <!-- stale? -->
   the CI-signed v1 and the NixOS-built v3 have different debug
   keystores, so `pm install -r` fails `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
   and the uninstall takes the device's nebula config with it.
-- 2026-09-20 — **The NixOS box builds the APK from `~/p24`, which is
+- 2026-09-20 — **The NixOS box builds the APK from `~/p24`, which is <!-- stale? -->
   not a git clone** — an rsync'd copy of the tree (`~/p0` is the old
   P0.2 clone, on a detached HEAD). Sync the files you changed
   (`rsync -a config-server/meshtun/ mar@nixos:~/p24/config-server/meshtun/`)
@@ -739,40 +739,40 @@
   rebuild is minutes, not the hour the cold cross build costs:
   `libiroh_ffi.a` for `aarch64-linux-android` and the gradle caches
   are already in the store.
-- 2026-09-20 — **`adb install -r` over the *same* debug keystore keeps
+- 2026-09-20 — **`adb install -r` over the *same* debug keystore keeps <!-- stale? -->
   the member**: reinstalling the NixOS-built APK on top of itself left
   `files/member/` intact (name, key, kit) — only the tunnel had to be
   reconnected. The destructive case is v1→v3 (different keystores).
-- 2026-09-20 — **Jellyfin's libraries are backed by read-only mounts
+- 2026-09-20 — **Jellyfin's libraries are backed by read-only mounts <!-- stale? -->
   in the jellyfin pod**; writes go through the *arr pods
   (`kubectl exec -n media deploy/radarr -c radarr -- …` sees
   `/movies` read-write). `POST /Library/Refresh` with an admin token
   picks the file up in ~20 s.
-- 2026-09-20 — **The Mac daemon lags a talos-config commit by a
+- 2026-09-20 — **The Mac daemon lags a talos-config commit by a <!-- stale? -->
   `darwin-rebuild switch`**: bumping `~/git/nixos/flake.lock` is not
   enough, and nothing warns you — compare the store path in
   `/Library/LaunchDaemons/org.nixos.talos-mesh.plist` against a symbol
   you expect (`grep Counters $(nix-store -q --deriver …)`-ish) or just
   the plist's mtime.
-- 2026-09-20 — **`jellyfin.gw.mesh.internal:8096` is unreachable from
+- 2026-09-20 — **`jellyfin.gw.mesh.internal:8096` is unreachable from <!-- stale? -->
   the Mac** (`marius-mac`, a node, not in `media`) while `hub` and the
   `:80` ingress both answer; the phone and TV reach `:8096`. Unproven
   guess: facet authorization is group-scoped. Use the `:80` ingress
   from the desktop.
-- 2026-09-20 — **Sealing the hub on demand is a restart** (no
+- 2026-09-20 — **Sealing the hub on demand is a restart** (no <!-- stale? -->
   endpoint; unsealed material is memory-only, invariant 8):
   `fly machine restart 7817426a194968 -a marnyg-talos-config`, then
   sign both proposals at `/status`. Measured cycle: nodes log `lost;
   beating` ~30 s after the seal (h2 ping interval), `beat ok` ≤40 s
   after the unseal, hub `etcd-running` within the next 30 s poll.
-- 2026-09-20 — **Phone dev loop from the Mac**: `adb` is not on PATH —
+- 2026-09-20 — **Phone dev loop from the Mac**: `adb` is not on PATH — <!-- stale? -->
   `nix shell nixpkgs#android-tools -c adb …`. The APK build on
   `mar@nixos` (`android/README.md` steps 1–2) is ~30 s with the store
   warm. `adb install -r` kills the VpnService and it **cannot be
   restarted over adb** (`am start-foreground-service` → "Requires
   permission not exported"); open the app and tap Connect. Go log:
   `adb shell run-as dev.marnyg.mesh tail cache/mesh.log`.
-- 2026-09-20 — **P4.1 upgrade timings and one Talos fact**: `talosctl
+- 2026-09-20 — **P4.1 upgrade timings and one Talos fact**: `talosctl <!-- stale? -->
   upgrade --wait` w1 ~3.5 min, cp1 ~7 min (drain; both nodes up this
   time). After an upgrade the node's stored config still carried the
   `nebula` ExtensionServiceConfig for an extension that no longer
@@ -783,25 +783,25 @@
   if ever needed, is `talosctl upgrade --image <0.1.4 pin>` (git
   history has it) — nebula would come back configured, since the
   stored config never lost the document.
-- 2026-09-20 — **The hub bakes `talos/` at image build** (`fly/image.nix`):
+- 2026-09-20 — **The hub bakes `talos/` at image build** (`fly/image.nix`): <!-- stale? -->
   any `talos/clusters/**` or `talos/machines/**` change needs
   `HUB_BUILDER=mar@nixos fly/deploy.sh` (~3 min) + an unseal before
   `nix run .#apply` serves it. Plan one unseal per session: batch the
   git changes, deploy once.
-- 2026-09-21 — **A device may not enroll under a machine's name or
+- 2026-09-21 — **A device may not enroll under a machine's name or <!-- stale? -->
   `hub`**: the hub answers 409 at `/mesh/enroll/challenge` and refuses
   the mint if the approver types one on the card. The name map is
   witnessed, so nothing else would have stopped a second `cp1`.
-- 2026-09-21 — **Hub deploy recipe unchanged, one flag fewer**: the
+- 2026-09-21 — **Hub deploy recipe unchanged, one flag fewer**: the <!-- stale? -->
   process is a hub iff `IROH_RELAY_URL` is set (`fly/entrypoint.sh`
   folds `--auto-bootstrap` and `--kms-advertise` under it). A wrong
   wallet at unseal now fails with `decrypting secrets … (wrong wallet
   or message?)` instead of a CA-pin mismatch — same meaning.
-- 2026-09-21 — **Enrollment message is v3** (`name, group, node,
+- 2026-09-21 — **Enrollment message is v3** (`name, group, node, <!-- stale? -->
   nonce`). A client built before `600d2d4` signs v2 and gets 403 at
   mint; the phone/TV APK, gateway image and Mac daemon are on that
   list until rebuilt (bd task). Existing kits renew regardless.
-- 2026-09-21 — **The dedicated fly IPv4 is the KMS port's, not
+- 2026-09-21 — **The dedicated fly IPv4 is the KMS port's, not <!-- stale? -->
   nebula's**: `fly ips release 213.188.219.215` would break disk
   unlock on the next node boot (shared v4 = 80/443 only). `os8s`.
 - 2026-09-29 — **A dead node freezes GitOps**: StatefulSet pods on a
@@ -1333,3 +1333,5 @@
   the poll**; `kubectl -n argocd annotate application
   platform-sap-parent argocd.argoproj.io/refresh=normal --overwrite`
   synced it in seconds.
+
+- 2026-10-24 — **`tasks` crashloops on purpose if its log stops replaying.** The pod rebuilds all state from the event log in `tasks.db` at boot and `log.Fatalf`s on the first event a reducer rejects. That is a reducer bug (or a payload-shape change without an upcaster), never a reason to edit or truncate the log (`tasks/docs/desired-state/domain-model.md`, invariants 1 and 6).

@@ -50,6 +50,7 @@ In monorepos, services/apps/packages may have their own `docs/` mirroring this l
   ECS-shaped, event-sourced store with several views (triage deck,
   DAG, kanban, groom, narrative) over the same entities. Design only
   so far — [`desired-state/domain-model.md`](../tasks/docs/desired-state/domain-model.md).
-  Deployed from `k8s/apps/tasks/` at tasks.gw.mesh.internal.
+  Deployed from `k8s/apps/tasks/` at tasks.gw.mesh.internal; the
+  architectural decision is its ADR-0001 (`tasks/docs/technical/adrs/`).
 
 <!-- e.g. - [config-server](../config-server/docs/) -->
