@@ -88,14 +88,38 @@ data:
         -d '{"path":"/tv"}' "$SONARR_URL/api/v3/rootfolder" || echo "WARN: root folder failed"
     fi
 
-    # Add NZBget download client
+    # Download clients. Owned like the NZBgeek indexer below: an existing
+    # entry (by name) is PUT back, a missing one POSTed, so a setting
+    # changed here reaches the persisted DB.
+    #
+    # removeCompletedDownloads is off when a client is added through the
+    # API (the UI defaults it on). /downloads and /tv are different
+    # volumes, so every import is a copy, and nothing else ever deletes
+    # the staging one: 2026-10-24 the downloads volume filled with 130 GB
+    # of imported episodes. With it on, usenet grabs go as soon as they
+    # are imported; a torrent only once transmission reports it stopped,
+    # which is the seed goal its indexer carries (prowlarr/configmap.yaml:
+    # public trackers get one, IPTorrents none, so those seed on).
     existing=$(curl -sf -H "$AUTH" "$SONARR_URL/api/v3/downloadclient")
-    if ! echo "$existing" | grep -q "NZBget"; then
-      echo "Adding NZBget download client..."
-      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+    download_client() {  # name, body
+      eid=$(printf '%s\n' "$existing" | awk -v n="$1" \
+        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+      if [ -n "$eid" ]; then
+        echo "Refreshing $1 download client (id $eid)..."
+        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+          -d "${2%\}}, \"id\": $eid}" "$SONARR_URL/api/v3/downloadclient/$eid" || echo "WARN: $1 refresh failed"
+      else
+        echo "Adding $1 download client..."
+        curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$2" "$SONARR_URL/api/v3/downloadclient" || echo "WARN: $1 client failed"
+      fi
+    }
+    download_client NZBget '{
         "enable": true,
         "protocol": "usenet",
         "priority": 1,
+        "removeCompletedDownloads": true,
+        "removeFailedDownloads": true,
         "name": "NZBget",
         "implementation": "Nzbget",
         "configContract": "NzbgetSettings",
@@ -107,26 +131,25 @@ data:
           {"name": "tvCategory", "value": "Series"},
           {"name": "useSsl", "value": false}
         ]
-      }' "$SONARR_URL/api/v3/downloadclient" || echo "WARN: NZBget client failed"
-    fi
-
-    # Add Transmission download client
-    if ! echo "$existing" | grep -q "Transmission"; then
-      echo "Adding Transmission download client..."
-      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+      }'
+    # tvCategory is Sonarr's default for Transmission, pinned so a PUT
+    # cannot move the subdirectory under /downloads/completed.
+    download_client Transmission '{
         "enable": true,
         "protocol": "torrent",
         "priority": 1,
+        "removeCompletedDownloads": true,
+        "removeFailedDownloads": true,
         "name": "Transmission",
         "implementation": "Transmission",
         "configContract": "TransmissionSettings",
         "fields": [
           {"name": "host", "value": "transmission"},
           {"name": "port", "value": 9091},
+          {"name": "tvCategory", "value": "tv-sonarr"},
           {"name": "useSsl", "value": false}
         ]
-      }' "$SONARR_URL/api/v3/downloadclient" || echo "WARN: Transmission client failed"
-    fi
+      }'
 
     # Torrent indexers are not added here: Prowlarr (k8s/apps/prowlarr)
     # holds them and pushes one entry per indexer into Sonarr through the

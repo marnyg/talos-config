@@ -64,8 +64,8 @@ data:
     # Indexers, one per definition id in PROWLARR_INDEXERS. The body is
     # the definition's own template from /api/v1/indexer/schema (what the
     # UI's "Add Indexer" POSTs): it carries every setting with its
-    # default, so only name/enable/profile/priority and the credential
-    # fields are patched in. The schema list is large and pretty-printed
+    # default, so only name/enable/profile/priority, the credential
+    # fields and the seed goal are patched in. The schema list is large and pretty-printed
     # — one entry per `  {`…`  }` block, top-level keys at 4 spaces,
     # field objects at 6/8 — the same layout the sonarr/radarr
     # configurators already lean on for Prowlarr's application list.
@@ -92,7 +92,18 @@ data:
       # Cardigann field names are not pinned here, the label-ish match
       # survives a definition rename). No JSON escaping: cookie and UA
       # strings carry no quotes/backslashes.
-      cookie=""; ua=""
+      #
+      # Seed goal (torrentBaseSettings.seedRatio / seedTime, synced to
+      # the apps as the indexer's seed criteria, which they set on each
+      # torrent in transmission): the apps' removeCompletedDownloads
+      # (sonarr/configmap.yaml) reaps a torrent only once transmission
+      # reports it stopped, and a torrent stops when it hits a goal.
+      # Public trackers get ratio 1.0 or 24 h idle (the apps map
+      # seedTime to transmission's idle limit, so a dead torrent still
+      # goes). iptorrents gets none: transmission's own default is
+      # unlimited, so those seed until stopped by hand, and are never
+      # removed on their own (2026-10-24).
+      cookie=""; ua=""; ratio="1.0"; seedtime="1440"
       case "$id" in
         iptorrents)
           if [ -z "$IPTORRENTS_COOKIE" ] || [ -z "$IPTORRENTS_USER_AGENT" ]; then
@@ -100,6 +111,7 @@ data:
             continue
           fi
           cookie="$IPTORRENTS_COOKIE"; ua="$IPTORRENTS_USER_AGENT"
+          ratio=""; seedtime=""
           ;;
       esac
       # definitionName is case-insensitive here: Cardigann YAML ids are
@@ -121,7 +133,7 @@ data:
         '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
       # Lines are emitted one behind so the last key before `}` can lose
       # its comma (or gain the id) whatever the schema put last.
-      COOKIE="$cookie" UA="$ua" awk -v pid="$profile" -v eid="$eid" '
+      COOKIE="$cookie" UA="$ua" RATIO="$ratio" SEEDTIME="$seedtime" awk -v pid="$profile" -v eid="$eid" '
         function out(l) { if (held != "") print held; held = l }
         NR == 1 { out("{"); out("  \"enable\": true,"); out("  \"appProfileId\": " pid ","); out("  \"priority\": 25,"); next }
         /^  \},?$/ { sub(/,$/, "", held); if (eid != "") { held = held ","; out("  \"id\": " eid) } out("}"); next }
@@ -133,9 +145,11 @@ data:
           out($0)
           if (k == "cookie" && ENVIRON["COOKIE"] != "") out("        \"value\": \"" ENVIRON["COOKIE"] "\",")
           if (k == "useragent" && ENVIRON["UA"] != "") out("        \"value\": \"" ENVIRON["UA"] "\",")
+          if (k == "torrentbasesettingsseedratio" && ENVIRON["RATIO"] != "") out("        \"value\": " ENVIRON["RATIO"] ",")
+          if (k == "torrentbasesettingsseedtime" && ENVIRON["SEEDTIME"] != "") out("        \"value\": " ENVIRON["SEEDTIME"] ",")
           next
         }
-        f && /^        "value": / && ((k == "cookie" && ENVIRON["COOKIE"] != "") || (k == "useragent" && ENVIRON["UA"] != "")) { next }
+        f && /^        "value": / && ((k == "cookie" && ENVIRON["COOKIE"] != "") || (k == "useragent" && ENVIRON["UA"] != "") || (k == "torrentbasesettingsseedratio" && ENVIRON["RATIO"] != "") || (k == "torrentbasesettingsseedtime" && ENVIRON["SEEDTIME"] != "")) { next }
         /^      \},?$/ { f = 0 }
         { out($0) }
         END { if (held != "") print held }

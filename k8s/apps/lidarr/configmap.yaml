@@ -74,14 +74,30 @@ data:
       fi
     fi
 
-    # Add NZBget download client
+    # Download clients: PUT-or-POST with removeCompletedDownloads on, see
+    # the comment in sonarr/configmap.yaml (imports are copies across
+    # volumes; torrents are removed only once their indexer's seed goal
+    # stops them in transmission, IPTorrents carries none).
     existing=$(curl -sf -H "$AUTH" "$LIDARR_URL/api/v1/downloadclient")
-    if ! echo "$existing" | grep -q "NZBget"; then
-      echo "Adding NZBget download client..."
-      curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+    download_client() {  # name, body
+      eid=$(printf '%s\n' "$existing" | awk -v n="$1" \
+        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+      if [ -n "$eid" ]; then
+        echo "Refreshing $1 download client (id $eid)..."
+        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+          -d "${2%\}}, \"id\": $eid}" "$LIDARR_URL/api/v1/downloadclient/$eid" || echo "WARN: $1 refresh failed"
+      else
+        echo "Adding $1 download client..."
+        curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$2" "$LIDARR_URL/api/v1/downloadclient" || echo "WARN: $1 client failed"
+      fi
+    }
+    download_client NZBget '{
         "enable": true,
         "protocol": "usenet",
         "priority": 1,
+        "removeCompletedDownloads": true,
+        "removeFailedDownloads": true,
         "name": "NZBget",
         "implementation": "Nzbget",
         "configContract": "NzbgetSettings",
@@ -93,16 +109,13 @@ data:
           {"name": "musicCategory", "value": "Music"},
           {"name": "useSsl", "value": false}
         ]
-      }' "$LIDARR_URL/api/v1/downloadclient" || echo "WARN: NZBget client failed"
-    fi
-
-    # Add Transmission download client
-    if ! echo "$existing" | grep -q "Transmission"; then
-      echo "Adding Transmission download client..."
-      curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+      }'
+    download_client Transmission '{
         "enable": true,
         "protocol": "torrent",
         "priority": 1,
+        "removeCompletedDownloads": true,
+        "removeFailedDownloads": true,
         "name": "Transmission",
         "implementation": "Transmission",
         "configContract": "TransmissionSettings",
@@ -112,8 +125,7 @@ data:
           {"name": "musicCategory", "value": "lidarr"},
           {"name": "useSsl", "value": false}
         ]
-      }' "$LIDARR_URL/api/v1/downloadclient" || echo "WARN: Transmission client failed"
-    fi
+      }'
 
     # NZBgeek indexer (Newznab/usenet) — PUT-or-POST as in
     # sonarr/configmap.yaml, so a rotated key in the secret reaches the

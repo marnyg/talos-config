@@ -82,14 +82,30 @@ data:
         -d '{"path":"/movies"}' "$RADARR_URL/api/v3/rootfolder" || echo "WARN: root folder failed"
     fi
 
-    # Add NZBget download client
+    # Download clients: PUT-or-POST with removeCompletedDownloads on, see
+    # the comment in sonarr/configmap.yaml (imports are copies across
+    # volumes; torrents are removed only once their indexer's seed goal
+    # stops them in transmission, IPTorrents carries none).
     existing=$(curl -sf -H "$AUTH" "$RADARR_URL/api/v3/downloadclient")
-    if ! echo "$existing" | grep -q "NZBget"; then
-      echo "Adding NZBget download client..."
-      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+    download_client() {  # name, body
+      eid=$(printf '%s\n' "$existing" | awk -v n="$1" \
+        '$0 == "    \"name\": \"" n "\"," { hit = 1 } hit && /^    "id": / { gsub(/[^0-9]/, ""); print; exit }')
+      if [ -n "$eid" ]; then
+        echo "Refreshing $1 download client (id $eid)..."
+        curl -sf -o /dev/null -X PUT -H "$AUTH" -H "Content-Type: application/json" \
+          -d "${2%\}}, \"id\": $eid}" "$RADARR_URL/api/v3/downloadclient/$eid" || echo "WARN: $1 refresh failed"
+      else
+        echo "Adding $1 download client..."
+        curl -sf -o /dev/null -X POST -H "$AUTH" -H "Content-Type: application/json" \
+          -d "$2" "$RADARR_URL/api/v3/downloadclient" || echo "WARN: $1 client failed"
+      fi
+    }
+    download_client NZBget '{
         "enable": true,
         "protocol": "usenet",
         "priority": 1,
+        "removeCompletedDownloads": true,
+        "removeFailedDownloads": true,
         "name": "NZBget",
         "implementation": "Nzbget",
         "configContract": "NzbgetSettings",
@@ -101,26 +117,25 @@ data:
           {"name": "movieCategory", "value": "Movies"},
           {"name": "useSsl", "value": false}
         ]
-      }' "$RADARR_URL/api/v3/downloadclient" || echo "WARN: NZBget client failed"
-    fi
-
-    # Add Transmission download client
-    if ! echo "$existing" | grep -q "Transmission"; then
-      echo "Adding Transmission download client..."
-      curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" -d '{
+      }'
+    # movieCategory is Radarr's default for Transmission, pinned so a PUT
+    # cannot move the subdirectory under /downloads/completed.
+    download_client Transmission '{
         "enable": true,
         "protocol": "torrent",
         "priority": 1,
+        "removeCompletedDownloads": true,
+        "removeFailedDownloads": true,
         "name": "Transmission",
         "implementation": "Transmission",
         "configContract": "TransmissionSettings",
         "fields": [
           {"name": "host", "value": "transmission"},
           {"name": "port", "value": 9091},
+          {"name": "movieCategory", "value": "radarr"},
           {"name": "useSsl", "value": false}
         ]
-      }' "$RADARR_URL/api/v3/downloadclient" || echo "WARN: Transmission client failed"
-    fi
+      }'
 
     # Torrent indexers are not added here: Prowlarr (k8s/apps/prowlarr)
     # holds them and pushes one entry per indexer into Radarr through the
