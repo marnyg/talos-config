@@ -1,10 +1,14 @@
-# StorageProfile override for the default Longhorn class.
+# StorageProfile override for the plain `longhorn` class — the cluster
+# default until 2026-10-20, now the opt-in for VM disks/ISOs and other
+# bytes that want neither encryption nor backup (ADR-0044). The new
+# default has its own override, storageprofile-longhorn-encrypted.yaml.
 #
 # CDI creates one StorageProfile per StorageClass (ownerRef: CDI) and
 # fills status from a hard-coded capability table. For
 # driver.longhorn.io that table is conservative — RWO/Block only,
 # cloneStrategy copy — and CDI's metric marks any default class that
-# lacks RWX *or* smart clone as degraded, which pages
+# lacks RWX *or* smart clone as degraded (the alert checks the default
+# class and the virt-default one; neither is this class today), which pages
 # CDIDefaultStorageClassDegraded (an OpenShift live-migration
 # expectation; operator_health_impact none). Longhorn supports both:
 #   - csi-clone: PVC dataSource of kind PVC through the CSI driver, so
