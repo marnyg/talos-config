@@ -12,6 +12,7 @@ import (
 
 	"github.com/marnyg/talos-config/tasks/ecs"
 	"github.com/marnyg/talos-config/tasks/systems/core"
+	"github.com/marnyg/talos-config/tasks/systems/dag"
 	"github.com/marnyg/talos-config/tasks/systems/triage"
 	"github.com/marnyg/talos-config/tasks/web"
 )
@@ -40,7 +41,7 @@ func main() {
 	}
 	defer logStore.Close()
 
-	systems := []ecs.System{core.System{}, triage.System{}}
+	systems := []ecs.System{core.System{}, dag.System{}, triage.System{}}
 	world, err := ecs.New(logStore, systems...)
 	if err != nil {
 		log.Fatalf("rebuild: %v", err)

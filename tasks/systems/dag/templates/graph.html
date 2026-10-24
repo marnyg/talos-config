@@ -1,0 +1,23 @@
+{{define "title"}}graph{{end}}
+{{define "content"}}
+<h1>Graph</h1>
+<p class="muted">Open tasks in dependency order: layer 0 is ready now; each later layer waits on the one before it.</p>
+{{range $i, $layer := .Layers}}
+<div class="card">
+  <p class="muted">layer {{$i}}{{if eq $i 0}} — ready{{end}}</p>
+  <ul class="tasks">
+  {{range $layer}}
+    <li>
+      <span>
+        <a href="/tasks/{{.ID}}">{{.Title}}</a>
+        {{if .NeedsGrooming}}<span class="tag">groom</span>{{end}}
+        {{if .Blockers}}<span class="muted">← {{range $j, $b := .Blockers}}{{if $j}}, {{end}}<a href="/tasks/{{$b.ID}}">{{$b.Title}}</a>{{end}}</span>{{end}}
+      </span>
+    </li>
+  {{end}}
+  </ul>
+</div>
+{{else}}
+<div class="card"><p class="muted">No open tasks.</p></div>
+{{end}}
+{{end}}

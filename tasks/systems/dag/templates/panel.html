@@ -1,0 +1,41 @@
+{{$id := .ID}}
+<div class="card">
+  <p class="muted">Blocked by</p>
+  <ul class="tasks">
+  {{range .BlockedBy}}
+    <li class="{{if .Task.IsDone}}done{{end}}">
+      <a href="/tasks/{{.Task.ID}}">{{.Task.Title}}</a>
+      <form method="post" action="/dag/unlink/{{.Edge}}"><input type="hidden" name="back" value="/tasks/{{$id}}"><button>unlink</button></form>
+    </li>
+  {{else}}
+    <li class="muted">nothing — this task is ready</li>
+  {{end}}
+  </ul>
+  <p class="muted">Blocks</p>
+  <ul class="tasks">
+  {{range .Blocks}}
+    <li class="{{if .Task.IsDone}}done{{end}}">
+      <a href="/tasks/{{.Task.ID}}">{{.Task.Title}}</a>
+      <form method="post" action="/dag/unlink/{{.Edge}}"><input type="hidden" name="back" value="/tasks/{{$id}}"><button>unlink</button></form>
+    </li>
+  {{else}}
+    <li class="muted">nothing</li>
+  {{end}}
+  </ul>
+  {{if .Candidates}}
+  <div class="actions">
+    <form method="post" action="/dag/link">
+      <input type="hidden" name="to" value="{{$id}}">
+      <input type="hidden" name="back" value="/tasks/{{$id}}">
+      <select name="from">{{range .Candidates}}<option value="{{.ID}}">{{.Title}}</option>{{end}}</select>
+      <button>blocks this</button>
+    </form>
+    <form method="post" action="/dag/link">
+      <input type="hidden" name="from" value="{{$id}}">
+      <input type="hidden" name="back" value="/tasks/{{$id}}">
+      <select name="to">{{range .Candidates}}<option value="{{.ID}}">{{.Title}}</option>{{end}}</select>
+      <button>is blocked by this</button>
+    </form>
+  </div>
+  {{end}}
+</div>

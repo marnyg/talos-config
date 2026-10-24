@@ -51,6 +51,11 @@
   {{end}}
 </div>
 
+{{range .Panels}}
+<h2>{{.Name}}</h2>
+{{.HTML}}
+{{end}}
+
 <h2>History</h2>
 <ul class="tasks">
 {{range .History}}

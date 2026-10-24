@@ -23,6 +23,22 @@ type Mounter interface {
 	Mount(mux *http.ServeMux, w *ecs.World)
 }
 
+// Panel is a fragment another system contributes to the task detail
+// page. Registration lets core render dag's dependency editor without
+// core depending on dag: the arrow stays view → owner.
+type Panel struct {
+	Name   string
+	Render func(w *ecs.World, id ecs.EntityID) (template.HTML, error)
+}
+
+var panels []Panel
+
+// RegisterPanel adds a detail-page panel; call from Mount.
+func RegisterPanel(p Panel) { panels = append(panels, p) }
+
+// Panels returns the registered panels in registration order.
+func Panels() []Panel { return panels }
+
 // Funcs are available to every page.
 var Funcs = template.FuncMap{
 	"date": func(t time.Time) string { return t.Local().Format("Mon 2 Jan") },

@@ -4,6 +4,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strings"
 	"time"
@@ -72,7 +73,20 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 			web.Fail(rw, err, http.StatusInternalServerError)
 			return
 		}
-		web.Render(rw, tplDetail, map[string]any{"T": t, "Now": w.Now(), "History": history})
+		type panel struct {
+			Name string
+			HTML template.HTML
+		}
+		var panels []panel
+		for _, p := range web.Panels() {
+			h, err := p.Render(w, id)
+			if err != nil {
+				web.Fail(rw, fmt.Errorf("panel %s: %w", p.Name, err), http.StatusInternalServerError)
+				return
+			}
+			panels = append(panels, panel{p.Name, h})
+		}
+		web.Render(rw, tplDetail, map[string]any{"T": t, "Now": w.Now(), "History": history, "Panels": panels})
 	})
 
 	mux.HandleFunc("POST /tasks/{id}/edit", func(rw http.ResponseWriter, r *http.Request) {

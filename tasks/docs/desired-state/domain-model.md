@@ -44,7 +44,13 @@ log is the only truth; everything else is rebuilt from it at boot.
 - **UI handler** — an HTTP handler in any system that turns a user
   action into exactly one event, of any namespace.
 - **Edge** — an entity carrying `dag.Edge{from, to, kind}`. Only kind
-  `blocks` exists today.
+  `blocks` exists today ("from blocks to"). The reducer rejects
+  self-edges, duplicates and anything that would close a cycle, so the
+  graph is acyclic by construction; done blockers stop blocking by
+  derivation, the edge stays.
+- **Panel** — a fragment a system contributes to the task detail page
+  (`web.RegisterPanel`). How dag puts its dependency editor on core's
+  detail page without core importing dag: the arrow stays view → owner.
 - **Derivation** — anything computed at read time from components +
   `now`. Never stored (see list below).
 
@@ -69,6 +75,8 @@ need it the same way, it is not theirs — push it to core.
 **Dependency direction:** views may depend on state-owning systems
 (triage reads `dag.Edge` to exclude blocked tasks); views must not
 depend on views; the system graph stays acyclic and points at core.
+A state-owning system may read core (dag checks both ends exist) but
+never a sibling owner.
 
 ## Derived, never stored
 

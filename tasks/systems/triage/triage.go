@@ -12,6 +12,7 @@ import (
 
 	"github.com/marnyg/talos-config/tasks/ecs"
 	"github.com/marnyg/talos-config/tasks/systems/core"
+	"github.com/marnyg/talos-config/tasks/systems/dag"
 	"github.com/marnyg/talos-config/tasks/web"
 )
 
@@ -31,14 +32,15 @@ func (System) Reduce(ecs.Event, ecs.Reader, ecs.Writer) error { return nil }
 
 // Deck returns today's eligible tasks in today's order.
 //
-// eligible = ¬Done ∧ ¬sleeping ∧ ¬flagged-for-grooming
-// (¬blocked joins once the dag system exists). Order is random but
+// eligible = ¬Done ∧ ¬sleeping ∧ ¬flagged-for-grooming ∧ ¬blocked.
+// Order is random but
 // seeded per local calendar day, so a refresh does not reshuffle and
 // the next card is stable until acted on.
 func Deck(r ecs.Reader, now time.Time) []core.Task {
 	var deck []core.Task
+	g := dag.Load(r)
 	for _, t := range core.All(r) {
-		if t.IsDone() || t.Sleeping(now) || t.NeedsGrooming {
+		if t.IsDone() || t.Sleeping(now) || t.NeedsGrooming || g.Blocked(r, t.ID) {
 			continue
 		}
 		deck = append(deck, t)
