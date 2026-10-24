@@ -62,6 +62,8 @@
           # The workout tracker (epic yz75): pure Go, no cgo. See
           # workouts/nix/default.nix.
           workouts = import ./workouts/nix { inherit pkgs lib; self = self'; };
+          # The task app (epic 3vp0): pure Go, no cgo. See tasks/nix/default.nix.
+          tasks = import ./tasks/nix { inherit pkgs lib; self = self'; };
           # The VM power switch (f0jl): pure Go, stdlib only, no go.sum.
           # See vmpower/nix/default.nix.
           vmpower = import ./vmpower/nix { inherit pkgs lib; self = self'; };
@@ -87,6 +89,8 @@
             packages.actors-bin = actors.bin;
             # nix build .#workouts-bin   — bin/workouts + the module's go test
             packages.workouts-bin = workouts.bin;
+            # nix build .#tasks-bin      — bin/tasks + the module's go test
+            packages.tasks-bin = tasks.bin;
             # nix build .#vmpower-bin    — bin/vmpower + the module's go test
             packages.vmpower-bin = vmpower.bin;
 
@@ -445,6 +449,7 @@
               nix2container = inputs'.nix2container.packages.nix2container;
               workouts = workouts.static;
             };
+            packages.tasks-static = tasks.static;
             packages.vmpower-static = vmpower.static;
             # nix build .#vmpower-image — the power switch's pod image
             # (vmpower/image.nix; driver: vmpower/build.sh).

@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [config-server, protocol, actors]
+        module: [config-server, protocol, actors, tasks]
     steps:
       # Full checkout, not sparse: config-server's policy/ tests read
       # the shipped ../talos/mesh-policy-v3.yaml and the Nickel contract
@@ -95,7 +95,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        attr: [config-server-bin, iroh-transport, actors-bin, workouts-bin]
+        attr: [config-server-bin, iroh-transport, actors-bin, workouts-bin, tasks-bin]
     steps:
       - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@v22

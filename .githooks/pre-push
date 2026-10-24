@@ -46,6 +46,7 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
       config-server/*) echo "config-server-bin" ;;
       actors/*)        echo "actors-bin" ;;
       workouts/*)      echo "workouts-bin" ;;
+      tasks/*)         echo "tasks-bin" ;;
     esac
   }
   while read -r local_ref local_sha _remote_ref remote_sha; do
@@ -59,8 +60,8 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
     # shellcheck disable=SC2086
     files=$(git -C "$repo" diff --name-only $range -- \
       'protocol/**/*.go' 'protocol/*.go' 'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' \
-      'config-server/go.*' 'protocol/go.*' 'iroh-transport/go.*' 'iroh-go/go.*' 'actors/go.*' 'workouts/go.*' \
-      'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 'workouts/nix/default.nix' 2>/dev/null || true)
+      'config-server/go.*' 'protocol/go.*' 'iroh-transport/go.*' 'iroh-go/go.*' 'actors/go.*' 'workouts/go.*' 'tasks/go.*' \
+      'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 'workouts/nix/default.nix' 'tasks/nix/default.nix' 2>/dev/null || true)
     [ -n "$files" ] && touched="$touched$files
 " && pushed="$pushed$local_ref $local_sha
 "
