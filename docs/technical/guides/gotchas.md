@@ -269,3 +269,247 @@ these are properties of the tools, not current weather (that lives in
 
 - **`fly logs` replays old buffered history** — filter by timestamp or
   you will debug yesterday.
+
+## Hardware (promoted from notes 2026-10-24)
+
+- **nas1's two 2.5GbE ports: keep the cable in `:a8`.** The MACs are
+  consecutive and Talos reports the *first* port's MAC as the identity
+  the device flow selects `talos/machines/<mac>/` by, whichever port
+  has the cable. Cable in `:a9` ⇒ config served under `:a8`, whose
+  `deviceSelector` pins the address onto a link-less port: console says
+  `CONNECTIVITY OK`, DNS times out, trustd is "no route to host", the
+  install wedges at `Installing`. `arp -n <ip>` from the LAN shows which
+  MAC actually answers.
+- **nas1's SMBIOS is the OEM placeholder** (serial `Default string`,
+  UUID `03000200-0400-0500-0006-000700080009`). Seal/unseal work, but
+  the UUID is not per-unit — a second board from that OEM shares the
+  KMS allowlist entry. Never read it as an identity (ADR-0004).
+- **w1 has no wired PCI NIC; its LAN is a USB r8152 dongle.** The
+  machine dir is named after the Dell dock's pass-through MAC
+  (`98-e7-43-11-97-b8`), the dongle is `0c:37:96:5d:26:c4`. A selector
+  on the wrong MAC matches nothing and Talos falls back to DHCP
+  *silently* (`talosctl logs controller-runtime | grep 'no matching
+  network device'`; check `get addressspecs`). Swapping the adapter
+  also renames the interface, and **flannel keeps waiting for the old
+  name** — cross-node pod traffic was dead for 4.5 h while host↔host
+  worked (Longhorn attach failures, pods in ContainerCreating). After
+  any w1 reboot/address change: delete its `kube-flannel-*` pod and
+  check the node's `flannel.alpha.coreos.com/public-ip` annotation
+  equals its INTERNAL-IP.
+- **The dedicated fly IPv4 (`213.188.219.215`) is the KMS port's.**
+  Releasing it breaks disk unlock on the next node boot (shared v4 =
+  80/443 only). Bead `os8s` is the move off it.
+
+## Talos (more)
+
+- **An extension that mounts under `/var` needs `depends: [service:
+  cri]`**, or `talosctl upgrade`/`reboot` hangs at `teardownLifecycle`
+  ("luks2-EPHEMERAL … still in use"). `talosctl services` shows the
+  offender still Running; `talosctl service ext-<x> stop` unblocks it.
+- **Talos restarts an extension service when its
+  `ExtensionServiceConfig` is *updated*, not when it is first
+  *created* under a running service.** After an apply that adds the
+  document, restart by hand; after one that changes it, don't.
+- **Talos ignores an `ExtensionServiceConfig` whose service is not
+  installed** — the document stays inert in the stored config and an
+  `apply-config` carrying it is accepted without complaint. A rollback
+  to an image that has the extension brings it back configured.
+- **`talosctl -n <node>` is dialed by the endpoint, never
+  short-circuited**: on a control plane apid holds a client cert, so
+  every `-n X` is a TLS dial to `X:50000` with SNI `X` from cp1. `-n`
+  must be a name cp1 resolves *and* has in its apid SANs — the node's
+  hostname (`talos-wu6-eib` for cp1 until `t7b2`), never
+  `cp1.mesh.internal` or `127.0.0.1`.
+- **Re-serving a machine config without the mesh, one browser click**:
+  `POST /device/code -d client_id=talos-pxe -d mac= -d uuid=` → open
+  `/status?user_code=…`, approve (one wallet signature) → poll `POST
+  /token` with the `device_code` → `GET /config?mac=…` with the bearer
+  → `talosctl apply-config`. The boot token inside is good 1 h.
+
+## Nix / Go (more)
+
+- **Touching `protocol/*.go` stales every consumer's `vendorHash`**
+  (`config-server`, `iroh-transport`, `actors`), and the fixed-output
+  cache hides it: the build then fails with an `undefined: actor.X`
+  that looks like a code bug. The pre-push hook and CI's `vendor-hash`
+  job exist for this; recompute with a bogus hash, not `go.sum` — the
+  vendor dir is per *package*, so importing a new package from an
+  already-required module changes the hash while `go.sum` stays
+  identical.
+- **`iroh-go/` builds are slow cold** (iroh-ffi 7–10 min, iroh-relay
+  8 min, uniffi-bindgen-go ~45 min on an M-series; warm
+  `nix build .#iroh-go-smoke` ≈ 45 s) and carry two upstream patches
+  to keep when bumping iroh: the `fetchCargoVendor` User-Agent override
+  (crates.io 403s the generic UA of the 2026-01 nixpkgs) and the
+  `postPatch` that removes upstream's `.cargo/config.toml` `-fuse-ld=
+  lld` pin. Hand-run `go build`/`go test` in `iroh-go/` or
+  `iroh-transport/` needs `CGO_LDFLAGS="-L$(nix build
+  .#iroh-ffi-static --print-out-paths)/lib"` (+ `IROH_RELAY_BIN` for
+  the relay test). `nix flake check --impure` is the canonical full
+  check (`--impure` for devenv); the `static`/musl link runs only on
+  Linux (the NixOS box or CI).
+- **`git pull --rebase` destroys merge commits** — it flattened all six
+  `merge swarm/*` commits of the M2 swarm (content intact, SHAs in
+  bead notes gone). `git pull --rebase=merges`, or fetch + inspect.
+
+## Networking (more)
+
+- **ingress-nginx is a ClusterIP only** (`xnat`), dialed by the gateway.
+  To poke nginx off-mesh: `kubectl -n ingress-nginx port-forward
+  svc/ingress-nginx-controller 8080:80` and send a `Host:` header.
+  `curl http://<node>/` answering anything means hostNetwork is back.
+  To see the identity headers a backend gets, a throwaway
+  `traefik/whoami` behind an Ingress echoes `X-Mesh-*`; the same
+  request from the LAN with `Host:` must show none.
+- **Outside the home LAN every iroh path is the fly relay** (QAD off ⇒
+  no WAN punch): ~50–75 Mbps. Never read a throughput number taken
+  from outside as a design result; the agent's journal prints
+  `paths=[*relay:…]` vs `*ip:10.0.0.x`. **Any overlay carrying the
+  route to the peer poisons a punch measurement** (Tailscale exit node,
+  another VPN) — `route get <peer>` must show a physical NIC.
+- **A machinery `client.New` with ONE endpoint runs gRPC's DNS resolver
+  before any `WithContextDialer`**: a name only the identity plane
+  knows fails as `name resolver error: produced zero addresses`.
+  `facetResolver` in `config-server` `bootstrap.go` shadows the scheme;
+  any new machinery client over a facet needs it
+  (`bootstrap_client_test.go` is the pattern).
+
+## Hub on fly
+
+- **Deploys are `fly/deploy.sh`, never `fly deploy`**: the image is
+  nix-built (cgo), `fly.toml` has no `[build]`. From a Mac,
+  `HUB_BUILDER=mar@nixos fly/deploy.sh` builds in that box's store
+  (`--store ssh-ng://… --eval-store auto`; `--builders` does NOT work,
+  the darwin daemon runs as root without your ssh key). **`talos/` is
+  baked at image build**: any `talos/clusters/**` or `talos/machines/**`
+  change is a deploy (~3 min) + an unseal before `nix run .#apply`
+  serves it — batch git changes, one unseal per session.
+- **Every deploy re-seals the hub** (unsealed material is memory-only,
+  invariant 8); so does sealing on demand (`fly machine restart …`).
+  `/status` asks for **two signatures**: the master message and the
+  per-process hubkey speak-as proposal (useless against any other
+  process). `/sealed` is 503 while the identity plane is sealed or in
+  the nag window. The process is a hub iff `IROH_RELAY_URL` is set
+  (`fly/entrypoint.sh` folds `--auto-bootstrap`/`--kms-advertise` under
+  it); a wrong wallet at unseal reads `decrypting secrets … (wrong
+  wallet or message?)`.
+- **Live acceptance of a redeploy**: `fly logs | grep auto-bootstrap`
+  and `talosctl -n <node> logs ext-p0agent` — `lost; beating` → `beat
+  ok` on the node within ~40 s of the kill, `node-unknown` →
+  `etcd-running` on the hub within one 30 s poll of the unseal. After
+  the unseal the **first** mesh flow to the hub takes ~15 s (dial
+  timeout on the dead hubkey, then a rebeat; rebeats are rate-limited
+  to one/min per daemon) and the **name map is empty until each member
+  beats** (up to 6 h; members keep their last map). Force a beat:
+  `talosctl service ext-p0agent restart` / restart the desktop daemon.
+- **`/status` and `/sealed` round runway to the nearest day**; the nag
+  window is judged on raw seconds, so "30 d left, NAG" at the boundary
+  is not a bug. **A device may not enroll under a machine's name or
+  `hub`** (409 at the challenge). **`hub.mesh.internal` is not in the
+  name map** — the daemon answers it from `hub.json` after the first
+  beat; a `media` member is admitted on hub-http and 403'd on
+  `/config` by the per-route gate.
+- **The `p0agent` extension chain**: static agent via
+  `nix build --store ssh-ng://mar@nixos --eval-store auto
+  .#packages.x86_64-linux.config-server-static` (`bin/nodeagent`),
+  `talos/extensions/p0agent/build.sh <bin> <ver>` prints the
+  `tag@digest` to pin in **both** `talos/hardware/*.yaml`; Talos
+  version + official extension refs live in
+  `talos/extensions/installer.env` only. A scratch rootfs has no CA
+  bundle — Go's HTTPS client needs the `/etc/ssl/certs` bind.
+
+## Mesh daemon / identity plane (desktop)
+
+- **The Mac member is a launchd daemon** (`org.nixos.talos-mesh`,
+  `irohup -tun`, user `_talosmesh`, state
+  `/var/lib/talos-mesh/marius-mac.iroh`, log `/var/log/talos-mesh.log`;
+  `talos-mesh-enroll -reenroll|-rekey`; restart `sudo launchctl
+  kickstart -k system/org.nixos.talos-mesh`). Never also run a
+  foreground `irohup` on the same state dir — two endpoints, one
+  NodeId. **It is built from the nixos flake's `talos-config` input**:
+  a commit reaches it only after `git push` **and** `nix flake update
+  talos-config --refresh && darwin-rebuild switch` in `~/git/nixos`;
+  verify by the store path in the LaunchDaemons plist.
+- **Probing mesh names on macOS**: `dig cp1.mesh.internal` ignores
+  `/etc/resolver` and SERVFAILs — use `dscacheutil -q host -a name …`
+  (what CGO clients see) or `dig @198.18.0.2`. `route -n get -net
+  198.18.0.0/15`, not a `.0` host, to check the route. **Fake IPs are
+  per-daemon-process**: a restart re-mints from `198.18.1.1` in
+  first-lookup order; the 60 s TTL bounds staleness — never hard-code
+  one. Reading iroh paths: `P0_LOG=debug`, grep `path::selected`
+  (`Ip(a->b)` direct, `Relay(url)` relayed; the hub is always relay by
+  construction, ADR-0022).
+- **`talosctl`/`kubectl` over the identity plane**: `irohup` bridges
+  `cp1/apid` and `cp1/kube-api` to loopback; talosctl needs `-e
+  talos-wu6-eib:50000 -n talos-wu6-eib` with that name in `/etc/hosts`
+  (apid's SANs name the node, never `127.0.0.1`); kubectl can use
+  `https://localhost:6443`. **Enrolling a headless member**: `irohup`
+  serves its signing page on the box's loopback — read the URL from its
+  log, `ssh -N -L PORT:127.0.0.1:PORT`, open locally; the NodeId never
+  travels. **Gateway enrollment lives in the pod log** (empty PVC ⇒
+  `kubectl logs -n gateway deploy/gateway` prints the `/status?
+  user_code=` URL; sign as `gw`, group media, within 10 min; the PVC
+  `gateway-state` *is* the membership).
+
+## Android / TV
+
+- **The APK is not built by CI** (the AAR links `libiroh_ffi.a`
+  cross-built for `aarch64-linux-android`, impure + unfree NDK, ~1 h
+  cold). Build on the NixOS box from **`~/p24`, which is an rsync'd
+  copy, not a clone** — sync the files you changed first or you ship
+  the previous source; `android/README.md` has the steps (~30 s warm).
+  The `android-latest` release asset is only as fresh as the last
+  manual `android/publish.sh`.
+- **adb from the Mac**: `nix shell nixpkgs#android-tools`; the Sony
+  only enumerates after USB debugging is on *and* a re-plug.
+  `adb install -r` over the **same** debug keystore keeps the member
+  (`files/member/`); a different keystore (`INSTALL_FAILED_UPDATE_
+  INCOMPATIBLE`) means uninstall, which takes the membership with it.
+  `adb install -r` kills the VpnService and it cannot be restarted over
+  adb — open the app, tap Connect. The debug build's log is readable
+  without root: `adb shell run-as dev.marnyg.mesh tail cache/mesh.log`.
+  Starting the mesh app evicts Tailscale (one VpnService). Wi-Fi →
+  cellular takes minutes to recover (the hub fetch reuses the dead h2
+  conn, 30 s per attempt); a home-Wi-Fi-off test over USB adb is a
+  valid cellular test when `dumpsys connectivity` shows one LTE netId
+  holding.
+- **The Shield is driven over network adb** (`adb connect
+  10.0.0.2:5555` after Network debugging, accept once on screen);
+  leanback ignores `input tap` — `input keyevent DPAD_*`, read focus
+  from `uiautomator dump`, `KEYCODE_ENTER` not `DPAD_CENTER` in an
+  EditText. Its toybox has no curl/wget/nslookup, only `nc`, which
+  closes on stdin EOF: `{ printf '…'; sleep 6; } | nc <ip> <port>`.
+- **Jellyfin's libraries are read-only mounts in the jellyfin pod**;
+  writes go through the *arr pods. `POST /Library/Refresh` with an
+  admin token picks a file up in ~20 s. The Jellyfin *app* is required
+  for Direct Play (Firefox has no MKV demuxer).
+
+## Verification / tooling
+
+- **The Quint models are the sharper spec** for ADR-0015/0017: five
+  doc sentences were refuted by them (decisions `h3c zqw dvf syw
+  6o1`; FINDING blocks in `verification/quint/*.qnt`). When glossary
+  and model disagree, the model's header says which ruling applied.
+  **Laws over many nondet dimensions hold vacuously** (`authorize.qnt`
+  reached Accept with p≈2⁻¹⁵ until a boundary-biased generator was
+  added) — mutation-test a new model before trusting `[ok]`; never
+  `powerset()` a 25-element set in a generator. **rapid at 100 checks
+  is too shallow for pair-faults** — `TestFaultPairSweep` in
+  `protocol/cert` enumerates the fault space exhaustively; add a case
+  there when a new law needs a specific pair.
+- **`bd` traps, all silent** (1.0.3): `bd ready --exclude-type` is a
+  no-op (`| grep -v '\[epic\]'`); `--deps blocks:<id>` makes the *new*
+  issue block `<id>` (use `bd dep add <new> --blocked-by <id>`);
+  `--parent` inherits the parent's status, so a child of an
+  `in_progress` epic is born invisible to `bd ready`. **Beads config
+  lives outside git and can vanish** (`.beads/config.yaml`,
+  `metadata.json`): without it `bd` silently uses an empty DB named
+  `beads` — `bd dolt show` must say `Database: talos_config`;
+  `git ls-remote origin refs/dolt/data` must move after `bd dolt push`.
+- **`pi -p` hangs after its answer when stdin is open**: `timeout -k 10
+  420 pi -p --no-session "…" </dev/null`.
+- **The NixOS box (`mar@nixos`)**: login shell is **fish** — wrap
+  anything scripted over ssh in `sh -c`/`bash -lc`; no passwordless
+  sudo; `~/disks/1TB-old` is 100 % full — never copy onto it; UDP
+  41641 is Tailscale's; LAN peers punch in through nixos-fw via
+  conntrack with no inbound rule.
