@@ -43,7 +43,7 @@ spec:
       containers:
         - name: tasks
           # tasks/build.sh prints the digest; pin it here.
-          image: ghcr.io/marnyg/tasks@sha256:e790fcbb9e68f4b2cc420f0eabfcddb06b145fbf6e3ec232b9f72846ce5f0084
+          image: ghcr.io/marnyg/tasks@sha256:42cd69a19b5fd92f90193c86d183f68d9a08499b9821ac64ae34b45682c6ff74
           args: ["-data", "/var/lib/tasks", "-listen", ":8080", "-tz", "Europe/Oslo"]
           ports:
             - containerPort: 8080
