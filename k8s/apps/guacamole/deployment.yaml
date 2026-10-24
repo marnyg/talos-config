@@ -95,7 +95,8 @@ spec:
               cpu: 50m
               memory: 128Mi
             # Generous: every live session is a forked child holding a
-            # decoded 16-bit framebuffer. Two sessions stay well under.
+            # decoded 16-bit framebuffer (enable-gfx=false below; GFX
+            # would force 32 bpp). Two sessions stay well under.
             limits:
               memory: 1Gi
 ---
@@ -213,6 +214,17 @@ spec:
             - -param=security=nla
             - -param=ignore-cert=true
             - -param=resize-method=display-update
+            # No RDP Graphics Pipeline (1.6.0 enables it by default): under
+            # GFX the guest streams full-surface RemoteFX/AVC frames that
+            # FreeRDP decodes in software and guacd then re-encodes as
+            # PNG/JPEG for the browser — two codec passes per frame on
+            # CPU, and since the GPU passthrough (8169c65) the guest
+            # emits them at full rate. One session pinned 10 cores on w1
+            # and guacd logged "User is not responding" (2026-10-23).
+            # GFX also forces 32 bpp and ignores every visual-effect
+            # toggle below; the legacy bitmap path honours them.
+            - -param=enable-gfx=false
+            - -param=color-depth=16
             - -param=server-layout=en-us-qwerty
             - -param=enable-audio=true
             - -param=enable-wallpaper=false
