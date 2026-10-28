@@ -7,6 +7,10 @@
 # The Android app holds a WebSocket (/<topic>/ws) or a JSON stream
 # open for as long as it runs; same timeout treatment as Vaultwarden's
 # notifications hub so nginx does not cut it every 60 s.
+#
+# proxy-body-size matches NTFY_ATTACHMENT_FILE_SIZE_LIMIT
+# (deployment.yaml) so an image published from a device is refused by
+# ntfy with a reason, not by nginx's 1m default.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -33,6 +37,7 @@ metadata:
     gethomepage.dev/widget.fields: '["title", "priority", "lastReceived"]'
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 25m
 spec:
   ingressClassName: nginx
   rules:

@@ -28,7 +28,10 @@
 # notifications so a phone that was off the mesh when a page fired
 # catches up on reconnect (`since=`); losing it loses that catch-up and
 # nothing else. 24 h rather than the 12 h default for the same reason —
-# a night away should still be readable in the morning.
+# a night away should still be readable in the morning. Attachments
+# (images on a page) live on the same volume under attachments/, kept
+# as long as the messages; the total cap keeps them from crowding the
+# cache db out of the 1Gi.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -86,6 +89,19 @@ spec:
             - name: NTFY_CACHE_FILE
               value: /var/cache/ntfy/cache.db
             - name: NTFY_CACHE_DURATION
+              value: 24h
+            # Attachments on (unset dir = any body over the 4 KB message
+            # limit is refused). Stored here, never on a hosted hop.
+            # The per-file cap is mirrored by the Ingress's
+            # proxy-body-size; per-visitor limits stay at the defaults
+            # (100M total, 500M/day).
+            - name: NTFY_ATTACHMENT_CACHE_DIR
+              value: /var/cache/ntfy/attachments
+            - name: NTFY_ATTACHMENT_FILE_SIZE_LIMIT
+              value: 25M
+            - name: NTFY_ATTACHMENT_TOTAL_SIZE_LIMIT
+              value: 512M
+            - name: NTFY_ATTACHMENT_EXPIRY_DURATION
               value: 24h
             # Rate limits keyed on X-Forwarded-For (ingress-nginx sets
             # it) rather than on the one nginx pod IP.
