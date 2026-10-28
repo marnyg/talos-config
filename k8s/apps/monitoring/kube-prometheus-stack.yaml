@@ -74,6 +74,14 @@ spec:
             # OUTSIDE the failure domain, and the hub (ADR-0027) does
             # not take heartbeats yet.
             general: true
+          disabled:
+            # The 1st-percentile client-cert expiry dips under 7 d /
+            # 1 d whenever a short-lived client talks to the apiserver;
+            # it went pending ~3200 times in a week and fired once for
+            # six minutes (a p5 page through do-not-disturb) while the
+            # real p01 sat at 180 d. Known chart false positive on
+            # clusters that mint short-lived credentials.
+            KubeClientCertificateExpiration: true
 
         kubeEtcd:
           enabled: true
@@ -277,7 +285,10 @@ spec:
               group_by: [alertname, namespace]
               group_wait: 30s
               group_interval: 5m
-              repeat_interval: 12h
+              # One page per day while an alert stays firing; the
+              # bridge's cache (ntfy-alertmanager.yaml) is tuned to
+              # just under this and explains why.
+              repeat_interval: 24h
               routes:
                 - receiver: "null"
                   matchers:

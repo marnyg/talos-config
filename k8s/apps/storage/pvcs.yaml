@@ -85,8 +85,9 @@ spec:
 # renames into it, Navidrome scans and streams it read-only. Same tier
 # and disposability argument as tv/movies/books (ADR-0011): everything
 # in it re-downloads from Lidarr's wanted list. The root is chowned to
-# 1000 by lidarr's init container. ~700 FLAC albums or ~3000 MP3 ones;
-# expandable.
+# 1000 by lidarr's init container. 300Gi → 600Gi on 2026-10-28: the
+# first import filled 293G in three days and paged
+# KubePersistentVolumeFillingUp (critical, <3% free).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -98,4 +99,4 @@ spec:
   storageClassName: longhorn-bulk
   resources:
     requests:
-      storage: 300Gi
+      storage: 600Gi

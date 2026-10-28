@@ -3,8 +3,14 @@
 # JSON shape and ntfy only reads its own, so one of them needs a
 # translator; this one is a small Go service that maps alert labels to
 # ntfy priority/tags, stateless apart from a memory cache of alerts
-# it has already sent (single mode, so a 12 h repeat_interval does not
-# re-page the same alert). Alertmanager's receiver points here
+# it has already sent: in single mode every group re-notification
+# (group_interval, 5 m) carries every alert in the group, and the cache
+# is what keeps an unchanged alert from re-paging each time a neighbour
+# changes. Its duration therefore sets the real repeat cadence: an
+# alert re-pages at the first repeat_interval tick AFTER its cache
+# entry expires, so 23 h here against Alertmanager's 24 h repeat is one
+# page per day while it stays firing (24 h against 12 h was 36 h,
+# observed 2026-10-25 and 2026-10-27). Alertmanager's receiver points here
 # (kube-prometheus-stack.yaml); this points at ntfy (k8s/apps/ntfy).
 #
 # No silence button: that needs this pod reachable from the phone and
@@ -55,7 +61,9 @@ data:
 
     cache {
         type memory
-        duration 24h
+        # Just under repeat_interval (kube-prometheus-stack.yaml); see
+        # the header.
+        duration 23h
     }
 ---
 apiVersion: apps/v1
