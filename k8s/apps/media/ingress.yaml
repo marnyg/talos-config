@@ -252,6 +252,36 @@ spec:
                 port:
                   number: 13378
 ---
+# Casting from Audiobookshelf: the Chromecast receiver on the TV fetches
+# the track itself, as the TV's member (`media`), so under the admins
+# gate above it gets 403 and the cast dies silently (2026-10-30, Shield
+# + Absorb). Audiobookshelf's /public/ prefix is unauthenticated by
+# design — its only routes are /public/session/<id>/track/<n>, which
+# serve an open playback session's audio and exist for exactly this
+# receiver — so that prefix alone opts out of the global gate. ingress-
+# nginx merges the locations per host, so / stays admins-only. Every
+# member cert still has to be admitted by the gateway to reach it at all.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: audiobookshelf-public
+  namespace: media
+  annotations:
+    nginx.ingress.kubernetes.io/enable-global-auth: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: audiobookshelf.gw.mesh.internal
+      http:
+        paths:
+          - path: /public/
+            pathType: Prefix
+            backend:
+              service:
+                name: audiobookshelf
+                port:
+                  number: 13378
+---
 # Navidrome is gated like Audiobookshelf: admins-only reachability, its
 # own accounts underneath (see navidrome/deployment.yaml). The Subsonic
 # apps work through the gate since it decides on the gateway's token.
