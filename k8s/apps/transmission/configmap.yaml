@@ -24,5 +24,9 @@ data:
       "download-queue-enabled": true,
       "download-queue-size": 5,
       "speed-limit-down-enabled": false,
-      "speed-limit-up-enabled": false
+      "speed-limit-up-enabled": false,
+      "ratio-limit": 2.0,
+      "ratio-limit-enabled": true,
+      "idle-seeding-limit": 40320,
+      "idle-seeding-limit-enabled": true
     }
