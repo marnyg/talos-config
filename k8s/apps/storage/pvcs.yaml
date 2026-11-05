@@ -57,7 +57,7 @@ spec:
   storageClassName: longhorn-bulk
   resources:
     requests:
-      storage: 200Gi
+      storage: 250Gi
 ---
 # The book library (2026-10-20): audiobooks/ and ebooks/ under one
 # volume, so Chaptarr (writer: imports and renames) and Audiobookshelf
