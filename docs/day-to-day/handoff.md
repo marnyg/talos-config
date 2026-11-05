@@ -3,58 +3,53 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
-## Last session (2026-10-24): the tasks app — designed, built, deployed (`3vp0`)
+## Last session (2026-11-05): tasks — tags + scope (`p0i9`)
 
-- **New sub-scope `tasks/`** (epic `3vp0`, decision `06sh`): an
-  ECS-shaped, event-sourced single-user task app. Design in
-  `tasks/docs/desired-state/domain-model.md`; the architectural
-  decision drafted as `tasks/docs/technical/adrs/0001` (Proposed).
-  Shape: bare-id entities, namespaced components, an append-only event
-  log in SQLite as the *only* truth (component tables rebuilt in memory
-  at boot), systems that own kinds and reduce events through writers
-  scoped to those kinds, every view a derivation. Reducers see the
-  pre-event state and never emit; a rejected event is never appended.
-- **Five systems, all five views**: `core` (title/body/done/sleep/
-  groom flag), `dag` (edge entities, `blocks`, acyclic by reducer),
-  `kanban` (`Position{rank}`, derived columns), and the stateless
-  `triage` deck (day-seeded order), `groom` queue and `narrative`
-  (`/log` + per-task Story). Two registries in `web/` keep the arrows
-  pointing view → owner: `RegisterPanel` (dag/narrative add sections to
-  core's detail page) and `RegisterNarrator` (each system narrates its
-  own events). `dag.Unlinked` echoes the edge data — events are
-  self-describing.
-- **Gate + deploy**: `nix build .#tasks-bin` (tests in checkPhase),
-  `tasks-static`, `tasks-image`; CI `go` + `vendor-hash` matrices and
-  the pre-push hook cover `tasks/`. Live at **tasks.gw.mesh.internal**
-  (`platform-tasks`, image `tasks:07a1fbd@42cd69a1…`, 1Gi
-  `longhorn-encrypted` PVC, group-gated, homepage tile). Dark theme.
-- **Trap hit once**: a directory under `k8s/apps/` deploys nothing
-  until it has a line in `k8s/clusters/homelab/cluster.yaml`
-  (ADR-0040) — `089abec` sat Synced-and-absent until `3aa7b94`. The
-  new GHCR package had to be flipped public by hand (gotchas).
+- **Tags are core data**, not a sibling system: `core.Tags` (sorted
+  set of lower-case labels), `Created{tags}` so creating inside a
+  scope is one event (tasks invariant 2 kept), `Tagged`/`Untagged`
+  for later changes (no-ops rejected; empty set drops the component).
+  The domain model's own ownership rule decided it — every view reads
+  tags the same way, and a `tags` system would have forced a
+  core ↔ tags cycle. Tasks invariant 7 added: tags are user-written
+  only; a system wanting to tag programmatically declares its own kind.
+- **Scope is UI state**: a `scope` cookie, never an event, set from a
+  selector in the nav via the new `web.RegisterChrome` registry
+  (`web.Render` now takes the request). Deck, all, graph, board,
+  groom and log all narrow; the graph still counts out-of-scope
+  blockers, the log keeps lines whose story touches an in-scope task,
+  kanban moves step past the neighbour visible in scope. Tags panel
+  on the detail page, chips on every card, new-form prefilled with
+  the active scope.
+- **Deployed** `2e1d843` (image `tasks:5b2d42e@cf8cd6cd…`); the new
+  pod replayed the existing 24 tasks cleanly. ArgoCD needed a manual
+  refresh annotation to pick up the pin inside its poll interval.
+- Gate caught a real trap: `nix build .#tasks-bin` builds from the
+  git tree, so an **untracked** new template (`tags.html`) passed
+  `go test` locally and failed the nix checkPhase. Stage before gating.
 
 ## Loose threads
 
-- `tasks`: `World.History` replays the whole log per detail page /
-  `/log`; fine single-user, first hotspot if it ever isn't. Triage
-  "do" means *done* — revisit if an in-progress notion is wanted.
-  No htmx yet (plain forms); no mobile pass on the board.
+- `tasks`: the dag panel's candidate list is unscoped (every open
+  task) — filter by scope with an "all" fallback once the vocabulary
+  grows. `World.History` still replays the whole log per detail page /
+  `/log` (now plus a `core.Scoped` pass under a scope); first hotspot.
+  Multi-tag scope (`home,work`) not built — one tag per scope.
 - `docs/README.md` spikes paragraph still says the root ArgoCD app
-  recurses `k8s/apps/` — untrue since ADR-0040; surfaced, undecided.
-- Another session's uncommitted `k8s/apps/guacamole/deployment.yaml`
-  edit (13 lines) has been in the worktree all session; not committed
-  here.
-- Carried from 2026-10-22 (see git history of this file for detail):
-  `f0jl` first real stop→start untested, idle auto-stop undecided;
-  `agents/scratch` stale PRs, PR 10 is the real one (`ready → done`);
-  `xt40` token revocation; old plaintext PVs
-  (`kubectl get pv -l encrypt-pvc/old`) and `gateway-state` encryption
-  over LAN (`9io`); `dsuj` GPU hand-off + CP question; ntfy first page.
+  recurses `k8s/apps/` (untrue since ADR-0040) — surfaced twice,
+  undecided.
+- Carried from 2026-10-24 (see git history of this file): ADR-0001
+  (tasks) still Proposed — this session is a confirming data point
+  ("at most a new owned kind"); `f0jl` first real stop→start
+  untested; PR 10 `ready → done`; `xt40` token revocation; old
+  plaintext PVs and `gateway-state` over LAN (`9io`); `dsuj` GPU
+  hand-off + CP question; ntfy first page.
 
 ## Suggested next steps
 
-- Use the tasks app for a week; the model's open questions (priority?
-  in-progress? estimates for groom?) should come from use, not design.
-  Accept/amend `tasks/docs/technical/adrs/0001`.
-- Merge PR 10 and move `1d1c85ac` to `done` — the full flow-v2 loop.
+- Use the tasks app with scopes for a week; the user's idea of **one
+  board per tag** (views keyed off a tag) is the natural next view —
+  it lands as a new package with no core change, which is the
+  confirmation ADR-0001 asks for. Accept the ADR after that.
+- Merge PR 10 and move `1d1c85ac` to `done`.
 - Delete the old plaintext PVs; `gateway-state` over LAN.

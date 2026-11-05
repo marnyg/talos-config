@@ -68,8 +68,9 @@ the same evening **the GPU is passed through to win2k25** (KubeVirt
 1.9.1) with the NVIDIA driver and RDP audio provisioned by a CD-borne
 script; the VM↔AI-pod hand-off and the CP question stay on the spike. **Detour 2026-10-24, done:** the tasks app (`3vp0`) at
 `tasks.gw.mesh.internal` — ECS-shaped, event-sourced, five views;
-its own sub-scope `tasks/docs/` with ADR-0001 Proposed. Using it is
-what remains. Back to the line above.
+its own sub-scope `tasks/docs/` with ADR-0001 Proposed; 2026-11-05
+tags + scope (`p0i9`: tags are core data, scope is a cookie, every
+view narrows). Using it is what remains. Back to the line above.
 
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for
