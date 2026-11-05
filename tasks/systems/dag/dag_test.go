@@ -75,7 +75,7 @@ func TestDerivations(t *testing.T) {
 		if g.Blocked(r, a) || !g.Blocked(r, b) || !g.Blocked(r, c) {
 			t.Error("blocked: want only b, c")
 		}
-		layers := g.Layers(r)
+		layers := g.Layers(r, "")
 		if len(layers) != 3 || layers[0][0].ID != a || layers[1][0].ID != b || layers[2][0].ID != c {
 			t.Errorf("layers = %v", titles(layers))
 		}
@@ -95,7 +95,7 @@ func TestDerivations(t *testing.T) {
 		if len(g.BlockedBy(b)) != 1 {
 			t.Error("edge a→b should still exist")
 		}
-		if layers := g.Layers(r); len(layers) != 2 || layers[0][0].ID != b {
+		if layers := g.Layers(r, ""); len(layers) != 2 || layers[0][0].ID != b {
 			t.Errorf("layers after a done = %v", titles(layers))
 		}
 	})

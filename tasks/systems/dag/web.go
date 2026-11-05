@@ -36,7 +36,7 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 		var layers [][]row
 		w.Read(func(rd ecs.Reader) {
 			g := Load(rd)
-			for _, layer := range g.Layers(rd) {
+			for _, layer := range g.Layers(rd, core.Scope(r)) {
 				var rows []row
 				for _, t := range layer {
 					x := row{Task: t}
@@ -50,7 +50,7 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 				layers = append(layers, rows)
 			}
 		})
-		web.Render(rw, tplGraph, map[string]any{"Layers": layers})
+		web.Render(rw, r, tplGraph, map[string]any{"Layers": layers})
 	})
 
 	mux.HandleFunc("POST /dag/link", func(rw http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,7 @@
   {{if $t.IsDone}}<span class="tag">done</span>{{end}}
   {{if $t.Sleeping $now}}<span class="tag">sleeping until {{date $t.SleepUntil}}</span>{{end}}
   {{if $t.NeedsGrooming}}<span class="tag">needs grooming</span>{{end}}
+  {{template "tags" $t.Tags}}
 </h1>
 <p class="muted">created {{when $t.CreatedAt}} · <code>{{$t.ID}}</code></p>
 

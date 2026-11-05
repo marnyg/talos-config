@@ -4,6 +4,7 @@
 <p class="muted">{{.Count}} in the deck</p>
 <div class="card">
   <h2><a href="/tasks/{{$t.ID}}">{{$t.Title}}</a></h2>
+  {{if $t.Tags}}<p class="tags">{{template "tags" $t.Tags}}</p>{{end}}
   {{if $t.Body}}<pre>{{$t.Body}}</pre>{{end}}
   <p class="muted">created {{date $t.CreatedAt}}</p>
   <div class="actions">

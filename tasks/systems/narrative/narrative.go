@@ -64,9 +64,29 @@ func Tell(w *ecs.World, keep func(ecs.Event, web.Story) bool) ([]Line, error) {
 }
 
 // Mount serves /log and registers the Story panel.
+//
+// /log narrows to the scope: a line is kept when its story touches a
+// task in scope (so an edge event shows if either end is).
 func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 	mux.HandleFunc("GET /log", func(rw http.ResponseWriter, r *http.Request) {
-		lines, err := Tell(w, func(ecs.Event, web.Story) bool { return true })
+		keep := func(ecs.Event, web.Story) bool { return true }
+		if scope := core.Scope(r); scope != "" {
+			in := map[ecs.EntityID]bool{}
+			w.Read(func(rd ecs.Reader) {
+				for _, t := range core.Scoped(rd, scope) {
+					in[t.ID] = true
+				}
+			})
+			keep = func(_ ecs.Event, s web.Story) bool {
+				for _, e := range s.Entities {
+					if in[e] {
+						return true
+					}
+				}
+				return false
+			}
+		}
+		lines, err := Tell(w, keep)
 		if err != nil {
 			web.Fail(rw, err, http.StatusInternalServerError)
 			return
@@ -79,7 +99,7 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 		if len(lines) > logCap {
 			lines = lines[:logCap]
 		}
-		web.Render(rw, tplLog, map[string]any{"Lines": lines, "Total": total})
+		web.Render(rw, r, tplLog, map[string]any{"Lines": lines, "Total": total})
 	})
 
 	web.RegisterPanel(web.Panel{Name: "Story", Render: func(w *ecs.World, id ecs.EntityID) (template.HTML, error) {

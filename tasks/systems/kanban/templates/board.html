@@ -17,6 +17,7 @@
     {{range .Entries}}
     <div class="card">
       <a href="/tasks/{{.ID}}">{{.Title}}</a>
+      {{if .Tags}}<div class="tags">{{template "tags" .Tags}}</div>{{end}}
       {{if eq $col "sleeping"}}<div class="muted">until {{date .SleepUntil}}</div>{{end}}
       {{if eq $col "done"}}<div class="muted">{{date .Done}}</div>{{end}}
       {{if ne $col "done"}}

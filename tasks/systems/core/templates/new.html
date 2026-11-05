@@ -7,6 +7,9 @@
   <input type="text" id="title" name="title" required autofocus>
   <label for="body">Body</label>
   <textarea id="body" name="body"></textarea>
+  <label for="tags">Tags <span class="muted">(comma or space separated{{if .Tags}}; prefilled with the active scope{{end}})</span></label>
+  <input type="text" id="tags" name="tags" value="{{.Tags}}" list="tag-vocab">
+  <datalist id="tag-vocab">{{range .Scopes}}<option value="{{.}}">{{end}}</datalist>
   <div class="actions"><button class="primary">Add</button></div>
 </form>
 {{end}}

@@ -71,7 +71,7 @@ func TestColumns(t *testing.T) {
 		ColDone:     {"done"},
 	}
 	w.Read(func(r ecs.Reader) {
-		b := Board(r, now)
+		b := Board(r, now, "")
 		for c, names := range want {
 			if got := titles(b[c]); !eq(got, names) {
 				t.Errorf("%s = %v, want %v", c, got, names)
@@ -85,28 +85,28 @@ func TestMove(t *testing.T) {
 	a, b, c := mk(t, w, "a"), mk(t, w, "b"), mk(t, w, "c")
 	ready := func() []string {
 		var got []string
-		w.Read(func(r ecs.Reader) { got = titles(Board(r, now)[ColReady]) })
+		w.Read(func(r ecs.Reader) { got = titles(Board(r, now, "")[ColReady]) })
 		return got
 	}
 	if got := ready(); !eq(got, []string{"a", "b", "c"}) {
 		t.Fatalf("initial = %v", got)
 	}
-	if err := Move(w, c, -1); err != nil { // c above b
+	if err := Move(w, c, -1, ""); err != nil { // c above b
 		t.Fatal(err)
 	}
 	if got := ready(); !eq(got, []string{"a", "c", "b"}) {
 		t.Errorf("after c up = %v", got)
 	}
-	if err := Move(w, c, -1); err != nil { // c to top
+	if err := Move(w, c, -1, ""); err != nil { // c to top
 		t.Fatal(err)
 	}
 	if got := ready(); !eq(got, []string{"c", "a", "b"}) {
 		t.Errorf("after c up again = %v", got)
 	}
-	if err := Move(w, c, -1); !errors.Is(err, ErrNoMove) {
+	if err := Move(w, c, -1, ""); !errors.Is(err, ErrNoMove) {
 		t.Errorf("top: %v", err)
 	}
-	if err := Move(w, a, 1); err != nil { // a below b (b unpositioned)
+	if err := Move(w, a, 1, ""); err != nil { // a below b (b unpositioned)
 		t.Fatal(err)
 	}
 	if got := ready(); !eq(got, []string{"c", "b", "a"}) {

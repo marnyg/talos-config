@@ -56,6 +56,17 @@ var narrators []Narrator
 // vocabulary stays with the system that owns it.
 func RegisterNarrator(n Narrator) { narrators = append(narrators, n) }
 
+// Chrome contributes keys to every page's data "Scope", "Scopes" —
+// what the shared layout (nav) needs that web itself does not own.
+// core registers the active-scope selector here so the layout can
+// show it without web importing core.
+type Chrome func(r *http.Request) map[string]any
+
+var chromes []Chrome
+
+// RegisterChrome adds a chrome contributor; call from Mount.
+func RegisterChrome(c Chrome) { chromes = append(chromes, c) }
+
 // Tell runs the narrators over ev; falls back to the raw event name.
 func Tell(ev ecs.Event, r ecs.Reader) Story {
 	for _, n := range narrators {
@@ -81,8 +92,17 @@ func Page(fsys fs.FS, files ...string) *template.Template {
 	return template.Must(t.ParseFS(fsys, files...))
 }
 
-// Render executes the page layout with data.
-func Render(w http.ResponseWriter, t *template.Template, data any) {
+// Render executes the page layout with data (a map[string]any or nil),
+// merged with every registered Chrome's contribution for r.
+func Render(w http.ResponseWriter, r *http.Request, t *template.Template, data map[string]any) {
+	if data == nil {
+		data = map[string]any{}
+	}
+	for _, c := range chromes {
+		for k, v := range c(r) {
+			data[k] = v
+		}
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, "layout.html", data); err != nil {
 		log.Printf("render: %v", err)

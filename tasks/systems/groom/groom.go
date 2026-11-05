@@ -26,10 +26,10 @@ func (System) Name() string                                   { return Name }
 func (System) Kinds() []ecs.Kind                              { return nil }
 func (System) Reduce(ecs.Event, ecs.Reader, ecs.Writer) error { return nil }
 
-// Queue = NeedsGrooming ∧ ¬Done, oldest flag first.
-func Queue(r ecs.Reader) []core.Task {
+// Queue = in scope ∧ NeedsGrooming ∧ ¬Done, oldest flag first.
+func Queue(r ecs.Reader, scope string) []core.Task {
 	var out []core.Task
-	for _, t := range core.All(r) {
+	for _, t := range core.Scoped(r, scope) {
 		if t.NeedsGrooming && !t.IsDone() {
 			out = append(out, t)
 		}
@@ -41,7 +41,7 @@ func Queue(r ecs.Reader) []core.Task {
 func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 	mux.HandleFunc("GET /groom", func(rw http.ResponseWriter, r *http.Request) {
 		var q []core.Task
-		w.Read(func(rd ecs.Reader) { q = Queue(rd) })
-		web.Render(rw, tplQueue, map[string]any{"Queue": q})
+		w.Read(func(rd ecs.Reader) { q = Queue(rd, core.Scope(r)) })
+		web.Render(rw, r, tplQueue, map[string]any{"Queue": q})
 	})
 }

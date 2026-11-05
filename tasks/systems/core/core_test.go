@@ -105,6 +105,96 @@ func TestLifecycle(t *testing.T) {
 	}
 }
 
+func TestTags(t *testing.T) {
+	w, lg := newWorld(t)
+
+	// Created carries tags: normalized, deduped, sorted.
+	id, err := Create(w, "paint fence", "", "Home", "garden", "home")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := load(t, w, id).Tags; len(got) != 2 || got[0] != "garden" || got[1] != "home" {
+		t.Errorf("tags = %v", got)
+	}
+	other, _ := Create(w, "untagged", "")
+	if load(t, w, other).Tags != nil {
+		t.Error("untagged task carries Tags")
+	}
+
+	if err := AddTag(w, id, " Work "); err != nil {
+		t.Fatal(err)
+	}
+	if got := load(t, w, id); !got.Has("work") || !got.InScope("work") || got.InScope("nope") || !got.InScope("") {
+		t.Errorf("after tag = %v", got.Tags)
+	}
+	if err := RemoveTag(w, id, "garden"); err != nil {
+		t.Fatal(err)
+	}
+
+	// No-ops and bad tags are rejected and leave no trace.
+	n := len(lg.Events)
+	for _, bad := range []error{
+		AddTag(w, id, "work"),      // already
+		RemoveTag(w, id, "garden"), // not any more
+		AddTag(w, id, ""),          // empty
+		AddTag(w, id, "two words"), // separator
+		AddTag(w, "nope", "x"),     // no such task
+	} {
+		if bad == nil {
+			t.Error("rejection expected")
+		}
+	}
+	if _, err := Create(w, "bad", "", "a,b"); err == nil {
+		t.Error("comma in a Created tag accepted")
+	}
+	if len(lg.Events) != n {
+		t.Errorf("log grew on rejected events: %d → %d", n, len(lg.Events))
+	}
+
+	// Vocabulary and Scoped are derived.
+	w.Read(func(r ecs.Reader) {
+		if v := Vocabulary(r); len(v) != 2 || v[0] != "home" || v[1] != "work" {
+			t.Errorf("vocabulary = %v", v)
+		}
+		if s := Scoped(r, "home"); len(s) != 1 || s[0].ID != id {
+			t.Errorf("scoped(home) = %v", s)
+		}
+		if s := Scoped(r, ""); len(s) != 2 {
+			t.Errorf("scoped('') = %d tasks", len(s))
+		}
+	})
+
+	// Removing the last tag drops the component; replay agrees.
+	if err := RemoveTag(w, id, "home"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveTag(w, id, "work"); err != nil {
+		t.Fatal(err)
+	}
+	w.Read(func(r ecs.Reader) {
+		if r.Has(id, Tags) {
+			t.Error("empty Tags component kept")
+		}
+	})
+	w2, err := ecs.New(lg, System{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := load(t, w2, id); got.Tags != nil {
+		t.Errorf("after replay tags = %v", got.Tags)
+	}
+}
+
+func TestParseTags(t *testing.T) {
+	got, err := ParseTags(" Home, work  garden,home\n")
+	if err != nil || len(got) != 3 || got[0] != "garden" || got[1] != "home" || got[2] != "work" {
+		t.Errorf("ParseTags = %v, %v", got, err)
+	}
+	if got, err := ParseTags(""); err != nil || got != nil {
+		t.Errorf("ParseTags('') = %v, %v", got, err)
+	}
+}
+
 func TestParseUntil(t *testing.T) {
 	now := time.Date(2026, 3, 1, 15, 30, 0, 0, time.UTC)
 	cases := map[string]time.Time{

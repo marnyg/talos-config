@@ -30,16 +30,16 @@ func (System) Name() string                                   { return Name }
 func (System) Kinds() []ecs.Kind                              { return nil }
 func (System) Reduce(ecs.Event, ecs.Reader, ecs.Writer) error { return nil }
 
-// Deck returns today's eligible tasks in today's order.
+// Deck returns today's eligible tasks in scope, in today's order.
 //
-// eligible = ¬Done ∧ ¬sleeping ∧ ¬flagged-for-grooming ∧ ¬blocked.
+// eligible = in scope ∧ ¬Done ∧ ¬sleeping ∧ ¬flagged-for-grooming ∧ ¬blocked.
 // Order is random but
 // seeded per local calendar day, so a refresh does not reshuffle and
 // the next card is stable until acted on.
-func Deck(r ecs.Reader, now time.Time) []core.Task {
+func Deck(r ecs.Reader, now time.Time, scope string) []core.Task {
 	var deck []core.Task
 	g := dag.Load(r)
-	for _, t := range core.All(r) {
+	for _, t := range core.Scoped(r, scope) {
 		if t.IsDone() || t.Sleeping(now) || t.NeedsGrooming || g.Blocked(r, t.ID) {
 			continue
 		}
@@ -57,11 +57,11 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 	mux.HandleFunc("GET /{$}", func(rw http.ResponseWriter, r *http.Request) {
 		now := w.Now()
 		var deck []core.Task
-		w.Read(func(rd ecs.Reader) { deck = Deck(rd, now) })
+		w.Read(func(rd ecs.Reader) { deck = Deck(rd, now, core.Scope(r)) })
 		data := map[string]any{"Count": len(deck)}
 		if len(deck) > 0 {
 			data["Card"] = deck[0]
 		}
-		web.Render(rw, tplDeck, data)
+		web.Render(rw, r, tplDeck, data)
 	})
 }

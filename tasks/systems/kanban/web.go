@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/marnyg/talos-config/tasks/ecs"
+	"github.com/marnyg/talos-config/tasks/systems/core"
 	"github.com/marnyg/talos-config/tasks/web"
 )
 
@@ -32,7 +33,7 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 		var cols []col
 		now := w.Now()
 		w.Read(func(rd ecs.Reader) {
-			board := Board(rd, now)
+			board := Board(rd, now, core.Scope(r))
 			for _, c := range Columns {
 				x := col{Name: c, Entries: board[c]}
 				if c == ColDone && len(x.Entries) > doneCap {
@@ -42,7 +43,7 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 				cols = append(cols, x)
 			}
 		})
-		web.Render(rw, tplBoard, map[string]any{"Columns": cols, "Now": now})
+		web.Render(rw, r, tplBoard, map[string]any{"Columns": cols, "Now": now})
 	})
 
 	mux.HandleFunc("POST /kanban/{id}/move", func(rw http.ResponseWriter, r *http.Request) {
@@ -51,7 +52,7 @@ func (System) Mount(mux *http.ServeMux, w *ecs.World) {
 			web.Fail(rw, errors.New("dir must be up or down"), http.StatusBadRequest)
 			return
 		}
-		err := Move(w, ecs.EntityID(r.PathValue("id")), dir)
+		err := Move(w, ecs.EntityID(r.PathValue("id")), dir, core.Scope(r))
 		if err != nil && !errors.Is(err, ErrNoMove) {
 			web.Fail(rw, err, http.StatusBadRequest)
 			return

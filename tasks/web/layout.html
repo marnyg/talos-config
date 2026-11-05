@@ -14,9 +14,15 @@
   body { max-width: 40rem; margin: 0 auto; padding: 1rem; line-height: 1.4; background: var(--bg); color: var(--fg); }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; font-size: .9rem; }
+  nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; font-size: .9rem; align-items: center; flex-wrap: wrap; }
   nav a { color: var(--muted); }
   nav a:hover { color: var(--fg); text-decoration: none; }
+  nav form.scope { margin-left: auto; display: inline-flex; gap: .3rem; align-items: center; }
+  nav form.scope select { width: auto; padding: .2rem .4rem; font-size: .85rem; }
+  nav form.scope select.active { border-color: var(--accent); color: var(--accent); }
+  .tags { display: inline-flex; gap: .25rem; flex-wrap: wrap; }
+  .tags a.tag { margin-left: 0; }
+  .tags a.tag:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
   h1, h2 { font-weight: 600; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: .75rem; padding: 1.25rem; margin: 1rem 0; }
   .card h2 { margin-top: 0; }
@@ -47,7 +53,16 @@
   <a href="/groom">groom</a>
   <a href="/log">log</a>
   <a href="/tasks/new">+ new</a>
+  <form class="scope" method="post" action="/scope">
+    <input type="hidden" name="back" value="{{.Path}}">
+    <select name="scope" class="{{if .Scope}}active{{end}}" onchange="this.form.submit()" title="scope: every view shows only tasks with this tag">
+      <option value="">all scopes</option>
+      {{$s := .Scope}}{{range .Scopes}}<option value="{{.}}" {{if eq . $s}}selected{{end}}>#{{.}}</option>{{end}}
+    </select>
+    <noscript><button>go</button></noscript>
+  </form>
 </nav>
 {{template "content" .}}
 </body>
+{{define "tags"}}{{range .}}<span class="tag">#{{.}}</span>{{end}}{{end}}
 </html>

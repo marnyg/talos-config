@@ -9,6 +9,7 @@
       <a href="/tasks/{{.ID}}">{{.Title}}</a>
       {{if .Sleeping $now}}<span class="tag">sleeping until {{date .SleepUntil}}</span>{{end}}
       {{if .NeedsGrooming}}<span class="tag">groom</span>{{end}}
+      {{template "tags" .Tags}}
     </span>
     <span class="actions">
       {{if .IsDone}}

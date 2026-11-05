@@ -94,12 +94,12 @@ type Entry struct {
 	Positioned bool
 }
 
-// Board groups every task by column, ordered. Done is newest-done
-// first; the rest are by effective rank (see Ranked).
-func Board(r ecs.Reader, now time.Time) map[Column][]Entry {
+// Board groups every task in scope by column, ordered. Done is
+// newest-done first; the rest are by effective rank (see Ranked).
+func Board(r ecs.Reader, now time.Time, scope string) map[Column][]Entry {
 	g := dag.Load(r)
 	by := map[Column][]core.Task{}
-	for _, t := range core.All(r) {
+	for _, t := range core.Scoped(r, scope) {
 		c := ColumnOf(r, g, t, now)
 		by[c] = append(by[c], t)
 	}
@@ -139,8 +139,10 @@ func Ranked(r ecs.Reader, tasks []core.Task) []Entry {
 var ErrNoMove = errors.New("kanban: already at the edge")
 
 // Move raises kanban.Moved to shift id one step up (-1) or down (+1)
-// within its current column.
-func Move(w *ecs.World, id ecs.EntityID, dir int) error {
+// within its current column, past the neighbour visible in scope (the
+// rank line is shared across scopes; the step is relative to what
+// the board showed).
+func Move(w *ecs.World, id ecs.EntityID, dir int, scope string) error {
 	var (
 		rank float64
 		err  error
@@ -159,7 +161,7 @@ func Move(w *ecs.World, id ecs.EntityID, dir int) error {
 			return
 		}
 		var peers []core.Task
-		for _, x := range core.All(r) {
+		for _, x := range core.Scoped(r, scope) {
 			if ColumnOf(r, g, x, now) == col {
 				peers = append(peers, x)
 			}

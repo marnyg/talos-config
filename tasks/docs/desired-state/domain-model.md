@@ -48,9 +48,25 @@ log is the only truth; everything else is rebuilt from it at boot.
   self-edges, duplicates and anything that would close a cycle, so the
   graph is acyclic by construction; done blockers stop blocking by
   derivation, the edge stays.
+- **Tag** — a plain lower-case label on a task (`core.Tags`, a sorted
+  set). The generic grouping vocabulary: the thing every view narrows
+  by, and the hook a future view can key off (one board per tag).
+  Any system may read it; only core writes it, and only from a user
+  action (`Created{tags}`, `Tagged`, `Untagged`). A system that wants
+  to write a tag programmatically wants its own component kind. There
+  is no "create a tag" step — the vocabulary is derived.
+- **Scope** — the active context: one tag every view narrows to (deck,
+  all, graph, board, groom, log), or none. UI state, not domain state:
+  "which context am I working in" is a fact about the user, not about
+  any task, so it is a cookie (`scope`), never an event or component.
+  The new-task form prefills the scope so a task born in a context
+  stays visible there — in one `Created` event (invariant 2).
 - **Panel** — a fragment a system contributes to the task detail page
   (`web.RegisterPanel`). How dag puts its dependency editor on core's
   detail page without core importing dag: the arrow stays view → owner.
+- **Chrome** — keys a system contributes to every page's data
+  (`web.RegisterChrome`), for what the shared layout shows but `web`
+  does not own: core feeds the nav its scope selector this way.
 - **Derivation** — anything computed at read time from components +
   `now`. Never stored (see list below).
 
@@ -58,7 +74,7 @@ log is the only truth; everything else is rebuilt from it at boot.
 
 | system    | owns (components)                                             | canonical events                                                          |
 |-----------|---------------------------------------------------------------|---------------------------------------------------------------------------|
-| core      | Title, Body, CreatedAt, Done, SleepUntil, NeedsGrooming       | Created, Edited{field,value}, Done, Reopened, Snoozed{until}, Woken, FlaggedForGrooming, Groomed |
+| core      | Title, Body, CreatedAt, Done, SleepUntil, NeedsGrooming, Tags | Created{title,body,tags}, Edited{field,value}, Done, Reopened, Snoozed{until}, Woken, FlaggedForGrooming, Groomed, Tagged{tag}, Untagged{tag} |
 | dag       | Edge{from,to,kind} (on edge entities)                         | Linked{from,to,kind}, Unlinked{from,to,kind} (both on the edge entity)    |
 | kanban    | Position{rank}                                                | Moved{rank}; reduces core.Done → drop Position                            |
 | triage    | —                                                             | — (raises core.Done / core.Snoozed / core.FlaggedForGrooming)             |
@@ -70,7 +86,10 @@ Cross-system reductions are allowed and expected: kanban reduces
 
 **Ownership rule:** a component belongs to the lowest system in which
 every reader would be semantically wrong without it. If two siblings
-need it the same way, it is not theirs — push it to core.
+need it the same way, it is not theirs — push it to core. (This is why
+`Tags` is core and not a `tags` system: every view filters on it the
+same way, and as a sibling it would have forced a cycle — core's list
+view reading tags, tags checking `core.Title`.)
 
 **Dependency direction:** views may depend on state-owning systems
 (triage reads `dag.Edge` to exclude blocked tasks); views must not
@@ -93,6 +112,13 @@ never a sibling owner.
   derivation too, not a flag.)
 - **triage deck** — eligible = `¬Done ∧ ¬sleeping ∧ ¬blocked ∧ ¬NeedsGrooming`; order
   random, seeded per calendar day. No priority component.
+- **in scope** — `scope = "" ∨ scope ∈ Tags`. Applied by every view
+  after its own predicate; the graph still counts blockers outside
+  the scope (a task waiting on one is still waiting), and the log
+  keeps a line if its story touches any in-scope task.
+- **vocabulary** — the union of `Tags` over all tasks, done or not.
+  A tag exists while a task carries it; an empty set means no
+  `Tags` component at all.
 - **narrative** — the log filtered to an entity plus its edge
   neighbours, rendered as prose. This view is why events carry intent.
   Each system registers a `web.Narrator` for its own events (prose +
@@ -111,6 +137,9 @@ never a sibling owner.
 5. Nothing in the "derived" list above is ever persisted.
 6. Events are never rewritten; a change of meaning is a change of
    reducer (plus an upcaster if the payload shape changes).
+7. `Tags` is written only by core, only from a user action. It is a
+   user vocabulary, not a bag systems stash state in; a system that
+   wants to tag programmatically declares its own kind.
 
 ## Ruled out
 
@@ -122,6 +151,13 @@ never a sibling owner.
   replaced by a user-raised flag; simpler and the user decides.
 - **Parent/child edge kind**: tempts a hierarchy that fights the flat
   entity model. Later hierarchy views add their own kinds.
+- **Tags as their own system** (`tags.Tags`, `tags.Tagged`): fails the
+  ownership rule (every view reads it the same way) and needs a
+  `web.RegisterScoper` registry to dodge the core ↔ tags cycle.
+- **Scope as an event** ("switched to #home"): not a fact about a
+  task; would need a singleton component and a reducer for UI state.
+- **Create-in-scope as two events** (`Created` then `Tagged`): breaks
+  invariant 2; `Created` carries `tags` instead.
 - **Game-engine ECS machinery** (archetypes, tick loops): systems
   here are query-time predicates, not per-tick iterators.
 

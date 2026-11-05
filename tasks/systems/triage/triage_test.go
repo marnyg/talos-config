@@ -31,7 +31,7 @@ func TestDeck(t *testing.T) {
 	deck := func(at time.Time) map[ecs.EntityID]bool {
 		got := map[ecs.EntityID]bool{}
 		w.Read(func(r ecs.Reader) {
-			for _, task := range Deck(r, at) {
+			for _, task := range Deck(r, at, "") {
 				got[task.ID] = true
 			}
 		})
@@ -49,7 +49,7 @@ func TestDeck(t *testing.T) {
 	order := func(at time.Time) []ecs.EntityID {
 		var ids []ecs.EntityID
 		w.Read(func(r ecs.Reader) {
-			for _, task := range Deck(r, at) {
+			for _, task := range Deck(r, at, "") {
 				ids = append(ids, task.ID)
 			}
 		})
@@ -64,5 +64,17 @@ func TestDeck(t *testing.T) {
 		if a[i] != b[i] {
 			t.Fatalf("deck reshuffled within a day: %v vs %v", a, b)
 		}
+	}
+
+	// Scope narrows the deck to tagged tasks; "" is everything.
+	core.AddTag(w, ready, "home")
+	var scoped []ecs.EntityID
+	w.Read(func(r ecs.Reader) {
+		for _, task := range Deck(r, now, "home") {
+			scoped = append(scoped, task.ID)
+		}
+	})
+	if len(scoped) != 1 || scoped[0] != ready {
+		t.Errorf("scoped deck = %v, want [%s]", scoped, ready)
 	}
 }

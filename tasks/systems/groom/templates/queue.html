@@ -5,7 +5,7 @@
 <ul class="tasks">
 {{range .Queue}}
   <li>
-    <span><a href="/tasks/{{.ID}}">{{.Title}}</a>{{if .Body}} <span class="muted">— {{printf "%.80s" .Body}}</span>{{end}}</span>
+    <span><a href="/tasks/{{.ID}}">{{.Title}}</a>{{template "tags" .Tags}}{{if .Body}} <span class="muted">— {{printf "%.80s" .Body}}</span>{{end}}</span>
     <span class="actions">
       <form method="post" action="/tasks/{{.ID}}/groomed"><input type="hidden" name="back" value="/groom"><button>groomed</button></form>
       <form method="post" action="/tasks/{{.ID}}/done"><input type="hidden" name="back" value="/groom"><button>done</button></form>

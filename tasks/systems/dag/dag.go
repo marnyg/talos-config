@@ -223,10 +223,11 @@ func (g Graph) Blocked(r ecs.Reader, id ecs.EntityID) bool {
 	return len(g.Blockers(r, id)) > 0
 }
 
-// Layers groups the open tasks topologically: layer 0 has no open
-// blockers, layer n+1 is unblocked once layer ≤ n is done. Tasks are
-// ordered as core.All within a layer.
-func (g Graph) Layers(r ecs.Reader) [][]core.Task {
+// Layers groups the open tasks in scope topologically: layer 0 has no
+// open blockers, layer n+1 is unblocked once layer ≤ n is done. Depth
+// counts blockers in any scope — a task waiting on one outside the
+// scope is still waiting. Tasks are ordered as core.All within a layer.
+func (g Graph) Layers(r ecs.Reader, scope string) [][]core.Task {
 	depth := map[ecs.EntityID]int{}
 	var walk func(ecs.EntityID) int
 	walk = func(id ecs.EntityID) int {
@@ -244,7 +245,7 @@ func (g Graph) Layers(r ecs.Reader) [][]core.Task {
 		return d
 	}
 	var layers [][]core.Task
-	for _, t := range core.All(r) {
+	for _, t := range core.Scoped(r, scope) {
 		if t.IsDone() {
 			continue
 		}

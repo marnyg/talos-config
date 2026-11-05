@@ -1,0 +1,29 @@
+{{$id := .ID}}
+<div class="card">
+  <p class="tags">
+  {{range .Tags}}
+    <form method="post" action="/tasks/{{$id}}/untag" style="display:inline">
+      <input type="hidden" name="tag" value="{{.}}">
+      <input type="hidden" name="back" value="/tasks/{{$id}}">
+      <button class="tag" title="remove">#{{.}} ×</button>
+    </form>
+  {{else}}
+    <span class="muted">no tags</span>
+  {{end}}
+  </p>
+  <div class="actions">
+    <form method="post" action="/tasks/{{$id}}/tag">
+      <input type="hidden" name="back" value="/tasks/{{$id}}">
+      <input type="text" name="tag" list="tag-vocab" placeholder="tag" required style="width:12rem">
+      <datalist id="tag-vocab">{{range .Others}}<option value="{{.}}">{{end}}</datalist>
+      <button>tag</button>
+    </form>
+    {{range .Others}}
+    <form method="post" action="/tasks/{{$id}}/tag">
+      <input type="hidden" name="tag" value="{{.}}">
+      <input type="hidden" name="back" value="/tasks/{{$id}}">
+      <button class="tag">+ #{{.}}</button>
+    </form>
+    {{end}}
+  </div>
+</div>

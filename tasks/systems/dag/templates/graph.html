@@ -11,6 +11,7 @@
       <span>
         <a href="/tasks/{{.ID}}">{{.Title}}</a>
         {{if .NeedsGrooming}}<span class="tag">groom</span>{{end}}
+        {{template "tags" .Tags}}
         {{if .Blockers}}<span class="muted">← {{range $j, $b := .Blockers}}{{if $j}}, {{end}}<a href="/tasks/{{$b.ID}}">{{$b.Title}}</a>{{end}}</span>{{end}}
       </span>
     </li>
