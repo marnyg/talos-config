@@ -78,7 +78,7 @@ spec:
           tolerationSeconds: 30
       containers:
         - name: gateway
-          image: ghcr.io/marnyg/gateway:109c6b5@sha256:8ac3b862016c2ef71282b5df6b9bf1f4944492abc56b93203c5c36ac50379ec4
+          image: ghcr.io/marnyg/gateway:2719bbb@sha256:5387464b466e69795eacc1384aa2106978c8a3fdf42dfc85eae1bf13550a28ac
           args:
             - -hub=https://marnyg-talos-config.fly.dev
             - -state=/var/lib/gateway
@@ -89,6 +89,10 @@ spec:
             # it sets are the only ones nginx ever sees.
             - -ingress=http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80
             - -rdp=win2k25-rdp.vms.svc.cluster.local:3389
+            # Raw TCP to the cluster's Syncthing peer (ADR-0046,
+            # k8s/apps/syncthing): devices dial
+            # syncthing.gw.mesh.internal:22000 over the mesh.
+            - -syncthing=syncthing.syncthing.svc.cluster.local:22000
           env:
             - name: P0_LOG
               value: warn

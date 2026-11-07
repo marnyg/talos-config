@@ -61,6 +61,11 @@ gateway:
     # `xfreerdp /v:rdp.gw.mesh.internal` from an admin device. Owner
     # devices only; the guest's own login is the second gate.
     - {facet: rdp, group: admins}
+    # Raw TCP to the cluster's Syncthing peer (k8s/apps/syncthing,
+    # ADR-0046): a device's Syncthing dials
+    # tcp://syncthing.gw.mesh.internal:22000. Owner devices only;
+    # Syncthing's own device-ID pairing is the second gate.
+    - {facet: syncthing, group: admins}
 hub:
   inbound:
     # The hub's overlay HTTP surface (/config): both device groups, as
