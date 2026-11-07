@@ -103,8 +103,11 @@ spec:
             - |
               cfg=/var/syncthing/config/config.xml
               if [ -e "$cfg" ]; then echo "config exists, leaving it"; exit 0; fi
-              /bin/syncthing generate --home=/var/syncthing/config --no-default-folder
+              /bin/syncthing generate --home=/var/syncthing/config --no-port-probing
+              # 2.x generate has no --no-default-folder; strip any folder
+              # block it wrote (STNODEFAULTFOLDER below covers serve).
               sed -i \
+                -e '/<folder /,/<\/folder>/d' \
                 -e 's|<listenAddress>default</listenAddress>|<listenAddress>tcp://0.0.0.0:22000</listenAddress>|' \
                 -e 's|<globalAnnounceEnabled>true</globalAnnounceEnabled>|<globalAnnounceEnabled>false</globalAnnounceEnabled>|' \
                 -e 's|<localAnnounceEnabled>true</localAnnounceEnabled>|<localAnnounceEnabled>false</localAnnounceEnabled>|' \
@@ -134,6 +137,9 @@ spec:
               value: /var/syncthing/config
             # No auto-upgrade: the image pin is the version.
             - name: STNOUPGRADE
+              value: "1"
+            # No default ~/Sync folder; folders are declared in the GUI.
+            - name: STNODEFAULTFOLDER
               value: "1"
           ports:
             - name: sync
