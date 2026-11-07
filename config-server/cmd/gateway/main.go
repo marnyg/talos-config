@@ -5,7 +5,8 @@
 // (config-server/gateway).
 //
 //	gateway [-hub URL] [-relay URL] [-state DIR] [-name gw] [-group media]
-//	        [-ingress URL] [-rdp host:port] [-bind ip:port] [-beat DUR]
+//	        [-ingress URL] [-rdp host:port] [-syncthing host:port]
+//	        [-bind ip:port] [-beat DUR]
 //
 // State (key, kit, bundle, hub record, mark) lives under -state, a
 // volume that outlives the pod: the key is the member's identity and
@@ -48,6 +49,7 @@ func main() {
 		group    = flag.String("group", "media", "proposed group (the approver decides)")
 		ingress  = flag.String("ingress", "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local", "ingress-http upstream: the ingress controller's Service")
 		rdp      = flag.String("rdp", "", "rdp facet target host:port (the win2k25-rdp Service); empty ⇒ facet not served")
+		syncth   = flag.String("syncthing", "", "syncthing facet target host:port (the syncthing Service, ADR-0046); empty ⇒ facet not served")
 		bindAddr = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 		beat     = flag.Duration("beat", nodeagent.DefaultBeat, "renewal beat interval")
 		maxAge   = flag.Duration("conn-max-age", gateway.DefaultConnMaxAge, "admitted connection bound (re-authorize past it)")
@@ -81,7 +83,7 @@ func main() {
 	defer stopProxy()
 	// Raw-TCP facets: each flag is one accept-table row, facet → Service.
 	fwd := map[string]string{}
-	for facet, target := range map[string]string{"rdp": *rdp} {
+	for facet, target := range map[string]string{"rdp": *rdp, "syncthing": *syncth} {
 		if target == "" {
 			continue
 		}

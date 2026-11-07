@@ -74,7 +74,10 @@ var Kinds = []Kind{KindNode, KindGateway, KindHub, KindDevice}
 // a recipe row.
 var facets = map[Kind][]string{
 	KindNode:    {"apid", "kube-api"},
-	KindGateway: {"ingress-http", "rdp"},
+	// `syncthing` (ADR-0046): raw TCP to the cluster's Syncthing peer,
+	// the always-on member of every device's sync set; Syncthing's
+	// own device-ID handshake is the second gate (as rdp/ssh).
+	KindGateway: {"ingress-http", "rdp", "syncthing"},
 	KindHub:     {"hub-http"},
 	// A device's own sshd (ADR-0038): raw TCP, the mesh grant is the
 	// first gate and sshd's own authentication the second (as rdp).
@@ -93,6 +96,7 @@ var facetPorts = map[string]uint16{
 	"ingress-http": 80,
 	"rdp":          3389,
 	"ssh":          22,
+	"syncthing":    22000,
 }
 
 // FacetPort returns the natural port of facet, or 0 if it has none.

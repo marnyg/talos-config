@@ -151,3 +151,49 @@ parameters:
   csi.storage.k8s.io/node-expand-secret-name: longhorn-crypto
   csi.storage.k8s.io/node-expand-secret-namespace: longhorn-system
   recurringJobSelector: '[{"name":"backup","isGroup":true}]'
+---
+# The owner's files tier (ADR-0046, 2026-11-07): the cluster's copy of
+# the Syncthing sync set — the archive off the retired disks, documents,
+# media the owner made. Not re-downloadable, so not `longhorn-bulk`'s
+# one replica; not app state, so not the NVMe tier's 600 GB for 300 GB
+# of cold files; and NOT in the Tigris backup: the owner's redundancy
+# for this data is the Syncthing peers (the desktop's repurposed 1 TB
+# disk, the phone and the Mac for the hot folders), and the nightly
+# upload would ship ~300 GB for a copy that already exists elsewhere.
+# This class exists so that opt-out is a class, not a hand-removed
+# label on a `longhorn-encrypted` volume (its recurringJobSelector is
+# the whole exclusion mechanism — see above).
+#
+# Two replicas on nas1's two bulk bays (never one disk:
+# replicaDiskSoftAntiAffinity disabled), LUKS under the cluster
+# passphrase like `longhorn-encrypted`. Known cost, from ADR-0029's
+# day of mirroring the library across the bays: both replicas on one
+# node, so a nas1 reboot faults both and rebuilds — accepted for a
+# cold volume whose other copies are elsewhere. RWO only (one
+# Syncthing), so no share-manager and no NFS hop; the pod is pinned to
+# nas1 where the bytes are (k8s/apps/syncthing).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-bulk-encrypted
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+reclaimPolicy: Retain
+parameters:
+  numberOfReplicas: "2"
+  diskSelector: "bulk"
+  replicaSoftAntiAffinity: "enabled"
+  replicaDiskSoftAntiAffinity: "disabled"
+  staleReplicaTimeout: "30"
+  fsType: "ext4"
+  dataLocality: "disabled"
+  encrypted: "true"
+  csi.storage.k8s.io/provisioner-secret-name: longhorn-crypto
+  csi.storage.k8s.io/provisioner-secret-namespace: longhorn-system
+  csi.storage.k8s.io/node-publish-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-publish-secret-namespace: longhorn-system
+  csi.storage.k8s.io/node-stage-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-stage-secret-namespace: longhorn-system
+  csi.storage.k8s.io/node-expand-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-expand-secret-namespace: longhorn-system

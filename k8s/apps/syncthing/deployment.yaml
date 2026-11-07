@@ -1,0 +1,194 @@
+# Syncthing: the cluster's peer in the owner's sync set (ADR-0046).
+# Devices reach it one way only — the gateway's `syncthing` facet,
+# `tcp://syncthing.gw.mesh.internal:22000` from any member device, LAN
+# or remote (k8s/apps/gateway forwards the facet to the Service below).
+# So this peer is addressed statically and never dials out: global and
+# local discovery, relays and NAT traversal are all off (init
+# container). Pairing is by Syncthing device ID on both sides — the
+# second gate after the mesh grant, the rdp/ssh pattern.
+#
+# Two volumes:
+#   - config (`longhorn-encrypted`, backed up): the peer's identity
+#     (cert.pem/key.pem — losing it means re-pairing every device) and
+#     the index database. Small.
+#   - data (`longhorn-bulk-encrypted`, NOT backed up — the class
+#     comment in k8s/apps/storage/storageclass.yaml says why): the
+#     folders themselves, one directory per Syncthing folder under
+#     /var/syncthing/data. 600Gi thin, two replicas on nas1's bulk
+#     bays; grow it by raising the request (up only).
+# Both carry Prune=false,Delete=false: the data claim is one of the
+# copies of the owner's files, the config claim is the identity.
+#
+# Pinned to nas1 as samba is: the data replicas can only live there
+# (bulk tier), so a pod elsewhere would read every hash scan over the
+# LAN and gains no availability — nas1 down is the volume down either
+# way. RWO + Recreate: one Syncthing per config dir.
+#
+# First run: the init container generates the config without a
+# default folder and flips the options above; the GUI
+# (syncthing.gw.mesh.internal, admins gate) then has no password — set
+# one under Settings → GUI on the first visit, the Actual/Vaultwarden
+# posture. Folders and devices are added in the GUI; config is data
+# plane (invariant 2's exception) and lives on the config volume.
+#
+# Non-root: the image's entrypoint only chowns/su-execs when started
+# as root; as uid 1000 it execs syncthing directly. fsGroup makes both
+# volume roots writable. Syncthing runs fine on a read-only root fs
+# with HOME on the config volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: syncthing-config
+  namespace: syncthing
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-encrypted
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: syncthing-data
+  namespace: syncthing
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-bulk-encrypted
+  resources:
+    requests:
+      storage: 600Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: syncthing
+  namespace: syncthing
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: syncthing
+  template:
+    metadata:
+      labels:
+        app: syncthing
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: nas1
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Generate the config once, then make the peer static: no
+        # announce, no relays, no NAT, listen on TCP 22000 only (the
+        # facet forwards TCP; QUIC would be unreachable anyway). Usage
+        # and crash reporting declined. Idempotent: a config that
+        # exists is left alone, so later GUI changes stick.
+        - name: init-config
+          image: docker.io/syncthing/syncthing:2.1.7@sha256:2b71da7c0d0a91a6ae5285ad079226fecc0a365d08b27720e1f7037b018f7546
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              cfg=/var/syncthing/config/config.xml
+              if [ -e "$cfg" ]; then echo "config exists, leaving it"; exit 0; fi
+              /bin/syncthing generate --home=/var/syncthing/config --no-default-folder
+              sed -i \
+                -e 's|<listenAddress>default</listenAddress>|<listenAddress>tcp://0.0.0.0:22000</listenAddress>|' \
+                -e 's|<globalAnnounceEnabled>true</globalAnnounceEnabled>|<globalAnnounceEnabled>false</globalAnnounceEnabled>|' \
+                -e 's|<localAnnounceEnabled>true</localAnnounceEnabled>|<localAnnounceEnabled>false</localAnnounceEnabled>|' \
+                -e 's|<relaysEnabled>true</relaysEnabled>|<relaysEnabled>false</relaysEnabled>|' \
+                -e 's|<natEnabled>true</natEnabled>|<natEnabled>false</natEnabled>|' \
+                -e 's|<urAccepted>0</urAccepted>|<urAccepted>-1</urAccepted>|' \
+                -e 's|<crashReportingEnabled>true</crashReportingEnabled>|<crashReportingEnabled>false</crashReportingEnabled>|' \
+                -e 's|<startBrowser>true</startBrowser>|<startBrowser>false</startBrowser>|' \
+                "$cfg"
+              grep -E 'listenAddress|AnnounceEnabled|relaysEnabled|natEnabled|urAccepted' "$cfg"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /var/syncthing/config
+      containers:
+        - name: syncthing
+          # Pinned by digest; the 2.1.7 tag resolved on 2026-11-07.
+          image: docker.io/syncthing/syncthing:2.1.7@sha256:2b71da7c0d0a91a6ae5285ad079226fecc0a365d08b27720e1f7037b018f7546
+          env:
+            - name: STGUIADDRESS
+              value: 0.0.0.0:8384
+            - name: STHOMEDIR
+              value: /var/syncthing/config
+            # No auto-upgrade: the image pin is the version.
+            - name: STNOUPGRADE
+              value: "1"
+          ports:
+            - name: sync
+              containerPort: 22000
+            - name: gui
+              containerPort: 8384
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /var/syncthing/config
+            - name: data
+              mountPath: /var/syncthing/data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /rest/noauth/health
+              port: 8384
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              # The first scan hashes ~300 GB; the index of ~100k
+              # files sits well under this.
+              memory: 2Gi
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: syncthing-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: syncthing-data
+        - name: tmp
+          emptyDir: {}
+---
+# `sync` is what the gateway's `syncthing` facet forwards to; `gui` is
+# what the Ingress routes to.
+apiVersion: v1
+kind: Service
+metadata:
+  name: syncthing
+  namespace: syncthing
+spec:
+  selector:
+    app: syncthing
+  ports:
+    - name: sync
+      port: 22000
+      targetPort: 22000
+    - name: gui
+      port: 8384
+      targetPort: 8384

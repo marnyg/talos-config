@@ -1,0 +1,8 @@
+# `syncthing`: the cluster's Syncthing peer (ADR-0046) — the always-on
+# member of every device's sync set. Only Syncthing lives here.
+# Inherits the cluster-wide PSS restricted default: no hostPort, the
+# peer is reached through the gateway's `syncthing` facet.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: syncthing

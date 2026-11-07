@@ -1,0 +1,34 @@
+# syncthing.gw.mesh.internal: the peer's GUI, behind the admins gate
+# (k8s/apps/media/ingress.yaml explains the mechanism) with Syncthing's
+# own GUI password as the second gate (deployment.yaml). Only the GUI
+# goes through here — the sync protocol itself is the gateway's
+# `syncthing` facet on port 22000, a raw TCP splice that never touches
+# nginx. The GUI's event stream is long-polling, hence the read
+# timeout.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: syncthing
+  namespace: syncthing
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Syncthing
+    gethomepage.dev/group: Apps
+    gethomepage.dev/icon: syncthing.png
+    gethomepage.dev/description: file sync
+    gethomepage.dev/pod-selector: app=syncthing
+    gethomepage.dev/weight: "40"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: syncthing.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: syncthing
+                port:
+                  number: 8384

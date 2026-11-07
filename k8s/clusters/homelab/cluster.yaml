@@ -134,6 +134,8 @@ spec:
           # Task app (epic 3vp0): tasks.gw.mesh.internal.
           - {name: tasks}
           - {name: files}
+          # The cluster's Syncthing peer (ADR-0046).
+          - {name: syncthing}
           - {name: sillytavern}
           - {name: nix-cache}
           # --- forge + agents

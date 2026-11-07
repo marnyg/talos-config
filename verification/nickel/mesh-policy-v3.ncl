@@ -53,7 +53,9 @@ let groups = ["admins", "media", "machines"] in
 # and the enrollment flow, never by a recipe row.
 let facets = {
   node = ["apid", "kube-api"],
-  gateway = ["ingress-http", "rdp"],
+  # `syncthing` (ADR-0046): raw TCP to the cluster's Syncthing peer;
+  # Syncthing's own device-ID pairing is the second gate (as rdp/ssh).
+  gateway = ["ingress-http", "rdp", "syncthing"],
   hub = ["hub-http"],
   # A device that serves is a receiver (ADR-0038): its own sshd, raw
   # TCP, the mesh grant the first gate and sshd's auth the second.

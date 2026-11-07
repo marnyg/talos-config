@@ -466,7 +466,10 @@ provisioning or recovery path may depend on it.
   stays app-layer; since ADR-0034 the appliances' door too — the raw
   `jellyfin` splice was retired 2026-10-06), `rdp` (raw TCP to the
   win2k25 guest's RDP Service, natural port 3389 — the NodePort path
-  died with nebula, `j5c5`); hub `hub-http` (stream); **device**
+  died with nebula, `j5c5`), `syncthing` (raw TCP to the cluster's
+  Syncthing peer, natural port 22000 — ADR-0046, 2026-11-07: the
+  always-on member of every device's sync set; Syncthing's device-ID
+  pairing is the second gate); hub `hub-http` (stream); **device**
   `ssh` (raw TCP to the device's own sshd, natural port 22 — ADR-0038,
   2026-10-17: a device that serves a facet is a receiver of kind
   `device`; one that serves nothing still only initiates. The mesh
@@ -497,7 +500,8 @@ provisioning or recovery path may depend on it.
   Ports exist only inside a facet definition (forward) and in the
   device-local map (expose) — never in a grant. A facet has one
   **natural port** (`policy.FacetPort`: `apid` 50000, `kube-api`
-  6443, `hub-http` 80, `ingress-http` 80, `rdp` 3389, `ssh` 22), the port its service listens on at the
+  6443, `hub-http` 80, `ingress-http` 80, `rdp` 3389, `ssh` 22,
+  `syncthing` 22000), the port its service listens on at the
   receiver and the port every presentation shows for it, so
   `cp1.mesh.internal:50000` reads the same on a bridge, a tun, or the
   node itself; a port is read in the vocabulary of the name's kind
