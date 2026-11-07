@@ -1,9 +1,15 @@
 # ADR-0046: Syncthing is a gateway facet; the cluster is the always-on peer of every device's sync set
 
-- Status: Proposed 2026-11-07 (owner). Live when: the `syncthing`
-  row compiles into an admin's bundle, this desktop's Syncthing
-  connects to `syncthing.gw.mesh.internal:22000` and the first folder
-  reaches `Up to Date` on both sides.
+- Status: Accepted 2026-11-07 (owner). Live the same day: hub
+  `4954246` unsealed, gateway `2719bbb` advertises `[ingress-http rdp
+  syncthing]` and logged `admitted "nixos" [admins] → syncthing`;
+  the desktop's Syncthing (nixos repo, `modules.my.syncthing`, folders
+  on the reformatted pre-NVMe SSD at `/home/mar/sync`) holds a TLS 1.3
+  session to the cluster peer `MH66KIH` via `198.18.1.6:22000`;
+  `notes` reached `idle` (115 MB) within a minute of pairing. The
+  dedup made the migration a selective copy: of ~450 GB on the disks,
+  186 GB was Audible `.aax` (re-liberated by Libation, skipped), 200 GB
+  a Nextcloud export ≡ `archive`, and the sync set is ~30 GB.
 - Date: 2026-11-07
 - Related: spike `talos-config-ch74` (share vs sync — this is the
   sync half; the SMB share `files/transfer` stays for VMs, `e6yj`),
