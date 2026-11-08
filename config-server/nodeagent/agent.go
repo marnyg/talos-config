@@ -50,6 +50,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -189,16 +190,31 @@ func Start(o Options) (*Agent, error) {
 		return nil, fmt.Errorf("nodeagent: unknown receiver kind %q", kind)
 	}
 	facets := make([]string, 0, len(o.Forward)+len(o.Serve))
+	// ports is the port each facet is presented on (ADR-0047): its
+	// natural port when it has one, else — for a forward — the port its
+	// target listens on, the one fact the receiver has that the table
+	// lacks.
+	ports := make(map[string]uint16, len(o.Forward)+len(o.Serve))
 	for f, target := range o.Forward {
 		if !slices.Contains(known, f) {
 			return nil, fmt.Errorf("nodeagent: %q is not a %s facet (%v)", f, kind, known)
 		}
-		if _, _, err := net.SplitHostPort(target); err != nil {
+		_, tp, err := net.SplitHostPort(target)
+		if err != nil {
 			return nil, fmt.Errorf("nodeagent: forward %s=%q: %w", f, target, err)
 		}
 		if _, dup := o.Serve[f]; dup {
 			return nil, fmt.Errorf("nodeagent: %q is both forwarded and served", f)
 		}
+		port := policy.FacetPort(f)
+		if port == 0 {
+			n, err := strconv.ParseUint(tp, 10, 16)
+			if err != nil || n == 0 {
+				return nil, fmt.Errorf("nodeagent: forward %s=%q: no natural port and target port %q is not a port", f, target, tp)
+			}
+			port = uint16(n)
+		}
+		ports[f] = port
 		facets = append(facets, f)
 	}
 	for f, h := range o.Serve {
@@ -208,9 +224,23 @@ func Start(o Options) (*Agent, error) {
 		if h == nil {
 			return nil, fmt.Errorf("nodeagent: serve %s: nil handler", f)
 		}
+		port := policy.FacetPort(f)
+		if port == 0 {
+			return nil, fmt.Errorf("nodeagent: serve %s: facet has no natural port to advertise", f)
+		}
+		ports[f] = port
 		facets = append(facets, f)
 	}
 	slices.Sort(facets)
+	// The reach-me-at advertises each facet twice (ADR-0047): bare, which
+	// is what reads as this member's kind (Zone) and what pre-0047 daemons
+	// understand, and `<facet>@<port>`, which is what a presentation reads
+	// a port against. Additive on purpose: drop the bare form only once
+	// no daemon reads it.
+	adverts := make([]string, 0, 2*len(facets))
+	for _, f := range facets {
+		adverts = append(adverts, f, Advertise(f, ports[f]))
+	}
 	accept := map[string]string{}
 	alpns := make([]string, 0, len(facets))
 	for _, f := range facets {
@@ -236,10 +266,11 @@ func Start(o Options) (*Agent, error) {
 	}
 	a.actor = actor.New(cert.NewEdSigner(priv), ep)
 	a.actor.Clock = o.Clock
-	// The reach-me-at advertises the facets served, so a presentation
-	// reads this member's kind from the plane (Zone) — an advertisement,
-	// never authority: the consent below is what admits.
-	a.actor.Serves = slices.Clone(facets)
+	// The reach-me-at advertises the facets served and their ports, so a
+	// presentation reads this member's kind and its ports from the plane
+	// (Zone, Target) — an advertisement, never authority: the consent
+	// below is what admits.
+	a.actor.Serves = adverts
 	a.actor.RestoreLowWater(o.State.Mark())
 	// The hub outlives the agent's restarts (reboot, upgrade) and keeps
 	// its seq high-water mark for this node; seed from the clock so the
