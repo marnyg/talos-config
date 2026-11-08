@@ -433,8 +433,10 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 	if dev.Beats() != tb+1 {
 		t.Fatalf("Target should have re-beaten once: %d → %d", tb, dev.Beats())
 	}
-	if e := issuer.Lookup(dev.Bundle().NameMap, "gw"); len(e) != 1 || e[0].Location == nil || !slices.Equal(e[0].Location.Cav.Facet, []string{"ingress-http"}) {
-		t.Fatalf("gw's reach-me-at should advertise ingress-http: %+v", e)
+	// Bare facet plus `<facet>@<port>` (ADR-0047): the kind for old
+	// daemons, the port for new ones.
+	if e := issuer.Lookup(dev.Bundle().NameMap, "gw"); len(e) != 1 || e[0].Location == nil || !slices.Equal(e[0].Location.Cav.Facet, []string{"ingress-http", "ingress-http@80"}) {
+		t.Fatalf("gw's reach-me-at should advertise ingress-http and ingress-http@80: %+v", e)
 	}
 	// A wrong port on a fresh directory: one rate-limited re-beat, then
 	// the same error — not a loop.

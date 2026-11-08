@@ -17,13 +17,24 @@ func serving(id, name string, facets ...string) issuer.NameEntry {
 // The zone rule (P2.3, decision on 359.9.3): one label is a member in
 // its advertised kind; `<svc>.<member>` resolves only on a gateway, so
 // a service name under a node stays nebula's during the dual plane.
+// The port is read off the member's `<facet>@<port>` advertisement
+// (ADR-0047); a record from before that advertises bare facets only
+// and is read in its kind's vocabulary.
 func TestZoneRule(t *testing.T) {
 	dir := map[string][]issuer.NameEntry{
-		"cp1":    {serving("ed:cp1", "cp1", "apid", "kube-api")},
-		"gw":     {serving("ed:gw", "gw", "ingress-http", "rdp")},
-		"laptop": {entry("ed:laptop", "laptop", 1000, 1000)}, // advertises nothing
-		"old":    {entry("ed:old", "old", 1000, 0)},          // no location at all
+		"cp1":    {serving("ed:cp1", "cp1", "apid", "kube-api")},  // pre-0047: bare facets only
+		"gw":     {serving("ed:gw", "gw", "ingress-http", "rdp")}, // pre-0047
+		"laptop": {entry("ed:laptop", "laptop", 1000, 1000)},      // advertises nothing
+		"old":    {entry("ed:old", "old", 1000, 0)},               // no location at all
 		"hub":    {entry("ed:hub", "hub", 1000, 1000)},
+		// post-0047: `probe` is in no Go table, its port is still readable.
+		"gw2": {serving("ed:gw2", "gw2", "ingress-http", "ingress-http@80", "rdp", "rdp@3389", "probe", "probe@4242")},
+		// post-0047 but advertising a port for only one of its facets: a
+		// port the table knows for the kind is NOT read from the table
+		// once the member advertises ports at all.
+		"gw3": {serving("ed:gw3", "gw3", "ingress-http", "rdp", "rdp@3389")},
+		// a device gaining a facet with a non-natural port (its sshd on 2222)
+		"mac": {serving("ed:mac", "mac", "ssh", "ssh@2222")},
 	}
 	resolve := func(name string) ([]issuer.NameEntry, error) {
 		if e, ok := dir[name]; ok {
@@ -51,6 +62,15 @@ func TestZoneRule(t *testing.T) {
 		{"x.hub", 80, "", "", ErrNotThatKind},
 		{"laptop", 50000, "laptop", "apid", nil}, // advertises nothing ⇒ read as a node (a device that serves nothing)
 		{"old", 50000, "old", "apid", nil},
+		{"gw2", 4242, "gw2", "probe", nil}, // (a) read off the advertisement, no table knows `probe`
+		{"probe.gw2", 4242, "gw2", "probe", nil},
+		{"gw2", 80, "gw2", "ingress-http", nil},
+		{"rdp.gw2", 3389, "gw2", "rdp", nil},
+		{"gw2", 22000, "", "", errPlain}, // not advertised, even though the gateway table has 22000
+		{"gw3", 3389, "gw3", "rdp", nil}, // advertised
+		{"gw3", 80, "", "", errPlain},    // advertises ports, not this one: no table fallback
+		{"mac", 2222, "mac", "ssh", nil}, // the advertised port, not the natural one
+		{"mac", 22, "", "", errPlain},    // the natural port is not what the member advertises
 		{"nope", 80, "", "", ErrUnknownName},
 		{"a.b.c", 80, "", "", ErrUnknownName},
 		{".gw", 80, "", "", ErrUnknownName},
@@ -84,15 +104,38 @@ var errPlain = errors.New("plain")
 
 // KindOf reads the first recognised advertised facet; a newer entry
 // without a location does not hide an older one's advertisement.
+// `<facet>@<port>` entries (ADR-0047) carry no kind and are skipped.
 func TestKindOf(t *testing.T) {
 	entries := []issuer.NameEntry{entry("ed:new", "gw", 1000, 0), serving("ed:old", "gw", "rdp")}
 	if k := KindOf("gw", entries); k != "gateway" {
 		t.Errorf("KindOf = %s", k)
+	}
+	if k := KindOf("gw", []issuer.NameEntry{serving("ed:x", "gw", "probe@4242", "rdp@3389", "rdp")}); k != "gateway" {
+		t.Errorf("@ entries should not change the kind, got %s", k)
+	}
+	if k := KindOf("gw", []issuer.NameEntry{serving("ed:x", "gw", "rdp@3389")}); k != "node" {
+		t.Errorf("an @ entry alone names no kind, got %s", k)
 	}
 	if k := KindOf("gw", []issuer.NameEntry{serving("ed:x", "gw", "not-a-facet")}); k != "node" {
 		t.Errorf("unknown facet should fall back to node, got %s", k)
 	}
 	if k := KindOf("hub", nil); k != "hub" {
 		t.Errorf("hub: %s", k)
+	}
+}
+
+// Advertise and splitAdvert round-trip; bare and malformed entries are
+// not ports.
+func TestAdvertise(t *testing.T) {
+	if s := Advertise("syncthing", 22000); s != "syncthing@22000" {
+		t.Fatalf("Advertise = %q", s)
+	}
+	if f, p, ok := splitAdvert("syncthing@22000"); !ok || f != "syncthing" || p != 22000 {
+		t.Errorf("splitAdvert = %q %d %v", f, p, ok)
+	}
+	for _, bad := range []string{"rdp", "rdp@", "@80", "rdp@0", "rdp@70000", "rdp@x", ""} {
+		if _, _, ok := splitAdvert(bad); ok {
+			t.Errorf("splitAdvert(%q) should not parse", bad)
+		}
 	}
 }
