@@ -1,6 +1,10 @@
 # ADR-0048: The facet vocabulary is recipe data; a receiver accepts exactly what it forwards or serves
 
-- Status: Proposed 2026-11-08 (swarm cut 2+3 of `talos-config-m6xc`'s
+- Status: Accepted 2026-11-08 (owner). Live the same day: hub `88e74c8`
+  unsealed and `beat ok: 7 grants` against the recipe's `facets:` section;
+  gateway image `7f92008` up with `-forward=rdp=… -forward=syncthing=…`
+  advertising `[ingress-http rdp syncthing]`; `nixos → syncthing`,
+  `marius-mac → syncthing` admitted. Originally:
   follow-through; `talos-config-4rqw`). Not yet deployed: the hub must
   pick up `policy` before the recipe with `facets:` reaches the tip
   (ordering below).

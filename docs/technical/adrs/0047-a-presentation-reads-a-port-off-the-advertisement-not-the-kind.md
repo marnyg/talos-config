@@ -1,6 +1,10 @@
 # ADR-0047: A presentation reads a port off the member's advertisement, not its kind
 
-- Status: Proposed 2026-11-07. Evidence: adding the `syncthing`
+- Status: Accepted 2026-11-08 (owner). Live: merged `58ea54a`, shipped in
+  hub `88e74c8` and gateway image `7f92008`; the desktop's `irohup`
+  (nixos input `a0cd84a`, pre-0047) still resolves every facet through
+  the bare-name fallback — the first device built from this rev reads
+  ports off `@` entries. Evidence that motivated it:
   gateway facet (ADR-0046) left the desktop's `irohup` refusing
   `198.18.1.32:22000 (syncthing.gw)` with `port is not a facet of the
   member's kind: port 22000 on a gateway` until its daemon was

@@ -72,6 +72,13 @@ its own sub-scope `tasks/docs/` with ADR-0001 Proposed; 2026-11-05
 tags + scope (`p0i9`: tags are core data, scope is a cookie, every
 view narrows). Using it is what remains. Back to the line above.
 
+**Detour 2026-11-07/08, done:** Syncthing over the mesh (`7lxt`,
+ADR-0046 — the cluster as the always-on peer of a ~30 GB sync set on
+the new `longhorn-bulk-encrypted` class; desktop + Mac paired, phone
+pending its APK) and, forced by it, the facet vocabulary out of the
+binaries (ADR-0047/0048: a new facet is a recipe row + a `-forward`
+arg; `m6xc` closed).
+
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for
 real work, and the first with a durable datastore of its own; it is

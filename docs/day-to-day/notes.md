@@ -79,14 +79,14 @@
   `~/strong-export-2026-10-16/` on the laptop only — licensed media,
   never in git (`yz75`).
 
-- 2026-10-04 — **Commits on `main` must be ssh-signed by the owner key**
+- 2026-10-04 — **Commits on `main` must be ssh-signed by the owner key** <!-- stale? -->
   (ADR-0030, `lehx`): the pre-push hook refuses an unsigned tip, and once
   deployed the hub will not serve one. The nixos box is configured; the
   darwin laptop is NOT yet (four `git config` lines in AGENTS.md). No
   GitHub-UI merges. `SKIP_SIGNED=1` exists for emergencies — an unsigned
   tip on `main` then means the hub stays on the previous tree until a
   signed commit lands on top.
-- 2026-10-04 — **ADR-0030 is live** (hub 3896837): `talos/` edits are
+- 2026-10-04 — **ADR-0030 is live** (hub 3896837): `talos/` edits are <!-- stale? -->
   served within 3 min of a signed push, or seconds after
   `curl -X POST https://marnyg-talos-config.fly.dev/git/nudge`
   (proven 2026-10-05: 6 s). The "talos/ from git" row on `/status`
@@ -131,14 +131,14 @@
   is `:latest` + `imagePullPolicy: Always` — CI push changes nothing
   until `kubectl -n sso rollout restart deployment siwe-oidc` (or an
   args change rolls it).
-- 2026-10-06 — **Gated apps all 401 ⇒ check the gateway pin first.**
+- 2026-10-06 — **Gated apps all 401 ⇒ check the gateway pin first.** <!-- stale? -->
   `/authz` trusts only the `-gateway=ed:…` ids in
   `k8s/apps/siwe-oidc/deployment.yaml`; a gateway on a fresh volume is
   a new id (its log: `identity token issuer ed:…`). Also 401 if the
   gateway image predates `31f4f24` (no token minted) — the gate fails
   closed, never open. `kubectl -n sso logs deploy/siwe-oidc | grep
   authz:` names the reason per refusal.
-- 2026-10-06 — Deploy order for bridge+gateway changes: push Go first
+- 2026-10-06 — Deploy order for bridge+gateway changes: push Go first <!-- stale? -->
   (CI builds the bridge image in ~40 s; the gateway image is built on
   the box, `HUB_BUILDER=mar@nixos k8s/apps/gateway/build.sh`, ~5 min,
   and pinned by digest), manifests second. A manifest that adds a
@@ -158,14 +158,14 @@
 
 ## CI / orchestration
 
-- 2026-10-06 — **A `ReverseProxy` hook that reads a body must own
+- 2026-10-06 — **A `ReverseProxy` hook that reads a body must own <!-- stale? -->
   `Accept-Encoding`**: forward the client's `gzip` and the upstream
   compresses; `ModifyResponse` then sees bytes (`resp.Uncompressed`
   false). Delete the header on that request and Go's transport
   negotiates gzip itself and decodes transparently. Found by the TV
   (OkHttp sends gzip; `nc` and curl do not, so the laptop test and
   the unit tests passed).
-- 2026-09-29 — **A dead node freezes GitOps**: StatefulSet pods on a
+- 2026-09-29 — **A dead node freezes GitOps**: StatefulSet pods on a <!-- stale? -->
   NotReady node stay `Terminating` forever and never reschedule.
   `argocd-application-controller-0` sat on w1 from 09-21 to 09-29, so
   ArgoCD reconciled nothing for 8 days (stuck at `22a84de`) and
@@ -173,13 +173,13 @@
   `kubectl delete pod -n argocd argocd-application-controller-0
   --force --grace-period=0`. Structural fix is part of the HA sweep
   (`9l67`, noted there).
-- 2026-09-29 — **`/var/run/docker.sock` on the Mac is podman's**
+- 2026-09-29 — **`/var/run/docker.sock` on the Mac is podman's** <!-- stale? -->
   (a symlink into `~/.local/share/containers/podman/`), not Docker
   Desktop's. Anything defaulting to it talks to podman. The actors
   docker driver now resolves like the docker CLI (DOCKER_HOST → docker
   context → socket), so it follows `docker context show`; other tools
   may not.
-- 2026-09-29 — **The sap-actors image has no shell or `cat`.** No
+- 2026-09-29 — **The sap-actors image has no shell or `cat`.** No <!-- stale? -->
   need to read files off its pods any more: every actor binary takes
   `-state DIR -print-id`, and the provisioner is found by `#lookup` at
   `sap-lighthouse` (`0bc.6`). If a file must be read anyway:
@@ -189,7 +189,7 @@
   `--profile=restricted` the debug container is refused (the default
   profile adds `SYS_PTRACE`); same-uid `/proc/<pid>/root` reads need no
   ptrace. Use `KUBECONFIG=./kubeconfig` from the repo root.
-- 2026-09-29 — **A node that is truly off: taint it out of service.**
+- 2026-09-29 — **A node that is truly off: taint it out of service.** <!-- stale? -->
   `kubectl taint node w1 node.kubernetes.io/out-of-service=nodeshutdown:NoExecute`
   made KCM force-delete every ghost pod on w1 and release its three
   `VolumeAttachment`s within 30 s; the gateway attached on cp1, the
@@ -200,7 +200,7 @@
   kubelet does not tolerate it. Structural successors: Longhorn
   `nodeDownPodDeletionPolicy` (volumes) and the argocd controller pin
   (`k8s/apps/argocd/controller-patch.yaml`), both from `9l67` slice 1.
-- 2026-09-29 — **A member that missed > 7 d of beats before `6ccabed`
+- 2026-09-29 — **A member that missed > 7 d of beats before `6ccabed` <!-- stale? -->
   is stranded** — `renew: … effective chain is expired (beating with
   the held certs)` in its log forever, its names gone from the map,
   though the pod/agent looks healthy (`5hek`). The gateway was; **w1
@@ -211,12 +211,12 @@
   2026-09-19 note) and `apply-config`. Agents built after `6ccabed`
   print that themselves instead of retrying; kits minted or renewed
   after the fix carry 90 d beat grants and never hit it inside 45 d.
-- 2026-09-29 — **The `wg0` assertion in `TestConfigRefusedWhileSealed`
+- 2026-09-29 — **The `wg0` assertion in `TestConfigRefusedWhileSealed` <!-- stale? -->
   is a flake**: the served config embeds base64 cert material, and a
   random signature can contain the substring `wg0`. Seen once in a
   full tagged run, passes alone. Fix is a real assertion (bead).
   _Fixed 2026-10-17 (`d4p8`): the check is a YAML-line regexp now._
-- 2026-09-29 — **An ArgoCD sync op can sit "Running" for hours** on
+- 2026-09-29 — **An ArgoCD sync op can sit "Running" for hours** on <!-- stale? -->
   "waiting for healthy state of <wave-0 resource>" when any later
   wave exists (`vms/` uses waves 1–2): the gateway's ghost pod on w1
   held the `676a791` op open from 10:35Z, and `apps` showed *Synced*
@@ -226,7 +226,7 @@
   auto-sync starts a fresh op that applies wave 0 and hangs again.
   Check `.status.operationState.{phase,startedAt,message}`, not the
   sync status, when a push seems not to land.
-- 2026-09-30 — **Required pod anti-affinity + replicas == schedulable
+- 2026-09-30 — **Required pod anti-affinity + replicas == schedulable <!-- stale? -->
   nodes deadlocks a default rolling update**: the surge pod has no
   node, and `maxUnavailable: 25%` rounds to 0 so no old pod is ever
   retired — the new pod sits `Pending` forever and the Deployment is
@@ -243,7 +243,7 @@
   at once, and auto-sync picks up the newest revision. Watch
   `.status.operationState.startedAt` change; a Running op whose
   `startedAt` predates your push applied the *old* spec.
-- 2026-10-01 — **Longhorn `nodeDownPodDeletionPolicy=delete-both` only
+- 2026-10-01 — **Longhorn `nodeDownPodDeletionPolicy=delete-both` only <!-- stale? -->
   force-deletes pods that are already `Terminating`** — it does not
   evict. A Deployment pod with a Longhorn RWO volume on an unreachable
   node still waits out its `node.kubernetes.io/unreachable` toleration
@@ -253,7 +253,7 @@
   30 s `unreachable`/`not-ready` tolerations (gateway, siwe-oidc have
   them). cp1 is the only control plane, so pods pinned there have no
   node-loss story to tell — only nas1/w1 residents matter.
-- 2026-10-03 — **Admin from `mar@nixos` is on the identity plane now**:
+- 2026-10-03 — **Admin from `mar@nixos` is on the identity plane now**: <!-- stale? -->
   `talos-mesh.service` (`irohup -tun`, user `talosmesh`, state
   `/var/lib/talos-mesh/nixos.iroh`, log `journalctl -u talos-mesh`),
   tun `talosmesh0`, zone `~mesh.internal → 198.18.0.2` declared
@@ -264,13 +264,13 @@
   `sudo systemctl start talos-mesh` once. Kubeconfig here still points
   at the dead nebula IP — pass `--server https://cp1.mesh.internal:6443`
   or run `nix run .#kubeconfig`.
-- 2026-10-03 — **When the mesh is down, LAN-direct still works from this
+- 2026-10-03 — **When the mesh is down, LAN-direct still works from this <!-- stale? -->
   box** (invariant 4 exercised): `talosctl -e 10.0.0.68 -n 10.0.0.68`
   with `talos/talosconfig`; apid has request forwarding off, so each
   node must be dialled at its own LAN IP (nas1 `10.0.0.74`, w1
   `10.0.0.71`). cp1's console `address-overlap` diagnostic appeared
   while its link was down and cleared with the replug.
-- 2026-10-03 — **A node that was off longer than its speak-as comes back
+- 2026-10-03 — **A node that was off longer than its speak-as comes back <!-- stale? -->
   looping on `effective chain is expired`** (agent fix `7fb6473`; on the
   whole fleet as p0agent 0.1.6 since 2026-10-04, `9af0` — the workaround
   below is history). Workaround that worked on w1: re-serve
@@ -278,79 +278,79 @@
   --image=busybox:1.36 --profile=sysadmin --attach -q -- rm
   /host/var/lib/p0agent/{kit,bundle,hub}.json` (keep `key`), then
   `talosctl service ext-p0agent restart` — enrolled in <1 s, same NodeId.
-- 2026-10-03 — **`nix run .#apply` dry-runs first** and refuses (a) any
+- 2026-10-03 — **`nix run .#apply` dry-runs first** and refuses (a) any <!-- stale? -->
   diff touching `systemDiskEncryption` unless `APPLY_REKEY=1` (since
   2026-10-04; it meant "no override, fix `meta.yaml` installMAC" for a
   day) and (b) a reboot unless `APPLY_REBOOT=1`. Verify a
   node's on-disk slot-1 passphrase against the hub's compose without
   printing either: compare the `passphrase:` prefixes of `talosctl get
   mc -o yaml` and `curl http://hub.mesh.internal/config?mac=…`.
-- 2026-10-03 — **The hub test suite is timing-sensitive under build
+- 2026-10-03 — **The hub test suite is timing-sensitive under build <!-- stale? -->
   load**: `nix build .#config-server-bin` compiles every `cmd/` while
   packages' tests run; a test that passes under `scripts/test-iroh.sh`
   can fail in the sandbox (TestNodeAgentEndToEnd did, deterministically,
   until the sleeper rewrite). Compare both before blaming a change.
-- 2026-10-04 — **Longhorn reads `node.longhorn.io/default-disks-config`
+- 2026-10-04 — **Longhorn reads `node.longhorn.io/default-disks-config` <!-- stale? -->
   only for a node it has no disks for.** Adding a disk to a registered
   node (nas1's bays) means patching `nodes.longhorn.io/<node>`
   `spec.disks` by hand. The annotation in the machine patch is what a
   reinstall reproduces.
-- 2026-10-04 — **Recreating a StorageClass under ArgoCD races
+- 2026-10-04 — **Recreating a StorageClass under ArgoCD races <!-- stale? -->
   self-heal**: deleting it before ArgoCD's target revision is the new
   commit gets the *old* class re-applied, and the next sync fails with
   "updates to parameters are forbidden". Push, wait until `apps` shows
   the new revision, then `kubectl delete sc`.
-- 2026-10-04 — **Deleting an RWX share-manager pod restarts every
+- 2026-10-04 — **Deleting an RWX share-manager pod restarts every <!-- stale? -->
   Deployment pod mounting that volume** (`rwx-volume-fast-failover`
   off); bare Pods keep their mount and keep working. The pod lands
   where the class's `shareManagerNodeSelector` says. Patching
   `sharemanager.status.ownerID` does not move it (the owning manager
   re-asserts on the pod-delete event).
-- 2026-10-04 — **The old docker host still holds the library**:
+- 2026-10-04 — **The old docker host still holds the library**: <!-- stale? -->
   `mar@nixos:~/disks/1TB-old/server/{tv,movies}` (466 GB, imported into
   the cluster today) with its media containers **stopped, not
   removed**, and Sonarr's export at `sonarr-series-2026-10-04.json`
   beside them. It is the only second copy until the owner retires it.
-- 2026-10-03 — **`irohtransport.Raw.Close` does not interrupt a Read
+- 2026-10-03 — **`irohtransport.Raw.Close` does not interrupt a Read <!-- stale? -->
   blocked in the FFI.** iroh-ffi serialises `read()`/`stop()` on one
   tokio lock and the bindgen has no cancel, so any splice over a `Raw`
   (gateway WebSockets, `meshtun.Pipe`, nodeagent `splice`) only returns
   when the peer ends its side or the connection dies — `Close` resets
   our send side to provoke that. Do not add a "Stop on Close" to
   unblock it; that is the deadlock `vzbf` found. Thread `vh6e`.
-- 2026-10-03 — **Media app state is on PVCs now; a media pod restart
+- 2026-10-03 — **Media app state is on PVCs now; a media pod restart <!-- stale? -->
   is a ~30 s outage, not a wipe.** sonarr/radarr/jellyfin/transmission
   run `strategy: Recreate` on RWO `<app>-config` volumes, so
   `kubectl rollout restart` takes the app down until the new pod
   attaches (longer if it lands on another node). jackett and nzbget
   are still `emptyDir` by design — their `/config` is templated on
   every start.
-- 2026-10-03 — **The docker host's sonarr/radarr DBs are now older
+- 2026-10-03 — **The docker host's sonarr/radarr DBs are now older <!-- stale? -->
   than the cluster's.** They were imported into the new PVCs that
   evening (`vu9n`); any further change happens in the cluster. Do not
   re-import. Jellyfin was *not* imported (owner's call).
-- 2026-10-03 — **ArgoCD auto-sync stalls behind an unhealthy
+- 2026-10-03 — **ArgoCD auto-sync stalls behind an unhealthy <!-- stale? -->
   Deployment.** The `apps` sync waits for each Deployment to go
   healthy; a crash-looping pod from one commit holds the *next*
   commit's fix in OutOfSync until the operation times out. `kubectl
   apply -f` the committed manifest to unblock; identical content, so
   ArgoCD reports Synced once the pod is healthy.
-- 2026-10-03 — **Jellyfin is the upstream `jellyfin/jellyfin` image,
+- 2026-10-03 — **Jellyfin is the upstream `jellyfin/jellyfin` image, <!-- stale? -->
   not linuxserver's**, pinned by dated tag; its four `JELLYFIN_*_DIR`
   envs keep lsio's `/config` layout. Bumps: `skopeo list-tags` for the
   `12.x.YYYYMMDD-HHMMSS` tag. The lsio build cannot run non-root.
-- 2026-10-04 — **The `/status` `storage` row is silent when healthy.**
+- 2026-10-04 — **The `/status` `storage` row is silent when healthy.** <!-- stale? -->
   It logs `storage: …` only when the warn line *changes*, so a fresh
   hub's first good poll leaves nothing in `fly logs`; the page is the
   check. `degraded` during a Longhorn rebuild (disk swap, node return)
   is expected and clears on its own; `FAULTED` is not.
-- 2026-10-04 — **`files/samba` is a LAN-open SMB server on nas1:445**
+- 2026-10-04 — **`files/samba` is a LAN-open SMB server on nas1:445** <!-- stale? -->
   (password auth, not wallet). Temporary for the Windows PC transfer;
   set `replicas: 0` in `k8s/apps/files/deployment.yaml` when done.
   `longhorn-bulk` was recreated this day with corrected
   anti-affinity values — the first PVC ever provisioned through it is
   `files/transfer`; media volumes predate the fix and were hand-patched.
-- 2026-10-04 — **Rebooting nas1 rebuilds the whole bulk tier** (`k8sd`):
+- 2026-10-04 — **Rebooting nas1 rebuilds the whole bulk tier** (`k8sd`): <!-- stale? -->
   both replicas of every `longhorn-bulk` volume are on nas1, so a reboot
   fails both and Longhorn copies the live head from the salvaged one —
   ~600 GB at ~12 MB/s, i.e. hours, and the three bulk rebuilds pin the
@@ -361,7 +361,7 @@
   Talos drain always times out at 5 min on nas1 (bulk PDBs,
   `block-if-contains-last-replica`) and the upgrade proceeds anyway —
   that is Talos' `DrainTimeout`, not a hang.
-- 2026-10-04 — **A slot-1 (break-glass) passphrase change is two boots
+- 2026-10-04 — **A slot-1 (break-glass) passphrase change is two boots <!-- stale? -->
   with the hub unsealed**, not one: boot A opens STATE on the old slot
   1 (META still holds the old block), writes the new block to META and
   re-keys EPHEMERAL; boot B rejects slot 1 on STATE, opens it via slot
@@ -369,18 +369,18 @@
   says `roundtrip OK` before each boot; do not deploy the hub (it
   re-seals) between A and B. `talosctl get volumestatus STATE` shows
   `encryptionSlot: 0` once the KMS opened it.
-- 2026-10-04 — **`talosctl` hangs while cp1 reboots**: the talosconfig
+- 2026-10-04 — **`talosctl` hangs while cp1 reboots**: the talosconfig <!-- stale? -->
   endpoint is `cp1.mesh.internal`, so every `-n` goes through the node
   being rebooted. Use `-e 10.0.0.68` (cp1's LAN address) for anything
   that must run across a cp1 reboot; `kubectl` likewise times out once
   on a stale h2 connection to `cp1.mesh.internal:6443` after the node
   returns, then recovers.
-- 2026-10-04 — **The EPHEMERAL slot-0 call can fail `network is
+- 2026-10-04 — **The EPHEMERAL slot-0 call can fail `network is <!-- stale? -->
   unreachable` seconds after STATE was opened over the network** (nas1
   13:56:30, 12 s after a KMS open) — the per-handler DNS path, not
   DHCP. Harmless (slot 1 opens it, slot 0 re-syncs) but it means the
   "race" is per call, not per boot.
-- 2026-10-04 — **Driving the phone over adb from the nixos box**: `adb`
+- 2026-10-04 — **Driving the phone over adb from the nixos box**: `adb` <!-- stale? -->
   is not on PATH, only inside `android/shell.nix` (`nix-shell --impure
   shell.nix --run 'adb …'`). First connect shows `unauthorized` until the
   phone's USB-debugging prompt is accepted. `adb install -r` upgrades in
@@ -392,7 +392,7 @@
   `StatusJSON`. The hub's `/status` member table (reach-me-at column)
   needs a wallet sign-in, so the phone's own Debug view is the quicker
   endpoints check.
-- 2026-10-04 — **Driving the TV over network adb from the nixos box**:
+- 2026-10-04 — **Driving the TV over network adb from the nixos box**: <!-- stale? -->
   `adb connect 10.0.0.2:5555` sits `unauthorized` until the Shield's
   on-screen prompt is accepted once per builder key. Replacing the app
   *while its tunnel is up* makes the Shield answer a blank `failed to
@@ -403,13 +403,13 @@
   …`) brought the tunnel up without a Connect tap. Mixing the SDK's
   `adb` (shell.nix) with `nixpkgs#android-tools` restarts the adb
   server and re-prompts every device — pick one.
-- 2026-10-04 — **Hub deploy from this box is ~3 min**: `fly/deploy.sh`
+- 2026-10-04 — **Hub deploy from this box is ~3 min**: `fly/deploy.sh` <!-- stale? -->
   with no `HUB_BUILDER` builds the x86_64 image locally (the tagged
   test phase runs inside), pushes, deploys; the hub comes up sealed and
   the TV/phone retry the beat every minute until the owner signs at
   `/status` (TV renewed its member cert against the new hubkey within
   60 s today).
-- 2026-10-04 — **Reading a Longhorn rebuild on nas1**: a same-node
+- 2026-10-04 — **Reading a Longhorn rebuild on nas1**: a same-node <!-- stale? -->
   replica rebuild (bay → bay) is a *local* sparse sync
   (`SyncLocalFile` in the instance-manager log) and the engine's
   `rebuildStatus` stays at `progress: 0, appliedRebuildingMBps: 0` for
@@ -422,11 +422,11 @@
   after the 13:55Z reboot `sda`/`sdb`; `sdc…sdk` are Longhorn's iSCSI
   volumes) — map with `talosctl mounts | grep longhorn` first. A
   reboot mid-rebuild throws the partial replica away (101 GB today).
-- 2026-10-04 — **Phone Connect from the box**: after `adb install -r`
+- 2026-10-04 — **Phone Connect from the box**: after `adb install -r` <!-- stale? -->
   the phone's app does not bring the tunnel up on launch (the Shield
   does); `adb shell input tap 178 438` on the Connect button of the
   not-connected screen (1080×2520) did, no VPN consent re-prompt.
-- 2026-10-05 — **Watching a Talos node go down from here**: `talosctl
+- 2026-10-05 — **Watching a Talos node go down from here**: `talosctl <!-- stale? -->
   reboot`/`shutdown` block with `--wait` (default) until the node is
   back — run them in the background or with `--wait=false` when a tool
   call must return in <60 s. `talosctl dmesg --follow` dies the moment
@@ -436,7 +436,7 @@
   `Linux version` line; 2.5 min on nas1 is healthy). Longhorn marks a
   volume `degraded` for ~30 s while a node's replica comes back; that
   is not a rebuild (check `replicas.longhorn.io … failedAt` is empty).
-- 2026-10-06 — **herdr CLI/server protocol mismatch after a profile
+- 2026-10-06 — **herdr CLI/server protocol mismatch after a profile <!-- stale? -->
   update**: the nix profile's `herdr` (0.9.1, protocol 22) refuses every
   control command against the still-running 0.8.2 server (protocol 20)
   with `protocol_mismatch`; the suggested `herdr server stop` kills every
@@ -444,16 +444,16 @@
   the session with the old build still in the store
   (`/nix/store/2qd228lh58rf32y16sr0d16hlcvcraiv-herdr-0.8.2/bin/herdr`;
   `ls -d /nix/store/*herdr-0.8*`). Restart herdr at a natural break.
-- 2026-10-06 — **Draft manifests never go under `k8s/apps/`**: every
+- 2026-10-06 — **Draft manifests never go under `k8s/apps/`**: every <!-- stale? -->
   directory there is an auto-synced ArgoCD Application (listed in
   `k8s/clusters/homelab/cluster.yaml`, selfHeal), so a committed draft
   deploys on push. Spike drafts park in
   `docs/spikes/<slug>/` and are promoted with `git mv` (see
   `docs/README.md`).
-- 2026-10-06 — **A stray `~` file at the repo root** was an editor
+- 2026-10-06 — **A stray `~` file at the repo root** was an editor <!-- stale? -->
   backup of `auth notes` (a `~`-suffix written as a bare name). Deleted
   with the original; if it reappears, it is the editor, not a tool.
-- 2026-10-08 — **Draining nas1 and cp1 both stall on PDBs, by design.**
+- 2026-10-08 — **Draining nas1 and cp1 both stall on PDBs, by design.** <!-- stale? -->
   nas1 holds the only replica of the media volumes (`movies`,
   `downloads`, `tv`), so Longhorn's `block-if-contains-last-replica`
   pins its instance-manager PDB at 0; cp1 is the only node KubeVirt's
@@ -467,7 +467,7 @@
   `degraded` (rebuild) and cdi/csi-provisioner CrashLoopBackOff
   (leader election through the API blip) — both self-heal; evicted
   pods leave `Error` corpses to delete.
-- 2026-10-08 — **Rebuilding the installer for an extension change
+- 2026-10-08 — **Rebuilding the installer for an extension change <!-- stale? -->
   needs no nodeagent binary**: `build.sh --installer-only` reuses
   `ghcr.io/marnyg/p0agent:<manifest version>`; bump `SUFFIX` in
   `installer.env` so the tag changes. imager runs under amd64
@@ -696,3 +696,6 @@
   synced it in seconds.
 
 - 2026-10-24 — **`tasks` crashloops on purpose if its log stops replaying.** The pod rebuilds all state from the event log in `tasks.db` at boot and `log.Fatalf`s on the first event a reducer rejects. That is a reducer bug (or a payload-shape change without an upcaster), never a reason to edit or truncate the log (`tasks/docs/desired-state/domain-model.md`, invariants 1 and 6).
+- 2026-11-08 — **Recipe changes that touch parsing ship hub-first.** `policy.Parse` is `KnownFields(true)` (ADR-0048), so an old hub reading a `talos/mesh-policy-v3.yaml` with a key it does not know refuses every `#bundle` until redeployed; members keep their last bundle (7 d runway) but nothing new compiles. Order: `fly/deploy.sh` + unseal, then push the recipe. Gateway `-forward` args and the image pin go in one commit (an old binary crash-loops on an unknown flag). Both bit the dry run on 2026-11-07 and were sequenced by hand.
+- 2026-11-08 — **Syncthing API key** for scripted pairing lives in the cluster peer's `config.xml` (`kubectl -n syncthing exec deploy/syncthing -c syncthing -- sed -n 's|.*<apikey>\(.*\)</apikey>.*|\1|p' /var/syncthing/config/config.xml`); `curl -H "X-API-Key: …" http://syncthing.gw.mesh.internal/rest/…` through the gate. The GUI password gates browsers, not the key.
+- 2026-11-08 — **Forgejo: `mar`'s stored git credential is a narrow token** (no `write:organization`, cannot even `POST /user/repos`); creating orgs/repos by API means basic auth as `sysadmin` from `forgejo/forgejo-sysadmin` (bootstrap.md §1). Pushing to an existing repo works with the token.
