@@ -4,8 +4,9 @@
 # blame trace) iff the value violates a snapshot invariant.
 {
   # v3: the REAL talos/mesh-policy-v3.yaml (facet-class recipe,
-  # ADR-0017; compiled to grants by config-server/policy).
+  # ADR-0017; compiled to grants by config-server/policy). `Policy` is
+  # applied as a function: it builds the rule contracts from the
+  # document's own `facets:` section (ADR-0048).
   mesh_policy_v3 =
-    (import "../../talos/mesh-policy-v3.yaml")
-      | (import "./mesh-policy-v3.ncl").Policy,
+    (import "./mesh-policy-v3.ncl").Policy (import "../../talos/mesh-policy-v3.yaml"),
 }

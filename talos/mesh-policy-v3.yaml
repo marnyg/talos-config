@@ -6,14 +6,19 @@
 # mesh-policy.yaml went with the nebula render). Nickel contract:
 # verification/nickel/mesh-policy-v3.ncl.
 #
+# Vocabulary: `facets:` (ADR-0048) declares every facet a rule may
+# name — {name, kind, port}. The hub reads it off the signed git tip
+# with the rules, so a new facet is a row here plus a `-forward` on the
+# receiver that serves it: no hub or gateway rebuild. Names are
+# disjoint across kinds (kind ≡ facet vocabulary: a grant's reach is
+# its facet's); ports are disjoint within a kind (hub-http and
+# ingress-http may both be 80). `port` is the facet's natural port —
+# where the service listens on the receiver, the port a presentation
+# shows — never something a grant carries.
+#
 # Rule shape: {facet, host|group}
-#   facet: a named entry point the receiver exposes — closed set per
-#          receiver kind, disjoint across kinds (glossary "Facet";
-#          kind ≡ facet vocabulary):
-#            node     apid | kube-api
-#            gateway  ingress-http | rdp
-#            hub      hub-http
-#            device   ssh
+#   facet: a named entry point the receiver exposes — one of the names
+#          declared under `facets:` for this kind (glossary "Facet").
 #          Never a port: ports live in the receiver's own accept table
 #          (facet → forward). Reachability is not a facet. The iroh
 #          relay is not a facet (transport; membership-implied access).
@@ -27,6 +32,17 @@
 # widens — a grant is honored at every receiver that consented to the
 # Owner for that facet). A kind with `inbound: []` is legal and means
 # "no grant names this receiver kind".
+facets:
+  - {name: apid, kind: node, port: 50000}
+  - {name: kube-api, kind: node, port: 6443}
+  - {name: ingress-http, kind: gateway, port: 80}
+  # Raw TCP to the win2k25 guest's RDP (k8s/apps/vms/win2k25-rdp.yaml).
+  - {name: rdp, kind: gateway, port: 3389}
+  # Raw TCP to the cluster's Syncthing peer (ADR-0046).
+  - {name: syncthing, kind: gateway, port: 22000}
+  - {name: hub-http, kind: hub, port: 80}
+  # A device's own sshd (ADR-0038).
+  - {name: ssh, kind: device, port: 22}
 node:
   inbound:
     # Owner devices: the machine's control surfaces. Same access v2

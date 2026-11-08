@@ -50,7 +50,6 @@ import (
 	"net"
 	"net/http"
 	"slices"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -96,15 +95,19 @@ const (
 type Options struct {
 	Config Config
 	State  State
-	// Kind is the receiver kind whose facet vocabulary Forward and Serve
-	// draw from (policy.Facets); "" ⇒ policy.KindNode.
+	// Kind is the receiver kind this member presents itself as ("" ⇒
+	// policy.KindNode). Informational since ADR-0048: the accept table
+	// is Forward ∪ Serve, not the kind's vocabulary — a facet the hub's
+	// recipe declares tomorrow is served today, and one the recipe never
+	// names is advertised and accepted but reached by nobody (no grant
+	// compiles for it).
 	Kind policy.Kind
 	// Forward is the accept table's other half: facet → loopback target
 	// (glossary "Facet": ports exist only inside a facet definition).
-	// Keys must be policy.Facets(Kind); only these ALPNs are
-	// advertised, and the member consents to the Owner for exactly
-	// them (with Serve's). Empty, with Serve empty ⇒ a caller-only
-	// member: no ALPN advertised, no consent signed, nothing accepted.
+	// Any facet name; exactly these ALPNs (with Serve's) are advertised
+	// and accepted, and the member consents to the Owner for exactly
+	// them. Empty, with Serve empty ⇒ a caller-only member: no ALPN
+	// advertised, no consent signed, nothing accepted.
 	Forward map[string]string
 	// Serve is the accept table's in-process half: facet → handler for
 	// facets the member terminates itself instead of splicing (the
@@ -181,72 +184,11 @@ func Start(o Options) (*Agent, error) {
 	if err := o.Config.Validate(); err != nil {
 		return nil, err
 	}
-	kind := o.Kind
-	if kind == "" {
-		kind = policy.KindNode
+	rt, err := receiverTable(o.Kind, o.Forward, o.Serve)
+	if err != nil {
+		return nil, err
 	}
-	known := policy.Facets(kind)
-	if known == nil {
-		return nil, fmt.Errorf("nodeagent: unknown receiver kind %q", kind)
-	}
-	facets := make([]string, 0, len(o.Forward)+len(o.Serve))
-	// ports is the port each facet is presented on (ADR-0047): its
-	// natural port when it has one, else — for a forward — the port its
-	// target listens on, the one fact the receiver has that the table
-	// lacks.
-	ports := make(map[string]uint16, len(o.Forward)+len(o.Serve))
-	for f, target := range o.Forward {
-		if !slices.Contains(known, f) {
-			return nil, fmt.Errorf("nodeagent: %q is not a %s facet (%v)", f, kind, known)
-		}
-		_, tp, err := net.SplitHostPort(target)
-		if err != nil {
-			return nil, fmt.Errorf("nodeagent: forward %s=%q: %w", f, target, err)
-		}
-		if _, dup := o.Serve[f]; dup {
-			return nil, fmt.Errorf("nodeagent: %q is both forwarded and served", f)
-		}
-		port := policy.FacetPort(f)
-		if port == 0 {
-			n, err := strconv.ParseUint(tp, 10, 16)
-			if err != nil || n == 0 {
-				return nil, fmt.Errorf("nodeagent: forward %s=%q: no natural port and target port %q is not a port", f, target, tp)
-			}
-			port = uint16(n)
-		}
-		ports[f] = port
-		facets = append(facets, f)
-	}
-	for f, h := range o.Serve {
-		if !slices.Contains(known, f) {
-			return nil, fmt.Errorf("nodeagent: %q is not a %s facet (%v)", f, kind, known)
-		}
-		if h == nil {
-			return nil, fmt.Errorf("nodeagent: serve %s: nil handler", f)
-		}
-		port := policy.FacetPort(f)
-		if port == 0 {
-			return nil, fmt.Errorf("nodeagent: serve %s: facet has no natural port to advertise", f)
-		}
-		ports[f] = port
-		facets = append(facets, f)
-	}
-	slices.Sort(facets)
-	// The reach-me-at advertises each facet twice (ADR-0047): bare, which
-	// is what reads as this member's kind (Zone) and what pre-0047 daemons
-	// understand, and `<facet>@<port>`, which is what a presentation reads
-	// a port against. Additive on purpose: drop the bare form only once
-	// no daemon reads it.
-	adverts := make([]string, 0, 2*len(facets))
-	for _, f := range facets {
-		adverts = append(adverts, f, Advertise(f, ports[f]))
-	}
-	accept := map[string]string{}
-	alpns := make([]string, 0, len(facets))
-	for _, f := range facets {
-		accept[policy.ALPN(f)] = f
-		alpns = append(alpns, policy.ALPN(f))
-	}
+	facets, accept, alpns, adverts := rt.facets, rt.accept, rt.alpns, rt.adverts
 
 	priv, minted, err := o.State.Key()
 	if err != nil {

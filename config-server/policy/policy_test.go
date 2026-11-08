@@ -45,41 +45,119 @@ func TestLoadShippedRecipe(t *testing.T) {
 	}
 }
 
-// The Go vocabulary and the Nickel contract are the same table. The
-// .ncl is the checked-in source the CI nickel job validates the recipe
-// against; this test reads its `let facets = {...}` block so the two
-// cannot drift apart silently.
-func TestVocabularyMatchesNickel(t *testing.T) {
+// The compiled Default is the shipped recipe's `facets:` section: the
+// device side (irohup defaults, the bridge guard) still reads Default,
+// so until it reads the vocabulary off the plane the two must not drift.
+func TestDefaultMatchesShippedRecipe(t *testing.T) {
+	r, err := Load(filepath.Join(repoRoot(t), "talos"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Facets) == 0 {
+		t.Fatal("shipped recipe has no facets: section")
+	}
+	if !slices.Equal(r.Facets, Default) {
+		t.Fatalf("talos/mesh-policy-v3.yaml facets:\n%v\n≠ policy.Default\n%v", r.Facets, Default)
+	}
+	if !slices.Equal(r.Vocabulary(), Default) {
+		t.Fatal("Vocabulary() should be the declared section")
+	}
+}
+
+// The shipped yaml, mutated the way check.sh mutates it for the Nickel
+// contract (mutants 20–27 + the positive control), gets the same
+// verdict from Parse: a facets: row with a bad kind/port/key, a name
+// twice, a port twice within a kind, a rule naming an undeclared facet
+// all fail; a brand-new facet plus a rule naming it passes with no Go
+// change (the acceptance of ADR-0048).
+func TestShippedRecipeMutants(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), "talos", File))
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := string(raw)
+	addFacet := func(row string) string {
+		return strings.Replace(live, "facets:\n", "facets:\n  - "+row+"\n", 1)
+	}
+	mustDiffer := func(name, doc string) {
+		t.Helper()
+		if doc == live {
+			t.Fatalf("%s: mutation did not apply", name)
+		}
+	}
+	blame := map[string]string{
+		"21 facet kind phone":            addFacet("{name: probe, kind: phone, port: 4242}"),
+		"22 facet port 0":                addFacet("{name: probe, kind: gateway, port: 0}"),
+		"23 facet port 70000":            addFacet("{name: probe, kind: gateway, port: 70000}"),
+		"24 facet row proto key":         addFacet("{name: probe, kind: gateway, port: 4242, proto: tcp}"),
+		"25 facet name twice":            addFacet("{name: ssh, kind: node, port: 2222}"),
+		"26 port twice within a kind":    addFacet("{name: probe, kind: gateway, port: 3389}"),
+		"27 rule names undeclared facet": strings.Replace(live, "  - {name: rdp, kind: gateway, port: 3389}\n", "", 1),
+		"empty facet name":               addFacet("{name: \"\", kind: gateway, port: 4242}"),
+	}
+	for name, doc := range blame {
+		mustDiffer(name, doc)
+		if _, err := Parse([]byte(doc)); err == nil {
+			t.Errorf("%s: parsed, want error", name)
+		}
+	}
+	probe := strings.Replace(addFacet("{name: probe, kind: gateway, port: 4242}"),
+		"    - {facet: rdp, group: admins}\n", "    - {facet: rdp, group: admins}\n    - {facet: probe, group: admins}\n", 1)
+	mustDiffer("probe", probe)
+	r, err := Parse([]byte(probe))
+	if err != nil {
+		t.Fatalf("a new facet is a data change: %v", err)
+	}
+	if r.Vocabulary().KindOf("probe") != KindGateway || r.Vocabulary().Port("probe") != 4242 || KindOf("probe") != "" {
+		t.Fatal("probe should be in the recipe's vocabulary and not in Default")
+	}
+	if !r.Allows(Caller{Name: "laptop", Groups: []string{"admins"}}, KindGateway, "probe") {
+		t.Fatal("admins should reach gateway probe")
+	}
+	if gs := Compile(r, Caller{Key: cert.ActorID("ed:" + strings.Repeat("ab", 32)), Name: "laptop", Groups: []string{"admins"}}, 1); !slices.ContainsFunc(gs, func(g cert.Cert) bool { return g.Cav.Facet[0] == "probe" }) {
+		t.Fatal("probe grant not compiled")
+	}
+	// Mutant 20 (section omitted) is not a Parse error: an old checkout
+	// or a test fixture without `facets:` reads Default. The Nickel
+	// contract requires the section in the shipped file.
+	noSection := strings.Replace(live, live[strings.Index(live, "facets:\n"):strings.Index(live, "node:\n")], "", 1)
+	mustDiffer("20", noSection)
+	r, err = Parse([]byte(noSection))
+	if err != nil {
+		t.Fatalf("no facets: section should fall back to Default: %v", err)
+	}
+	if len(r.Facets) != 0 || !slices.Equal(r.Vocabulary(), Default) {
+		t.Fatal("Vocabulary() should be Default without a section")
+	}
+	// The Default is validated like a section.
+	if err := Default.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Vocabulary{{"a", KindNode, 1}, {"a", KindHub, 2}}).Validate(); err == nil {
+		t.Fatal("duplicate names across kinds should fail")
+	}
+	if err := (Vocabulary{{"a", KindNode, 80}, {"b", KindHub, 80}}).Validate(); err != nil {
+		t.Fatalf("same port across kinds is legal: %v", err)
+	}
+}
+
+// The group vocabulary is still a compiled constant on both sides.
+func TestGroupsMatchNickel(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(repoRoot(t), "verification", "nickel", "mesh-policy-v3.ncl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	block := regexp.MustCompile(`(?s)let facets = \{(.*?)\}\nin`).FindSubmatch(raw)
-	if block == nil {
-		t.Fatal("mesh-policy-v3.ncl: `let facets = {...}` block not found — update this test with the contract")
-	}
-	row := regexp.MustCompile(`(\w+) = \[([^\]]*)\]`)
-	got := map[Kind][]string{}
-	for _, m := range row.FindAllStringSubmatch(string(block[1]), -1) {
-		var fs []string
-		for _, q := range strings.Split(m[2], ",") {
-			if q = strings.Trim(strings.TrimSpace(q), `"`); q != "" {
-				fs = append(fs, q)
-			}
-		}
-		got[Kind(m[1])] = fs
-	}
-	if len(got) != len(Kinds) {
-		t.Fatalf("nickel kinds %v ≠ Go kinds %v", got, Kinds)
-	}
-	for _, k := range Kinds {
-		if !slices.Equal(got[k], Facets(k)) {
-			t.Fatalf("%s facets: nickel %v ≠ Go %v", k, got[k], Facets(k))
-		}
-	}
 	groups := regexp.MustCompile(`let groups = \[([^\]]*)\]`).FindSubmatch(raw)
 	if groups == nil || strings.ReplaceAll(strings.ReplaceAll(string(groups[1]), `"`, ""), " ", "") != strings.Join(Groups, ",") {
 		t.Fatalf("nickel groups %q ≠ Go %v", groups, Groups)
+	}
+	kinds := regexp.MustCompile(`let kinds = \[([^\]]*)\]`).FindSubmatch(raw)
+	want := make([]string, len(Kinds))
+	for i, k := range Kinds {
+		want[i] = string(k)
+	}
+	if kinds == nil || strings.ReplaceAll(strings.ReplaceAll(string(kinds[1]), `"`, ""), " ", "") != strings.Join(want, ",") {
+		t.Fatalf("nickel kinds %q ≠ Go %v", kinds, Kinds)
 	}
 }
 

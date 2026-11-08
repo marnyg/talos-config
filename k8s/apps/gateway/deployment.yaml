@@ -88,11 +88,15 @@ spec:
             # xnat, this pod is its only caller, so the X-Mesh-* headers
             # it sets are the only ones nginx ever sees.
             - -ingress=http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80
-            - -rdp=win2k25-rdp.vms.svc.cluster.local:3389
+            # Raw-TCP facets (ADR-0048): one -forward per facet, facet →
+            # Service. The accept table is ingress-http plus these; a new
+            # facet is a `facets:` row in talos/mesh-policy-v3.yaml plus
+            # a line here, no image.
+            - -forward=rdp=win2k25-rdp.vms.svc.cluster.local:3389
             # Raw TCP to the cluster's Syncthing peer (ADR-0046,
             # k8s/apps/syncthing): devices dial
             # syncthing.gw.mesh.internal:22000 over the mesh.
-            - -syncthing=syncthing.syncthing.svc.cluster.local:22000
+            - -forward=syncthing=syncthing.syncthing.svc.cluster.local:22000
           env:
             - name: P0_LOG
               value: warn

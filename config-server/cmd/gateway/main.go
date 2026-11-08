@@ -5,8 +5,12 @@
 // (config-server/gateway).
 //
 //	gateway [-hub URL] [-relay URL] [-state DIR] [-name gw] [-group media]
-//	        [-ingress URL] [-rdp host:port] [-syncthing host:port]
-//	        [-bind ip:port] [-beat DUR]
+//	        [-ingress URL] [-forward facet=host:port]... [-bind ip:port]
+//	        [-beat DUR]
+//
+// Raw-TCP facets are `-forward <facet>=<Service host:port>`, repeatable
+// (ADR-0048): the accept table is exactly ingress-http plus these, so a
+// new facet is a recipe row plus a deployment arg, not an image.
 //
 // State (key, kit, bundle, hub record, mark) lives under -state, a
 // volume that outlives the pod: the key is the member's identity and
@@ -25,7 +29,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/url"
 	"os"
 	"os/signal"
@@ -41,6 +44,7 @@ import (
 )
 
 func main() {
+	var fwd forwards
 	var (
 		hub      = flag.String("hub", "https://marnyg-talos-config.fly.dev", "hub base URL (HTTPS: enrollment and /.well-known)")
 		relay    = flag.String("relay", "", "iroh home relay URL (default: the hub, ADR-0022)")
@@ -48,12 +52,11 @@ func main() {
 		name     = flag.String("name", "gw", "proposed member name (the approver decides; services are <svc>.<name>.mesh.internal)")
 		group    = flag.String("group", "media", "proposed group (the approver decides)")
 		ingress  = flag.String("ingress", "http://ingress-nginx-controller.ingress-nginx.svc.cluster.local", "ingress-http upstream: the ingress controller's Service")
-		rdp      = flag.String("rdp", "", "rdp facet target host:port (the win2k25-rdp Service); empty ⇒ facet not served")
-		syncth   = flag.String("syncthing", "", "syncthing facet target host:port (the syncthing Service, ADR-0046); empty ⇒ facet not served")
 		bindAddr = flag.String("bind", "", "UDP bind address (default all interfaces, ephemeral port)")
 		beat     = flag.Duration("beat", nodeagent.DefaultBeat, "renewal beat interval")
 		maxAge   = flag.Duration("conn-max-age", gateway.DefaultConnMaxAge, "admitted connection bound (re-authorize past it)")
 	)
+	flag.Var(&fwd, "forward", "<facet>=<host:port> raw-TCP facet spliced to a Service (e.g. rdp=win2k25-rdp.vms.svc.cluster.local:3389); repeatable")
 	flag.Parse()
 	if *relay == "" {
 		*relay = *hub
@@ -81,16 +84,8 @@ func main() {
 	logger.Printf("identity token issuer %s (pin this in the bridge's -gateway)", signer.ID())
 	proxy, stopProxy := gateway.HTTPFacet("ingress-http", gateway.Proxy(upstream, signer), logger)
 	defer stopProxy()
-	// Raw-TCP facets: each flag is one accept-table row, facet → Service.
-	fwd := map[string]string{}
-	for facet, target := range map[string]string{"rdp": *rdp, "syncthing": *syncth} {
-		if target == "" {
-			continue
-		}
-		if _, _, err := net.SplitHostPort(target); err != nil {
-			logger.Fatalf("-%s: %v", facet, err)
-		}
-		fwd[facet] = target
+	if _, dup := fwd["ingress-http"]; dup {
+		logger.Fatalf("-forward ingress-http: served in-process (-ingress), not forwarded")
 	}
 
 	cfg := nodeagent.Config{Hub: *hub, Relay: *relay}
