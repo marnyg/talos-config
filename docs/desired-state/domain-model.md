@@ -397,12 +397,16 @@ flowchart LR
   one stream to that (member, facet). Nothing in the plane has an
   opinion about the zone or the addresses.
   **Zone rule** _(2026-09-20, P2.3, `nodeagent.Zone`)_: one label is
-  a member, its port read in the vocabulary of the **kind its
-  reach-me-at advertises**; two labels `<svc>.<member>` is a service
-  on a gateway and resolves only while the member advertises a
-  gateway facet — a service name under a node (`jackett.cp1`, the v2 form)
-  is unknown, not shadowed. A record advertising nothing reads as a
-  node (agents that predate advertisement; a device serving nothing).
+  a member, its port read off the **`<facet>@<port>` entries its
+  reach-me-at advertises** _(2026-11-07, ADR-0047; was: in the
+  vocabulary of the kind it advertises — a record advertising bare
+  facets only is still read that way, `policy.FacetByPort`)_; two
+  labels `<svc>.<member>` is a service on a gateway and resolves only
+  while the member advertises a gateway facet — a service name under
+  a node (`jackett.cp1`, the v2 form) is unknown, not shadowed. A
+  record advertising nothing reads as a node (agents that predate
+  advertisement; a device serving nothing). Kind is read off the bare
+  facets alone; it decides the two-label rule, not a port.
 - **Path selection** — the data plane is **peer-to-peer**: direct
   paths on the LAN (a stated goal — LAN traffic never hairpins
   through fly), relay through the hub for remote members, because
@@ -504,8 +508,13 @@ provisioning or recovery path may depend on it.
   `syncthing` 22000), the port its service listens on at the
   receiver and the port every presentation shows for it, so
   `cp1.mesh.internal:50000` reads the same on a bridge, a tun, or the
-  node itself; a port is read in the vocabulary of the name's kind
-  (`hub.mesh.internal:80` is `hub-http`) _(2026-09-19)_. **A facet
+  node itself; a receiver advertises each facet it serves as
+  `<facet>` and `<facet>@<port>` in its reach-me-at, and a
+  presentation reads a port off that advertisement, so a facet new to
+  the fleet needs no peer rebuilt _(2026-11-07, ADR-0047; was
+  2026-09-19: read in the vocabulary of the name's kind — still the
+  fallback for a record that advertises no `@` entry, and
+  `hub.mesh.internal:80` is `hub-http` either way)_. **A facet
   admits by the recipe; a route gates by group**: `hub-http` admits
   admins and media alike (two recipe rows), and `/config` answers
   admins only — the per-route gate is where capability discipline
