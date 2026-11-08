@@ -182,7 +182,9 @@ data:
         alerts: [{type: ntfy}]
       - name: seerr
         group: media
-        url: http://seerr.media.svc:5055/api/v1/status
+        # /appdata, not /status: /status calls GitHub (see the
+        # readiness probe in k8s/apps/seerr).
+        url: http://seerr.media.svc:5055/api/v1/status/appdata
         interval: 60s
         conditions: ["[STATUS] == 200"]
         alerts: [{type: ntfy}]

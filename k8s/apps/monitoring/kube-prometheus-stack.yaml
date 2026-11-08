@@ -293,6 +293,16 @@ spec:
                 - receiver: "null"
                   matchers:
                     - alertname =~ "Watchdog|InfoInhibitor"
+                # The weekly restore test's scratch pods
+                # (k8s/apps/backup-verify) sit NotReady on a blocking
+                # mount while Longhorn pulls the backup; files/transfer
+                # takes ~40 min, past this rule's 15 m, so it paged every
+                # Sunday (2026-11-01, 11-08). The Job's own outcome still
+                # pages through KubeJobFailed and BackupVerifyStale.
+                - receiver: "null"
+                  matchers:
+                    - alertname = KubePodNotReady
+                    - namespace = backup-verify
             receivers:
               - name: "null"
               - name: ntfy

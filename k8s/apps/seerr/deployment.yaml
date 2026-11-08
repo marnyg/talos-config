@@ -75,9 +75,14 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /app/config
+          # Not /api/v1/status: that one asks the GitHub releases API for
+          # updateAvailable on every call, so a GitHub outage (503/504 for
+          # 70 min on 2026-11-08) failed the 1 s probe, pulled the pod
+          # from the Service and paged three times while the app was
+          # fine. /appdata only checks the config dir.
           readinessProbe:
             httpGet:
-              path: /api/v1/status
+              path: /api/v1/status/appdata
               port: 5055
             initialDelaySeconds: 15
             periodSeconds: 10
