@@ -31,23 +31,37 @@
 # a config that does not exist (nas1's :a8/:a9 trap, from the other
 # side). Wi-Fi (Intel AX210) is undriven and irrelevant.
 #
-# GPU: the RTX 3070 belongs to VMs, not the host (spike dsuj). The
-# Talos kernel has no nouveau and ships no nvidia driver, so at boot
-# 0000:0b:00.0 (10de:2488) and its HDA function 0000:0b:00.1
-# (10de:228b) sit unbound in IOMMU group 16 — the two of them alone,
-# measured 2026-10-19 — and vfio-pci below simply claims them by ID
-# (`ids=` is the module parameter; no kernel args, no reinstall:
-# kernel.modules applies live). KubeVirt's permittedHostDevices
-# (k8s/apps/kubevirt/kubevirt-cr.yaml) turns the bound devices into
-# the nvidia.com/* resources a VM's hostDevices asks for. Both
+# GPU: since 2026-11-17 the RTX 3070 belongs to the HOST — AI pods
+# (epic talos-config-e6rx, ADR-0049; the owner ruled win2k25 stays
+# powered off). Before that it belonged to the VM (spike dsuj,
+# 2026-10-19): vfio-pci claimed 0000:0b:00.0 (10de:2488) and its HDA
+# function 0000:0b:00.1 (10de:228b) by `ids=`, the two of them alone in
+# IOMMU group 16.
+#
+# Now the `-nvidia` installer (below) carries the open NVIDIA modules
+# and the four `nvidia*` lines bind the VGA function at boot; the card
+# shows up as `nvidia.com/gpu: 1` (k8s/apps/nvidia-device-plugin).
+# vfio-pci stays loaded and keeps ONLY the HDA function parked — so the
+# way back is a rebind, not a config change: `scripts/gpu-handoff.sh
+# vm` moves the VGA function to vfio-pci (KubeVirt then advertises
+# nvidia.com/GA104_GEFORCE_RTX_3070 again, kubevirt-cr.yaml) and
+# `… host` returns it. A reboot always lands on the host driver. Both
 # functions must go to the same VM: vfio hands out a whole group.
 machine:
   kernel:
     modules:
       - name: vfio_pci
         parameters:
-          - ids=10de:2488,10de:228b
+          - ids=10de:228b
       - name: vfio_iommu_type1
+      - name: nvidia
+      - name: nvidia_uvm
+      - name: nvidia_drm
+      - name: nvidia_modeset
+  # Sidero's NVIDIA guide sets this alongside the modules; taken as
+  # given, not investigated (same as alienware-x15.yaml).
+  sysctls:
+    net.core.bpf_jit_harden: "1"
   install:
     # THREE NVMes, so `type: nvme` (nas1's selector) is ambiguous and the
     # base template's /dev/sda default is forbidden anyway. Pin by model
@@ -77,8 +91,9 @@ machine:
       model: KINGSTON SNVS1000G
     # The fleet image — stock Talos + iscsi-tools + util-linux-tools
     # (Longhorn, ADR-0011) + kata + our p0agent extension (the node's
-    # mesh identity). hardware/minipc.yaml has the full account; keep
-    # tag AND digest in step with minipc.yaml, alienware-x15.yaml and
-    # terramaster-f4-425-plus.yaml — one fleet image, change all four
-    # together.
-    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata@sha256:6e8e77cb8c2234c2d648923da376606b96137feaf323f92db9be6239fe2341c0
+    # mesh identity). hardware/minipc.yaml has the full account.
+    # Since 2026-11-17 the `-nvidia` VARIANT (plus the two NVIDIA
+    # extensions, talos/extensions/installer.env): keep tag AND digest
+    # in step with alienware-x15.yaml, and the Talos/p0agent versions
+    # in step with minipc.yaml and terramaster-f4-425-plus.yaml.
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata-nvidia@sha256:a871cd26d11d08e33b077860e30c79c388ac173f796ffdcf878cf56b4b96d2aa
