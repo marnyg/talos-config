@@ -132,6 +132,11 @@ carved out), so `comfyui-w2` is an ordinary Deployment like w1's.
 - Good: the digest pins close a hole that had been open since
   ADR-0023 — any rebuild of the fleet image could have done to cp1
   what this one did to w1.
+- Bad: "stock image" is 405 MB, not the 67 MB first shipped: torch
+  2.14 JIT-compiles some ops with triton, which builds a small C
+  extension on first use, so the comfyui container is the `bookworm`
+  flavour (gcc) rather than `-slim`. A compiler on the volume (a `zig`
+  wheel) would win the 340 MB back; not tried.
 - Bad: the fleet now runs two installer images; a Talos bump rebuilds
   both and re-reads every digest.
 - Bad: the pod is not hermetic — a *cold* volume needs PyPI, GitHub and

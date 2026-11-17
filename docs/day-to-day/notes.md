@@ -740,3 +740,10 @@
   out to `/sbin/ldconfig -p` to find libcuda — absent on NixOS;
   `run.sh` sets `TRITON_LIBCUDA_PATH=/run/opengl-driver/lib` there.
   Kernel cache is `~/.triton` (on the volume in the pod, `HOME=/data`).
+- 2026-11-17 — **The house WAN is ~13 MB/s in total** (≈100 Mbit),
+  whoever pulls: three concurrent pullers got ~2–8 MB/s each. And
+  **w1's only NIC is the r8152 USB dongle** (`talosctl get links`:
+  speed unknown, duplex Half): w1 → w2 mirroring ran at ~5 MB/s while
+  w1 was also pulling ~8 MB/s from the WAN, i.e. that link saturates
+  near 100 Mbit. w2 is on 1 GbE. Make w2 the WAN puller and w1 the
+  mirror client when it matters.
