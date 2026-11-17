@@ -16,5 +16,5 @@ configMapGenerator:
       - requirements.lock
       - entrypoint.sh
       - run.sh
-      - fetch-models.sh
+      - fetch_models.py
       - models.txt

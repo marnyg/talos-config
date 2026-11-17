@@ -17,9 +17,10 @@
 #   One volume per node, because the data should sit beside the card.
 # - The `models` container fills /data/models from models.txt (tier 1 =
 #   the set every card can run) and serves the tree on :8189 to the
-#   other node, which asks it before Hugging Face (fetch-models.sh:
-#   the WAN is the bottleneck, the LAN is not). It restarts and resumes
-#   if the WAN drops. Raise MODEL_TIER for the variants.
+#   other node, which asks it before Hugging Face (fetch_models.py:
+#   the WAN is the bottleneck, the LAN is not). Downloads resume by
+#   byte range and are sha256-checked, so a pod roll or a WAN drop
+#   costs nothing. Raise MODEL_TIER for the variants.
 # - w1 and w2 are the same block twice, differing in node, memory limit
 #   (w1 has 32GB, w2 48GB with win2k25 off) and fetch order. w2's card
 #   is the host's since 2026-11-17 (ADR-0049); `scripts/gpu-handoff.sh
@@ -111,8 +112,7 @@ spec:
               set -eu
               mkdir -p /data/models
               python3 -m http.server 8189 --directory /data/models >/dev/null 2>&1 &
-              until [ -f /data/venv/.lock-sha ]; do sleep 5; done
-              HF_CLI=/data/venv/bin/hf /app/fetch-models.sh "$MODEL_TIER" /data/models
+              python3 /app/fetch_models.py "$MODEL_TIER" /data/models
               wait
           env:
             - {name: HOME, value: /data}
@@ -262,8 +262,7 @@ spec:
               set -eu
               mkdir -p /data/models
               python3 -m http.server 8189 --directory /data/models >/dev/null 2>&1 &
-              until [ -f /data/venv/.lock-sha ]; do sleep 5; done
-              HF_CLI=/data/venv/bin/hf /app/fetch-models.sh "$MODEL_TIER" /data/models
+              python3 /app/fetch_models.py "$MODEL_TIER" /data/models
               wait
           env:
             - {name: HOME, value: /data}

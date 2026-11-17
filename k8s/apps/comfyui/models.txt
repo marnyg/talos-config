@@ -1,6 +1,6 @@
 # Model manifest: <tier> <hf-repo> <path-in-repo>   (sizes in GB, comment only)
 # Every repo here already uses ComfyUI's directory layout, so a file
-# lands at $MODELS/<path-in-repo>. fetch-models.sh reads this top to
+# lands at $MODELS/<path-in-repo>. fetch_models.py reads this top to
 # bottom; tier 1 is the smallest set that runs every model (what the
 # benchmark needs on every GPU), tier 2 is the variants. File choices
 # follow the stock templates in comfyui-workflow-templates
