@@ -1,0 +1,20 @@
+# The one directory under k8s/apps that is a kustomization (cluster.yaml:
+# "the day a directory needs generators, give THAT directory a
+# kustomization.yaml"): the pod runs the scripts and pins that sit beside
+# the manifests, shipped as a ConfigMap whose content hash is in its
+# name — so a bump of versions.env, requirements.lock or models.txt
+# rolls the pod, and the pod converges its volume on start.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - comfyui.yaml
+configMapGenerator:
+  - name: comfyui-app
+    namespace: ai
+    files:
+      - versions.env
+      - requirements.lock
+      - entrypoint.sh
+      - run.sh
+      - fetch-models.sh
+      - models.txt

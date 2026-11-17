@@ -1,0 +1,79 @@
+# NVIDIA GPUs as `nvidia.com/gpu` (epic talos-config-e6rx). The GPU
+# nodes run the `-nvidia` installer variant (talos/extensions/
+# installer.env): open kernel modules + nvidia-container-toolkit, which
+# registers the `nvidia` containerd handler this RuntimeClass names. A
+# pod gets a card by asking for both: `runtimeClassName: nvidia` and a
+# `nvidia.com/gpu: 1` limit.
+#
+# Not to be confused with `nvidia.com/GA104_GEFORCE_RTX_3070` — that is
+# KubeVirt's passthrough resource for the SAME card on w2 while
+# vfio-pci holds it (k8s/apps/kubevirt/kubevirt-cr.yaml). A card is on
+# exactly one of the two drivers at a time, so exactly one of the two
+# resources is non-zero per card.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+handler: nvidia
+---
+# Upstream's static manifest (NVIDIA/k8s-device-plugin v0.20.2,
+# deployments/static/nvidia-device-plugin.yml), vendored per the "no
+# helm-repo Applications" rule (guides/gotchas.md). Deltas:
+# - runtimeClassName nvidia: the plugin itself needs NVML, i.e. the
+#   driver libraries the runtime injects (Sidero's NVIDIA guide).
+# - nodeAffinity on the toolkit extension's node label, which Talos
+#   sets from the installed image — so the DaemonSet follows the image
+#   variant with no label to maintain.
+# - FAIL_ON_INIT_ERROR=false: on a node whose card is on vfio-pci
+#   (w2 while the Windows VM has it) NVML finds no device; the plugin
+#   then idles advertising nothing instead of crash-looping. It does
+#   NOT notice a later rebind — delete the pod after handing the card
+#   to the host.
+# - image pinned by digest.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvidia-device-plugin
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: nvidia-device-plugin
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: nvidia-device-plugin
+    spec:
+      runtimeClassName: nvidia
+      priorityClassName: system-node-critical
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: extensions.talos.dev/nvidia-container-toolkit-lts
+                    operator: Exists
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: nvidia-device-plugin
+          image: nvcr.io/nvidia/k8s-device-plugin:v0.20.2@sha256:7673383d44a84bece724d9ca8feeadf4eee69cd46475fdff614cbbca6732d463
+          env:
+            - name: FAIL_ON_INIT_ERROR
+              value: "false"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: kubelet-device-plugins-dir
+              mountPath: /var/lib/kubelet/device-plugins
+      volumes:
+        - name: kubelet-device-plugins-dir
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+            type: Directory

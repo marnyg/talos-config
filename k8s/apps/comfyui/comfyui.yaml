@@ -1,0 +1,171 @@
+# ComfyUI on the cluster's GPUs (epic talos-config-e6rx): Krea 2,
+# MiniMax H3 Image and MiniMax H3 video, one Deployment per GPU node.
+# The desktop runs the same pinned stack from the same files
+# (setup-local.sh), which is what makes bench.py a comparison of GPUs.
+#
+# Shape, and why:
+# - NO image of ours. The container is the stock uv+python image
+#   (67MB compressed) pinned by digest; ComfyUI, the venv and the
+#   models live on the volume and entrypoint.sh converges them from the
+#   ConfigMap. A baked image would be ~7GB (torch + CUDA wheels) pulled
+#   over the WAN on every bump; this way a bump moves only what changed
+#   and there is no registry package to publish.
+# - The volume is `longhorn-local` (k8s/apps/storage): ONE replica on
+#   the pod's own node, strict-local, unencrypted, not backed up —
+#   everything on it is re-downloadable and public (ADR-0004's test),
+#   and a strict-local single replica skips the network hop entirely.
+#   One volume per node, because the data should sit beside the card.
+# - The `models` container fills /data/models from models.txt (tier 1 =
+#   the set every card can run) and then idles; it restarts and resumes
+#   if the WAN drops. Raise MODEL_TIER for the variants.
+# - runtimeClassName nvidia + nvidia.com/gpu (k8s/apps/
+#   nvidia-device-plugin). The memory limit is the node's safety belt:
+#   an 8GB card runs these models mostly from system RAM, and an
+#   OOM-killed pod is better than an OOM-ing node.
+# - Group-gated like every other Ingress (global auth, admins); ComfyUI
+#   has no auth of its own.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: comfyui-w1
+  namespace: ai
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-local
+  resources:
+    requests:
+      storage: 300Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comfyui-w1
+  namespace: ai
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: comfyui
+      gpu-node: w1
+  template:
+    metadata:
+      labels:
+        app: comfyui
+        gpu-node: w1
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        kubernetes.io/hostname: w1
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: comfyui
+          image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim@sha256:531f855bda2c73cd6ef67d56b733b357cea384185b3022bd09f05e002cd144ca
+          command: ["/app/entrypoint.sh"]
+          env:
+            - {name: COMFY_HOME, value: /data}
+            - {name: LISTEN, value: 0.0.0.0}
+            - {name: NVIDIA_DRIVER_CAPABILITIES, value: "compute,utility"}
+          ports:
+            - containerPort: 8188
+          resources:
+            requests: {cpu: "2", memory: 8Gi}
+            limits: {memory: 26Gi, nvidia.com/gpu: 1}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: app, mountPath: /app}
+            - {name: tmp, mountPath: /tmp}
+          # The first start installs the venv (~7GB of wheels over the
+          # WAN): up to an hour before the probe gives up.
+          startupProbe:
+            httpGet: {path: /system_stats, port: 8188}
+            periodSeconds: 10
+            failureThreshold: 360
+          readinessProbe:
+            httpGet: {path: /system_stats, port: 8188}
+            periodSeconds: 10
+        - name: models
+          image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim@sha256:531f855bda2c73cd6ef67d56b733b357cea384185b3022bd09f05e002cd144ca
+          command:
+            - bash
+            - -c
+            - |
+              set -eu
+              until [ -f /data/venv/.lock-sha ]; do sleep 5; done
+              HF_CLI=/data/venv/bin/hf /app/fetch-models.sh "$MODEL_TIER" /data/models
+              exec sleep infinity
+          env:
+            - {name: HOME, value: /data}
+            - {name: MODEL_TIER, value: "1"}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 2Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: app, mountPath: /app}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: comfyui-w1
+        - name: app
+          configMap:
+            name: comfyui-app
+            defaultMode: 0555
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comfyui-w1
+  namespace: ai
+spec:
+  selector:
+    app: comfyui
+    gpu-node: w1
+  ports:
+    - port: 8188
+      targetPort: 8188
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: comfyui-w1
+  namespace: ai
+  annotations:
+    gethomepage.dev/enabled: "false"
+    # Reference images / videos upload past nginx's 1 MiB default, and
+    # a video render holds the websocket open for minutes.
+    nginx.ingress.kubernetes.io/proxy-body-size: 1g
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: comfy-w1.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: comfyui-w1
+                port:
+                  number: 8188

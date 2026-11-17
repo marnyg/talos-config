@@ -1,0 +1,290 @@
+aiohappyeyeballs==2.7.1
+    # via aiohttp
+aiohttp==3.14.5
+    # via -r ComfyUI/requirements.txt
+aiosignal==1.4.0
+    # via aiohttp
+alembic==1.20.1
+    # via -r ComfyUI/requirements.txt
+annotated-doc==0.0.6
+    # via typer
+annotated-types==0.8.0
+    # via pydantic
+anyio==4.16.0
+    # via httpx2
+attrs==26.1.0
+    # via aiohttp
+av==19.0.2
+    # via -r ComfyUI/requirements.txt
+blake3==1.0.11
+    # via -r ComfyUI/requirements.txt
+certifi==2026.10.23
+    # via requests
+charset-normalizer==3.5.2
+    # via requests
+click==8.5.1
+    # via huggingface-hub
+comfy-aimdo==0.6.0
+    # via -r ComfyUI/requirements.txt
+comfy-angle==0.1.1
+    # via -r ComfyUI/requirements.txt
+comfy-kitchen==0.2.41
+    # via -r ComfyUI/requirements.txt
+comfyui-embedded-docs==0.5.16
+    # via -r ComfyUI/requirements.txt
+comfyui-frontend-package==1.58.5
+    # via -r ComfyUI/requirements.txt
+comfyui-workflow-templates==0.11.110
+    # via -r ComfyUI/requirements.txt
+comfyui-workflow-templates-core==0.3.401
+    # via comfyui-workflow-templates
+comfyui-workflow-templates-json==0.1.136
+    # via comfyui-workflow-templates
+comfyui-workflow-templates-media-api==0.3.84
+    # via comfyui-workflow-templates
+comfyui-workflow-templates-media-assets-01==0.1.48
+    # via comfyui-workflow-templates
+comfyui-workflow-templates-media-assets-02==0.1.33
+    # via comfyui-workflow-templates
+comfyui-workflow-templates-media-image==0.3.160
+    # via comfyui-workflow-templates
+comfyui-workflow-templates-media-other==0.3.229
+    # via comfyui-workflow-templates
+comfyui-workflow-templates-media-video==0.3.101
+    # via comfyui-workflow-templates
+cuda-bindings==13.5.0
+    # via torch
+cuda-pathfinder==1.9.0
+    # via cuda-bindings
+cuda-toolkit==13.0.3.0
+    # via torch
+einops==0.8.2
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   spandrel
+filelock==4.2.11
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   huggingface-hub
+    #   torch
+frozenlist==1.8.0
+    # via
+    #   aiohttp
+    #   aiosignal
+fsspec==2026.9.0
+    # via
+    #   huggingface-hub
+    #   torch
+h11==0.16.0
+    # via httpcore2
+hf-xet==1.8.0
+    # via huggingface-hub
+httpcore2==2.16.2
+    # via httpx2
+httpx2==2.16.2
+    # via huggingface-hub
+huggingface-hub==2.4.0
+    # via
+    #   tokenizers
+    #   transformers
+idna==3.20
+    # via
+    #   anyio
+    #   httpx2
+    #   requests
+    #   yarl
+jinja2==3.1.6
+    # via torch
+kornia==0.9.2
+    # via -r ComfyUI/requirements.txt
+kornia-rs==0.2.0
+    # via kornia
+mako==1.4.3
+    # via alembic
+markdown-it-py==4.3.0
+    # via rich
+markupsafe==3.0.4
+    # via
+    #   jinja2
+    #   mako
+mdurl==0.1.2
+    # via markdown-it-py
+mpmath==1.3.0
+    # via sympy
+multidict==7.2.1
+    # via
+    #   aiohttp
+    #   yarl
+networkx==3.7
+    # via torch
+numpy==2.5.5
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   kornia
+    #   scipy
+    #   spandrel
+    #   torchsde
+    #   torchvision
+    #   transformers
+nvidia-cublas==13.1.1.3
+    # via
+    #   cuda-toolkit
+    #   nvidia-cudnn-cu13
+    #   nvidia-cusolver
+nvidia-cuda-cupti==13.0.85
+    # via cuda-toolkit
+nvidia-cuda-nvrtc==13.0.88
+    # via
+    #   cuda-toolkit
+    #   nvidia-cublas
+nvidia-cuda-runtime==13.0.96
+    # via cuda-toolkit
+nvidia-cudnn-cu13==9.24.0.43
+    # via torch
+nvidia-cufft==12.0.0.61
+    # via cuda-toolkit
+nvidia-cufile==1.15.1.6
+    # via cuda-toolkit
+nvidia-curand==10.4.0.35
+    # via cuda-toolkit
+nvidia-cusolver==12.0.4.66
+    # via cuda-toolkit
+nvidia-cusparse==12.6.3.3
+    # via
+    #   cuda-toolkit
+    #   nvidia-cusolver
+nvidia-cusparselt-cu13==0.8.1
+    # via torch
+nvidia-nccl-cu13==2.30.7
+    # via torch
+nvidia-nvjitlink==13.5.37
+    # via
+    #   cuda-toolkit
+    #   nvidia-cufft
+    #   nvidia-cusolver
+    #   nvidia-cusparse
+nvidia-nvshmem-cu13==3.4.5
+    # via torch
+nvidia-nvtx==13.0.85
+    # via cuda-toolkit
+packaging==26.3
+    # via
+    #   huggingface-hub
+    #   transformers
+pillow==13.0.0
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   torchvision
+propcache==0.5.4
+    # via
+    #   aiohttp
+    #   yarl
+psutil==7.2.2
+    # via -r ComfyUI/requirements.txt
+pydantic==2.14.3
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   pydantic-settings
+    #   typer
+pydantic-core==2.50.4
+    # via pydantic
+pydantic-settings==2.16.3
+    # via -r ComfyUI/requirements.txt
+pygments==2.21.0
+    # via rich
+pyopengl==3.1.10
+    # via -r ComfyUI/requirements.txt
+python-dotenv==1.2.4
+    # via pydantic-settings
+pyyaml==6.0.3
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   huggingface-hub
+    #   transformers
+regex==2026.11.15
+    # via transformers
+requests==2.34.2
+    # via -r ComfyUI/requirements.txt
+rich==15.0.0
+    # via typer
+safetensors==0.8.0
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   spandrel
+    #   transformers
+scipy==1.18.1
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   torchsde
+sentencepiece==0.2.3
+    # via -r ComfyUI/requirements.txt
+setuptools==84.2.1
+    # via torch
+shellingham==1.5.4
+    # via typer
+simpleeval==1.0.8
+    # via -r ComfyUI/requirements.txt
+spandrel==0.4.2
+    # via -r ComfyUI/requirements.txt
+sqlalchemy==2.1.9
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   alembic
+sympy==1.14.0
+    # via torch
+tokenizers==0.23.3
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   transformers
+torch==2.14.1+cu130
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   kornia
+    #   spandrel
+    #   torchsde
+    #   torchvision
+torchsde==0.2.6
+    # via -r ComfyUI/requirements.txt
+torchvision==0.29.1+cu130
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   spandrel
+tqdm==4.70.1
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   huggingface-hub
+    #   transformers
+trampoline==0.1.2
+    # via torchsde
+transformers==5.23.0
+    # via -r ComfyUI/requirements.txt
+triton==3.8.0
+    # via torch
+truststore==0.10.5
+    # via
+    #   httpcore2
+    #   httpx2
+typer==0.29.1
+    # via transformers
+typing-extensions==4.16.0
+    # via
+    #   alembic
+    #   anyio
+    #   huggingface-hub
+    #   pydantic
+    #   pydantic-core
+    #   pydantic-settings
+    #   spandrel
+    #   sqlalchemy
+    #   torch
+    #   typing-inspection
+typing-inspection==0.4.5
+    # via
+    #   pydantic
+    #   pydantic-settings
+urllib3==2.8.0
+    # via requests
+yarl==1.25.1
+    # via
+    #   -r ComfyUI/requirements.txt
+    #   aiohttp

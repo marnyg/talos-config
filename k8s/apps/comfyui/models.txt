@@ -1,0 +1,42 @@
+# Model manifest: <tier> <hf-repo> <path-in-repo>   (sizes in GB, comment only)
+# Every repo here already uses ComfyUI's directory layout, so a file
+# lands at $MODELS/<path-in-repo>. fetch-models.sh reads this top to
+# bottom; tier 1 is the smallest set that runs every model (what the
+# benchmark needs on every GPU), tier 2 is the variants. File choices
+# follow the stock templates in comfyui-workflow-templates
+# (image_krea2_turbo_t2i, image_minimax_h3_image_t2i,
+# video_minimax_h3_{t2v,i2v,r2v}).
+
+# --- Krea 2
+1 Comfy-Org/Krea-2 vae/qwen_image_vae.safetensors                                  # 0.25
+1 Comfy-Org/Krea-2 text_encoders/qwen3vl_4b_fp8_scaled.safetensors                 # 5.2
+1 Comfy-Org/Krea-2 diffusion_models/krea2_turbo_nvfp4.safetensors                  # 7.7
+1 Comfy-Org/Krea-2 diffusion_models/krea2_turbo_fp8_scaled.safetensors             # 13.1  template default
+# --- MiniMax H3 Image (text encoder is shared with H3 video)
+1 Comfy-Org/MiniMax-H3-Image vae/minimax_h3_image_vae_fp16.safetensors             # 1.2
+1 Comfy-Org/MiniMax-H3-Image diffusion_models/minimax_h3_image_pruned_w4a8.safetensors  # 12.6
+1 Comfy-Org/MiniMax-H3 text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors  # 15.7
+# --- MiniMax H3 video, first/last-frame (t2v + i2v)
+1 Comfy-Org/MiniMax-H3 vae/minimax_h3_audio_vae_fp32.safetensors                   # 0.6
+1 Comfy-Org/MiniMax-H3 vae/minimax_h3_video_vae_int8_convrot.safetensors           # 2.8
+1 Comfy-Org/MiniMax-H3 loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors      # 2.0
+1 Comfy-Org/MiniMax-H3 loras/minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors # 2.0
+1 Comfy-Org/MiniMax-H3 diffusion_models/minimax_h3_fl2va_pruned_w6a8.safetensors   # 16.0
+
+# --- tier 2: variants
+2 Comfy-Org/Krea-2 diffusion_models/krea2_turbo_int8_convrot.safetensors           # 13.5
+2 Comfy-Org/Krea-2 diffusion_models/krea2_raw_fp8_scaled.safetensors               # 13.1
+2 Comfy-Org/Krea-2 diffusion_models/krea2_raw_int8_convrot.safetensors             # 13.5
+2 Comfy-Org/Krea-2 text_encoders/qwen3vl_4b_int8_convrot.safetensors               # 4.9
+2 Comfy-Org/Krea-2 loras/*                                                         # 5.2  style LoRAs + turbo LoRA
+2 Comfy-Org/MiniMax-H3 diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors   # 21.0  template default
+2 Comfy-Org/MiniMax-H3 diffusion_models/minimax_h3_ref2va_pruned_w6a8.safetensors  # 16.0  reference-to-video
+2 Comfy-Org/MiniMax-H3 loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors    # 2.0
+2 Comfy-Org/MiniMax-H3-Image diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors # 21.0  template default
+2 Comfy-Org/Qwen3.5 text_encoders/qwen3.5_9b_w4a8_gptq.safetensors                 # 7.3   prompt enhancer
+2 Comfy-Org/MiniMax-H3 diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors  # 21.0
+2 Comfy-Org/MiniMax-H3 vae/minimax_h3_video_vae_fp16.safetensors                   # 5.2
+2 Comfy-Org/MiniMax-H3 text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors       # 27.1
+2 Comfy-Org/MiniMax-H3 loras/pika_h3_flex_fl2va_v1_bf16.safetensors                # 2.0
+2 Comfy-Org/MiniMax-H3 loras/pika_h3_flex_ref2va_v1_bf16.safetensors               # 2.0
+2 Comfy-Org/MiniMax-H3 model_patches/minimax_h3_fun_controlnet_union_2.0_pruned_int8_convrot.safetensors # 4.5

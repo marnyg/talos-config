@@ -197,3 +197,30 @@ parameters:
   csi.storage.k8s.io/node-stage-secret-namespace: longhorn-system
   csi.storage.k8s.io/node-expand-secret-name: longhorn-crypto
   csi.storage.k8s.io/node-expand-secret-namespace: longhorn-system
+---
+# Node-local scratch for re-downloadable payload (epic talos-config-e6rx:
+# the ComfyUI venv and model weights beside each GPU). ONE replica,
+# `strict-local`: the replica lives on the node the pod runs on and
+# the engine reaches it over a unix socket instead of TCP (Longhorn's
+# documented fast path for this mode; the iSCSI frontend stays) — the
+# reason this is not `longhorn` with a replica count of 1. Measured
+# numbers belong in the epic, not here. The price is stated in the name: the volume is
+# pinned to its node and dies with that node's disk, so nothing that
+# cannot be fetched again belongs here (ADR-0004's test; unencrypted
+# and outside the backup group for the same reason).
+# WaitForFirstConsumer so the replica is placed where the pod lands,
+# not where Longhorn happens to have room.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-local
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+parameters:
+  numberOfReplicas: "1"
+  diskSelector: "nvme"
+  dataLocality: "strict-local"
+  staleReplicaTimeout: "30"
+  fsType: "ext4"

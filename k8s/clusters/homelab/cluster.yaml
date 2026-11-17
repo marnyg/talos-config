@@ -137,6 +137,8 @@ spec:
           # The cluster's Syncthing peer (ADR-0046).
           - {name: syncthing}
           - {name: sillytavern}
+          - {name: nvidia-device-plugin}
+          - {name: comfyui}
           - {name: nix-cache}
           # --- forge + agents
           - {name: forgejo}
