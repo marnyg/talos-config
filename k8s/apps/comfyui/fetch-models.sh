@@ -14,8 +14,9 @@ mkdir -p "$models"
 # MODEL_MIRROR=http://peer:8189 — another node's model tree served over
 # the LAN (the pod's `models` container runs http.server on it). The
 # WAN is the scarce thing (~13 MB/s for the whole house, a tier is
-# 80 GB), so: pass 1 takes whatever the peer already has; pass 2 walks
-# the manifest, asks the peer first and Hugging Face second. With
+# 80 GB), so: first take whatever the peer already has; then walk the
+# manifest, asking the peer first and Hugging Face second, and sweep
+# the peer again after every WAN pull. With
 # MODEL_ORDER=reverse on one of two peers they start from opposite ends
 # and each file crosses the WAN about once.
 mirror=${MODEL_MIRROR:-}
@@ -43,12 +44,15 @@ except Exception as e:
     sys.exit(1)
 PY
 }
-if [ -n "$mirror" ]; then
-  echo "$entries" | while read -r repo path; do
+sweep() { # everything the peer has by now, manifest order
+  [ -n "$mirror" ] || return 0
+  echo "$all" | while read -r repo path; do
     [ -e "$models/$path" ] && continue
     from_mirror "$path" && echo "== $(date +%T) mirror $path"
   done || true
-fi
+}
+all=$entries
+sweep
 [ "${MODEL_ORDER:-}" = reverse ] && entries=$(echo "$entries" | tac)
 echo "$entries" | while read -r repo path; do
   if [ ! -e "$models/$path" ] && from_mirror "$path"; then
@@ -57,6 +61,9 @@ echo "$entries" | while read -r repo path; do
   fi
   echo "== $(date +%T) $repo $path"
   "$hf" download "$repo" --include "$path" --local-dir "$models" --quiet
+  # The peer has been downloading meanwhile, from the other end: take
+  # what it finished before starting the next WAN pull.
+  sweep </dev/null
 done
 rm -rf "$models/.cache"
 echo "== $(date +%T) done: $(du -sh "$models" | cut -f1) in $models"

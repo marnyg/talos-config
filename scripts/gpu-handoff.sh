@@ -6,9 +6,10 @@
 #                               (KubeVirt passthrough, win2k25)
 #   host  nvidia holds it    -> nvidia.com/gpu: 1  (pods, ComfyUI)
 #
-# The card is on exactly one driver at a time. The boot default is `vm`
-# (vfio_pci ids= in talos/hardware/asus-tuf-b550-pro.yaml claims it
-# before the nvidia modules load), so a reboot always hands it back.
+# The card is on exactly one driver at a time. The boot default is
+# `host` since 2026-11-17 (ADR-0049: win2k25 stays off; the nvidia
+# modules in talos/hardware/asus-tuf-b550-pro.yaml bind it at boot), so
+# a reboot always returns it to the pods — `vm` is the excursion.
 #
 #   scripts/gpu-handoff.sh status
 #   scripts/gpu-handoff.sh host     # refuses while a VMI holds the card
@@ -52,9 +53,9 @@ rebind() {
           [ -e $d/driver ] && echo \($addr) > $d/driver/unbind
           echo \($to) > $d/driver_override
           echo \($addr) > /sys/bus/pci/drivers_probe
-          echo bound: $(basename $(readlink $d/driver))"],
-        volumeMounts: [{name: sys, mountPath: "/sys"}]}],
-      volumes: [{name: sys, hostPath: {path: "/sys"}}]}}')" >/dev/null
+          echo bound: $(basename $(readlink $d/driver 2>/dev/null || echo none-yet))"],
+        volumeMounts: [{name: "sys", mountPath: "/sys"}]}],
+      volumes: [{name: "sys", hostPath: {path: "/sys"}}]}}')" >/dev/null
   kubectl -n kube-system wait --for=jsonpath='{.status.phase}'=Succeeded "pod/$name" --timeout=90s >/dev/null ||
     { kubectl -n kube-system logs "$name" >&2 || true; kubectl -n kube-system delete pod "$name" --wait=false >/dev/null; return 1; }
   kubectl -n kube-system logs "$name"
@@ -81,6 +82,15 @@ case ${1:-status} in
     # block the bind, and started again below.
     talosctl -n "$NODE_IP" service ext-nvidia-persistenced stop >/dev/null 2>&1 || true
     rebind nvidia
+    # nvidia.ko REFUSES TO LOAD while no NVIDIA device is free ("No
+    # NVIDIA devices probed", ENODEV — seen 2026-11-17 with the card on
+    # vfio-pci), so after a `vm` excursion that began before the module
+    # was ever loaded there is no nvidia driver to probe yet. The
+    # override above keeps vfio-pci from re-taking the card; Talos'
+    # KernelModuleSpecController retries the load on its own and the
+    # module then binds it.
+    for _ in $(seq 1 90); do [ "$(driver)" = nvidia ] && break; sleep 2; done
+    [ "$(driver)" = nvidia ] || { echo "nvidia did not bind $ADDR within 3 min (talosctl -n $NODE_IP dmesg | grep NVRM)" >&2; exit 1; }
     talosctl -n "$NODE_IP" service ext-nvidia-persistenced start >/dev/null 2>&1 || true
     bounce kube-system name=nvidia-device-plugin
     bounce kubevirt kubevirt.io=virt-handler
