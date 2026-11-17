@@ -11,6 +11,10 @@ app=/app
 . "$app/versions.env"
 home=${COMFY_HOME:-/data}
 export HOME="$home" UV_CACHE_DIR="$home/.uv-cache" UV_LINK_MODE=hardlink UV_PYTHON_DOWNLOADS=never
+# uv's 30s default killed the first install on w1 (2026-11-17): a 1GB
+# wheel stalled while the WAN was busy and the container restarted. The
+# cache is on the volume, so a retry resumes — but do not need one.
+export UV_HTTP_TIMEOUT=600
 mkdir -p "$home/models" "$home/output" "$home/input" "$home/user"
 
 if [ "$(cat "$home/ComfyUI/.ref" 2>/dev/null || true)" != "$COMFYUI_REF" ]; then
