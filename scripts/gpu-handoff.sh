@@ -15,9 +15,8 @@
 #   scripts/gpu-handoff.sh host     # refuses while a VMI holds the card
 #   scripts/gpu-handoff.sh vm       # refuses while a pod holds nvidia.com/gpu
 #
-# UNTESTED past `status` as of 2026-11-17: w2 does not run the -nvidia
-# installer yet (its reboot bounces win2k25 — waiting on the owner).
-# Read it as the design until this line is removed.
+# `host` ran for real on w2 2026-11-17. `vm` is UNTESTED (nothing has
+# needed the card back yet) — read that branch as the design.
 #
 # It never stops the VM or a pod for you — losing a Windows session or
 # a render is the operator's call (vmpower / `kubectl scale`).

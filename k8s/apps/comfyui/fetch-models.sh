@@ -15,8 +15,8 @@ mkdir -p "$models"
 # the LAN (the pod's `models` container runs http.server on it). The
 # WAN is the scarce thing (~13 MB/s for the whole house, a tier is
 # 80 GB), so: first take whatever the peer already has; then walk the
-# manifest, asking the peer first and Hugging Face second, and sweep
-# the peer again after every WAN pull. With
+# manifest, asking the peer first and Hugging Face second, while a
+# background loop sweeps the peer again every minute. With
 # MODEL_ORDER=reverse on one of two peers they start from opposite ends
 # and each file crosses the WAN about once.
 mirror=${MODEL_MIRROR:-}
@@ -53,6 +53,13 @@ sweep() { # everything the peer has by now, manifest order
 }
 all=$entries
 sweep
+# ...and keep sweeping while the WAN pulls run: a 16 GB pull takes 20+
+# minutes, and the peer finishes other files meanwhile.
+if [ -n "$mirror" ]; then
+  ( while sleep 60; do sweep; done ) &
+  sweeper=$!
+  trap 'kill $sweeper 2>/dev/null || true' EXIT
+fi
 [ "${MODEL_ORDER:-}" = reverse ] && entries=$(echo "$entries" | tac)
 echo "$entries" | while read -r repo path; do
   if [ ! -e "$models/$path" ] && from_mirror "$path"; then
@@ -60,10 +67,7 @@ echo "$entries" | while read -r repo path; do
     continue
   fi
   echo "== $(date +%T) $repo $path"
-  "$hf" download "$repo" --include "$path" --local-dir "$models" --quiet
-  # The peer has been downloading meanwhile, from the other end: take
-  # what it finished before starting the next WAN pull.
-  sweep </dev/null
+  [ -e "$models/$path" ] || "$hf" download "$repo" --include "$path" --local-dir "$models" --quiet
 done
 rm -rf "$models/.cache"
 echo "== $(date +%T) done: $(du -sh "$models" | cut -f1) in $models"
