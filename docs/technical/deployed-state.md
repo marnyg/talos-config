@@ -44,13 +44,18 @@ history and, where the numbers still matter, in ADR-0006 and
   (imager-built, ADR-0023: stock Talos + `iscsi-tools` v0.2.0 +
   `util-linux-tools` 2.41.2 + `kata-containers` 3.26.0 (ADR-0035) +
   `p0agent` 0.1.6 — ships nodeagent `7fb6473`). **Since 2026-11-17 w1
-  runs the `-nvidia` variant** (ADR-0049, epic `e6rx`: the same plus
-  `nvidia-open-gpu-kernel-modules-lts` and
+  and w2 run the `-nvidia` variant** (ADR-0049, epic `e6rx`: the same
+  plus `nvidia-open-gpu-kernel-modules-lts` and
   `nvidia-container-toolkit-lts` 580.126.20,
-  `…-kata-nvidia@sha256:a871cd26…`); its RTX 3070 Mobile is on the host
-  driver and advertised as `nvidia.com/gpu: 1`
-  (`k8s/apps/nvidia-device-plugin`), serving `ai/comfyui-w1` from a
-  300Gi `longhorn-local` volume. cp1, nas1 and w2 are unchanged. `talosctl get
+  `…-kata-nvidia@sha256:a871cd26…`). Both cards are on the host driver
+  and advertised as `nvidia.com/gpu: 1`
+  (`k8s/apps/nvidia-device-plugin`): w1's RTX 3070 Mobile serves
+  `ai/comfyui-w1`, w2's RTX 3070 `ai/comfyui-w2`, each from a 300Gi
+  `longhorn-local` volume (one strict-local replica on its own node).
+  **win2k25 is Halted** and no longer holds w2's card — the vfio/
+  passthrough paragraphs below describe the 2026-10-19 state, reachable
+  again only through `scripts/gpu-handoff.sh vm`. cp1 and nas1 are
+  unchanged. `talosctl get
   extensions` on each node lists exactly those four; `ext-p0agent`
   Running on all three. `RuntimeClass kata` (cloud-hypervisor) applied;
   the `kata-qemu` handler exists on the nodes but is undeclared.

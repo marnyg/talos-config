@@ -3,46 +3,45 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
-## Last session (2026-11-17): image/video generation on own GPUs (`e6rx`) — w1 and the desktop are up, nothing is finished
+## Last session (2026-11-17): image/video generation on own GPUs (`e6rx`) — all three GPUs run ComfyUI; the H3 half of the benchmark is still downloading
 
-- **Desktop** (RTX 5070 Ti): pinned ComfyUI stack in a uv venv on
-  `~/disks/1TB-2024/ai` (`k8s/apps/comfyui/{versions.env,
-  requirements.lock,setup-local.sh,run.sh}`). First numbers, Krea 2
-  Turbo nvfp4, 1024², 8 steps: 8.1 s warm (0.89 s/it), ~42 s cold —
-  the cold cost is the SATA SSD read, not ComfyUI (API up in 5 s).
-- **w1** (RTX 3070 Mobile): on the new `-nvidia` installer variant,
-  `nvidia.com/gpu: 1`, `ai/comfyui-w1` running from a `longhorn-local`
-  strict-local volume with **no image of ours** (stock uv image +
-  ConfigMap; ADR-0049 **Proposed**). Not benchmarked yet — its models
-  were still downloading.
+- **Three ComfyUI instances from one set of pins** (`k8s/apps/comfyui`:
+  `versions.env`, `requirements.lock`): the desktop (RTX 5070 Ti, uv
+  venv on `~/disks/1TB-2024/ai`), `ai/comfyui-w1` (RTX 3070 Mobile) and
+  `ai/comfyui-w2` (RTX 3070). The pods are the stock uv image + a
+  ConfigMap converging a 300Gi `longhorn-local` volume — no image of
+  ours. ADR-0049 **Accepted**.
+- **w1 and w2 run the `-nvidia` installer variant**; both cards are on
+  the host driver (`nvidia.com/gpu: 1` each). **win2k25 is powered off
+  by the owner's ruling** and w2's card is the host's at boot;
+  `scripts/gpu-handoff.sh` is the way back (`host` tested, `vm` not).
 - **Incident, closed**: the first `-nvidia` build pulled official
-  extensions by tag; Sidero had repointed three of them, w1 booted with
-  `ext-iscsid` crash-looping (Longhorn down on w1 ~10 min, replicas
-  degraded, nothing lost). `talosctl rollback`, then every extension
-  pinned `tag@digest` and `build.sh` refuses bare tags (`24c6a17`).
-- `bench.py` (same three graphs against any ComfyUI URL) and
-  `scripts/gpu-handoff.sh` (w2 card vfio-pci ↔ host; **untested past
-  `status`**) are written.
+  extensions by tag; Sidero had repointed three, w1 booted with
+  `ext-iscsid` crash-looping (~10 min, replicas degraded, nothing
+  lost). Rolled back; every extension is now pinned `tag@digest` and
+  `build.sh` refuses bare tags.
+- `bench.py` (same graphs against any ComfyUI URL; results in
+  `k8s/apps/comfyui/bench-results/*.jsonl`, `--table` prints them) and
+  `fetch_models.py` (resumable, sha256-checked, peer-mirroring model
+  fetch) are written and in use.
 
 ## Loose threads
 
-- **w2 is untouched and needs the owner's go**: upgrading it reboots
-  the node and bounces win2k25; benchmarking it needs the VM off. Then:
-  add the nvidia modules after the two vfio lines in
-  `asus-tuf-b550-pro.yaml`, repin, upgrade, `gpu-handoff.sh host`.
-- **Undecided (ADR-0049 "Open")**: the declarative shape of ComfyUI on
-  w2 while Windows may hold the card — a Pending pod pages, `replicas`
-  as live state is a second invariant-2 carve-out, or `vmpower` owns
-  the hand-off.
-- Downloads in flight (notes 2026-11-17); the benchmark table is only
-  meaningful once tier 1 is on every machine. H3 Image and H3 video
-  graphs in `bench.py` are **unrun** — expect a wrong input name or two.
-- `longhorn-local` read speed is unmeasured (the fallback is a raw
-  Talos user volume). `ERROR: init 250 result=11` when `uv pip sync`
-  runs in the GPU container is unexplained. Warm pod restart on w1:
-  scheduled → Ready in 31 s.
-- `comfy-w1.gw.mesh.internal` Ingress is declared but never opened in a
-  browser.
+- **Benchmark coverage**: see `bench.py --table`. Krea 2 Turbo is
+  measured; `h3_image` and `h3_t2v` graphs are **unrun everywhere**
+  (the 16 GB text encoder and the H3 weights were still crossing the
+  WAN) — expect to fix an input name or two on first contact, and to
+  find out whether 8 GB cards run H3 at all inside the pods' memory
+  limits (w1 26Gi, w2 40Gi).
+- Fetches in flight (notes 2026-11-17). The desktop fetch must be
+  restarted by hand after a reboot; the pods resume by themselves.
+- `longhorn-local` read speed is unmeasured (fallback: a raw Talos user
+  volume). `ERROR: init 250 result=11` when `uv pip sync` runs in the
+  GPU container is unexplained.
+- `comfy-w1.gw.mesh.internal` answers through the gateway (API checked,
+  UI not opened in a browser); `comfy-w2.gw` unchecked.
+- win2k25 is Halted, not deleted: its disks and manifest stand. w2's
+  `deployed-state.md` passthrough paragraphs describe the old state.
 - Carried from 2026-11-08: phone APK rebuild + Syncthing pairing; wipe
   the four old disks; glossary "Facet"/"Recipe" vs ADR-0048;
   `policy.Default` on devices; `oh3l`; ADR-0001 (tasks) Proposed; PR 10
@@ -50,8 +49,10 @@
 
 ## Suggested next steps
 
-- Run `bench.py` against the desktop and w1 (port-forward
-  `svc/comfyui-w1 8188`) once the fetches finish; fix the H3 graphs.
-- Get the go for w2, then `e6rx.4`; seed w2's volume from w1 over the
-  LAN.
-- Owner reads ADR-0049 and rules on the w2 shape.
+- When tier 1 is on all three (`kubectl -n ai logs deploy/comfyui-w1 -c
+  models | tail`): `bench.py --url … --label …` for the desktop,
+  `http://comfy-w1.gw.mesh.internal` and `http://comfy-w2.gw.mesh.internal`;
+  then pick per-GPU variants (tier 2) from the numbers.
+- Measure a cold load off `longhorn-local` vs the node's raw NVMe.
+- Decide win2k25's fate (keep Halted / delete) and prune
+  `deployed-state.md` accordingly.

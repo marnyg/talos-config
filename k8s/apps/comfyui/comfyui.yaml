@@ -5,11 +5,17 @@
 #
 # Shape, and why:
 # - NO image of ours. The container is the stock uv+python image
-#   (67MB compressed) pinned by digest; ComfyUI, the venv and the
-#   models live on the volume and entrypoint.sh converges them from the
-#   ConfigMap. A baked image would be ~7GB (torch + CUDA wheels) pulled
-#   over the WAN on every bump; this way a bump moves only what changed
-#   and there is no registry package to publish.
+#   pinned by digest; ComfyUI, the venv and the models live on the
+#   volume and entrypoint.sh converges them from the ConfigMap. A baked
+#   image would be ~7GB (torch + CUDA wheels) pulled over the WAN on
+#   every bump; this way a bump moves only what changed and there is no
+#   registry package to publish.
+#   The comfyui container is the `bookworm` flavour (405MB compressed),
+#   not `-slim` (67MB), for one reason: torch 2.14 JIT-compiles some
+#   ops with triton, and triton builds a small C extension on first use
+#   — "Failed to find C compiler" on slim (2026-11-17). The build is
+#   cached under /data/.triton. The `models` container needs only
+#   python and stays slim.
 # - The volume is `longhorn-local` (k8s/apps/storage): ONE replica on
 #   the pod's own node, strict-local, unencrypted, not backed up —
 #   everything on it is re-downloadable and public (ADR-0004's test),
@@ -75,7 +81,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: comfyui
-          image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim@sha256:531f855bda2c73cd6ef67d56b733b357cea384185b3022bd09f05e002cd144ca
+          image: ghcr.io/astral-sh/uv:python3.13-bookworm@sha256:47965cdc9d53a515f68f78241161c901e70051ce428f12e791bd7fe19f6a631a
           command: ["/app/entrypoint.sh"]
           env:
             - {name: COMFY_HOME, value: /data}
@@ -225,7 +231,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: comfyui
-          image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim@sha256:531f855bda2c73cd6ef67d56b733b357cea384185b3022bd09f05e002cd144ca
+          image: ghcr.io/astral-sh/uv:python3.13-bookworm@sha256:47965cdc9d53a515f68f78241161c901e70051ce428f12e791bd7fe19f6a631a
           command: ["/app/entrypoint.sh"]
           env:
             - {name: COMFY_HOME, value: /data}

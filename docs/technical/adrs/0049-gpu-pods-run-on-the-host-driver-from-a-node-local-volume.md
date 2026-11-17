@@ -1,8 +1,11 @@
 # ADR-0049: GPU pods run on the host NVIDIA driver, from a node-local volume, with no image of ours
 
-- Status: **Proposed** 2026-11-17 (written by the agent during epic
-  `talos-config-e6rx`; the owner chose the direction — "A and B", "only
-  the GPU nodes" — but has not read this text). Live on w1; w2 pending.
+- Status: Accepted 2026-11-17 (owner, in session). Live the same day:
+  w1 and w2 both run the `-nvidia` installer `a871cd26…` and advertise
+  `nvidia.com/gpu: 1`; `ai/comfyui-w1` and `ai/comfyui-w2` run from
+  `longhorn-local` volumes on the stock uv image. The w2 question below
+  was ruled the same day: **win2k25 stays powered off, the card is the
+  host's.**
 - Date: 2026-11-17
 - Related: epic `talos-config-e6rx`; spike `talos-config-dsuj` (the
   VM↔AI-pod hand-off it left open); ADR-0023 (own install image —
@@ -99,16 +102,27 @@ weights live, and what the container is.
 5. ComfyUI is the runtime on all three machines, from one set of pins
    (`k8s/apps/comfyui`), so `bench.py` compares GPUs and nothing else.
 
-### Open: w2's card has two owners
+### w2's card: the host's by default (ruled 2026-11-17)
 
-`scripts/gpu-handoff.sh` rebinds the card between `vfio-pci` (boot
-default, the VM) and `nvidia` (pods). What is **not** decided is the
-declarative shape of the w2 ComfyUI workload: a Deployment that is
-Pending whenever Windows holds the card (simple, but a Pending pod
-pages), `replicas` as live state ignored by ArgoCD (a second
-invariant-2 carve-out after `vmpower`'s `runStrategy` — to be argued),
-or `vmpower` owning the hand-off (VM stop → card to the host). Owner's
-call; nothing for w2 is in git beyond the script.
+The draft left open how ComfyUI on w2 is declared while Windows may
+hold the card (a Pending Deployment, `replicas` as live state — a
+second invariant-2 carve-out — or `vmpower` owning the hand-off). The
+owner cut the knot: **the VM is powered off and stays off**
+(`runStrategy: Halted`, the existing live-state field; nothing new is
+carved out), so `comfyui-w2` is an ordinary Deployment like w1's.
+
+- Boot default is the host driver: the nvidia modules bind the VGA
+  function; `vfio_pci ids=` keeps only the HDA function parked.
+- The way back is an excursion, not a mode: scale `comfyui-w2` to 0,
+  `scripts/gpu-handoff.sh vm`, start the VM; `… host` (or a reboot)
+  returns the card. `host` is tested; `vm` is not.
+- Learned doing it: **`nvidia.ko` refuses to load while no NVIDIA
+  device is free** (`No NVIDIA devices probed`, ENODEV). The first
+  hand-off on a node is therefore "unbind from vfio-pci and wait" —
+  Talos' KernelModuleSpecController retries the load and the module
+  then binds the card.
+- win2k25's definition and disks are untouched. Whether the VM is
+  deleted is a separate decision nobody has made.
 
 ### Consequences
 
