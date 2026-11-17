@@ -28,6 +28,9 @@
 #   the p0agent extension already at ghcr.io/marnyg/p0agent:<version>
 #   (default: the version in manifest.yaml) — for a Talos bump or an
 #   OFFICIAL list change in ../installer.env. Bump SUFFIX there too.
+#   VARIANT=nvidia (either form) adds installer.env's NVIDIA list and
+#   tags `…-nvidia`: the GPU nodes' image (w1, w2), pinned only in
+#   alienware-x15.yaml and asus-tuf-b550-pro.yaml.
 set -euo pipefail
 cd "$(dirname "$0")"
 # Talos version + official extension refs live in ../installer.env so
@@ -36,6 +39,16 @@ cd "$(dirname "$0")"
 . ../installer.env
 talos=$TALOS
 official=("${OFFICIAL[@]}")
+variant=${VARIANT:-}
+case $variant in
+  "") ;;
+  nvidia) official+=("${NVIDIA[@]}") ;;
+  *) echo "unknown VARIANT=$variant"; exit 1 ;;
+esac
+# A tag is not a pin (installer.env has the 2026-11-17 account).
+for ref in "${official[@]}"; do
+  case $ref in *@sha256:*) ;; *) echo "unpinned extension ref: $ref (add the factory digest)"; exit 1 ;; esac
+done
 
 if [ "${1:-}" = --installer-only ]; then
   ver=${2:-$(sed -n 's/^  version: //p' manifest.yaml)}
@@ -58,7 +71,7 @@ else
   docker push "$ext"
   rm -f ./nodeagent
 fi
-installer=ghcr.io/marnyg/talos-installer:$talos-p0agent-$ver${SUFFIX:+-$SUFFIX}
+installer=ghcr.io/marnyg/talos-installer:$talos-p0agent-$ver${SUFFIX:+-$SUFFIX}${variant:+-$variant}
 
 mkdir -p _out
 docker run --rm --platform linux/amd64 -v "$PWD/_out:/out" \

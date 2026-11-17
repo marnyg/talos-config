@@ -18,6 +18,24 @@ machine:
   # max_perf_pct (e.g. "70") instead of no_turbo.
   sysfs:
     devices.system.cpu.intel_pstate.no_turbo: "1"
+  # GPU: the RTX 3070 Mobile (0000:01:00.0, 10de:24dd GA104M, 8GB)
+  # belongs to the HOST — AI pods, epic talos-config-e6rx. It sat
+  # unbound until 2026-11-18 (stock Talos ships no nvidia driver). The
+  # `-nvidia` installer below carries the open kernel modules and the
+  # container toolkit (talos/extensions/installer.env has the why of
+  # open + lts); these four lines are what actually binds the card.
+  # k8s/apps/nvidia-device-plugin turns it into `nvidia.com/gpu: 1`.
+  # The iGPU (Intel UHD, 00:02.0) is undriven and irrelevant.
+  kernel:
+    modules:
+      - name: nvidia
+      - name: nvidia_uvm
+      - name: nvidia_drm
+      - name: nvidia_modeset
+  # Sidero's NVIDIA guide sets this alongside the modules; taken as
+  # given, not investigated.
+  sysctls:
+    net.core.bpf_jit_harden: "1"
   install:
     # PIN, not the base template's /dev/sda. That default would have
     # been actively destructive here: the machine also presents a
@@ -35,10 +53,15 @@ machine:
     # talos/extensions/installer.env) + our p0agent extension, which puts
     # the node on the identity plane (w1.mesh.internal; talos-config-qb5q).
     # Without p0agent the node has no mesh identity at all; without the
-    # Longhorn pair it cannot run Longhorn (ADR-0011). Keep the tag AND
-    # digest in step with minipc.yaml — one fleet image.
+    # Longhorn pair it cannot run Longhorn (ADR-0011).
+    #
+    # Since 2026-11-18 this is the `-nvidia` VARIANT of the fleet image
+    # (same Talos, same four extensions, plus the two NVIDIA ones —
+    # `VARIANT=nvidia build.sh --installer-only`). Only the GPU nodes
+    # run it: keep tag AND digest in step with asus-tuf-b550-pro.yaml,
+    # and the Talos/p0agent versions in step with minipc.yaml.
     #
     # Predecessors: factory 6a9acc… until 2026-09-19 (upgraded in place,
     # `talosctl upgrade`; EPHEMERAL survives); p0agent-0.1.4 with the
     # nebula extension until 2026-09-21 (Mesh v3 Phase 4, P4.1).
-    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata@sha256:6e8e77cb8c2234c2d648923da376606b96137feaf323f92db9be6239fe2341c0
+    image: ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata-nvidia@sha256:a871cd26d11d08e33b077860e30c79c388ac173f796ffdcf878cf56b4b96d2aa
