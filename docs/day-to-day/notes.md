@@ -699,3 +699,25 @@
 - 2026-11-08 — **Recipe changes that touch parsing ship hub-first.** `policy.Parse` is `KnownFields(true)` (ADR-0048), so an old hub reading a `talos/mesh-policy-v3.yaml` with a key it does not know refuses every `#bundle` until redeployed; members keep their last bundle (7 d runway) but nothing new compiles. Order: `fly/deploy.sh` + unseal, then push the recipe. Gateway `-forward` args and the image pin go in one commit (an old binary crash-loops on an unknown flag). Both bit the dry run on 2026-11-07 and were sequenced by hand.
 - 2026-11-08 — **Syncthing API key** for scripted pairing lives in the cluster peer's `config.xml` (`kubectl -n syncthing exec deploy/syncthing -c syncthing -- sed -n 's|.*<apikey>\(.*\)</apikey>.*|\1|p' /var/syncthing/config/config.xml`); `curl -H "X-API-Key: …" http://syncthing.gw.mesh.internal/rest/…` through the gate. The GUI password gates browsers, not the key.
 - 2026-11-08 — **Forgejo: `mar`'s stored git credential is a narrow token** (no `write:organization`, cannot even `POST /user/repos`); creating orgs/repos by API means basic auth as `sysadmin` from `forgejo/forgejo-sysadmin` (bootstrap.md §1). Pushing to an existing repo works with the token.
+- 2026-11-17 — **Two installer images** (ADR-0049, `e6rx`): w1 runs
+  `…-kata-nvidia@sha256:a871cd26…` (open NVIDIA modules + toolkit
+  580.126.20), cp1/nas1/w2 still `…-kata@sha256:6e8e77cb…`. w2's
+  hardware file is NOT yet edited: its upgrade reboots the node and
+  bounces win2k25 (an `Administrator` session has been logged in since
+  2026-10-22) — owner's go first. The discarded first build
+  (`@sha256:7d727201…`, by-tag extensions, broken iscsid) was
+  overwritten under the same tag; never pin that digest.
+- 2026-11-17 — **The WAN is ~11–17 MB/s and everything shares it.** The
+  desktop is on Wi-Fi (`wlp12s0`); upstream is ~1.2 MB/s, so a 680 MB
+  installer push takes ~9 min and starves under a concurrent download
+  (`kill -STOP` the download). Model sets are 80 GB (tier 1) to 270 GB
+  per machine: plan w2 as a LAN copy from w1's volume, not a third pull.
+- 2026-11-17 — **In flight when the session ended**: desktop
+  `fetch-models.sh 2` (nohup, log `/tmp/comfy-fetch.log`, target
+  `~/disks/1TB-2024/ai/models`; rerun to resume) and the `models`
+  container of `ai/comfyui-w1` (tier 1). Desktop ComfyUI was left
+  running on `127.0.0.1:8188` (`k8s/apps/comfyui/run.sh`).
+- 2026-11-17 — **torch 2.14 JIT-compiles ops with triton**, which shells
+  out to `/sbin/ldconfig -p` to find libcuda — absent on NixOS;
+  `run.sh` sets `TRITON_LIBCUDA_PATH=/run/opengl-driver/lib` there.
+  Kernel cache is `~/.triton` (on the volume in the pod, `HOME=/data`).

@@ -43,7 +43,14 @@ history and, where the numbers still matter, in ADR-0006 and
   `ghcr.io/marnyg/talos-installer:v1.12.6-p0agent-0.1.6-kata@sha256:6e8e77cb…`
   (imager-built, ADR-0023: stock Talos + `iscsi-tools` v0.2.0 +
   `util-linux-tools` 2.41.2 + `kata-containers` 3.26.0 (ADR-0035) +
-  `p0agent` 0.1.6 — ships nodeagent `7fb6473`). `talosctl get
+  `p0agent` 0.1.6 — ships nodeagent `7fb6473`). **Since 2026-11-17 w1
+  runs the `-nvidia` variant** (ADR-0049, epic `e6rx`: the same plus
+  `nvidia-open-gpu-kernel-modules-lts` and
+  `nvidia-container-toolkit-lts` 580.126.20,
+  `…-kata-nvidia@sha256:a871cd26…`); its RTX 3070 Mobile is on the host
+  driver and advertised as `nvidia.com/gpu: 1`
+  (`k8s/apps/nvidia-device-plugin`), serving `ai/comfyui-w1` from a
+  300Gi `longhorn-local` volume. cp1, nas1 and w2 are unchanged. `talosctl get
   extensions` on each node lists exactly those four; `ext-p0agent`
   Running on all three. `RuntimeClass kata` (cloud-hypervisor) applied;
   the `kata-qemu` handler exists on the nodes but is undeclared.

@@ -79,6 +79,13 @@ pending its APK) and, forced by it, the facet vocabulary out of the
 binaries (ADR-0047/0048: a new facet is a recipe row + a `-forward`
 arg; `m6xc` closed).
 
+**Detour 2026-11-17, in progress:** image/video generation on own GPUs
+(epic `e6rx`, ADR-0049 Proposed) — ComfyUI with Krea 2 and MiniMax H3
+on the desktop and w1, benchmark harness written; w2 (hand-off with
+win2k25) and the comparison table remain. No goal in `goals.md` names
+this: it is a personal-projects workload riding the cluster, not a
+step toward the protocol.
+
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for
 real work, and the first with a durable datastore of its own; it is
