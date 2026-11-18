@@ -747,3 +747,24 @@
   w1 was also pulling ~8 MB/s from the WAN, i.e. that link saturates
   near 100 Mbit. w2 is on 1 GbE. Make w2 the WAN puller and w1 the
   mirror client when it matters.
+- 2026-11-18 — **ComfyUI's data left Longhorn** for static `local` PVs
+  (`local-nvme`, `/var/mnt/longhorn/local/comfyui` on w1 and w2): the
+  v1 engine read at 350–465 MB/s where the bare NVMe does 2.7–3.1 GB/s.
+  The old `ai/comfyui-w1` / `ai/comfyui-w2` claims (`longhorn-local`,
+  ~85 GB each) are unused copies awaiting the owner's delete. An empty
+  `/var/lib/e6rx-scratch` was left on both nodes by the disk test.
+- 2026-11-18 — **w1's GPU is held to ~50 W by the laptop**, not by
+  anything we set: `nvidia-smi` shows 100 % utilisation at 46–55 W and
+  1065 of 2100 MHz with throttle reasons `0x24` (SW power cap + SW
+  thermal slowdown) at 64 °C, AC online; its default limit is 85 W, max
+  110 W. w2's identical chip draws 217 W and runs every benchmark
+  2–2.8× faster. Talos builds no Dell/Alienware platform driver, so
+  there is no profile to switch from the OS.
+- 2026-11-18 — **`models-w2.gw.mesh.internal` (the model mirror through
+  the gateway) moved 1.3 MB/s to the desktop** while the desktop's
+  Wi-Fi was also pulling from the WAN — declared, working, not a fast
+  path.
+- 2026-11-18 — ComfyUI 0.45 has a default-on **"Comfy model compiler"**
+  (`--disable-comfy-compiler`): with it off, Krea 2 and H3 Image ran at
+  the same s/it on the 5070 Ti. Neither a cost nor a win here.
+
