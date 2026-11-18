@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Build chain for the fleet's declared install image (all three
-# talos/hardware/*.yaml). Born as the Mesh v3 P0.3 spike; adopted at
+# Build chain for the fleet's declared install image (the four
+# talos/hardware/*.yaml; two pin the plain image, the two GPU nodes the
+# VARIANT=nvidia one). Born as the Mesh v3 P0.3 spike; adopted at
 # the Phase 0 gate 2026-09-16 (bead 5cz). Run by hand, each step
 # idempotent; the last line prints the tag@digest to pin in every
 # hardware file. Talos version + official extensions: ../installer.env.
@@ -86,5 +87,9 @@ docker rmi "$loaded" >/dev/null
 docker push "$installer"
 echo "installer: $installer"
 digest=$(docker buildx imagetools inspect "$installer" --format '{{json .Manifest.Digest}}' | tr -d '"')
-echo "pin in talos/hardware/*.yaml (all three): image: $installer@$digest"
+case $variant in
+  nvidia) where="alienware-x15.yaml + asus-tuf-b550-pro.yaml" ;;
+  *) where="minipc.yaml + terramaster-f4-425-plus.yaml" ;;
+esac
+echo "pin in talos/hardware/{$where}: image: $installer@$digest"
 echo "next: talosctl upgrade -n <node> --image $installer@$digest"

@@ -27,12 +27,9 @@ history and, where the numbers still matter, in ADR-0006 and
   gitops row, `9l67`)_.
 - **Cluster endpoint is a LAN address** (`https://10.0.0.68:6443`); the
   cluster needs no mesh to be a cluster (invariant 4 unqualified).
-- **w1 is off** (owner closed it 2026-09-21 ~07:20Z; it will come
-  back) and **carries `node.kubernetes.io/out-of-service=nodeshutdown:
-  NoExecute`** since 2026-09-29 19:10Z — remove it before w1 rejoins.
-  The taint released its ghost pods and volume attachments; the
-  gateway and win2k25 run elsewhere. When w1 returns its kit is
-  expired (`5hek`): re-serve its config (notes 2026-09-29).
+- **All four nodes are up** (w1 has been back since before
+  2026-10-08 and carries no `out-of-service` taint; verified
+  2026-11-18).
 
 ## Cluster — _verified 2026-10-08_
 
@@ -76,7 +73,6 @@ history and, where the numbers still matter, in ADR-0006 and
     ADR-0004 posture) at `/var/mnt/longhorn`. Beware `sda`, a USB boot
     stick — install disk is pinned. Worker configs take
     `clusters/homelab/worker-{cluster,secrets}.yaml`.
-    **Off since 2026-09-21 07:23Z** (`Ready=Unknown`, no ping, no apid).
   - **nas1** — worker, the storage node, dir
     `talos/machines/6c-bf-b5-05-51-a8`, node name `nas1` (**pinned**),
     **static `10.0.0.74`** (selector by the directory MAC). NodeId

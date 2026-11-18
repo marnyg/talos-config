@@ -13,7 +13,7 @@ machine:
   # the i9-11900H at base clocks (2.5GHz; boost is 4.9) instead of
   # spiking to ~90°C under load — the EC then never ramps the fans past
   # their low tier. Applied live by apply-config, no reboot; verify with
-  #   talosctl -n 10.42.227.66 read /sys/devices/system/cpu/intel_pstate/no_turbo
+  #   talosctl -n 10.0.0.71 read /sys/devices/system/cpu/intel_pstate/no_turbo
   # If the throughput loss ever matters, the softer knob is
   # max_perf_pct (e.g. "70") instead of no_turbo.
   sysfs:
