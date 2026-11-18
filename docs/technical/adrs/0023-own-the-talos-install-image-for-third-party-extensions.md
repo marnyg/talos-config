@@ -3,6 +3,11 @@
 - Status: Accepted _(ruled 2026-09-16 at the Mesh v3 Phase 0 gate,
   decision `talos-config-b2t`, bead `5cz`; in effect on cp1)_
 - Date: 2026-09-16
+- Amended 2026-11-17 by ADR-0049: the *inputs* are pinned too — every
+  official extension ref in `talos/extensions/installer.env` carries
+  the Image Factory's digest for the Talos version (a by-tag rebuild
+  picked up a repointed `iscsi-tools`), and the fleet runs two variants
+  of the image (plain; `-nvidia` on the GPU nodes).
 - Related: ADR-0011 (Longhorn — why the official extensions are
   there), ADR-0016 (identity-native mesh — the node agent is a Talos
   extension), `docs/mesh-v3-iroh.md` §P0.3 (the data),

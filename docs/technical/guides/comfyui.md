@@ -39,8 +39,8 @@ pick the model files named under "Which files" below.
 
 ## Which files
 
-`int8_convrot` is the one to use for Krea 2 on every card here — it
-is also what upstream recommends on cu130:
+`int8_convrot` is the one to use for **Krea 2** on every card here —
+it is also what upstream recommends on cu130:
 
 | Krea 2 Turbo, 1024², 8 steps, warm | 5070 Ti | 3070 (w2) | 3070 Mobile (w1) |
 |---|---|---|---|
@@ -51,7 +51,19 @@ is also what upstream recommends on cu130:
 ¹ measured while the volume was still on Longhorn; warm runs do not
 touch the disk.
 
-H3_INT8_PLACEHOLDER
+For H3 the same family is **not** the clear win — measure before
+switching. Both are in tier 1; the smaller files are the default:
+
+| Warm run | 3070 (w2) | 3070 Mobile (w1) |
+|---|---|---|
+| H3 Image `pruned_w4a8` (12.6 GB), 2048², 6 steps | **15.8 s** (1.74 s/it) | **42.7 s** (4.89) |
+| H3 Image `pruned_int8_convrot` (21 GB) | W2_H3I_INT8 | 49.9 s (5.04) |
+| H3 video t2v `fl2va_pruned_w6a8` (16 GB), 832×480, 56 f, 6 steps | 44.4 s (5.69) | 102 s (12.6) |
+| H3 video t2v `fl2va_pruned_int8_convrot` (21 GB) | **39.9 s** (4.81) | not run |
+
+On the desktop H3 Image `int8_convrot` ran 33 s against 11–27 s for
+`w4a8`, but that run was in swap (footnote 2) and says nothing about
+the card.
 
 ## What the three GPUs do (warm, tier-1 files)
 
