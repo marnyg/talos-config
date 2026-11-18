@@ -240,23 +240,22 @@ def table(a):
     rows = []
     for f in sorted(glob.glob(os.path.join(a.out, "*.jsonl"))):
         rows += [json.loads(l) for l in open(f) if l.strip()]
-    cols = ["label", "case", "unet", "run", "n", "total_s", "load_s", "encode_s", "sample_s", "s_per_it",
+    cols = ["label", "case", "unet", "steps", "run", "n", "total_s", "load_s", "encode_s", "sample_s", "s_per_it",
             "decode_s", "peak_vram_gb", "vram_before_gb"]
     agg = {}
     for r in rows:
-        if "error" in r:
-            agg[(r["label"], r["case"], r["params"]["unet"], "FAILED")] = [r]
-            continue
-        agg.setdefault((r["label"], r["case"], r["params"]["unet"], r["run"]), []).append(r)
+        key = (r["case"], r["label"], r["params"]["unet"].replace(".safetensors", ""), r["params"]["steps"])
+        agg.setdefault(key + ("FAILED" if "error" in r else r["run"],), []).append(r)
     print("| " + " | ".join(cols) + " |\n|" + "---|" * len(cols))
-    for (label, case, unet, run), rs in sorted(agg.items()):
+    for (case, label, unet, steps, run), rs in sorted(agg.items()):
         if run == "FAILED":
-            print(f"| {label} | {case} | {unet} | FAILED | | {rs[-1]['error'][:90]} |")
+            print(f"| {label} | {case} | {unet} | {steps} | FAILED | {len(rs)} | {rs[-1]['error'][:90]} |")
             continue
-        med = lambda k: sorted(x[k] for x in rs if x.get(k) is not None)[len(rs) // 2] if any(
-            x.get(k) is not None for x in rs) else ""
-        print("| " + " | ".join(str(x) for x in [
-            label, case, unet.replace(".safetensors", ""), run, len(rs)] + [med(c) for c in cols[5:]]) + " |")
+
+        def med(k):
+            v = sorted(x[k] for x in rs if x.get(k) is not None)
+            return v[len(v) // 2] if v else ""
+        print("| " + " | ".join(str(x) for x in [label, case, unet, steps, run, len(rs)] + [med(c) for c in cols[6:]]) + " |")
 
 
 if __name__ == "__main__":
