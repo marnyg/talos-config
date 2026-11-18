@@ -49,6 +49,48 @@ spec:
     requests:
       storage: 300Gi
 ---
+# The volume the pod runs from since 2026-11-18: a directory on the
+# node's NVMe xfs, no Longhorn in the data path (k8s/apps/storage,
+# `local-nvme`, has the measurement). The directory is not created by
+# anything declarative — after a wipe of that disk:
+#   kubectl -n kube-system run mk --rm -i --restart=Never --image=busybox \
+#     --overrides='{"spec":{"nodeName":"w1","containers":[{"name":"mk","image":"busybox",
+#       "command":["sh","-c","mkdir -p /lh/local/comfyui && chown 1000:1000 /lh/local/comfyui"],
+#       "volumeMounts":[{"name":"lh","mountPath":"/lh"}]}],
+#       "volumes":[{"name":"lh","hostPath":{"path":"/var/mnt/longhorn"}}]}}'
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: comfyui-w1-nvme
+spec:
+  capacity:
+    storage: 300Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-nvme
+  local:
+    path: /var/mnt/longhorn/local/comfyui
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [w1]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: comfyui-w1-nvme
+  namespace: ai
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-nvme
+  volumeName: comfyui-w1-nvme
+  resources:
+    requests:
+      storage: 300Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -195,6 +237,48 @@ metadata:
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: longhorn-local
+  resources:
+    requests:
+      storage: 300Gi
+---
+# The volume the pod runs from since 2026-11-18: a directory on the
+# node's NVMe xfs, no Longhorn in the data path (k8s/apps/storage,
+# `local-nvme`, has the measurement). The directory is not created by
+# anything declarative — after a wipe of that disk:
+#   kubectl -n kube-system run mk --rm -i --restart=Never --image=busybox \
+#     --overrides='{"spec":{"nodeName":"w2","containers":[{"name":"mk","image":"busybox",
+#       "command":["sh","-c","mkdir -p /lh/local/comfyui && chown 1000:1000 /lh/local/comfyui"],
+#       "volumeMounts":[{"name":"lh","mountPath":"/lh"}]}],
+#       "volumes":[{"name":"lh","hostPath":{"path":"/var/mnt/longhorn"}}]}}'
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: comfyui-w2-nvme
+spec:
+  capacity:
+    storage: 300Gi
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-nvme
+  local:
+    path: /var/mnt/longhorn/local/comfyui
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values: [w2]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: comfyui-w2-nvme
+  namespace: ai
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-nvme
+  volumeName: comfyui-w2-nvme
   resources:
     requests:
       storage: 300Gi

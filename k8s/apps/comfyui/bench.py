@@ -211,7 +211,7 @@ async def bench(a):
         host = {"gpu": dev["name"], "vram_gb": round(dev["vram_total"] / 2**30, 1),
                 "ram_gb": round(st["system"]["ram_total"] / 2**30, 1),
                 "comfyui": st["system"]["comfyui_version"], "torch": st["system"]["pytorch_version"]}
-        print(f"# {a.label}: {host}")
+        print(f"# {a.label}: {host}", flush=True)
         for name in a.cases.split(","):
             p = {**DEFAULTS[name], **over.get(name, {})}
             for i in range(1 + a.warm):

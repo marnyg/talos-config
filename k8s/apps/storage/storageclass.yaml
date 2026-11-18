@@ -224,3 +224,23 @@ parameters:
   dataLocality: "strict-local"
   staleReplicaTimeout: "30"
   fsType: "ext4"
+---
+# Static local volumes on a node's own NVMe filesystem, for payload
+# where Longhorn's data path is the bottleneck (epic talos-config-e6rx,
+# 2026-11-18). Measured, O_DIRECT sequential read of a 4GB file:
+#   longhorn-local (strict-local, v1 engine)   w1 465 MB/s   w2 349 MB/s
+#   the same NVMe's xfs, no Longhorn           w1 2.7 GB/s   w2 3.1 GB/s
+# A model set is 13-34GB per load, so that factor is the cold start.
+# No provisioner: each PersistentVolume is declared by hand beside its
+# consumer (kind `local`, pinned to its node, a directory under
+# /var/mnt/longhorn — the one NVMe path kubelet already has mounted).
+# A `local` PV keeps PodSecurity `baseline` intact where a hostPath in
+# the pod spec would not. Same contract as longhorn-local: dies with
+# the node's disk, re-downloadable payload only.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
