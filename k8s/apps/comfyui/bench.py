@@ -2,7 +2,7 @@
 """Benchmark a ComfyUI server: the same fixed graphs on every GPU.
 
     bench.py --url http://127.0.0.1:8188 --label desktop-5070ti \
-             [--cases krea2_turbo,h3_image,h3_t2v] [--warm 2] [--set k=v ...]
+             [--cases krea2_turbo,h3_image,h3_t2v,h3_i2v] [--warm 2] [--set k=v ...]
 
 Per case: one COLD run (models dropped with /free first, so it pays
 disk load + text encode + sampling + decode) and --warm runs with a
@@ -52,6 +52,7 @@ DEFAULTS = {
                    lora="minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
                    width=832, height=480, length=56, steps=6, fps=24),
 }
+DEFAULTS["h3_i2v"] = {**DEFAULTS["h3_t2v"], "image": "first_frame.jpg"}
 
 
 def ref(node, slot=0):
@@ -120,7 +121,22 @@ def h3_t2v(p, prompt, seed):
     return g
 
 
-CASES = {"krea2_turbo": krea2_turbo, "h3_image": h3_image, "h3_t2v": h3_t2v}
+def h3_i2v(p, prompt, seed):
+    """h3_t2v with a first frame — the stock video_minimax_h3_i2v graph."""
+    g = h3_t2v(p, prompt, seed)
+    g["16"] = {"class_type": "LoadImage", "inputs": {"image": p["image"]}}
+    g["5"]["inputs"]["first_frame"] = ref(16)
+    g["15"]["inputs"]["filename_prefix"] = "bench/h3_i2v"
+    return g
+
+
+CASES = {"krea2_turbo": krea2_turbo, "h3_image": h3_image, "h3_t2v": h3_t2v, "h3_i2v": h3_i2v}
+I2V_PROMPTS = [
+    "Slow dolly forward through the greenhouse, fern fronds swaying gently, dust drifting through the sunbeams",
+    "The camera pans left across the ferns as the morning fog thins and the light grows warmer",
+    "A light breeze moves the fronds, water drips from the glass panes, the camera holds still",
+    "The camera rises slowly toward the glass roof while the mist curls between the plants",
+]
 LOADERS = {"UNETLoader", "CLIPLoader", "VAELoader", "LoraLoaderModelOnly"}
 ENCODERS = {"CLIPTextEncode", "MiniMaxH3ImageConditioning", "MiniMaxH3ImageToVideo", "ConditioningZeroOut"}
 SAMPLERS = {"KSampler", "SamplerCustomAdvanced"}
@@ -214,6 +230,14 @@ async def bench(a):
         print(f"# {a.label}: {host}", flush=True)
         for name in a.cases.split(","):
             p = {**DEFAULTS[name], **over.get(name, {})}
+            prompts = I2V_PROMPTS if name == "h3_i2v" else PROMPTS
+            if p.get("image"):  # an input image: put it in the server's input directory
+                form = aiohttp.FormData()
+                form.add_field("image", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "bench-assets",
+                                                          p["image"]), "rb"), filename=p["image"])
+                form.add_field("overwrite", "true")
+                async with s.post(f"{a.url}/upload/image", data=form) as r:
+                    p["image"] = (await r.json())["name"]
             for i in range(1 + a.warm):
                 kind = "cold" if i == 0 else "warm"
                 if i == 0:
@@ -226,7 +250,7 @@ async def bench(a):
                 # (cold) that is everything that is not ComfyUI — a desktop
                 # compositor, a game; ~0 on a headless node.
                 base = round((d["vram_total"] - d["vram_free"]) / 2**30, 2)
-                res = await run_one(s, a.url, CASES[name](p, PROMPTS[i % len(PROMPTS)], 1000 + i), a.timeout)
+                res = await run_one(s, a.url, CASES[name](p, prompts[i % len(prompts)], 1000 + i), a.timeout)
                 rec = {"label": a.label, "case": name, "run": kind, "ts": int(time.time()), **host,
                        "params": p, "vram_before_gb": base, **res}
                 with open(out, "a") as f:
@@ -262,7 +286,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://127.0.0.1:8188")
     ap.add_argument("--label")
-    ap.add_argument("--cases", default=",".join(CASES))
+    ap.add_argument("--cases", default="krea2_turbo,h3_image,h3_t2v")
     ap.add_argument("--warm", type=int, default=2)
     ap.add_argument("--set", action="append")
     ap.add_argument("--timeout", type=int, default=3600, help="seconds without any server event")
