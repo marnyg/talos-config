@@ -97,8 +97,22 @@ weights live, and what the container is.
 3. A pod gets a card with `runtimeClassName: nvidia` +
    `nvidia.com/gpu: 1` (`k8s/apps/nvidia-device-plugin`, vendored
    static manifest, scheduled by the extension's own node label).
-4. Weights and the Python stack live on `longhorn-local`, one volume
-   per GPU node; the container is the stock uv image.
+4. Weights and the Python stack live on a node-local volume, one per
+   GPU node; the container is the stock uv image.
+   _Amended 2026-11-18, the day after:_ the volume is a static `local`
+   PersistentVolume (`local-nvme` class) — a directory on the node's
+   NVMe xfs — **not** `longhorn-local`. The fallback this ADR named was
+   triggered by the measurement it asked for: O_DIRECT sequential read
+   465 / 349 MB/s (w1 / w2) through Longhorn's v1 engine against
+   2.7 / 3.1 GB/s on the same disks bare; a page-cache-cold H3 Image
+   run on w2 went from 64.8 s to 25.7 s (warm: 15.8 s). A side effect
+   worth having: ComfyUI recognises a real NVMe (`fast_disk=True`) and
+   streams weights from disk instead of pinning them in RAM — the pod's
+   anonymous memory during H3 video fell from ~25 GB to ~15 GB on w1,
+   which has 32. A `local` PV rather than `hostPath` because the
+   cluster enforces PodSecurity `baseline`. The `longhorn-local` class
+   and the two claims on it remain, unused, until the owner deletes
+   them.
 5. ComfyUI is the runtime on all three machines, from one set of pins
    (`k8s/apps/comfyui`), so `bench.py` compares GPUs and nothing else.
 
@@ -142,9 +156,13 @@ carved out), so `comfyui-w2` is an ordinary Deployment like w1's.
 - Bad: the pod is not hermetic — a *cold* volume needs PyPI, GitHub and
   Hugging Face at start. Accepted: it is a workstation workload, not
   part of the provisioning or recovery path (invariant 4 untouched).
-- Bad: `strict-local` pins the volume to its node; draining the node
-  stops the workload instead of moving it. Intended — the card does
-  not move either.
-- Unknown: one line, `ERROR: init 250 result=11`, precedes uv's output
-  when `uv pip sync` runs in the GPU container (cold volume or a lock
-  bump; a warm start does not print it). Harmless so far, unexplained.
+- Bad: the volume is pinned to its node; draining the node stops the
+  workload instead of moving it. Intended — the card does not move
+  either. The directory behind a `local` PV is not created by anything
+  declarative (one `mkdir` after a disk wipe, in `comfyui.yaml`), and
+  it shares Longhorn's disk without Longhorn knowing what it is —
+  Longhorn sees only less free space.
+- Unknown: one line, `ERROR: init 250 result=11`, is the first thing
+  the GPU container prints on every start — before the entrypoint's
+  own first output, so neither uv nor ComfyUI; the `models` container
+  (no GPU) does not print it. Harmless so far, unexplained.

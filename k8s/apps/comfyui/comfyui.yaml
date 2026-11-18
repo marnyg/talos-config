@@ -232,6 +232,20 @@ spec:
                 name: comfyui-w1
                 port:
                   name: http
+    # The node's model tree (fetch_models.py --serve), same gate: lets
+    # an admin device mirror from the cluster over the mesh instead of
+    # pulling a file across the WAN a second time —
+    #   MODEL_MIRROR=http://models-w1.gw.mesh.internal fetch_models.py 2
+    - host: models-w1.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: comfyui-w1
+                port:
+                  name: models
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -425,3 +439,17 @@ spec:
                 name: comfyui-w2
                 port:
                   name: http
+    # The node's model tree (fetch_models.py --serve), same gate: lets
+    # an admin device mirror from the cluster over the mesh instead of
+    # pulling a file across the WAN a second time —
+    #   MODEL_MIRROR=http://models-w2.gw.mesh.internal fetch_models.py 2
+    - host: models-w2.gw.mesh.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: comfyui-w2
+                port:
+                  name: models
