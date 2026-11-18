@@ -24,9 +24,12 @@
 1 Comfy-Org/MiniMax-H3 diffusion_models/minimax_h3_fl2va_pruned_w6a8.safetensors   # 16.0
 
 # --- int8_convrot: what upstream recommends on cu130 ("prefer
-# int8_convrot if you are able to use pytorch with cu130"), and what the
-# benchmark agrees with — Krea 2 Turbo on the 5070 Ti: 0.64 s/it against
-# 0.89 (nvfp4) and 0.95 (fp8_scaled), 2026-11-18. Tier 1 since then.
+# int8_convrot if you are able to use pytorch with cu130"). Measured
+# 2026-11-18 (docs/technical/guides/comfyui.md): for Krea 2 Turbo it is
+# the one to use — 0.64 s/it against 0.89 (nvfp4) on the 5070 Ti, 1.33
+# against 2.88 on the 3070. For H3 it is not: H3 Image runs level with
+# w4a8 at twice the size, H3 video ~15% faster than w6a8. Tier 1 so
+# every machine can choose.
 1 Comfy-Org/Krea-2 diffusion_models/krea2_turbo_int8_convrot.safetensors           # 13.5
 1 Comfy-Org/MiniMax-H3-Image diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors # 21.0  template default
 1 Comfy-Org/MiniMax-H3 diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors   # 21.0  template default

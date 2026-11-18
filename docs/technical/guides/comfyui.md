@@ -57,7 +57,7 @@ switching. Both are in tier 1; the smaller files are the default:
 | Warm run | 3070 (w2) | 3070 Mobile (w1) |
 |---|---|---|
 | H3 Image `pruned_w4a8` (12.6 GB), 2048², 6 steps | **15.8 s** (1.74 s/it) | **42.7 s** (4.89) |
-| H3 Image `pruned_int8_convrot` (21 GB) | W2_H3I_INT8 | 49.9 s (5.04) |
+| H3 Image `pruned_int8_convrot` (21 GB) | 16.1 s (1.68) | 49.9 s (5.04) |
 | H3 video t2v `fl2va_pruned_w6a8` (16 GB), 832×480, 56 f, 6 steps | 44.4 s (5.69) | 102 s (12.6) |
 | H3 video t2v `fl2va_pruned_int8_convrot` (21 GB) | **39.9 s** (4.81) | not run |
 
