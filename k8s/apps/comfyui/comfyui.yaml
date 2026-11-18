@@ -16,11 +16,15 @@
 #   — "Failed to find C compiler" on slim (2026-11-17). The build is
 #   cached under /data/.triton. The `models` container needs only
 #   python and stays slim.
-# - The volume is `longhorn-local` (k8s/apps/storage): ONE replica on
-#   the pod's own node, strict-local, unencrypted, not backed up —
-#   everything on it is re-downloadable and public (ADR-0004's test),
-#   and a strict-local single replica skips the network hop entirely.
-#   One volume per node, because the data should sit beside the card.
+# - The volume is a `local-nvme` PersistentVolume (k8s/apps/storage):
+#   a directory on the node's own NVMe xfs, unencrypted, not backed up
+#   — everything on it is re-downloadable and public (ADR-0004's test).
+#   One per node, because the data should sit beside the card. It was
+#   `longhorn-local` (strict-local, one replica) for its first day; the
+#   read speed measured 6-9x below the bare disk and a model load is
+#   13-34GB, so the data moved (2026-11-18). The old `comfyui-w1` /
+#   `comfyui-w2` claims below still hold a copy and are UNUSED — kept
+#   until the owner says delete.
 # - The `models` container fills /data/models from models.txt (tier 1 =
 #   the set every card can run) and serves the tree on :8189 to the
 #   other node, which asks it before Hugging Face (fetch_models.py:
@@ -159,7 +163,7 @@ spec:
             - |
               set -eu
               mkdir -p /data/models
-              python3 -m http.server 8189 --directory /data/models >/dev/null 2>&1 &
+              python3 /app/fetch_models.py --serve 8189 /data/models &
               python3 /app/fetch_models.py "$MODEL_TIER" /data/models
               wait
           env:
@@ -182,7 +186,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: comfyui-w1
+            claimName: comfyui-w1-nvme
         - name: app
           configMap:
             name: comfyui-app
@@ -351,7 +355,7 @@ spec:
             - |
               set -eu
               mkdir -p /data/models
-              python3 -m http.server 8189 --directory /data/models >/dev/null 2>&1 &
+              python3 /app/fetch_models.py --serve 8189 /data/models &
               python3 /app/fetch_models.py "$MODEL_TIER" /data/models
               wait
           env:
@@ -375,7 +379,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: comfyui-w2
+            claimName: comfyui-w2-nvme
         - name: app
           configMap:
             name: comfyui-app

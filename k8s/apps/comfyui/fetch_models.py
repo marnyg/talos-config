@@ -2,6 +2,7 @@
 """Fill a ComfyUI model tree from models.txt. Stdlib only.
 
     fetch_models.py <max-tier> [models-dir]
+    fetch_models.py --serve <port> <models-dir>     (the mirror, below)
 
 Why not `hf download` (what this replaced on 2026-11-17): an
 interrupted `hf download` did not resume — every pod restart began the
@@ -9,8 +10,9 @@ file again under a new temp name, and five restarts left 8 GB of dead
 partials of one 5 GB file on w1. Here the WAN is the scarce thing
 (~10-15 MB/s for the whole house; a tier is 80 GB), so:
 
-- every download resumes: bytes go to <file>.part with an HTTP Range
-  request, and the file is renamed into place only when complete;
+- every download resumes, from the hub and from a peer alike: bytes
+  go to <file>.part with an HTTP Range request, and the file is
+  renamed into place only when complete;
 - a finished file is checked against the sha256 the hub publishes for
   it (X-Linked-ETag), wherever the bytes came from;
 - MODEL_MIRROR=http://peer:8189 names another node's model tree (the
@@ -37,8 +39,9 @@ import urllib.request
 HF = "https://huggingface.co"
 UA = {"User-Agent": "talos-config-fetch-models"}
 here = os.path.dirname(os.path.abspath(__file__))
-tier = int(sys.argv[1])
-models = sys.argv[2] if len(sys.argv) > 2 else os.environ.get(
+serving = len(sys.argv) > 1 and sys.argv[1] == "--serve"
+tier = 0 if serving else int(sys.argv[1])
+models = sys.argv[2] if len(sys.argv) > 2 and not serving else os.environ.get(
     "MODELS", os.path.expanduser("~/disks/1TB-2024/ai/models"))
 mirror = os.environ.get("MODEL_MIRROR", "").rstrip("/")
 locks, locks_guard = {}, threading.Lock()
@@ -158,6 +161,54 @@ def fetch(repo, path, mirror_only=False, wait=True):
         lock.release()
 
 
+def serve(port, root):
+    """The peer side of MODEL_MIRROR: files under `root`, with Range.
+
+    `python -m http.server` ignores Range, so a mirror pull that a pod
+    roll interrupted began again from byte 0.
+    """
+    import http.server
+    import re
+
+    class H(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            path = os.path.realpath(os.path.join(root, self.path.lstrip("/")))
+            if not path.startswith(os.path.realpath(root) + os.sep) or not os.path.isfile(path) \
+                    or path.endswith(".part"):
+                self.send_error(404)
+                return
+            size = os.path.getsize(path)
+            start = 0
+            m = re.fullmatch(r"bytes=(\d+)-", self.headers.get("Range", ""))
+            if m:
+                start = int(m.group(1))
+                if start >= size:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self.send_response(206)
+                self.send_header("Content-Range", f"bytes {start}-{size - 1}/{size}")
+            else:
+                self.send_response(200)
+            self.send_header("Content-Length", str(size - start))
+            self.end_headers()
+            with open(path, "rb") as f:
+                f.seek(start)
+                try:
+                    shutil.copyfileobj(f, self.wfile, 4 << 20)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+
+    http.server.ThreadingHTTPServer(("", port), H).serve_forever()
+
+
 def main():
     os.makedirs(models, exist_ok=True)
     shutil.rmtree(os.path.join(models, ".cache"), ignore_errors=True)  # dead `hf download` partials
@@ -188,4 +239,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if serving:  # fetch_models.py --serve <port> <dir>
+        serve(int(sys.argv[2]), sys.argv[3])
+    else:
+        main()

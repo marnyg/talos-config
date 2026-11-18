@@ -5,6 +5,7 @@
 #   COMFY_HOME  dir holding ComfyUI/ venv/ output/ input/ user/
 #   MODELS      model tree (default $COMFY_HOME/models), ComfyUI layout
 #   LISTEN/PORT default 127.0.0.1:8188
+#   COMFY_ARGS  extra main.py flags (word-split), e.g. --disable-fast-disk
 # Extra args go to main.py verbatim.
 set -euo pipefail
 paths_only=
@@ -37,4 +38,4 @@ cd "$home/ComfyUI"
 exec "$py" main.py --listen "${LISTEN:-127.0.0.1}" --port "${PORT:-8188}" \
   --extra-model-paths-config "$home/extra_model_paths.yaml" \
   --output-directory "$home/output" --input-directory "$home/input" \
-  --user-directory "$home/user" "$@"
+  --user-directory "$home/user" ${COMFY_ARGS:-} "$@"
