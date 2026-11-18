@@ -1,0 +1,101 @@
+# ComfyUI on own GPUs — how to use it, what it measured
+
+Epic `talos-config-e6rx`, ADR-0049. Three ComfyUI instances run the
+same pinned stack (`k8s/apps/comfyui/versions.env` +
+`requirements.lock`: ComfyUI v0.45.5, torch 2.14.1+cu130):
+
+| Where | GPU | URL | Runs from |
+|---|---|---|---|
+| desktop | RTX 5070 Ti 16 GB | `http://127.0.0.1:8188` | uv venv + models on `~/disks/1TB-2024/ai` (SATA SSD) |
+| w2 | RTX 3070 8 GB | `http://comfy-w2.gw.mesh.internal` | `ai/comfyui-w2`, `local-nvme` volume |
+| w1 | RTX 3070 Mobile 8 GB | `http://comfy-w1.gw.mesh.internal` | `ai/comfyui-w1`, `local-nvme` volume |
+
+The cluster URLs are behind the admins gate like every other Ingress.
+The stock templates work as shipped (Templates → Krea 2 / MiniMax H3);
+pick the model files named under "Which files" below.
+
+## Day to day
+
+- **Desktop**: `k8s/apps/comfyui/setup-local.sh` once (idempotent),
+  then `k8s/apps/comfyui/run.sh`. It is not a service — nothing starts
+  it at login.
+- **Models**: `k8s/apps/comfyui/models.txt` is the manifest (tier 1 =
+  on every machine, tier 2 = the other variants).
+  `python3 k8s/apps/comfyui/fetch_models.py 2` fills the desktop tree
+  and resumes where it stopped; the pods run the same script and
+  mirror each other (`MODEL_TIER` in `comfyui.yaml`).
+- **A bump** (ComfyUI, torch, a model): edit `versions.env` /
+  `requirements.lock` / `models.txt`, push. The ConfigMap name changes,
+  the pods roll, and each converges its volume. The lock is
+  `uv pip compile <ComfyUI checkout>/requirements.txt --python-version
+  3.13 --python-platform x86_64-manylinux_2_28 --torch-backend cu130
+  --no-header -o requirements.lock`.
+- **Benchmark**: `bench.py --url <url> --label <name>`; results append
+  to `k8s/apps/comfyui/bench-results/<label>.jsonl`, `bench.py --table`
+  prints everything.
+- **w2's card back to a VM**: scale `comfyui-w2` to 0,
+  `scripts/gpu-handoff.sh vm`, start the VM; `… host` or a reboot
+  returns it. `vm` has never been run.
+
+## Which files
+
+`int8_convrot` is the one to use for Krea 2 on every card here — it
+is also what upstream recommends on cu130:
+
+| Krea 2 Turbo, 1024², 8 steps, warm | 5070 Ti | 3070 (w2) | 3070 Mobile (w1) |
+|---|---|---|---|
+| `krea2_turbo_int8_convrot` | **6.2 s** (0.64 s/it) | **13.4 s** (1.33) | **29.9 s** (3.15) |
+| `krea2_turbo_nvfp4` | 8.1 s (0.90) | 26.9 s (2.88) | 48.4 s (5.26) |
+| `krea2_turbo_fp8_scaled` | 8.8 s (0.95) | 26.5 s (2.90)¹ | 49.6 s (5.65)¹ |
+
+¹ measured while the volume was still on Longhorn; warm runs do not
+touch the disk.
+
+H3_INT8_PLACEHOLDER
+
+## What the three GPUs do (warm, tier-1 files)
+
+| Case | 5070 Ti² | 3070 (w2) | 3070 Mobile (w1) |
+|---|---|---|---|
+| Krea 2 Turbo `int8_convrot`, 1024², 8 steps | 6.2 s | 13.4 s | 29.9 s |
+| H3 Image `w4a8`, 2048², 6 steps | 11–27 s (0.81 s/it) | 15.8 s (1.74) | 42.7 s (4.89) |
+| H3 video t2v `w6a8`, 832×480, 56 frames, 6 steps (8-step LoRA) | 38–54 s (2.64 s/it) | 44.4 s (5.69) | 102 s (12.6) |
+| — same, 4 steps (4-step LoRA) | 28 s | 32.8 s | — |
+| H3 video i2v, same settings | 33 s (2.95) | 48.9 s (6.41) | 112 s (13.9) |
+
+² **The desktop numbers are a floor, not the card's speed.** They were
+taken with the owner's session open: ~6.7 GB of the 16 GB VRAM and
+~46 GB of the 62 GB RAM were already in use, so H3 (a 13–20 GB model
+plus a 16 GB text encoder) ran with heavy offload and, at the end,
+into swap. Krea 2 fits and is representative. Re-run `bench.py` on a
+quiet desktop before drawing conclusions about H3 there.
+
+Reading it:
+
+- **w2's desktop 3070 runs every model, H3 video included, on 8 GB.**
+  It is 2.2× slower than the 5070 Ti on Krea 2 (the one case the
+  desktop ran unhandicapped) and roughly level with the desktop *as
+  measured* on H3.
+- **w1 is 2–2.8× slower than w2 on the same chip** because the laptop
+  holds its GPU to ~50 W (100 % utilisation at 46–55 W, 1065 of
+  2100 MHz, throttle reasons `0x24`; w2 draws 217 W). Nothing in
+  Talos can lift that; it is firmware/EC policy.
+- **ComfyUI itself costs little**: ~0.1 s per run outside
+  encode/sample/decode; process start to API 5 s; a warm pod is Ready
+  ~30 s after scheduling. The default-on "Comfy model compiler" made
+  no measurable difference either way (`--disable-comfy-compiler`).
+- **The cold start is the disk.** Page-cache-cold H3 Image on w2:
+  64.8 s with the volume on Longhorn, 25.7 s on the bare NVMe (warm
+  15.8 s). That is why the pods run from `local-nvme`. The desktop's
+  SATA SSD is the slow one now (~370 MB/s; cold H3 runs take 90–140 s
+  there).
+
+## Known gaps
+
+- `scripts/gpu-handoff.sh vm` is untested.
+- The `longhorn-local` claims `ai/comfyui-w1` / `ai/comfyui-w2` are
+  unused copies (~85 GB each) awaiting a delete.
+- H3 reference-to-video (`ref2va`), image edit and the 27 GB
+  `int8_convrot` text encoder are tier 2 and unmeasured.
+- `ERROR: init 250 result=11` as the first line of every GPU container
+  start: unexplained, harmless so far.

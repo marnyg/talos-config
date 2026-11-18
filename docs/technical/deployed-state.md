@@ -47,8 +47,9 @@ history and, where the numbers still matter, in ADR-0006 and
   `…-kata-nvidia@sha256:a871cd26…`). Both cards are on the host driver
   and advertised as `nvidia.com/gpu: 1`
   (`k8s/apps/nvidia-device-plugin`): w1's RTX 3070 Mobile serves
-  `ai/comfyui-w1`, w2's RTX 3070 `ai/comfyui-w2`, each from a 300Gi
-  `longhorn-local` volume (one strict-local replica on its own node).
+  `ai/comfyui-w1`, w2's RTX 3070 `ai/comfyui-w2`, each from a static
+  `local` PV (`local-nvme`: `/var/mnt/longhorn/local/comfyui` on the
+  node's NVMe xfs, beside Longhorn's data, since 2026-11-18).
   **win2k25 is Halted** and no longer holds w2's card — the vfio/
   passthrough paragraphs below describe the 2026-10-19 state, reachable
   again only through `scripts/gpu-handoff.sh vm`. cp1 and nas1 are
