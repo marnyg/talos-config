@@ -767,4 +767,8 @@
 - 2026-11-18 — ComfyUI 0.45 has a default-on **"Comfy model compiler"**
   (`--disable-comfy-compiler`): with it off, Krea 2 and H3 Image ran at
   the same s/it on the 5070 Ti. Neither a cost nor a win here.
-
+- 2026-11-21 — **The recipe grants `tcp` to `admins` but nothing serves
+  it** (ADR-0050): a `beat ok: 8 grants` on an admins device is the new
+  row, not a regression. A daemon older than this revision ignores the
+  grant and reads a member's `tcp@*` advertisement as nothing; reaching
+  any port needs the new irohup on **both** ends.

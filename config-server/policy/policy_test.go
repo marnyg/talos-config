@@ -187,7 +187,7 @@ func TestAcceptTable(t *testing.T) {
 	if _, ok := at[ALPN("ingress-http")]; ok {
 		t.Fatal("a node must not accept a gateway facet's ALPN")
 	}
-	if at := AcceptTable(KindDevice); at[ALPN("ssh")] != "ssh" || len(at) != 1 {
+	if at := AcceptTable(KindDevice); at[ALPN("ssh")] != "ssh" || at[ALPN("tcp")] != "tcp" || len(at) != 2 {
 		t.Fatalf("device accept table = %v", at)
 	}
 	if AcceptTable("phone") != nil {

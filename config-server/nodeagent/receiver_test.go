@@ -54,6 +54,32 @@ func TestReceiverTableIsForwardUnionServe(t *testing.T) {
 	}
 }
 
+// A forward to `<host>:*` is a facet that takes any port (ADR-0050):
+// accepted and consented like any other, advertised as `<facet>@*`
+// beside the bare name, with no port of its own — whatever the compiled
+// vocabulary's nominal one says.
+func TestReceiverTableAnyPort(t *testing.T) {
+	rt, err := receiverTable(policy.KindDevice, map[string]string{"ssh": "127.0.0.1:22", "tcp": "127.0.0.1:*"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(rt.facets, []string{"ssh", "tcp"}) || rt.accept[policy.ALPN("tcp")] != "tcp" || len(rt.alpns) != 2 {
+		t.Fatalf("facets %v accept %v alpns %v", rt.facets, rt.accept, rt.alpns)
+	}
+	if !slices.Equal(rt.adverts, []string{"ssh", "ssh@22", "tcp", "tcp@*"}) {
+		t.Fatalf("adverts %v", rt.adverts)
+	}
+	if _, has := rt.ports["tcp"]; has {
+		t.Fatalf("an any-port facet has no port to present: %v", rt.ports)
+	}
+	if host, ok := anyPortHost("127.0.0.1:*"); !ok || host != "127.0.0.1" {
+		t.Fatalf("anyPortHost = %q %v", host, ok)
+	}
+	if _, ok := anyPortHost("127.0.0.1:22"); ok {
+		t.Fatal("a fixed forward is not any-port")
+	}
+}
+
 func TestReceiverTableRejects(t *testing.T) {
 	type in struct {
 		kind    policy.Kind
@@ -68,6 +94,8 @@ func TestReceiverTableRejects(t *testing.T) {
 		"nil handler":            {serve: map[string]StreamHandler{"ingress-http": nil}},
 		"served, no port":        {serve: map[string]StreamHandler{"probe": noopHandler}},
 		"empty facet":            {forward: map[string]string{"": "x:1"}},
+		"any port, no host":      {forward: map[string]string{"tcp": ":*"}},
+		"any port, served too":   {forward: map[string]string{"ingress-http": "x:*"}, serve: map[string]StreamHandler{"ingress-http": noopHandler}},
 	}
 	for name, o := range cases {
 		if _, err := receiverTable(o.kind, o.forward, o.serve); err == nil {

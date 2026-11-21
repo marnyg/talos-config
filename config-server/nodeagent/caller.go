@@ -111,6 +111,20 @@ func (a *Agent) Target(name string, port uint16) (member, facet string, err erro
 	return target(name, port, a.Resolve)
 }
 
+// Route is Target plus the any-port fallback (ADR-0050): what a flow to
+// <name>:<port> rides. A port the member advertises a facet at reads as
+// Target does (Route.Port 0); any other port on a member that
+// advertises `<facet>@*` rides that facet with Route.Port set, for the
+// caller to name at the head of the stream (WritePort). Misses re-beat
+// exactly as Target's do.
+func (a *Agent) Route(name string, port uint16) (Route, error) {
+	r, err := route(name, port, a.Resolve)
+	if err == nil || !staleTarget(err) || !a.rebeat(context.Background()) {
+		return r, err
+	}
+	return route(name, port, a.Resolve)
+}
+
 // staleTarget: the Target misses a fresh beat may cure.
 func staleTarget(err error) bool {
 	return errors.Is(err, ErrUnknownName) || errors.Is(err, ErrNotFacet) || errors.Is(err, ErrNotThatKind)

@@ -5,15 +5,31 @@ import (
 	"net"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/config-server/policy"
 )
 
 // bridge is one local listener: TCP on Listen → facet on the member
-// called Name.
+// called Name. Port is set for a facet that takes any port (ADR-0050,
+// `<member>/<facet>@<port>=<listen>`): it is named at the head of each
+// stream, so it must be given exactly when the member forwards the
+// facet as `<host>:*` — the bridge has no advertisement to check it
+// against until the first beat, and a mismatch is a stream the receiver
+// drops.
 type bridge struct {
 	Name, Facet, Listen string
+	Port                uint16
+}
+
+// facet is the bridge's facet as written: `<facet>` or `<facet>@<port>`.
+func (b bridge) facet() string {
+	if b.Port == 0 {
+		return b.Facet
+	}
+	return nodeagent.Advertise(b.Facet, b.Port)
 }
 
 type bridges []bridge
@@ -21,29 +37,38 @@ type bridges []bridge
 func (b *bridges) String() string {
 	var parts []string
 	for _, x := range *b {
-		parts = append(parts, x.Name+"/"+x.Facet+"="+x.Listen)
+		parts = append(parts, x.Name+"/"+x.facet()+"="+x.Listen)
 	}
 	return strings.Join(parts, ",")
 }
 
-// Set parses <member>/<facet>=<host:port>.
+// Set parses <member>/<facet>[@<port>]=<host:port>.
 func (b *bridges) Set(s string) error {
 	target, listen, ok := strings.Cut(s, "=")
 	name, facet, ok2 := strings.Cut(target, "/")
 	if !ok || !ok2 || name == "" || facet == "" {
-		return fmt.Errorf("want <member>/<facet>=<host:port>, got %q", s)
+		return fmt.Errorf("want <member>/<facet>[@<port>]=<host:port>, got %q", s)
+	}
+	var port uint16
+	if f, p, found := strings.Cut(facet, nodeagent.PortSep); found {
+		n, err := strconv.ParseUint(p, 10, 16)
+		if err != nil || n == 0 || f == "" {
+			return fmt.Errorf("%q: want <facet>@<port> with a port 1–65535", s)
+		}
+		facet, port = f, uint16(n)
 	}
 	if _, _, err := net.SplitHostPort(listen); err != nil {
 		return fmt.Errorf("%q: %w", s, err)
 	}
-	*b = append(*b, bridge{Name: strings.ToLower(strings.TrimSpace(name)), Facet: facet, Listen: listen})
+	*b = append(*b, bridge{Name: strings.ToLower(strings.TrimSpace(name)), Facet: facet, Listen: listen, Port: port})
 	return nil
 }
 
 // forward is one served facet: a stream admitted under Facet is spliced
 // to the loopback Target (the accept table's other half, nodeagent
 // Options.Forward). Device facets only (policy.KindDevice): what a
-// device may serve — its own sshd (ADR-0038).
+// device may serve — its own sshd (ADR-0038), or with a target of
+// `<host>:*` every TCP port on that host (ADR-0050).
 type forwards map[string]string
 
 func (f *forwards) String() string {
@@ -55,7 +80,7 @@ func (f *forwards) String() string {
 	return strings.Join(parts, ",")
 }
 
-// Set parses <facet>=<host:port>.
+// Set parses <facet>=<host:port>; the port may be `*` (any port).
 func (f *forwards) Set(s string) error {
 	facet, target, ok := strings.Cut(s, "=")
 	if !ok || facet == "" {

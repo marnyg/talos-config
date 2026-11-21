@@ -16,6 +16,10 @@ import (
 // what made a new facet a receiver rebuild. Returns the sorted facet
 // list, the port each is presented on, the ALPN → facet accept table,
 // the ALPNs to bind, and the reach-me-at's cav.facet entries.
+//
+// A forward whose target is `<host>:*` is a facet that takes any port
+// (ADR-0050): it has no port to present, is advertised as `<facet>` and
+// `<facet>@*`, and each admitted stream names its own port (ReadPort).
 func receiverTable(kind policy.Kind, forward map[string]string, serve map[string]StreamHandler) (*receiver, error) {
 	if kind == "" {
 		kind = policy.KindNode
@@ -33,12 +37,21 @@ func receiverTable(kind policy.Kind, forward map[string]string, serve map[string
 		if f == "" {
 			return nil, fmt.Errorf("nodeagent: forward with an empty facet name")
 		}
-		_, tp, err := net.SplitHostPort(target)
+		host, tp, err := net.SplitHostPort(target)
 		if err != nil {
 			return nil, fmt.Errorf("nodeagent: forward %s=%q: %w", f, target, err)
 		}
 		if _, dup := serve[f]; dup {
 			return nil, fmt.Errorf("nodeagent: %q is both forwarded and served", f)
+		}
+		if tp == AnyPort {
+			// An empty host would dial the wildcard address; say which
+			// interface's services are being offered.
+			if host == "" {
+				return nil, fmt.Errorf("nodeagent: forward %s=%q: an any-port forward names its host", f, target)
+			}
+			facets = append(facets, f)
+			continue
 		}
 		port := policy.FacetPort(f)
 		if port == 0 {
@@ -73,7 +86,11 @@ func receiverTable(kind policy.Kind, forward map[string]string, serve map[string
 	// no daemon reads it.
 	adverts := make([]string, 0, 2*len(facets))
 	for _, f := range facets {
-		adverts = append(adverts, f, Advertise(f, ports[f]))
+		if port, ok := ports[f]; ok {
+			adverts = append(adverts, f, Advertise(f, port))
+		} else {
+			adverts = append(adverts, f, AdvertiseAny(f))
+		}
 	}
 	accept := map[string]string{}
 	alpns := make([]string, 0, len(facets))
@@ -85,7 +102,16 @@ func receiverTable(kind policy.Kind, forward map[string]string, serve map[string
 	return &receiver{facets: facets, ports: ports, accept: accept, alpns: alpns, adverts: adverts}, nil
 }
 
-// receiver is receiverTable's result.
+// anyPortHost reports whether a forward target is `<host>:*` — a facet
+// that takes any port (ADR-0050) — and the host its streams are spliced
+// to.
+func anyPortHost(target string) (host string, ok bool) {
+	h, p, err := net.SplitHostPort(target)
+	return h, err == nil && p == AnyPort
+}
+
+// receiver is receiverTable's result. ports has no entry for a facet
+// that takes any port.
 type receiver struct {
 	facets  []string
 	ports   map[string]uint16

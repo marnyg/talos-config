@@ -43,6 +43,11 @@ facets:
   - {name: hub-http, kind: hub, port: 80}
   # A device's own sshd (ADR-0038).
   - {name: ssh, kind: device, port: 22}
+  # Every TCP port on a device that opts in (ADR-0050). No port of its
+  # own: the caller names one per stream, the receiver advertises
+  # `tcp@*`. The 1 is nominal (tcpmux) — this table's shape wants a
+  # number and no presentation reads it.
+  - {name: tcp, kind: device, port: 1}
 node:
   inbound:
     # Owner devices: the machine's control surfaces. Same access v2
@@ -97,3 +102,12 @@ device:
     # own authentication is the second gate, so this row says who may
     # knock, not who may log in.
     - {facet: ssh, group: admins}
+    # Any TCP port on a device (ADR-0050): `<name>.mesh.internal:<port>`
+    # from an admin device, raw TCP to <host>:<port> on the receiver.
+    # Honored only at the devices that forward the facet (irohup
+    # -forward 'tcp=127.0.0.1:*' — the receiver's consent is its opt-in,
+    # and it picks the host). Owner devices only: with a loopback host
+    # this reaches services that listen on 127.0.0.1 alone and trust
+    # whoever connects, so there is no second gate unless the service
+    # brings one. Never media, never machines.
+    - {facet: tcp, group: admins}

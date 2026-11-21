@@ -496,6 +496,106 @@ func TestNodeAgentEndToEnd(t *testing.T) {
 		t.Fatalf("node → ingress-http: %v, want refused", err)
 	}
 
+	// A device that takes any port (ADR-0050): the same runtime under
+	// Kind device, forwarding `tcp` to 127.0.0.1:* — no port of its own,
+	// advertised as `tcp@*`. The desk reads any port on it as (nixos,
+	// tcp, that port), names the port at the head of the stream, and
+	// lands on whatever listens there (the apid stand-in's echo); a
+	// second stream on the same admitted connection names another port.
+	// The grant is the recipe's `{facet: tcp, group: admins}`: the
+	// gateway (media) and the node (machines) are refused at the
+	// preamble, before any port is named.
+	echoPort := uint16(ln.Addr().(*net.TCPAddr).Port)
+	deadLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadPort := uint16(deadLn.Addr().(*net.TCPAddr).Port)
+	_ = deadLn.Close()
+	nixState := nodeagent.State{Dir: t.TempDir()}
+	nixPriv, _, err := nixState.Key()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nixKit, err := m.issuer.Mint(cert.NewEdSigner(nixPriv).ActorID(), "nixos", []string{"admins"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nixState.SaveKit(nixKit); err != nil {
+		t.Fatal(err)
+	}
+	nix, err := nodeagent.Start(nodeagent.Options{
+		Config: nodeagent.Config{Hub: cfg.Hub, Relay: public}, State: nixState, Kind: policy.KindDevice,
+		Forward:  map[string]string{"tcp": "127.0.0.1:*"},
+		BindAddr: "127.0.0.1:0", Log: log.New(testWriter{t}, "nixos: ", 0), BeatEvery: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = nix.Close() })
+	go func() {
+		if err := nix.Run(ctx); err != nil && ctx.Err() == nil {
+			t.Errorf("nixos run: %v", err)
+		}
+	}()
+	waitFor(t, ctx, "nixos beat", func() bool { return nix.Beats() == 1 })
+	rt, err := dev.Route("nixos", echoPort) // the desk's directory predates nixos: re-beats on the miss
+	if err != nil || rt != (nodeagent.Route{Member: "nixos", Facet: "tcp", Port: echoPort}) {
+		t.Fatalf("nixos:%d → %+v %v", echoPort, rt, err)
+	}
+	if e := issuer.Lookup(dev.Bundle().NameMap, "nixos"); len(e) != 1 || e[0].Location == nil || !slices.Equal(e[0].Location.Cav.Facet, []string{"tcp", "tcp@*"}) {
+		t.Fatalf("nixos's reach-me-at should advertise tcp and tcp@*: %+v", e)
+	}
+	if _, _, err := dev.Target("nixos", echoPort); !errors.Is(err, nodeagent.ErrNotFacet) {
+		t.Fatalf("the exact reading must not answer with an any-port facet: %v", err)
+	}
+	conn, err = dev.Dial(ctx, rt.Member, rt.Facet)
+	if err != nil {
+		t.Fatalf("desk → nixos/tcp: %v", err)
+	}
+	raw, err = conn.Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nodeagent.WritePort(raw, rt.Port); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Write([]byte("any port")); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.CloseWrite()
+	if got, err := io.ReadAll(raw); err != nil || string(got) != "any port" {
+		t.Fatalf("echo through nixos:%d: %q, %v", echoPort, got, err)
+	}
+	_ = raw.Close()
+	// A port nobody listens on: the stream ends with nothing — the
+	// receiver's dial failed — and the connection is still good.
+	raw, err = conn.Open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nodeagent.WritePort(raw, deadPort); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = raw.Write([]byte("anyone?"))
+	_ = raw.CloseWrite()
+	if got, _ := io.ReadAll(raw); len(got) != 0 {
+		t.Fatalf("a dead port answered: %q", got)
+	}
+	_ = raw.Close()
+	if !conn.Alive() {
+		t.Fatal("a refused port must not cost the connection")
+	}
+	_ = conn.Close()
+	for who, caller := range map[string]*nodeagent.Agent{"gateway (media)": gw, "node (machines)": a} {
+		if err := caller.Beat(ctx); err != nil {
+			t.Fatalf("%s beat: %v", who, err)
+		}
+		if _, err := caller.Dial(ctx, "nixos", "tcp"); !errors.As(err, &refused) {
+			t.Fatalf("%s → nixos/tcp: %v, want refused", who, err)
+		}
+	}
+
 	// Hub redeploy (ipt7, z2go): the old process is gone — its endpoint
 	// with it — and the new one behind the same URL is SEALED until the
 	// wallet acts, then holds a fresh hubkey. The node dials nothing

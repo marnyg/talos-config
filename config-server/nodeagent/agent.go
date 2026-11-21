@@ -50,6 +50,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -108,6 +109,11 @@ type Options struct {
 	// and accepted, and the member consents to the Owner for exactly
 	// them. Empty, with Serve empty ⇒ a caller-only member: no ALPN
 	// advertised, no consent signed, nothing accepted.
+	// A target of `<host>:*` makes the facet take any port (ADR-0050):
+	// each admitted stream names its port in a two-byte header
+	// (ReadPort) and is spliced to <host>:<that port>. Whoever holds a
+	// grant for the facet reaches every TCP service on host, loopback-
+	// only ones included when host is 127.0.0.1.
 	Forward map[string]string
 	// Serve is the accept table's in-process half: facet → handler for
 	// facets the member terminates itself instead of splicing (the
@@ -841,6 +847,7 @@ func (a *Agent) handleConn(ctx context.Context, c *irohtransport.Conn) {
 	facet := a.accept[c.ALPN()]
 	target := a.o.Forward[facet]
 	handler := a.o.Serve[facet]
+	anyHost, anyPort := anyPortHost(target)
 	if err := c.Admit(ctx); err != nil {
 		return
 	}
@@ -859,12 +866,31 @@ func (a *Agent) handleConn(ctx context.Context, c *irohtransport.Conn) {
 		if err != nil {
 			return
 		}
-		if handler != nil {
+		switch {
+		case handler != nil:
 			go handler(ctx, raw, res.Identity, c.Peer())
-		} else {
+		case anyPort:
+			go a.spliceAny(raw, facet, anyHost, res.Identity.Name)
+		default:
 			go splice(raw, target)
 		}
 	}
+}
+
+// spliceAny runs one stream of a facet that takes any port (ADR-0050):
+// the caller's two-byte port header, then splice to host:port. One log
+// line per stream — which port a caller reached is the only record of
+// it anywhere, the grant and the admission name the facet alone. A
+// stream that ends before its header, or names port 0, is dropped.
+func (a *Agent) spliceAny(raw *irohtransport.Raw, facet, host, caller string) {
+	port, err := ReadPort(raw)
+	if err != nil {
+		_ = raw.Close()
+		return
+	}
+	target := net.JoinHostPort(host, strconv.Itoa(int(port)))
+	a.log.Printf("%s: %q → %s", facet, caller, target)
+	splice(raw, target)
 }
 
 // splice pipes one forward stream to a fresh TCP connection to target,

@@ -1,6 +1,7 @@
 package nodeagent
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
@@ -101,6 +102,108 @@ func TestZoneRule(t *testing.T) {
 }
 
 var errPlain = errors.New("plain")
+
+// A facet that takes any port (ADR-0050) is advertised as `<facet>@*`:
+// route falls back to it for every port the member advertises no facet
+// at, and carries the port; a facet advertised at exactly that port
+// wins. target — the exact reading the :443 fiction asks about :80 —
+// never answers with it. A daemon from before ADR-0050 skips the
+// entry: it is neither a port (splitAdvert) nor a kind (KindOf).
+func TestRouteAnyPort(t *testing.T) {
+	dir := map[string][]issuer.NameEntry{
+		// a device forwarding its sshd and any port
+		"nixos": {serving("ed:nixos", "nixos", "ssh", "ssh@22", "tcp", "tcp@*")},
+		// any port only: must not be read as a pre-0047 record
+		"mac": {serving("ed:mac", "mac", "tcp", "tcp@*")},
+		// a facet name no table knows, taking any port on a gateway
+		"gw":  {serving("ed:gw", "gw", "ingress-http", "ingress-http@80", "lab", "lab@*")},
+		"cp1": {serving("ed:cp1", "cp1", "apid", "apid@50000")},
+	}
+	resolve := func(name string) ([]issuer.NameEntry, error) {
+		if e, ok := dir[name]; ok {
+			return e, nil
+		}
+		return nil, ErrUnknownName
+	}
+	cases := []struct {
+		name string
+		port uint16
+		want Route
+		err  error
+	}{
+		{"nixos", 22, Route{Member: "nixos", Facet: "ssh"}, nil}, // the named facet wins its port
+		{"nixos", 8080, Route{Member: "nixos", Facet: "tcp", Port: 8080}, nil},
+		{"nixos", 443, Route{Member: "nixos", Facet: "tcp", Port: 443}, nil},
+		{"nixos", 1, Route{Member: "nixos", Facet: "tcp", Port: 1}, nil}, // the vocabulary's nominal port is a port like any other
+		{"mac", 22, Route{Member: "mac", Facet: "tcp", Port: 22}, nil},   // no ssh facet: :22 is just a port
+		{"mac", 50000, Route{Member: "mac", Facet: "tcp", Port: 50000}, nil},
+		{"nixos", 0, Route{}, ErrNotFacet},
+		{"gw", 80, Route{Member: "gw", Facet: "ingress-http"}, nil},
+		{"gw", 5432, Route{Member: "gw", Facet: "lab", Port: 5432}, nil},
+		{"db.gw", 5432, Route{Member: "gw", Facet: "lab", Port: 5432}, nil},
+		{"cp1", 50000, Route{Member: "cp1", Facet: "apid"}, nil},
+		{"cp1", 8080, Route{}, ErrNotFacet}, // no member gains a port it did not offer
+		{"nope", 8080, Route{}, ErrUnknownName},
+	}
+	for _, c := range cases {
+		got, err := route(c.name, c.port, resolve)
+		if !errors.Is(err, c.err) || got != c.want {
+			t.Errorf("route(%s, %d) = %+v, %v; want %+v, %v", c.name, c.port, got, err, c.want, c.err)
+		}
+		// target agrees wherever the port is a facet's own and refuses
+		// wherever only the any-port facet answers.
+		member, facet, terr := target(c.name, c.port, resolve)
+		switch {
+		case c.err != nil && !errors.Is(terr, c.err):
+			t.Errorf("target(%s, %d): %v, want %v", c.name, c.port, terr, c.err)
+		case c.err == nil && c.want.Port != 0 && !errors.Is(terr, ErrNotFacet):
+			t.Errorf("target(%s, %d) = %s/%s %v; the exact reading must not answer with an any-port facet", c.name, c.port, member, facet, terr)
+		case c.err == nil && c.want.Port == 0 && (terr != nil || member != c.want.Member || facet != c.want.Facet):
+			t.Errorf("target(%s, %d) = %s/%s %v", c.name, c.port, member, facet, terr)
+		}
+	}
+	if k := KindOf("mac", dir["mac"]); k != "device" {
+		t.Errorf("a member advertising tcp reads as a device, got %s", k)
+	}
+	if k := KindOf("x", []issuer.NameEntry{serving("ed:x", "x", "tcp@*")}); k != "node" {
+		t.Errorf("an @* entry alone names no kind, got %s", k)
+	}
+	if s := AdvertiseAny("tcp"); s != "tcp@*" {
+		t.Fatalf("AdvertiseAny = %q", s)
+	}
+	if _, _, ok := splitAdvert("tcp@*"); ok {
+		t.Error("an any-port entry is not a port: a pre-0050 daemon must skip it")
+	}
+	for _, bad := range []string{"tcp", "tcp@", "@*", "tcp@**", "tcp@80", ""} {
+		if _, ok := splitAdvertAny(bad); ok {
+			t.Errorf("splitAdvertAny(%q) should not parse", bad)
+		}
+	}
+}
+
+// The port header round-trips, and neither side lets port 0 through.
+func TestPortHeader(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WritePort(&buf, 8080); err != nil {
+		t.Fatal(err)
+	}
+	buf.WriteString("payload")
+	if !bytes.Equal(buf.Bytes()[:2], []byte{0x1f, 0x90}) {
+		t.Fatalf("header % x, want big-endian 8080", buf.Bytes()[:2])
+	}
+	if p, err := ReadPort(&buf); err != nil || p != 8080 || buf.String() != "payload" {
+		t.Fatalf("ReadPort = %d, %v; rest %q", p, err, buf.String())
+	}
+	if err := WritePort(&buf, 0); err == nil {
+		t.Error("WritePort(0) accepted")
+	}
+	if _, err := ReadPort(bytes.NewReader([]byte{0, 0})); err == nil {
+		t.Error("ReadPort accepted port 0")
+	}
+	if _, err := ReadPort(bytes.NewReader([]byte{0x1f})); err == nil {
+		t.Error("ReadPort accepted a short header")
+	}
+}
 
 // KindOf reads the first recognised advertised facet; a newer entry
 // without a location does not hide an older one's advertisement.

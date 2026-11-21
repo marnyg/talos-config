@@ -6,8 +6,10 @@
 // Android VpnService (mobile). One shape, two links:
 //
 //	tun → fakeip.Stack → { UDP/53: fakeip.Resolver gated by the zone rule (nodeagent.Zone);
-//	                       TCP to <fake IP>:<port>: nodeagent.Target → one stream on a
-//	                                                 pooled connection to (member, facet);
+//	                       TCP to <fake IP>:<port>: nodeagent.Route → one stream on a
+//	                                                 pooled connection to (member, facet),
+//	                                                 the port named in it when the facet
+//	                                                 takes any (ADR-0050);
 //	                       TCP to <fake IP>:443:    meshtls.Front → TLS ends here, each request
 //	                                                 one plain-HTTP round trip on the :80 facet }
 //
@@ -69,6 +71,22 @@ func (p *Pool) Open(ctx context.Context, name, facet string) (*irohtransport.Raw
 		return nil, err
 	}
 	return c.Open(ctx)
+}
+
+// OpenRoute is Open for what a flow means (nodeagent.Route): a stream
+// to r.Member under r.Facet, with the port header written first when
+// the facet takes any port (ADR-0050). The header is the stream's
+// first bytes, so the caller's payload follows it untouched.
+func (p *Pool) OpenRoute(ctx context.Context, r nodeagent.Route) (*irohtransport.Raw, error) {
+	raw, err := p.Open(ctx, r.Member, r.Facet)
+	if err != nil || r.Port == 0 {
+		return raw, err
+	}
+	if err := nodeagent.WritePort(raw, r.Port); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+	return raw, nil
 }
 
 // Paths reports each live pooled connection as

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -165,8 +166,10 @@ func Start(o Options) (*Tun, error) {
 
 // flow runs one accepted TCP flow: which vocabulary a port is read in
 // depends on who the name is — hub.<zone>:80 is hub-http, <svc>.gw:80
-// is ingress-http, cp1:50000 is apid (nodeagent.Target). :443 is the
-// TLS fiction in front of the :80 facet (https).
+// is ingress-http, cp1:50000 is apid (nodeagent.Route), and any other
+// port on a member that takes any port rides that facet with the port
+// named in the stream (ADR-0050). :443 is the TLS fiction in front of
+// the :80 facet (https) wherever there is one.
 func (t *Tun) flow(app fakeip.Conn, dst netip.AddrPort) {
 	t.Stats.Flows.Add(1)
 	t.Stats.FlowsOpen.Add(1)
@@ -178,21 +181,25 @@ func (t *Tun) flow(app fakeip.Conn, dst netip.AddrPort) {
 		t.log.Printf("tun: flow to %s: not a name we minted", dst)
 		return
 	}
-	if dst.Port() == HTTPSPort && t.Front != nil {
+	if dst.Port() == HTTPSPort && t.Front != nil && !t.rawHTTPS(name) {
 		t.https(app, name)
 		return
 	}
-	member, facet, err := t.Pool.a.Target(name, dst.Port())
+	r, err := t.Pool.a.Route(name, dst.Port())
 	if err != nil {
 		t.Stats.FlowErrors.Add(1)
 		t.log.Printf("tun: flow to %s (%s): %v", dst, name, err)
 		return
 	}
-	raw, err := t.Pool.Open(t.ctx, member, facet)
+	member, facet := r.Member, r.Facet
+	raw, err := t.Pool.OpenRoute(t.ctx, r)
 	if err != nil {
 		t.Stats.FlowErrors.Add(1)
 		t.log.Printf("tun: %s/%s: %v", member, facet, err)
 		return
+	}
+	if r.Port != 0 {
+		facet += nodeagent.PortSep + strconv.Itoa(int(r.Port)) // the log's name for it: tcp@8080
 	}
 	t0 := time.Now()
 	// The counters are handed to Pipe rather than added after it
@@ -200,6 +207,18 @@ func (t *Tun) flow(app fakeip.Conn, dst netip.AddrPort) {
 	// read as zero throughput on the status surface until it closed.
 	in, out := Pipe(raw, app, &Counters{In: &t.Stats.BytesIn, Out: &t.Stats.BytesOut})
 	t.log.Printf("tun: %s/%s (%s): stream done: %dB in, %dB out, %s", member, facet, name, in, out, time.Since(t0).Round(time.Millisecond))
+}
+
+// rawHTTPS: is :443 on name the member's own port rather than the TLS
+// fiction? Yes exactly when the name has no HTTP facet for the fiction
+// to stand in front of (nothing advertised at :80) but takes any port
+// (ADR-0050) — then :443 is whatever the member itself serves there,
+// its own TLS and its own certificate, spliced like any other port. A
+// member with an :80 facet keeps the fiction even if it also takes any
+// port.
+func (t *Tun) rawHTTPS(name string) bool {
+	r, err := t.Pool.a.Route(name, httpPort)
+	return err == nil && r.Port != 0
 }
 
 // https hands one :443 flow to the front: TLS terminated here with a

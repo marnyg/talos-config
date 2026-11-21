@@ -43,6 +43,35 @@ func Advertise(facet string, port uint16) string {
 	return facet + PortSep + strconv.FormatUint(uint64(port), 10)
 }
 
+// AnyPort is the port position of a facet that takes every port
+// (ADR-0050): a receiver forwards it as `<facet>=<host>:*` and
+// advertises it as `<facet>@*`. Such a facet has no port of its own —
+// the caller names one at the head of each stream (WritePort), and a
+// presentation falls back to it for any port the member advertises no
+// facet at. Like every `@` entry it is an advertisement, never
+// authority: the grant names the facet, the receiver's consent admits.
+const AnyPort = "*"
+
+// AdvertiseAny encodes "facet takes any port" for cav.facet. A daemon
+// from before ADR-0050 reads the entry as neither a port nor a kind
+// (splitAdvert, KindOf) and skips it.
+func AdvertiseAny(facet string) string { return facet + PortSep + AnyPort }
+
+// splitAdvertAny reads an advertised `<facet>@*` entry.
+func splitAdvertAny(s string) (facet string, ok bool) {
+	f, p, found := strings.Cut(s, PortSep)
+	return f, found && f != "" && p == AnyPort
+}
+
+// Route is what a flow to <name>:<port> means: the member, the facet
+// the stream rides and — when that facet takes any port (ADR-0050) —
+// the Port the caller must name at the head of each stream. Port is 0
+// for an ordinary facet, whose port is the receiver's own business.
+type Route struct {
+	Member, Facet string
+	Port          uint16
+}
+
 // splitAdvert reads an advertised `<facet>@<port>` entry; ok is false
 // for a bare facet or a malformed port.
 func splitAdvert(s string) (facet string, port uint16, ok bool) {
@@ -57,17 +86,26 @@ func splitAdvert(s string) (facet string, port uint16, ok bool) {
 	return f, uint16(n), true
 }
 
-// facetAt is the facet the member's live records advertise at port, and
-// whether they advertise any port at all — the two readings target
-// needs: a hit, a miss on a record that does advertise ports (a
-// genuine ErrNotFacet, or one beat of staleness), or a record from
-// before ADR-0047 that must be read in its kind's vocabulary instead.
-func facetAt(entries []issuer.NameEntry, port uint16) (facet string, advertised bool) {
+// facetAt is the facet the member's live records advertise at port,
+// the facet they advertise for any port (`<facet>@*`, ADR-0050; "" if
+// none), and whether they advertise in the `@` form at all — the
+// readings route needs: a hit, the any-port fallback, a miss on a
+// record that does advertise ports (a genuine ErrNotFacet, or one beat
+// of staleness), or a record from before ADR-0047 that must be read in
+// its kind's vocabulary instead.
+func facetAt(entries []issuer.NameEntry, port uint16) (facet, anyPort string, advertised bool) {
 	for _, e := range entries {
 		if e.Location == nil {
 			continue
 		}
 		for _, s := range e.Location.Cav.Facet {
+			if f, ok := splitAdvertAny(s); ok {
+				advertised = true
+				if anyPort == "" {
+					anyPort = f
+				}
+				continue
+			}
 			f, p, ok := splitAdvert(s)
 			if !ok {
 				continue
@@ -78,7 +116,7 @@ func facetAt(entries []issuer.NameEntry, port uint16) (facet string, advertised 
 			}
 		}
 	}
-	return facet, advertised
+	return facet, anyPort, advertised
 }
 
 // HubName is the hub's bare name on the presentation (hub.<zone>). The
@@ -162,17 +200,41 @@ func zoneEntries(name string, resolve func(string) ([]issuer.NameEntry, error)) 
 // all: a member that starts serving (a device gaining ssh, ADR-0038; a
 // gateway gaining syncthing, ADR-0046) changes its advertisement under
 // a map that still shows the old record. Agent.Target re-beats on it.
+//
+// target is the exact reading: a facet that takes any port (ADR-0050)
+// is not an answer here. It is what the :443 fiction asks about :80 —
+// "does this name have an HTTP facet" — and route is what a flow asks.
 func target(name string, port uint16, resolve func(string) ([]issuer.NameEntry, error)) (member, facet string, err error) {
-	member, kind, entries, err := zoneEntries(name, resolve)
+	r, err := route(name, port, resolve)
 	if err != nil {
 		return "", "", err
 	}
-	facet, advertised := facetAt(entries, port)
+	if r.Port != 0 {
+		return "", "", fmt.Errorf("%w: port %d on %s", ErrNotFacet, port, r.Member)
+	}
+	return r.Member, r.Facet, nil
+}
+
+// route is target plus the any-port fallback (ADR-0050): a facet the
+// member advertises at exactly that port wins; failing that, a facet it
+// advertises as `<facet>@*` carries the flow with the port named in the
+// stream (Route.Port). So a device that forwards both its sshd and any
+// port is reached on :22 under the ssh grant and everywhere else under
+// the any-port one. Errors are target's.
+func route(name string, port uint16, resolve func(string) ([]issuer.NameEntry, error)) (Route, error) {
+	member, kind, entries, err := zoneEntries(name, resolve)
+	if err != nil {
+		return Route{}, err
+	}
+	facet, anyPort, advertised := facetAt(entries, port)
 	if facet == "" && !advertised {
 		facet = policy.FacetByPort(kind, port)
 	}
-	if facet == "" {
-		return "", "", fmt.Errorf("%w: port %d on %s", ErrNotFacet, port, member)
+	switch {
+	case facet != "":
+		return Route{Member: member, Facet: facet}, nil
+	case anyPort != "" && port != 0:
+		return Route{Member: member, Facet: anyPort, Port: port}, nil
 	}
-	return member, facet, nil
+	return Route{}, fmt.Errorf("%w: port %d on %s", ErrNotFacet, port, member)
 }

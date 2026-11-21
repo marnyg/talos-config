@@ -27,6 +27,7 @@
 //	irohup -device                           # headless, no loopback: device flow — print user code + approve URL, Owner signs on /status, poll
 //	irohup -enroll-only                      # enroll (browser, -paste or -device) and exit
 //	irohup -tun ... -forward ssh=127.0.0.1:22 # also SERVE: this device's sshd as the ssh facet (ADR-0038)
+//	irohup -tun ... -forward 'tcp=127.0.0.1:*' # also SERVE every TCP port on that host (ADR-0050)
 //
 // talosctl through the bridge: `talosctl -e 127.0.0.1:50000 -n <node>`
 // with the node's hostname in the endpoint's SAN set — see
@@ -65,6 +66,16 @@
 // second gate. Without -forward the member only initiates, as before.
 // From another admin device: `ssh <name>.mesh.internal` through its
 // tun, or `-bridge <name>/ssh=127.0.0.1:2222` without one.
+//
+// Any port (ADR-0050): -forward 'tcp=<host>:*' serves the `tcp` facet
+// with no port of its own — each stream names one and is spliced to
+// <host>:<that port>. The grant is the recipe's (`{facet: tcp, group:
+// admins}`), so every admins device reaches every TCP service on
+// <host>; with 127.0.0.1 that includes the loopback-only ones, which
+// see the connection as local. From another admin device:
+// `<name>.mesh.internal:<any port>` through its tun (a port the device
+// also forwards by name, :22 above, keeps riding that facet), or
+// `-bridge <name>/tcp@8080=127.0.0.1:8080` without one.
 //
 // State (~/.config/talos-mesh/<name>.iroh/, or -state DIR): the same
 // layout as a node's /var/lib/p0agent (nodeagent.State): key,
@@ -115,8 +126,8 @@ func main() {
 		tunMode  = flag.Bool("tun", false, "desktop presentation: utun + 198.18/15 fake IPs + split DNS instead of bridges (root at start; drops to -user)")
 		runAs    = flag.String("user", "_talosmesh", "with -tun: the user to drop to after the privileged setup")
 	)
-	flag.Var(&br, "bridge", "<member>/<facet>=<host:port> local TCP bridge; repeatable (any facet with a kind; the receiver decides)")
-	flag.Var(&fw, "forward", "<facet>=<host:port> facet this device SERVES, spliced to a loopback target; repeatable (device facets: "+strings.Join(policy.Facets(policy.KindDevice), ", ")+")")
+	flag.Var(&br, "bridge", "<member>/<facet>[@<port>]=<host:port> local TCP bridge; repeatable (any facet with a kind; the receiver decides; @<port> for a facet the member forwards as <host>:*)")
+	flag.Var(&fw, "forward", "<facet>=<host:port> facet this device SERVES, spliced to a loopback target; repeatable; a port of * serves every TCP port on the host (device facets: "+strings.Join(policy.Facets(policy.KindDevice), ", ")+")")
 	flag.Parse()
 
 	// Privileged setup first, before anything else runs: it takes no
@@ -334,11 +345,11 @@ func firstLine(b []byte) string {
 func (b bridge) serve(ctx context.Context, pool *meshtun.Pool, logger *log.Logger) {
 	ln, err := net.Listen("tcp", b.Listen)
 	if err != nil {
-		logger.Printf("bridge %s/%s: listen: %v", b.Name, b.Facet, err)
+		logger.Printf("bridge %s/%s: listen: %v", b.Name, b.facet(), err)
 		return
 	}
 	go func() { <-ctx.Done(); _ = ln.Close() }()
-	logger.Printf("bridge %s/%s on %s", b.Name, b.Facet, b.Listen)
+	logger.Printf("bridge %s/%s on %s", b.Name, b.facet(), b.Listen)
 	for {
 		tcp, err := ln.Accept()
 		if err != nil {
@@ -346,14 +357,14 @@ func (b bridge) serve(ctx context.Context, pool *meshtun.Pool, logger *log.Logge
 		}
 		go func() {
 			defer tcp.Close()
-			raw, err := pool.Open(ctx, b.Name, b.Facet)
+			raw, err := pool.OpenRoute(ctx, nodeagent.Route{Member: b.Name, Facet: b.Facet, Port: b.Port})
 			if err != nil {
-				logger.Printf("bridge %s/%s: %v", b.Name, b.Facet, err)
+				logger.Printf("bridge %s/%s: %v", b.Name, b.facet(), err)
 				return
 			}
 			t0 := time.Now()
 			in, out := meshtun.Pipe(raw, tcp.(*net.TCPConn), nil)
-			logger.Printf("bridge %s/%s: stream done: %dB in, %dB out, %s", b.Name, b.Facet, in, out, time.Since(t0).Round(time.Millisecond))
+			logger.Printf("bridge %s/%s: stream done: %dB in, %dB out, %s", b.Name, b.facet(), in, out, time.Since(t0).Round(time.Millisecond))
 		}()
 	}
 }

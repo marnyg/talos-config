@@ -108,6 +108,13 @@ var Default = Vocabulary{
 	// A device's own sshd (ADR-0038): raw TCP, the mesh grant is the
 	// first gate and sshd's own authentication the second (as rdp).
 	{"ssh", KindDevice, 22},
+	// `tcp` (ADR-0050): every TCP port on a device that forwards it as
+	// `<host>:*`. The facet has no port of its own — the caller names
+	// one per stream and the receiver advertises `tcp@*` — so the 1
+	// here is nominal (IANA's tcpmux, the nearest thing to a natural
+	// port a multiplexer has): the vocabulary's shape wants a number
+	// and no presentation reads this one.
+	{"tcp", KindDevice, 1},
 }
 
 // Validate is the vocabulary's own closed-set check, the Go twin of the
