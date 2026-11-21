@@ -24,7 +24,8 @@ import java.net.InetAddress
  * session's Go log. "Test DNS" resolves one mesh name and one public
  * name through the system resolver — with the tunnel up that traverses
  * the fake resolver, exercising the exact mesh-vs-underlay split real
- * apps hit.
+ * apps hit. "Check for update" runs the update check now and shows the
+ * installed build either way.
  */
 class DebugActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -41,6 +42,12 @@ class DebugActivity : Activity() {
         debugText = findViewById(R.id.debug_text)
         findViewById<Button>(R.id.debug_refresh_button).setOnClickListener { refresh() }
         findViewById<Button>(R.id.test_dns_button).setOnClickListener { testDns() }
+        // The unthrottled update check: says what is installed and
+        // whether the published build is newer (Updater).
+        findViewById<Button>(R.id.check_update_button).setOnClickListener {
+            testStatus.text = getString(R.string.update_checking)
+            Updater.check(this, scope, force = true) { testStatus.text = it }
+        }
     }
 
     override fun onResume() {

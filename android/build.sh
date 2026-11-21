@@ -42,8 +42,10 @@ echo "   $lib"
 echo "== build-aar.sh → app/libs/mobile.aar"
 nix-shell --impure shell.nix --run "IROH_FFI_ANDROID_LIB=$lib ./build-aar.sh"
 
+# versionCode is the commit count (app/build.gradle.kts works it out);
+# the name carries $sha so a -dirty build says so on the device too.
 echo "== gradle assembleDebug"
-nix-shell --impure shell.nix --run "gradle --no-daemon assembleDebug"
+nix-shell --impure shell.nix --run "gradle --no-daemon assembleDebug -PmeshVersionName=0.2-$sha"
 
 apk="$here/app/build/outputs/apk/debug/app-debug.apk"
 echo "$sha" > "$apk.sha"

@@ -3,6 +3,25 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// The build's identity. versionCode is the commit count on HEAD: it only
+// grows, so a newer build always installs over an older one and the
+// app's update check (Updater.kt) has something to compare with the
+// published manifest (../publish.sh). versionName carries the commit for
+// humans. -PmeshVersionCode / -PmeshVersionName override; without git
+// (a tarball) the build falls back to the pre-count constants, which
+// installs over nothing newer.
+fun git(vararg args: String): String? = try {
+    providers.exec { commandLine("git", *args) }.standardOutput.asText.get().trim().ifEmpty { null }
+} catch (e: Exception) {
+    null
+}
+val meshVersionCode: Int = (findProperty("meshVersionCode") as String?)?.toInt()
+    ?: git("rev-list", "--count", "HEAD")?.toIntOrNull()
+    ?: 2
+val meshVersionName: String = (findProperty("meshVersionName") as String?)
+    ?: git("rev-parse", "--short", "HEAD")?.let { "0.2-$it" }
+    ?: "0.2"
+
 android {
     namespace = "dev.marnyg.mesh"
     compileSdk = 34
@@ -13,8 +32,8 @@ android {
         // older TVs in range while allowing startForegroundService.
         minSdk = 26
         targetSdk = 33
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = meshVersionCode
+        versionName = meshVersionName
         ndk { abiFilters += listOf("arm64-v8a") } // the only ABI the AAR carries
     }
 

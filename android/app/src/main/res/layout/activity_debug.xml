@@ -34,6 +34,13 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
                 android:text="@string/test_dns" />
+
+            <Button
+                android:id="@+id/check_update_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/update_check" />
         </LinearLayout>
 
         <TextView

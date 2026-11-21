@@ -88,6 +88,30 @@ a blank `failed to install:` and go offline for a few seconds although
 the install landed — check `dumpsys package dev.marnyg.mesh |
 grep lastUpdateTime` before retrying.
 
+## Updates
+
+The app is sideloaded, so it checks for a newer build itself
+(`Updater.kt`): on opening, at most once per 12 h, it fetches
+`talos-mesh.json` — `{versionCode, versionName, sha}`, uploaded by
+`publish.sh` beside the APK on the rolling release — and, if that
+`versionCode` is higher than the installed one, shows one dialog.
+**Download** hands the APK's URL to the browser; opening the downloaded
+file installs it over the app (enrollment kept — same signature, same
+data). A TV without a browser gets the URL to fetch with a downloader
+app or adb. The app installs nothing itself, and the manifest is a
+hint only: what may replace the app is still Android's signature
+check. **Debug → Check for update** runs the check now and shows the
+installed build. Failures (offline, GitHub unreachable) are silent.
+
+`versionCode` is the **commit count on HEAD** (`app/build.gradle.kts`),
+`versionName` is `0.2-<sha>`: every build from a later commit installs
+over an earlier one and is "newer" to the check. A build from a shallow
+clone or an older branch has a lower count; `publish.sh` refuses to
+publish one over a higher manifest (`FORCE=1` overrides), because
+Android will not install it over what devices already run. Builds
+before 2026-11-21 are `versionCode 2` and carry no check — their first
+update is still by hand.
+
 ## Signing
 
 Debug-signed on purpose. Switching to a release keystore later means

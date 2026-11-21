@@ -30,4 +30,18 @@
     <string name="open_settings">Open Settings</string>
     <string name="export_ca_done">Saved. Android lets only Settings install a CA: Security → Encryption &amp; credentials → Install a certificate → CA certificate → pick the file. Chrome then opens https://…mesh.internal without warnings; other apps keep using http://.</string>
     <string name="export_ca_failed">Could not export the certificate: %1$s</string>
+    <!-- Update check (Updater): the manifest and the APK are two assets of
+         the rolling android-latest release (android/publish.sh). -->
+    <string name="update_manifest_url" translatable="false">https://github.com/marnyg/talos-config/releases/download/android-latest/talos-mesh.json</string>
+    <string name="update_apk_url" translatable="false">https://github.com/marnyg/talos-config/releases/download/android-latest/talos-mesh.apk</string>
+    <string name="update_title">Update available</string>
+    <string name="update_message_fmt">Installed: %1$s\nAvailable: %2$s\n\nDownload opens the new APK in your browser; open the downloaded file to install it over this one. Enrollment is kept.</string>
+    <string name="update_download">Download</string>
+    <string name="update_later">Later</string>
+    <string name="update_no_browser_fmt">No app here can open a download link. Fetch the APK with a downloader app or adb:\n\n%1$s</string>
+    <string name="update_check">Check for update</string>
+    <string name="update_checking">Checking for an update…</string>
+    <string name="update_available_fmt">Update available: %1$s → %2$s</string>
+    <string name="update_none_fmt">Up to date: %1$s (build %2$d)</string>
+    <string name="update_check_failed">Update check failed: %1$s</string>
 </resources>

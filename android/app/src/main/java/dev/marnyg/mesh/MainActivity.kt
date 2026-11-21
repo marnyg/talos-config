@@ -47,6 +47,9 @@ import java.security.cert.X509Certificate
  *    11+ no app may install a CA itself — only a device owner (MDM)
  *    can — so the user saves the file and the app opens the Settings
  *    screen where it is installed once.
+ *
+ * Either state: on resume, a throttled check for a newer published
+ * build (Updater) that prompts to download it.
  */
 class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -99,6 +102,8 @@ class MainActivity : Activity() {
         super.onResume()
         render()
         if (MeshVpnService.running) refreshNames()
+        // Enrolled or not: a client too old to enroll needs the prompt most.
+        Updater.check(this, scope)
     }
 
     override fun onDestroy() {

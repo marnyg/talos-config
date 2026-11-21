@@ -26,7 +26,12 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
+      # Full history: the APK's versionCode is the commit count
+      # (android/app/build.gradle.kts); a shallow clone would build
+      # versionCode 1, which installs over nothing.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version-file: config-server/go.mod
