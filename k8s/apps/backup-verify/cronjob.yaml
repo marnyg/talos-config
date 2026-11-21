@@ -24,14 +24,20 @@
 # Cost: downloads every volume once a week (Tigris has no egress fee);
 # the November 2026 runs took 96–136 min.
 #
+# The read pod is pinned to the node holding the scratch replica, so
+# the hash never crosses the LAN. Unpinned it landed anywhere, and a
+# remote read is only as fast as the path to the replica: transfer's
+# 17 GiB hashed at 50–100 MB/s on 2026-11-08 (replica w2, pod w1) and
+# 25 GiB at ~11 MB/s a week later (replica w2, pod cp1), killed two
+# thirds through at the then-flat 60 min (xgxd). The difference was
+# not the pod's node: everything to or from w2 has moved at ~100 Mbit
+# since 2026-11-08 (measured 2026-11-21: w2<->cp1 and w2<->w1 11 MB/s
+# shared across flows, cp1<->w1 112 MB/s; w2's own link says 1 Gbit).
+#
 # Per-volume budget: 60 min + 3 min per GiB of backup data, not a flat
-# hour. The scratch replica and the read pod land wherever they land:
-# with the pod on w1 transfer's 17 GiB hashed at 50–100 MB/s (5 min),
-# with it on cp1 a week later 25 GiB read at ~11 MB/s and was killed
-# at 60 min, two thirds through, after a 35 min restore (xgxd,
-# 2026-11-15). 3 min/GiB is that slow path (1.2 restore + 1.7 read)
-# and the hour is the margin; activeDeadlineSeconds covers transfer
-# full (100 GiB = 6 h) plus the rest (~75 min).
+# hour. 3 min/GiB is the slow path above (1.2 restore + 1.7 remote
+# read) and the hour is the margin; activeDeadlineSeconds covers
+# transfer full (100 GiB = 6 h) plus the rest (~75 min).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -118,12 +124,28 @@ data:
       accessModes: [ReadWriteOnce]
       storageClassName: verify-$id
       resources: {requests: {storage: "$size"}}
-    ---
+    EOF
+      # Pin the read pod to the replica's node (header). The class binds
+      # immediately, so Longhorn has placed the one replica seconds
+      # after the claim exists; unknown after a minute = unpinned, the
+      # old behaviour, rather than a failed test.
+      rnode=""; pin=""
+      for i in $(seq 1 30); do
+        pv=$(kubectl -n "$NS" get pvc "$id" -o jsonpath='{.spec.volumeName}' 2>/dev/null)
+        [ -n "$pv" ] && rnode=$(kubectl -n longhorn-system get replicas.longhorn.io -l "longhornvolume=$pv" \
+          -o jsonpath='{.items[0].spec.nodeID}' 2>/dev/null)
+        [ -n "$rnode" ] && break
+        sleep 2
+      done
+      if [ -n "$rnode" ]; then pin="nodeSelector: {kubernetes.io/hostname: $rnode}"; note "replica on $rnode, read pod pinned there"
+      else note "replica node unknown, read pod unpinned"; fi
+      kubectl apply -f - >/dev/null <<EOF
     apiVersion: v1
     kind: Pod
     metadata: {name: $id, namespace: $NS}
     spec:
       restartPolicy: Never
+      $pin
       containers:
         - name: read
           image: alpine:3.20
