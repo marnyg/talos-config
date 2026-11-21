@@ -13,9 +13,10 @@
 # /tmp/backup-verify-<job>.manifest — diff it against the same command
 # run over the live volume (ADR-0044 did this for transfer).
 #
-# Restores pull from Tigris at ~12 MB/s: seconds for the small volumes,
-# ~30 min for transfer, ~1 h for everything. Waits up to 3 h; Ctrl-C
-# leaves the Job running (it cleans up after itself).
+# Restores pull from Tigris at ~12 MB/s: a minute or two for the small
+# volumes, 40–75 min for transfer, ~2 h for everything. Waits up to
+# 8 h (the Job's activeDeadlineSeconds); Ctrl-C leaves the Job running
+# (it cleans up after itself).
 set -euo pipefail
 
 volume=""; manifest=0
@@ -39,12 +40,12 @@ kubectl -n backup-verify create job --from=cronjob/backup-verify "$job" --dry-ru
   | kubectl apply -f - 2>&1 | grep -v '^Warning' || true
 echo "job backup-verify/$job started (${volume:-all volumes}); waiting..."
 
-deadline=$(( $(date +%s) + 3*3600 ))
+deadline=$(( $(date +%s) + 8*3600 ))
 while :; do
   s=$(kubectl -n backup-verify get job "$job" -o jsonpath='{.status.succeeded}{"/"}{.status.failed}')
   [ "$s" = "1/" ] && verdict=ok && break
   [ "${s#*/}" = 1 ] && verdict=fail && break
-  [ "$(date +%s)" -gt "$deadline" ] && { echo "still running after 3 h; check: kubectl -n backup-verify logs job/$job"; exit 2; }
+  [ "$(date +%s)" -gt "$deadline" ] && { echo "still running after 8 h; check: kubectl -n backup-verify logs job/$job"; exit 2; }
   sleep 15
 done
 

@@ -60,6 +60,10 @@ rules:
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get]
+  # The reason on a FAIL line is the scratch pod's last Warning event.
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

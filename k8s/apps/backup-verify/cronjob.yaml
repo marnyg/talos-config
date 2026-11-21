@@ -21,8 +21,17 @@
 # diff by hand against the live volume (done for files/transfer on
 # 2026-10-20: identical).
 #
-# Cost: downloads every volume once a week (~25 GB; Tigris has no
-# egress fee), ~20–30 min.
+# Cost: downloads every volume once a week (Tigris has no egress fee);
+# the November 2026 runs took 96–136 min.
+#
+# Per-volume budget: 60 min + 3 min per GiB of backup data, not a flat
+# hour. The scratch replica and the read pod land wherever they land:
+# with the pod on w1 transfer's 17 GiB hashed at 50–100 MB/s (5 min),
+# with it on cp1 a week later 25 GiB read at ~11 MB/s and was killed
+# at 60 min, two thirds through, after a 35 min restore (xgxd,
+# 2026-11-15). 3 min/GiB is that slow path (1.2 restore + 1.7 read)
+# and the hour is the margin; activeDeadlineSeconds covers transfer
+# full (100 GiB = 6 h) plus the rest (~75 min).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -70,12 +79,14 @@ data:
       if [ "$state" != Completed ] || [ -z "$url" ] || [ -z "$size" ]; then
         result "FAIL $who: newest backup $last is $state"; fail=$((fail+1)); continue
       fi
+      data=$(jq -r '.status.size // empty' <<<"$b"); [[ "$data" =~ ^[0-9]+$ ]] || data=0
+      budget_min=$(( 60 + data / 1024 / 1024 / 1024 * 3 ))
       bage_h=$(( (now - at) / 3600 ))
       [ "$bage_h" -ge "$MAX_AGE_H" ] && { result "FAIL $who: newest backup $last is ${bage_h}h old"; fail=$((fail+1)); continue; }
 
       id="v-${vol:4:8}"
       cleanup "$id"
-      note "restoring $who from $last (${bage_h}h old, $((size/1024/1024/1024)) GiB)"
+      note "restoring $who from $last (${bage_h}h old, $((size/1024/1024/1024)) GiB, $((data/1024/1024/1024)) GiB data, budget ${budget_min} min)"
       kubectl apply -f - >/dev/null <<EOF
     apiVersion: storage.k8s.io/v1
     kind: StorageClass
@@ -132,7 +143,7 @@ data:
       # Restore + LUKS open + full read. Waits on the pod, whose mount
       # blocks until Longhorn has finished pulling the backup.
       phase=""
-      for i in $(seq 1 360); do
+      for i in $(seq 1 $(( budget_min * 6 ))); do
         phase=$(kubectl -n "$NS" get pod "$id" -o jsonpath='{.status.phase}' 2>/dev/null)
         case "$phase" in Succeeded|Failed) break;; esac
         sleep 10
@@ -144,6 +155,7 @@ data:
       else
         why=$(kubectl -n "$NS" get events --field-selector "involvedObject.name=$id" -o json \
               | jq -r '[.items[] | select(.type=="Warning") | .message] | last // "timeout"' | cut -c1-200)
+        [ "$why" = timeout ] && [ "$phase" != Failed ] && why="no verdict after ${budget_min} min"
         result "FAIL $who: restore/read ${phase:-not started}: $why"; fail=$((fail+1))
       fi
       cleanup "$id"
@@ -166,7 +178,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 0
-      activeDeadlineSeconds: 14400
+      activeDeadlineSeconds: 28800
       template:
         spec:
           serviceAccountName: backup-verify
