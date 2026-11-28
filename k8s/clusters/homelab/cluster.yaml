@@ -145,10 +145,12 @@ spec:
           - {name: forgejo-runner}
           # Sandbox RuntimeClass + the agent Job (ADR-0036).
           - {name: sandbox}
-          # Sovereign-actor protocol: provisioner + lighthouse + the
-          # parent actor (the agent backend, ADR-0037).
+          # Sovereign-actor protocol: provisioner + the parent actor (the
+          # agent backend, ADR-0037). The lighthouse and the relay they
+          # home on are the protocol network's own fly app since
+          # 2026-11-28 (actors/net, root ADR-0051; sap-lighthouse
+          # retired, its Retain PV kept: talos-config-ssau).
           - {name: sap-provisioner}
-          - {name: sap-lighthouse}
           - {name: sap-parent}
   template:
     metadata:
