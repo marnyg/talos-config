@@ -84,3 +84,12 @@ not copied:
   ADR-0010 rotation touches none of them; a dead view admits nothing.
   _Proposed 2026-10-15 (task talos-config-d0o0); Accepted 2026-10-19
   (hub `3267876`: pins from `talos/pins/` on every served tip)._
+- [0012](0012-relay-admission-is-a-relay-chain-the-actor-presents.md) —
+  a relay's gate is a receiver: admission is `VerifyChain` on the
+  `relay` verb, and member / child / newborn are three chains the
+  verifier already folds (nothing; `[P→C]`; `[P→"*"` + postage`]` from
+  the intro, ADR-0008's shape). The actor presents its chain to the
+  gate over HTTPS; the gate caches `id → exp`, the relay's hook admits
+  the proven key, a proxy ends the connection at expiry. No new verb,
+  caveat or rule. _Proposed 2026-11-28 (spike talos-config-qx5c); not
+  reviewed._

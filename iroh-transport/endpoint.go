@@ -48,6 +48,18 @@ type Options struct {
 	// relay forwards by EndpointId, so the two names meet at one server.
 	// "" ⇒ report Relay (or what iroh learned).
 	AdvertiseRelay string
+	// RelayToken, when set, is presented to the home relay as
+	// `Authorization: Bearer <token>` on the WebSocket upgrade, where a
+	// proxy in front of the relay can read it (spike talos-config-qx5c).
+	// Opaque here. "" ⇒ no header.
+	//
+	// It is fixed for the endpoint's life: iroh 1.1.0 reads it once,
+	// when it first opens the home relay, and re-presents that value on
+	// every reconnect — replacing the relay-map entry on a live endpoint
+	// (Endpoint.insert_relay, with or without remove_relay first) does
+	// not change it (measured 2026-11-28). So it can carry a stable
+	// claim, never a credential that expires.
+	RelayToken string
 	// MaxMsg bounds one message; 0 ⇒ DefaultMaxMsg.
 	MaxMsg uint32
 	// StreamALPNs are the stream-facet ALPN classes this endpoint also
@@ -117,7 +129,7 @@ func Bind(priv ed25519.PrivateKey, o Options) (*Endpoint, error) {
 		// port, and probing a relay that has no QUIC endpoint costs ~3 s
 		// at startup. QuicPort nil = no QAD (see Options.Relay).
 		m := iroh.RelayMapEmpty()
-		if err := m.Insert(iroh.RelayConfig{Url: o.Relay}); err != nil {
+		if err := m.Insert(relayConfig(o.Relay, o.RelayToken)); err != nil {
 			return nil, fmt.Errorf("irohtransport: relay mode: %w", err)
 		}
 		mode = iroh.RelayModeCustom(m)
@@ -164,6 +176,16 @@ func Bind(priv ed25519.PrivateKey, o Options) (*Endpoint, error) {
 	e.loops.Add(1)
 	go e.acceptLoop()
 	return e, nil
+}
+
+// relayConfig is the relay-map entry for url: no QUIC port (no QAD, see
+// Options.Relay) and token as the bearer, if any.
+func relayConfig(url, token string) iroh.RelayConfig {
+	c := iroh.RelayConfig{Url: url}
+	if token != "" {
+		c.AuthToken = &token
+	}
+	return c
 }
 
 // ID is the actor id this endpoint authenticates as.

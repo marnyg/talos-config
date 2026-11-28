@@ -23,3 +23,19 @@
      the subtractive pin hop (authorize.qnt mutant p1), `res` pinned
      (djdl) — live in their Decision Outcome / Consequences. Recover
      from git history if needed. -->
+
+## Relay admission (spike qx5c, 2026-11-28; ADR-0012 Proposed)
+
+- 2026-11-28 — Tried carrying the `relay` chain as the relay client's
+  bearer token (iroh 1.1.0 `RelayConfig.auth_token`, read by a proxy in
+  front of the relay). Ruled out: iroh reads the token once per
+  endpoint and re-sends it on every reconnect; `insert_relay`, with or
+  without `remove_relay` first, does not replace it on a live endpoint
+  (measured, 11 reconnects all with the old token). A credential that
+  expires every beat would need a new endpoint every beat. The token
+  survives as a stable claim (the id) only.
+- 2026-11-28 — Considered the parent vouching for the child's key at
+  the gate (`#admit`). Ruled out: the key does not exist before birth
+  and birth needs the relay. The wildcard link in the intro is what
+  replaces it.
+

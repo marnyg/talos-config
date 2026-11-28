@@ -3,42 +3,49 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
-## Last session (2026-11-28): Mojo optimization and ComfyUI comparison (`j1kd`)
+## Last session (2026-11-28): the protocol network as its own surface (`k7sd`, `qx5c`)
 
-- Optimized the fused tensor-core Mojo projection from 112 ms to **36–38 ms**
-  by using `transpose_b` fragment loads, all block threads for tile copies,
-  and a 64x32 warp tile. Other tile sizes and K=64 regressed. Correctness
-  is unchanged. ComfyUI/PyTorch performs the same projection in **9.2–9.6 ms**.
-- Measured MAX with a runtime FP8 weight input at **11–14 ms / 256 MiB**,
-  close to cuBLAS without the bound-weight 512 MiB expansion. Direct FP8
-  MMA was ruled out for this pass: quantization is only ~0.2 ms, but the
-  MMA itself plus scaling is ~1.1 s.
-- The optimized two-block DiT takes **49 ms** (was 112 ms), with the same
-  cosine 0.999752 / relative L2 0.0226 as built-in MAX. Full details:
-  `k8s/apps/comfyui/max-krea2/README.md`.
+- Direction ruled by the owner: split the protocol's network
+  infrastructure (`iroh-relay` + `cmd/lighthouse`) off the talos hub
+  and off the cluster, into its own fly app; long term the hub is one
+  consumer of the protocol among many, probably from another repo.
+- Invariant 5 amended (scoped to the talos deployment, two dependency
+  rules), goal line added, **ADR-0051 Proposed** — the amendment and
+  the goal are ruled, the deployment shape is not reviewed.
+- Relay admission spiked (`qx5c`): **protocol ADR-0012 Proposed, not
+  reviewed** — the actor presents a `relay` chain to a gate in front
+  of the relay; a newborn presents a wildcard link from its intro.
+  No new verb, caveat or verifier rule.
+- Three tests are the evidence; nothing else is built or deployed:
+  `TestCrossRelayDial` and `TestRelayGate` (`iroh-transport`, real
+  relay binary), `TestRelayAdmissionShapes` (`protocol/cert`).
+  `irohtransport.Options` gained `RelayToken`.
 
 ## Loose threads
 
-- **No full 28-block execution or timing yet.** With other desktop
-  processes present, MAX saw ~11 GiB free and model initialization OOMed
-  on a final 96 MiB allocation even at the small shape. The FP8 checkpoint
-  is 13.1 GB decimal. A clean/headless desktop or explicit streaming is
-  required; do not extrapolate a full step from the projection results.
-- ComfyUI's full-model references remain **0.95 s/it fp8_scaled** and
-  **0.64 s/it int8_convrot**. MAX has no sampler, text encoder, VAE or
-  fixed-seed image comparison yet.
-- Clean H3 desktop results landed separately in `8a7fa82`; desktop
-  `int8_convrot`, 4-step LoRA, ref-to-video and image edit still need
-  clean measurements. w1 remains firmware-limited to ~50 W.
-- Unused `longhorn-local` claims `ai/comfyui-w1` and `ai/comfyui-w2`
-  (~85 GB each) await the owner's delete/keep decision (`e6rx.8`).
-- ADR-0050 (any-port TCP) is still Proposed. Its live desktop exposure
-  includes ComfyUI on `127.0.0.1:8188` to `admins`.
+- ADR-0012 reverses, for the protocol relay only, the 2026-09-18
+  ruling "relay is not a facet; no grant reaches the hook". The owner
+  has not seen that yet.
+- A relay bearer token cannot be replaced on a live iroh 1.1.0
+  endpoint (protocol exploration log) — it carries a claim, never a
+  credential.
+- Open in ADR-0012: signing the id claim, a stranger door at the
+  relay, onward delegation by a child, a per-client byte limit.
+- The caller connects to the foreign relay, so an enforcing hub gate
+  blocks actor → member dials. No such edge exists today.
+- `boot.ViaRelay` uses the actor's own `-relay` as the lighthouse dial
+  hint; fine only while every actor shares the lighthouse's relay.
+- Every relay test ran on loopback, not through fly's TLS proxy.
+- **The working tree holds uncommitted Krea 2 / Mojo work**
+  (`k8s/apps/comfyui/max-krea2/`, spike `j1kd`) from another session;
+  this session did not touch or commit it.
+- Carried over: ADR-0050 (any-port TCP) is still Proposed; the unused
+  `longhorn-local` claims await the owner (`e6rx.8`).
 
 ## Suggested next steps
 
-- Free enough desktop VRAM (ideally headless), then run
-  `max-krea2/run.sh parity.py --layers 28 --quant fp8_mojo_tc --runs 3`.
-  That produces the missing full-DiT-step comparison; do not start H3.
-- If it still OOMs, choose explicit weight streaming or a smaller
-  quantization rather than weakening the comparison.
+- Owner rules on ADR-0051's deployment shape and protocol ADR-0012.
+- Then build in this order: the gate (verify + table + hook + proxy)
+  as a package; the relay link in `protocol/spawn`'s intro and kit;
+  presentation in `actors/cmd/child`; the fly app; move the
+  provisioner and parent over; enforce the hub's member gate.
