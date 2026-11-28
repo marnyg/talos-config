@@ -45,16 +45,15 @@ end state" + "Explicit non-goals"). This file tracks the current goal set.
   invited children pay nothing); per-relationship flows settle on an
   EVM L2 (Base) chosen for wallet compatibility. Mesh v3 builds the
   protocol's transport, membership cert and gateway. Sketch:
-  [`../../protocol/docs/sovereign-actor-protocol.md`](../../protocol/docs/sovereign-actor-protocol.md);
+  [`sovereign-actor-protocol.md`](https://github.com/marnyg/sap/blob/main/docs/sovereign-actor-protocol.md) (in github.com/marnyg/sap since ADR-0052);
   restructure: `talos-config-k3o`.
   **The hub is one consumer among many** _(2026-11-28, ADR-0051, spike
   `k7sd`)_: the protocol must be runnable with no talos code and no
   talos infrastructure — its own relay and lighthouse, no hub, no
   cluster, no wallet unseal. Checkable: an agent on a machine that has
   never seen this deployment joins a protocol network and spawns a
-  child. Long term the hub consumes the protocol from a different
-  repo/app context; extraction waits until the deployment split has
-  proven the boundary.
+  child. **The hub consumes the protocol from its own repo** since
+  2026-11-28 (ADR-0052): github.com/marnyg/sap, required by tag.
 - **Provisioning plane stays minimal** — the Omni line in `vision.md`:
   no fleet management, no upgrade orchestration, no multi-cluster.
 - **Every exposed service authenticates against the wallet** —

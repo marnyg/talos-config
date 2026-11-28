@@ -84,7 +84,7 @@ data:
       # The protocol network's own surface (ADR-0051) — not the hub's,
       # and nothing of the hub's or the cluster's depends on it. The
       # relay's probe through its admission gate: 204 only when both
-      # are up (actors/net/fly.toml). No alert yet: no actor homes there
+      # are up (sap's actors/net/fly.toml). No alert yet: no actor homes there
       # until the sap plane moves (talos-config-ssau); a page for a
       # surface nobody uses is noise.
       - name: sap-net (relay behind its gate)

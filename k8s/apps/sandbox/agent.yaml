@@ -74,7 +74,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: agent
-              # k8s/apps/sandbox/build.sh prints the @digest to pin here (the same
+              # sap's actors/sandbox/build.sh prints the @digest to pin here (the same
               # string as the sap-provisioner -outfit and sap-parent -image pins).
               image: ghcr.io/marnyg/sandbox-agent@sha256:feb83bdc66cc429bda32f4547436f5650cf584536d7103d6c073a6877e5de969
               env:

@@ -1,35 +1,32 @@
 ## Repository layout
 
-Monorepo around the **sovereign-actor protocol** (decision
-`talos-config-5w1`, ADR-0020):
+The talos deployment — hub (`config-server/`), cluster (`talos/`,
+`k8s/`), and the personal apps riding it (`workouts/`, `tasks/`,
+`vmpower/`, `android/`); root `docs/` is authoritative for it.
 
-- `protocol/` — the protocol as its own Go module, with no dependency on
-  config-server, Talos, fly, or nebula. Docs sub-scope at
-  `protocol/docs/` (its own `desired-state/`, ADRs from 0001, the design
-  sketch `sovereign-actor-protocol.md`).
-- `actors/` — the protocol's runnable side: platform drivers
-  (`driver/k8s`, `driver/docker`), the child's beat (`child/`), the
-  parent actor (`parent/`), the relay's admission gate (`relaygate/`),
-  and the `cmd/{provisioner,child,lighthouse,parent,spawn}` binaries
-  behind build tag `iroh` (`cmd/sap`, the parent's terminal client, is
-  plain net/http). `actors/net/` is the protocol network's fly app
-  (lighthouse + gated relay, root ADR-0051). Own
-  Go module replacing `../protocol` + `../iroh-transport`; everything
-  but `cmd/` stays C-free. `nix build .#actors-bin` is the tagged
-  gate; `actors/build.sh` pushes the image (`actors/image.nix`).
-- `config-server/`, `talos/`, `k8s/` — the talos deployment, the
-  protocol's first (N=1) consumer; root `docs/` is authoritative for it.
+The **sovereign-actor protocol** it is built on lives in its own repo
+since 2026-11-28 (ADR-0052, superseding the monorepo ADR-0020):
+[github.com/marnyg/sap](https://github.com/marnyg/sap) — `protocol/`,
+`iroh-go/`, `iroh-transport/`, `actors/` (incl. the network's fly app
+`actors/net`), their images and docs. This repo consumes it:
 
-When working under `protocol/`, read the root
-`docs/desired-state/{goals,invariants,domain-model}.md` **and**
-`protocol/docs/desired-state/` (see the traversal rule below).
+- `config-server/go.mod` requires `github.com/marnyg/sap/{protocol,
+  iroh-transport,iroh-go}` by tag; the flake input `sap` supplies
+  libiroh_ffi and iroh-relay (`nix flake update sap` to move the pin).
+  A protocol change the hub needs is a sap release, then a version
+  bump here (+ `vendorHash`). For working on both: a gitignored
+  `go.work` in `config-server/` pointing at a local sap checkout.
+- `k8s/apps/sap-*` and `k8s/apps/sandbox/agent.yaml` pin sap's images
+  by digest; sap's build scripts print the lines to paste.
+
+Before changing how the hub uses the protocol, read sap's
+`docs/desired-state/`.
 
 ## Git hooks
 
 `git config core.hooksPath .githooks` once per clone. `.githooks/pre-push`
-refuses a push whose range touches a vendored tree (`protocol/`,
-`iroh-transport/`, `iroh-go/iroh/`, any `go.mod`/`go.sum`) while a Go
-`vendorHash` is stale (the fixed-output cache hides this locally; CI's
+refuses a push whose range touches a module's `go.mod`/`go.sum` or
+`nix/default.nix` while its Go `vendorHash` is stale (the fixed-output cache hides this locally; CI's
 `vendor-hash` job only goes red after the push). The other hooks there
 just delegate to beads' shims in `.beads/hooks/`, so `bd hooks` keep
 working. `SKIP_VENDOR_HASH=1 git push` bypasses the check.
@@ -56,11 +53,12 @@ ran it — which is how `main` went undeployable for three commits and a
 broken node beat was found by a live provisioning run
 (`talos-config-ydq0`, 2026-09-22).
 
-**After touching `protocol/`, `config-server/` or `iroh-transport/`, run
+**After touching `config-server/` (or bumping its sap versions), run
 `scripts/test-iroh.sh` before pushing.** It is the nix build's test
-phase without the sandbox (~40 s warm). `actors/cmd/` is the same
-story: `nix build .#actors-bin` is the only thing that compiles it. This is separate from the
-pre-push `vendorHash` check — same trees, different failure.
+phase without the sandbox (~40 s warm). The protocol's own tagged
+suites (`iroh-transport`, `actors-bin`) are sap's nix builds now. This
+is separate from the pre-push `vendorHash` check — same module,
+different failure.
 
 <!-- docs-skill:start -->
 ## Documentation contract

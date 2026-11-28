@@ -1,8 +1,8 @@
 # ADR-0020: The repo is a monorepo around the actor protocol; talos-config is its first consumer
 
-- Status: Proposed _(2026-09-06, from decision `talos-config-5w1`;
-  promote when the protocol Go module has a consumer wired — Mesh v3
-  Phase 1)_
+- Status: **Superseded 2026-11-28 by ADR-0052** — the protocol now
+  lives in github.com/marnyg/sap and this repo consumes it. _(Was
+  Proposed 2026-09-06, from decision `talos-config-5w1`.)_
 - Date: 2026-09-06
 - Related: decision `talos-config-5w1` (the protocol lives in this repo,
   at its center; a separate repo was rejected), ADR-0016 (Mesh v3

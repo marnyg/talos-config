@@ -30,15 +30,13 @@ Pre-scaffold documents (authoritative, being gradually absorbed):
 
 In monorepos, services/apps/packages may have their own `docs/` mirroring this layout. Link relevant sub-scopes here:
 
-- [**protocol**](../protocol/docs/) — the sovereign-actor protocol, the
-  reusable core this repo is built around (decision `talos-config-5w1`,
-  ADR-0020). Its `docs/desired-state/` holds the protocol's OWN goals,
-  invariants, and domain model — deployment-independent (no talos, fly,
-  nebula, Kubernetes), and the home of the design sketch
-  [`sovereign-actor-protocol.md`](../protocol/docs/sovereign-actor-protocol.md).
-  Read it before touching `protocol/` code; this root scope stays
-  authoritative for the *talos deployment* (the protocol's first, N=1
-  consumer). See the sub-scope's own [`README.md`](../protocol/docs/README.md).
+- **protocol** — no longer a sub-scope: since 2026-11-28 (ADR-0052)
+  the sovereign-actor protocol is its own repo,
+  [github.com/marnyg/sap](https://github.com/marnyg/sap), with its own
+  `docs/` (desired-state, ADRs from 0001, the design sketch). This repo
+  consumes it by tag; this root scope is authoritative for the talos
+  deployment only. Read sap's `docs/desired-state/` before changing how
+  the hub uses the protocol.
 
 - [**workouts**](../workouts/docs/) — the self-hosted workout tracker
   (epic `talos-config-yz75`): a data-plane app on Longhorn behind the

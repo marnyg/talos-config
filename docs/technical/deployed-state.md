@@ -401,10 +401,10 @@ public surface, independent of the hub (invariant 5 as amended).
 
 - App `marnyg-sap-net`, region `arn`, one `shared-cpu-1x`/256 MB
   machine (`48e730eae45218`), image `registry.fly.io/marnyg-sap-net:
-  16da0e4-dirty` (nix-built `actors/net/image.nix`: static
+  16da0e4-dirty` (nix-built `actors/net/image.nix` — in github.com/marnyg/sap since ADR-0052: static
   `lighthouse -tags iroh` + static `iroh-relay` + cacert; the
   `-dirty` is an unrelated uncommitted file at build time), deployed
-  with `actors/net/deploy.sh`. Nothing to sign after a deploy.
+  with sap's `actors/net/deploy.sh`. Nothing to sign after a deploy.
 - **Lighthouse id `ed:0db45a05d9f67676c27caaf31ce2243b52d9f7ee09b50d6e
   8743e21ba2561615`** — the network bundle, with
   `https://marnyg-sap-net.fly.dev` as its relay. Key on volume
