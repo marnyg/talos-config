@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // upgradeEcho is a stand-in for the relay's /relay handler: it accepts an

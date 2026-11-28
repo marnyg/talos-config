@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // Well-known paths the hub serves its cold-cache certs on (hubseal.go).

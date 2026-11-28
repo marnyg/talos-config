@@ -11,16 +11,13 @@
 # stayed undeployable for three commits; the deploy found out, mid
 # node-provisioning, with the hub already sealed.
 #
-# So: run this before pushing anything under protocol/, config-server/
-# or iroh-transport/. It is the same thing the nix build does, minus the
+# So: run this before pushing anything under config-server/ (or a sap
+# version bump in its go.mod). It is the same thing the nix build does, minus the
 # sandbox, and it reuses the dev machine's Go cache (~40 s warm vs. the
 # nix build's few minutes).
 #
-#   scripts/test-iroh.sh                  config-server + iroh-transport
+#   scripts/test-iroh.sh                  config-server
 #   scripts/test-iroh.sh config-server    one module
-#   scripts/test-iroh.sh actors           the actors module (not in the
-#                                         default set: `nix build
-#                                         .#actors-bin` is its gate)
 #   scripts/test-iroh.sh config-server -run TestHubBeatOverIroh
 #
 # Anything after the module name is passed through to `go test`; the
@@ -38,10 +35,9 @@ mod="${1:-}"
 [ $# -gt 0 ] && shift
 
 case "$mod" in
-    "" | all) mods="config-server iroh-transport" ;;
-    config-server | iroh-transport | actors) mods="$mod" ;;
+    "" | all | config-server) mods="config-server" ;;
     *)
-        echo "usage: $0 [config-server|iroh-transport|actors|all] [go test args...]" >&2
+        echo "usage: $0 [config-server] [go test args...]  (the protocol's suites are github.com/marnyg/sap's nix builds)" >&2
         exit 2
         ;;
 esac

@@ -7,7 +7,7 @@ import (
 
 	"pgregory.net/rapid"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // The round-trip law (talos-config-4un). Nickel checks the recipe and

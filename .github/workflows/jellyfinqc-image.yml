@@ -15,7 +15,6 @@ on:
       - "config-server/meshtoken/**"
       - "config-server/go.mod"
       - "config-server/go.sum"
-      - "protocol/**"
       - ".dockerignore"
       - "Dockerfile.cmd"
       - ".github/workflows/jellyfinqc-image.yml"

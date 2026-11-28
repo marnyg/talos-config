@@ -31,7 +31,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // File is the recipe's name under the talos tree. (The "-v3" is

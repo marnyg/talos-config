@@ -14,9 +14,9 @@ import (
 	"fmt"
 	"io"
 
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
-	"github.com/marnyg/talos-config/protocol/actor"
-	"github.com/marnyg/talos-config/protocol/cert"
+	irohtransport "github.com/marnyg/sap/iroh-transport"
+	"github.com/marnyg/sap/protocol/actor"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // irohHubTransport binds the hubkey on iroh: homed on `home` (the relay

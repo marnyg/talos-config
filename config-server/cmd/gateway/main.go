@@ -35,12 +35,12 @@ import (
 	"syscall"
 	"time"
 
+	irohtransport "github.com/marnyg/sap/iroh-transport"
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/gateway"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/meshtoken"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 func main() {

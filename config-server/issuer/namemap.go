@@ -33,7 +33,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // NameEntry is one member as the map knows it: the member cert that

@@ -48,9 +48,9 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	"github.com/siderolabs/talos/pkg/machinery/role"
 
+	"github.com/marnyg/sap/protocol/facethttp"
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/machines"
-	"github.com/marnyg/talos-config/protocol/facethttp"
 )
 
 const (

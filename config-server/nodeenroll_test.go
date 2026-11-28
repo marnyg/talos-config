@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/boottoken"
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/siderolabs/talos/pkg/machinery/config/configloader"
 	"gopkg.in/yaml.v3"
 )

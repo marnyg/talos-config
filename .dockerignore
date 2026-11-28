@@ -1,17 +1,11 @@
 # Allowlist for Dockerfile.cmd, the only docker build left (the
 # hub image is nix-built, fly/image.nix, since talos-config-e8d; the
-# gateway likewise, k8s/apps/gateway/image.nix): the server module and
-# the sibling modules its go.mod replaces by relative path. Of the iroh
-# modules only go.mod (+ go.sum where one exists) are needed — the module graph must load,
-# nothing from them is compiled into the bridge.
+# gateway likewise, k8s/apps/gateway/image.nix): the server module
+# alone — the protocol modules it requires come from the Go module
+# proxy (github.com/marnyg/sap, ADR-0052).
 *
 !config-server
-!protocol
-!iroh-transport/go.mod
-!iroh-transport/go.sum
-!iroh-go/go.mod
 
-# Build output and docs that sit in the working tree.
+# Build output that sits in the working tree.
 config-server/config-server
 config-server/result
-protocol/docs

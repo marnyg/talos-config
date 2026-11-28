@@ -38,7 +38,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // PinsDir is the directory under talos/ holding one pin file per

@@ -30,10 +30,10 @@ import (
 	"io"
 	"time"
 
+	"github.com/marnyg/sap/protocol/actor"
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/protocol/actor"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // HubMemberName is the name the hub's self-minted member cert carries

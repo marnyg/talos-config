@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/issuer"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // fakeHub is the device-flow surface of the hub as a headless member

@@ -14,10 +14,10 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 
+	"github.com/marnyg/sap/protocol/actor"
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/enrollmsg"
 	"github.com/marnyg/talos-config/config-server/issuer"
-	"github.com/marnyg/talos-config/protocol/actor"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 const t0 int64 = 1_700_000_000

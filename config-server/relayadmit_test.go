@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 const (

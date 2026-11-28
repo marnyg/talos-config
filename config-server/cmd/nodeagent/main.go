@@ -24,9 +24,9 @@ import (
 	"syscall"
 	"time"
 
+	irohtransport "github.com/marnyg/sap/iroh-transport"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/config-server/policy"
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 )
 
 type forwards map[string]string

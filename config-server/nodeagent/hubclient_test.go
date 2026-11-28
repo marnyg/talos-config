@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/issuer"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // pinWorld is the receiver side of a node after enrollment, reduced to

@@ -12,11 +12,11 @@ import (
 	"testing"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/masterderive"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // testHubManager builds a sealed hub over a throwaway talos tree with

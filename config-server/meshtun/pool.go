@@ -30,8 +30,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	irohtransport "github.com/marnyg/sap/iroh-transport"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 )
 
 // Pool keeps one connection per (member, facet), shared by every local

@@ -646,6 +646,27 @@
         "type": "github"
       }
     },
+    "nix2container_2": {
+      "inputs": {
+        "nixpkgs": [
+          "sap",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1773987955,
+        "narHash": "sha256-vgxwF/GS9lRC9s211RnmJaGKHIUexMiRs7Eslh11E08=",
+        "owner": "nlewo",
+        "repo": "nix2container",
+        "rev": "20d339590c3c36252514a57b0241c47bcd8a08ce",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nlewo",
+        "repo": "nix2container",
+        "type": "github"
+      }
+    },
     "nixd": {
       "inputs": {
         "flake-parts": [
@@ -883,7 +904,7 @@
         "flake-parts": "flake-parts_4",
         "nix2container": "nix2container",
         "nixpkgs": "nixpkgs_5",
-        "nixpkgs-pi": "nixpkgs-pi",
+        "sap": "sap",
         "treefmt-nix": "treefmt-nix_2"
       }
     },
@@ -905,6 +926,28 @@
       "original": {
         "owner": "oxalica",
         "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "sap": {
+      "inputs": {
+        "nix2container": "nix2container_2",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "nixpkgs-pi": "nixpkgs-pi"
+      },
+      "locked": {
+        "lastModified": 1795893473,
+        "narHash": "sha256-0pTfzfwFsK5zOdYzE2MEhrBxVpq9J12tVFZR7JvPrYg=",
+        "owner": "marnyg",
+        "repo": "sap",
+        "rev": "446fa18baa09ede53b076189cbcef9bc095faa21",
+        "type": "github"
+      },
+      "original": {
+        "owner": "marnyg",
+        "repo": "sap",
         "type": "github"
       }
     },

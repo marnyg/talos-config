@@ -8,19 +8,14 @@
 # binary and nothing else. Toolchain tag follows go.mod — bump
 # together with the root Dockerfile and flake.nix (see the note there).
 #
-# Layout mirrors the repo because config-server/go.mod replaces its
-# sibling modules by relative path (../protocol, ../iroh-transport,
-# ../iroh-go). Both binaries compile protocol/cert; the iroh modules
-# are only needed as go.mod files so the module graph loads — nothing
-# from them is built, and the binary stays CGO-free. The .dockerignore
-# allowlist keeps the context to exactly these paths.
+# The protocol modules (github.com/marnyg/sap/*, ADR-0052) come from
+# the Go module proxy by the versions config-server/go.mod requires;
+# nothing from iroh is built, and the binary stays CGO-free. The
+# .dockerignore allowlist keeps the context to config-server/.
 ARG CMD
 FROM golang:1.26-alpine AS build
 ARG CMD
 WORKDIR /src
-COPY protocol/ protocol/
-COPY iroh-transport/go.mod iroh-transport/go.sum iroh-transport/
-COPY iroh-go/go.mod iroh-go/
 COPY config-server/ config-server/
 WORKDIR /src/config-server
 RUN test -n "$CMD" && CGO_ENABLED=0 go build -trimpath -o /out/app ./cmd/$CMD

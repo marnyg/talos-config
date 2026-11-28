@@ -55,11 +55,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	irohtransport "github.com/marnyg/sap/iroh-transport"
+	"github.com/marnyg/sap/protocol/actor"
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/policy"
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
-	"github.com/marnyg/talos-config/protocol/actor"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // Timing. Beat is the bundle refresh cadence — blocklist propagation

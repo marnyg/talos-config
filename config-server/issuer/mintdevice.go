@@ -23,10 +23,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/marnyg/sap/protocol/actor"
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/enrollmsg"
 	"github.com/marnyg/talos-config/config-server/ethsig"
-	"github.com/marnyg/talos-config/protocol/actor"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // FacetMintDevice is the Issuer facet Enroll invokes.

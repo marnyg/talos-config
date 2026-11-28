@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/meshtoken"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 const host = "guac.gw.mesh.internal"

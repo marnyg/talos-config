@@ -13,7 +13,7 @@
 #           sign at /status afterwards — so the step prints the ref and
 #           stops.
 #
-# Same cache pair as iroh-go.yml / iroh-transport.yml; the musl iroh-ffi
+# The musl iroh-ffi and iroh-relay are sap's (flake input); the musl iroh-ffi
 # and iroh-relay are shared with the `static` job there when pins match.
 name: hub-image
 on:
@@ -21,9 +21,6 @@ on:
     branches: [main]
     paths:
       - config-server/**
-      - protocol/**
-      - iroh-transport/**
-      - iroh-go/**
       - talos/**
       - fly/**
       - flake.nix
@@ -32,9 +29,6 @@ on:
   pull_request:
     paths:
       - config-server/**
-      - protocol/**
-      - iroh-transport/**
-      - iroh-go/**
       - fly/**
       - flake.nix
       - flake.lock

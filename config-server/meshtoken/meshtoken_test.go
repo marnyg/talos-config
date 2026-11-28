@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 func newKey(t *testing.T) ed25519.PrivateKey {

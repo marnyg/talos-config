@@ -20,8 +20,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/issuer"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // State-dir file names.

@@ -8,7 +8,8 @@
 #   IROH_FFI_ANDROID_LIB             dir containing libiroh_ffi.a built for
 #                                    aarch64-linux-android:
 #                                      NIXPKGS_ALLOW_UNFREE=1 nix build --impure \
-#                                        -f iroh-go/nix/android.nix --print-out-paths
+#                                        -f <sap checkout>/iroh-go/nix/android.nix --print-out-paths
+#                                    (github.com/marnyg/sap, ADR-0052)
 #                                    (+ /lib). ~1 h cold on a linux builder,
 #                                    cached in the store after; see
 #                                    android/shell.nix for the whole shell.

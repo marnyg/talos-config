@@ -18,7 +18,6 @@ on:
       - "config-server/policy/**"
       - "config-server/go.mod"
       - "config-server/go.sum"
-      - "protocol/**"
       - ".dockerignore"
       - "Dockerfile.cmd"
       - ".github/workflows/siwe-oidc-image.yml"

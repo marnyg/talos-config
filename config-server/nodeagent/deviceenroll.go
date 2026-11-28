@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/issuer"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // Device-flow paths on the hub (deviceenroll.go, oauth.go).

@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // Header carries the token on the proxied request. Stripped from the

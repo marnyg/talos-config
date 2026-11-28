@@ -23,11 +23,13 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
-    # pi-coding-agent for the sandbox agent image (k8s/apps/sandbox/
-    # image.nix): the repo's nixpkgs predates the package; bumping it
-    # drags every Go/Rust build along, so pi rides its own lock entry:
-    # `nix flake update nixpkgs-pi` bumps pi and nothing else.
-    nixpkgs-pi.url = "github:nixos/nixpkgs/nixos-unstable";
+    # The sovereign-actor protocol, extracted 2026-11-28 (ADR-0052): the
+    # hub requires its Go modules by tag (config-server/go.mod) and takes
+    # the native pieces from here — libiroh_ffi to link iroh-go against,
+    # the iroh-relay it runs as a child. Same nixpkgs, so the Rust builds
+    # are the same store paths as before the extraction.
+    sap.url = "github:marnyg/sap";
+    sap.inputs.nixpkgs.follows = "nixpkgs";
 
     devenv.url = "github:cachix/devenv";
     nix2container.url = "github:nlewo/nix2container";
@@ -45,20 +47,10 @@
       perSystem = { pkgs, self', inputs', lib, ... }:
         let
           sshKey = "$HOME/.ssh/id_ed25519";
-          # In-house iroh Go binding (task talos-config-ow7): iroh-ffi 1.1.0
-          # → uniffi-bindgen-go → iroh-go/iroh. See iroh-go/README.md.
-          irohGo = import ./iroh-go/nix { inherit pkgs lib; self = self'; };
-          # sovereign-actor Transport over iroh (task talos-config-0bc.2.6):
-          # own Go module (iroh-transport/, replaces ../protocol + ../iroh-go);
-          # protocol/ itself never imports iroh-go. See iroh-transport/README.md.
-          irohTransport = import ./iroh-transport/nix { inherit pkgs lib; self = self'; };
-          # The hub binary (cgo against iroh-go, -tags iroh) and its static
-          # variant for the fly image. See config-server/nix/default.nix.
-          configServer = import ./config-server/nix { inherit pkgs lib; self = self'; };
-          # The protocol's runnable side: provisioner + child binaries on iroh
-          # (-tags iroh, cgo) and their static variant for the image. See
-          # actors/nix/default.nix.
-          actors = import ./actors/nix { inherit pkgs lib; self = self'; };
+          sap = inputs'.sap.packages;
+          # The hub binary (cgo against sap's iroh-go, -tags iroh) and its
+          # static variant for the fly image. See config-server/nix/default.nix.
+          configServer = import ./config-server/nix { inherit pkgs lib sap; self = self'; };
           # The workout tracker (epic yz75): pure Go, no cgo. See
           # workouts/nix/default.nix.
           workouts = import ./workouts/nix { inherit pkgs lib; self = self'; };
@@ -82,11 +74,6 @@
             #   nix build .#config-server-static   musl, what the fly image ships (linux)
             #   nix build .#hub-image              the fly image (linux; fly/image.nix)
             packages.config-server-bin = configServer.bin;
-            # nix build .#actors-bin     — bin/{child,provisioner} + the actors/
-            #                               suite under -tags iroh -race
-            # nix build .#actors-static  — musl, what actors/image.nix ships (linux)
-            # nix build .#actors-image   — the child/provisioner image (linux)
-            packages.actors-bin = actors.bin;
             # nix build .#workouts-bin   — bin/workouts + the module's go test
             packages.workouts-bin = workouts.bin;
             # nix build .#tasks-bin      — bin/tasks + the module's go test
@@ -94,34 +81,11 @@
             # nix build .#vmpower-bin    — bin/vmpower + the module's go test
             packages.vmpower-bin = vmpower.bin;
 
-            # nix build .#iroh-go        — libiroh_ffi.{a,dylib|so} + generated Go
-            #                               package, drift-checked against iroh-go/iroh
-            # nix build .#iroh-go-smoke  — the smoke binary; its checkPhase runs the
-            #                               direct and relay smoke (go test)
-            # nix run   .#iroh-go-regen  — regenerate iroh-go/iroh after a pin bump
-            packages.iroh-go = irohGo.iroh-go;
-            packages.iroh-go-smoke = irohGo.smoke;
-            packages.iroh-ffi = irohGo.iroh-ffi;
-            # static-only lib dir for hand-run go builds:
+            # sap's native pieces, re-exported for hand-run go builds and
+            # scripts/test-iroh.sh:
             #   CGO_LDFLAGS="-L$(nix build .#iroh-ffi-static --print-out-paths)/lib"
-            packages.iroh-ffi-static = irohGo.iroh-ffi-static;
-            packages.iroh-relay = irohGo.iroh-relay;
-            packages.uniffi-bindgen-go = irohGo.uniffi-bindgen-go;
-            # nix build .#iroh-transport        — library module; checkPhase runs the
-            #                                      two-actor handshake over iroh (direct +
-            #                                      local relay) with -race
-            # nix build .#iroh-transport-static — same suite under pkgsStatic (musl,
-            #                                      -extldflags -static): the Talos-
-            #                                      extension feasibility probe. Linux
-            #                                      only — darwin pkgsStatic still links
-            #                                      libSystem dynamically, so it proves
-            #                                      nothing there.
-            packages.iroh-transport = irohTransport.tests;
-            apps.iroh-go-regen = {
-              type = "app";
-              program = "${irohGo.regen}/bin/iroh-go-regen";
-              meta.description = "Regenerate the iroh-go/iroh Go binding from iroh-ffi via uniffi-bindgen-go";
-            };
+            packages.iroh-ffi-static = sap.iroh-ffi-static;
+            packages.iroh-relay = sap.iroh-relay;
 
             packages.config-server = pkgs.writeShellApplication {
               name = "config-server";
@@ -414,13 +378,10 @@
               '';
             };
           }
-          # Linux-only (see the iroh-transport comment above): a plain mkIf on
+          # Linux-only (pkgsStatic on darwin still links libSystem): a plain mkIf on
           # the attribute would leave a defined-but-valueless option behind
           # that `nix flake check` trips over; mkMerge drops it cleanly.
           (lib.mkIf pkgs.stdenv.isLinux {
-            packages.iroh-transport-static = irohTransport.static;
-            # nix build .#p0relay-static — static musl smoke + p0relay (P0.1 probe)
-            packages.p0relay-static = irohTransport.p0relayStatic;
             packages.config-server-static = configServer.static;
             # nix build .#hub-image; nix run .#hub-image.copyToRegistry —
             # the fly image (fly/image.nix; driver: fly/deploy.sh).
@@ -439,7 +400,6 @@
               nix2container = inputs'.nix2container.packages.nix2container;
               configServer = configServer.static;
             };
-            packages.actors-static = actors.static;
             packages.workouts-static = workouts.static;
             # nix build .#workouts-image — the tracker's pod image
             # (workouts/image.nix; driver: workouts/build.sh).
@@ -467,34 +427,9 @@
               nix2container = inputs'.nix2container.packages.nix2container;
               vmpower = vmpower.static;
             };
-            # nix build .#actors-image — the child/provisioner image
-            # (actors/image.nix; driver: actors/build.sh).
-            packages.actors-image = import ./actors/image.nix {
-              inherit pkgs lib;
-              self = inputs.self;
-              nix2container = inputs'.nix2container.packages.nix2container;
-              actors = actors.static;
-            };
-            # nix build .#net-image — the protocol network's fly image:
-            # lighthouse + the relay behind its gate (actors/net/image.nix;
-            # driver: actors/net/deploy.sh).
-            packages.net-image = import ./actors/net/image.nix {
-              inherit pkgs lib;
-              self = inputs.self;
-              nix2container = inputs'.nix2container.packages.nix2container;
-              actors = actors.static;
-              irohRelay = actors.irohRelayStatic;
-            };
-            # nix build .#sandbox-agent-image — the kata-sandboxed agent
-            # harness (k8s/apps/sandbox/image.nix; driver:
-            # k8s/apps/sandbox/build.sh).
-            packages.sandbox-agent-image = import ./k8s/apps/sandbox/image.nix {
-              inherit pkgs lib;
-              self = inputs.self;
-              nix2container = inputs'.nix2container.packages.nix2container;
-              pi = inputs'.nixpkgs-pi.legacyPackages.pi-coding-agent;
-              actors = actors.static;
-            };
+            # The actors, network and sandbox-agent images are sap's
+            # (github.com/marnyg/sap, actors/build.sh, actors/net/deploy.sh,
+            # actors/sandbox/build.sh); k8s/apps pins them by digest.
             # nix build .#forgejo-runner-image — the in-cluster CI runner
             # (k8s/apps/forgejo-runner/image.nix; driver: its build.sh).
             packages.forgejo-runner-image = import ./k8s/apps/forgejo-runner/image.nix {

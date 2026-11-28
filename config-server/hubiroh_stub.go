@@ -6,7 +6,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 
-	"github.com/marnyg/talos-config/protocol/actor"
+	"github.com/marnyg/sap/protocol/actor"
 )
 
 // irohHubTransport without the `iroh` tag: --iroh-relay is refused at

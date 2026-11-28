@@ -7,7 +7,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/hiddeco/sshsig v0.2.0
-	github.com/marnyg/talos-config/iroh-transport v0.0.0
+	github.com/marnyg/sap/iroh-transport v0.1.0
 	github.com/siderolabs/crypto v0.6.5
 	github.com/siderolabs/kms-client v0.2.0
 	github.com/siderolabs/talos/pkg/machinery v1.12.6
@@ -33,7 +33,7 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	github.com/marnyg/talos-config/iroh-go v0.0.0 // indirect
+	github.com/marnyg/sap/iroh-go v0.1.0 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
@@ -67,7 +67,7 @@ require (
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jsimonetti/rtnetlink/v2 v2.2.1-0.20260317095713-310581b9c6ac // indirect
-	github.com/marnyg/talos-config/protocol v0.0.0
+	github.com/marnyg/sap/protocol v0.1.0
 	github.com/mdlayher/ethtool v0.5.1 // indirect
 	github.com/mdlayher/genetlink v1.3.2 // indirect
 	github.com/mdlayher/netlink v1.9.0 // indirect
@@ -101,12 +101,3 @@ require (
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-replace github.com/marnyg/talos-config/protocol => ../protocol
-
-// The hub's iroh endpoint (talos-config-e8d, hubiroh.go, -tags iroh):
-// iroh-transport replaces ../iroh-go itself, so both replaces are needed
-// here too — Go applies the main module's replaces only.
-replace github.com/marnyg/talos-config/iroh-transport => ../iroh-transport
-
-replace github.com/marnyg/talos-config/iroh-go => ../iroh-go

@@ -23,12 +23,12 @@ import (
 	"syscall"
 	"time"
 
+	irohtransport "github.com/marnyg/sap/iroh-transport"
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/meshtls"
 	"github.com/marnyg/talos-config/config-server/meshtun"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
-	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 )
 
 // SocketProtector is implemented in Kotlin with VpnService.protect:

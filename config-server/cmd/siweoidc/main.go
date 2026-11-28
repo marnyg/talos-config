@@ -16,10 +16,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/policy"
 	"github.com/marnyg/talos-config/config-server/siweoidc"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // stringsFlag collects a repeatable string flag.

@@ -19,11 +19,11 @@ import (
 	"strings"
 	"testing"
 
+	pcert "github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/enrollmsg"
 	"github.com/marnyg/talos-config/config-server/issuer"
 	"github.com/marnyg/talos-config/config-server/policy"
-	pcert "github.com/marnyg/talos-config/protocol/cert"
 )
 
 // newMeshEnrollServer is a hub with the master unsealed and the

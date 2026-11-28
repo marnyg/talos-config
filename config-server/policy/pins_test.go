@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 func ethKey(t *testing.T, seed byte) (*secp256k1.PrivateKey, cert.ActorID) {

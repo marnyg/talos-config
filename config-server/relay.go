@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // relayPaths are the three routes the iroh relay protocol needs on the

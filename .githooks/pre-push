@@ -2,30 +2,21 @@
 # pre-push: refuse to push a stale Go vendorHash, or a Go package whose
 # other-OS half no longer type-checks (see the second block).
 #
-# config-server-bin, iroh-transport and actors-bin vendor the local
-# `replace`d modules (protocol/, iroh-transport/, iroh-go/iroh/) into a
-# fixed-output derivation, so any change under those trees — or to a
-# go.mod/go.sum of those modules (not any nested spike module: deleting
-# iroh-go/mobile/go.mod cost a full no-op dance, 2026-10-17) — changes
-# the hash while a cached vendor dir keeps
-# building fine locally. CI's `vendor-hash` job catches it, but we push
-# straight to main and nobody reads a red Actions tab: on 2026-09-20
-# main sat red for 14 pushes until darwin-rebuild hit the stale cache
-# (irohup built against an iroh-transport without Conn.Paths).
+# Each Go module's vendor dir is a fixed-output derivation, so a change
+# to its go.mod/go.sum (or its nix/default.nix) moves the hash while a
+# cached vendor dir keeps building fine locally. CI's `vendor-hash` job
+# catches it, but we push straight to main and nobody reads a red
+# Actions tab: on 2026-09-20 main sat red for 14 pushes until
+# darwin-rebuild hit the stale cache.
 #
 # So: when the pushed range touches one of those inputs, realise the
 # FODs that input feeds and re-run each with --rebuild (the two-step
-# dance documented on config-server/nix/default.nix; --rebuild
-# re-fetches the modules, so ~1 min per attr). Only the attrs an input
-# can move are checked: the three vendored trees feed config-server-bin,
-# iroh-transport and actors-bin; a module's own go.mod/go.sum and
-# nix/default.nix feed that module's attr alone. actors/ and
-# config-server/ sources are consumers, never vendored — a .go change
-# there moves no hash (2026-10-19: every actors push paid 4 attrs × 2
-# builds, ~5 min, for a hash that could not have changed). The
+# dance documented on config-server/nix/default.nix; ~1 min per attr).
+# Since ADR-0052 no module replaces a sibling by path — the protocol's
+# modules are github.com/marnyg/sap's, vendored by version — so only a
+# module's own go.mod/go.sum and nix/default.nix move its hash. The
 # flake is evaluated at the pushed commit (git+file://…?rev=), not the
-# working tree: `$repo#attr` folds uncommitted edits under a replace'd
-# module into the vendor dir and fails pushes that do not carry them.
+# working tree.
 # Set SKIP_VENDOR_HASH=1 to bypass. Delegates to beads' shim afterwards.
 
 set -eu
@@ -42,9 +33,7 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
   # attrs_for prints the attrs one changed path can move.
   attrs_for() {
     case "$1" in
-      protocol/*|iroh-transport/*|iroh-go/*) echo "config-server-bin iroh-transport actors-bin" ;;
       config-server/*) echo "config-server-bin" ;;
-      actors/*)        echo "actors-bin" ;;
       workouts/*)      echo "workouts-bin" ;;
       tasks/*)         echo "tasks-bin" ;;
     esac
@@ -59,9 +48,8 @@ if [ "${SKIP_VENDOR_HASH:-0}" != "1" ]; then
     fi
     # shellcheck disable=SC2086
     files=$(git -C "$repo" diff --name-only $range -- \
-      'protocol/**/*.go' 'protocol/*.go' 'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' \
-      'config-server/go.*' 'protocol/go.*' 'iroh-transport/go.*' 'iroh-go/go.*' 'actors/go.*' 'workouts/go.*' 'tasks/go.*' \
-      'config-server/nix/default.nix' 'iroh-transport/nix/default.nix' 'actors/nix/default.nix' 'workouts/nix/default.nix' 'tasks/nix/default.nix' 2>/dev/null || true)
+      'config-server/go.*' 'workouts/go.*' 'tasks/go.*' \
+      'config-server/nix/default.nix' 'workouts/nix/default.nix' 'tasks/nix/default.nix' 2>/dev/null || true)
     [ -n "$files" ] && touched="$touched$files
 " && pushed="$pushed$local_ref $local_sha
 "
@@ -117,8 +105,7 @@ if [ "${SKIP_OSCHECK:-0}" != "1" ]; then
     fi
     # shellcheck disable=SC2086
     files=$(git -C "$repo" diff --name-only $range -- \
-      'config-server/**/*.go' 'config-server/*.go' 'protocol/**/*.go' 'protocol/*.go' \
-      'iroh-transport/**/*.go' 'iroh-transport/*.go' 'iroh-go/iroh' 2>/dev/null || true)
+      'config-server/**/*.go' 'config-server/*.go' 'config-server/go.mod' 2>/dev/null || true)
     [ -n "$files" ] && gotouched="$gotouched$files
 "
   done <<EOF

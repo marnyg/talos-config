@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // relayColdWindow is how long after process start the relay admits

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // StreamHandler terminates one admitted forward stream in-process

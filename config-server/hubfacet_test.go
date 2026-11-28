@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marnyg/sap/protocol/cert"
+	"github.com/marnyg/sap/protocol/facethttp"
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/protocol/cert"
-	"github.com/marnyg/talos-config/protocol/facethttp"
 )
 
 // fakeFacetConn is one inbound facet connection without iroh: the

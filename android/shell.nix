@@ -6,7 +6,7 @@
 #
 #   cd android
 #   NIXPKGS_ALLOW_UNFREE=1 nix-shell --impure shell.nix
-#   IROH_FFI_ANDROID_LIB=$(NIXPKGS_ALLOW_UNFREE=1 nix build --impure -f ../iroh-go/nix/android.nix --print-out-paths)/lib ./build-aar.sh
+#   IROH_FFI_ANDROID_LIB=$(NIXPKGS_ALLOW_UNFREE=1 nix build --impure -f ../../sap/iroh-go/nix/android.nix --print-out-paths)/lib ./build-aar.sh
 #   gradle --no-daemon assembleDebug
 #   adb install -r app/build/outputs/apk/debug/app-debug.apk
 let

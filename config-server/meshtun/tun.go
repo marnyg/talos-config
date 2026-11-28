@@ -15,10 +15,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/marnyg/sap/protocol/facethttp"
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/meshtls"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
-	"github.com/marnyg/talos-config/protocol/facethttp"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 

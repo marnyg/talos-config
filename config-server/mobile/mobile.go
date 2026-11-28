@@ -28,10 +28,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/meshtls"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // The VpnService.Builder's inputs (fakeip's plan): address TunIP/32,

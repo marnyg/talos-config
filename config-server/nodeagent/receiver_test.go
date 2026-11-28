@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 func noopHandler(context.Context, io.ReadWriteCloser, cert.Identity, cert.ActorID) {}

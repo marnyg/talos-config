@@ -39,6 +39,7 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/deviceflow"
 	"github.com/marnyg/talos-config/config-server/enrollmsg"
 	"github.com/marnyg/talos-config/config-server/ethsig"
@@ -46,7 +47,6 @@ import (
 	"github.com/marnyg/talos-config/config-server/machines"
 	"github.com/marnyg/talos-config/config-server/nodeagent"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // enrollRequest is the params both entry paths converge on before the

@@ -17,23 +17,12 @@
 #   hub        seal lifecycle; ephemeral state dies with the process
 #   enroll     device enrollment (ADR-0012): nonce single-use, addr=f(name)
 #   approval   machine approval + ADR-0015 boot-token enrollment; reinstall
-#   authorize  ADR-0017/0018 authorize(): the per-connect chain check incl.
-#              speak-as resolution (step 2a) over per-process hub keys, and
-#              protocol ADR-0001/0002 verifyChain(): the N-link fold it is a
-#              case of, verb = the root consent's (invoke | publish);
-#              ADR-0003 rule 4: the receiver answers for principals whose
-#              speak-as it HOLDS (never the caller's bundle); ADR-0004: the
-#              target wildcard `*` never widens, a `*` consent roots nothing;
-#              ADR-0007 rev. 2026-09-22 (ydq0): a chain that begins with the
-#              rooting consent is folded without it (receiver-side strip)
 #   runway     ADR-0017/0018 cert lifetimes vs. sealed-hub starvation incl.
 #              the per-process speak-as bound and the 30 d nag
-#   clock      ADR-0019 time as trust input: iat low-water mark vs. clock rollback;
-#              only receiver-rooted certs feed the mark (strangers never do)
-#   rotation   spike aja2 pins 1–4: root rotation via a guardian-signed epoch
-#              chain — k-of-n rotate-root certs verified by signature alone,
-#              verifier pinned at policy_0 derives its view from the chain
-#              rooted at that pin, equivocation at a rooted prev = dead
+#
+# The protocol's models — authorize (verifyChain / authorize), clock and
+# rotation — moved to github.com/marnyg/sap with the protocol (ADR-0052,
+# 2026-11-28); their depths and history are recorded there.
 #
 # Expected violation: approval.residualTokenReplayAcrossRedeploy is the
 # residual ADR-0015 accepts (a leaked token replays after a redeploy
@@ -102,7 +91,7 @@ expect_violation() { # file invariant steps [samples]
 
 case "$mode" in
 run)
-  for f in approval authorize runway clock rotation; do
+  for f in approval runway; do
     echo "== $f (tests) =="
     quint test "$f.qnt"
   done
@@ -110,29 +99,16 @@ run)
     echo "== $f =="
     run_inv "$f" invAll 30
   done
-  echo "== authorize =="
-  run_inv authorize invAll 20 1000
-  run_inv authorize invTrivialPinsPreserveVerdicts 20 1000   # d0o0: out of invAll for verify time; see Depths
   echo "== runway =="
   run_inv runway invAll 60 1000
-  echo "== clock =="
-  run_inv clock invAll 30 500
-  echo "== rotation =="
-  run_inv rotation invAll 20 500
   echo "== expected violations =="
   expect_violation approval residualTokenReplayAcrossRedeploy 30
-  expect_violation rotation residualTruncatedHistory 30 3000   # pin 1 residual: unshown verifier accepts the old root
-  expect_violation rotation residualDeadStaysDead 30 3000      # pin 2 residual: restart loses the equivocation record (needs a ≥k thief, a rooted pair, a restart: ~1 trace in 200)
   ;;
 verify)
   quint verify --invariant=invAll --max-steps=15 hub.qnt
   quint verify --invariant=invAll --max-steps=12 approval.qnt
   quint verify --invariant=invAll --max-steps=8 enroll.qnt
-  quint verify --invariant=invAll --max-steps=2 authorize.qnt
-  quint verify --invariant=invTrivialPinsPreserveVerdicts --max-steps=2 authorize.qnt   # d0o0/djdl, ~61 s; see Depths
   quint verify --invariant=invAll --max-steps=10 runway.qnt
-  quint verify --invariant=invAll --max-steps=10 clock.qnt
-  quint verify --invariant=invAll --max-steps=7 rotation.qnt
   ;;
 *)
   echo "usage: $0 [run|verify]" >&2

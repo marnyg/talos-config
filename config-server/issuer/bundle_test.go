@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marnyg/sap/protocol/actor"
+	"github.com/marnyg/sap/protocol/cert"
+	"github.com/marnyg/sap/protocol/envelope"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/protocol/actor"
-	"github.com/marnyg/talos-config/protocol/cert"
-	"github.com/marnyg/talos-config/protocol/envelope"
 )
 
 // testRecipe is a small recipe with one row of each shape the compiler

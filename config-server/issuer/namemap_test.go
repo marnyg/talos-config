@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marnyg/talos-config/protocol/actor"
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/actor"
+	"github.com/marnyg/sap/protocol/cert"
 )
 
 // bundleAt runs the #bundle handler for member m (from its own key) and

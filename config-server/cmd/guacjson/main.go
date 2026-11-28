@@ -26,9 +26,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/guacjson"
 	"github.com/marnyg/talos-config/config-server/meshtoken"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 type stringsFlag []string

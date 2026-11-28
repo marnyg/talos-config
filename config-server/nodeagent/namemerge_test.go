@@ -3,8 +3,8 @@ package nodeagent
 import (
 	"testing"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/issuer"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // entry is a name-map entry for a fake NodeId; certs are not signed

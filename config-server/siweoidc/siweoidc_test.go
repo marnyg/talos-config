@@ -22,9 +22,9 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	secpecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/ethsig"
 	"github.com/marnyg/talos-config/config-server/meshtoken"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // wellKnownAddr is the Ethereum address of private key 0x…01.

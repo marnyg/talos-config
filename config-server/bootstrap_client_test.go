@@ -17,9 +17,9 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/marnyg/sap/protocol/cert"
 	"github.com/marnyg/talos-config/config-server/fakeip"
 	"github.com/marnyg/talos-config/config-server/machines"
-	"github.com/marnyg/talos-config/protocol/cert"
 )
 
 // pipeFacet is a facetClient whose every Open is one net.Pipe; the

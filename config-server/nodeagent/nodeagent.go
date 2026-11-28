@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/marnyg/talos-config/protocol/cert"
+	"github.com/marnyg/sap/protocol/cert"
 	"gopkg.in/yaml.v3"
 )
 

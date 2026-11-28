@@ -60,8 +60,8 @@ import (
 	"github.com/siderolabs/crypto/x509"
 	"github.com/siderolabs/talos/pkg/machinery/config/configloader"
 
+	"github.com/marnyg/sap/protocol/facethttp"
 	"github.com/marnyg/talos-config/config-server/machines"
-	"github.com/marnyg/talos-config/protocol/facethttp"
 )
 
 const (

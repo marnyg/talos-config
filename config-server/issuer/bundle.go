@@ -29,10 +29,10 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/marnyg/sap/protocol/actor"
+	"github.com/marnyg/sap/protocol/cert"
+	"github.com/marnyg/sap/protocol/envelope"
 	"github.com/marnyg/talos-config/config-server/policy"
-	"github.com/marnyg/talos-config/protocol/actor"
-	"github.com/marnyg/talos-config/protocol/cert"
-	"github.com/marnyg/talos-config/protocol/envelope"
 )
 
 // FacetBundle is the Issuer facet a member invokes for its grants. Like

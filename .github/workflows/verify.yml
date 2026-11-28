@@ -3,7 +3,8 @@
 # for two weeks; there was no Go test workflow at all). Five jobs:
 #
 #   go            go vet + go test -race for each module (config-server,
-#                 protocol, actors), Go version pinned from each module's
+#                 tasks; the protocol's are github.com/marnyg/sap's CI
+#                 since ADR-0052), Go version pinned from each module's
 #                 go.mod.
 #   quint         the fast tier — `check.sh run` (witness tests + random
 #                 simulation), on every push/PR.
@@ -41,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [config-server, protocol, actors, tasks]
+        module: [config-server, tasks]
     steps:
       # Full checkout, not sparse: config-server's policy/ tests read
       # the shipped ../talos/mesh-policy-v3.yaml and the Nickel contract
@@ -95,7 +96,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        attr: [config-server-bin, iroh-transport, actors-bin, workouts-bin, tasks-bin]
+        attr: [config-server-bin, workouts-bin, tasks-bin]
     steps:
       - uses: actions/checkout@v5
       - uses: DeterminateSystems/nix-installer-action@v22

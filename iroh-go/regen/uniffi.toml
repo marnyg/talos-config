@@ -1,3 +1,0 @@
-[bindings.go]
-package_name = "iroh"
-cdylib_name = "iroh_ffi"
