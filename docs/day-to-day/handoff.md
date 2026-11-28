@@ -20,6 +20,21 @@
   before INT8 rounding. MAX's typed INT8 TensorCore path is absent, so the
   kernel emits m16n8k32 signed-INT8 PTX directly.
 
+## Same day, another session: the protocol network is live (`k7sd` line)
+
+- ADR-0051 and protocol ADR-0012 Accepted. Fly app `marnyg-sap-net`
+  (`actors/net/`) runs the lighthouse with the relay behind its
+  admission gate; lighthouse `ed:0db45a…1615`. The sap plane moved onto
+  it (`ssau`): provisioner + parent home there, `sap-lighthouse`
+  retired (PV kept). First child born through the gate and settled
+  (session `4d42d6b6`) after a child-side ordering fix (`aa57a27`,
+  `67b2694`). Details: `technical/deployed-state.md`.
+- Loose: `e7f0` (enforce the hub relay's member gate) needs a code
+  switch — `relayAdmitter.gate` is never set in production — and a hub
+  deploy, so the owner unseals afterwards. `w0ur` (relay/publish links
+  do not feed the clock mark); ADR-0012's undecided four (signed id
+  claim, stranger door, onward delegation, byte limit).
+
 ## Loose threads
 
 - **Performance gate is not passed.** The custom projection is ~4.4× slower

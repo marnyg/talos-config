@@ -247,7 +247,9 @@ history and, where the numbers still matter, in ADR-0006 and
   `#publish ok` / `#lookup ok` within a second of start). `sap-parent`
   has `-relay-id` = that id, so children (sandbox-agent
   `@sha256:c361cb27…`, also pinned in `sandbox/agent.yaml`) are born
-  through the gate. **No child has run on it yet.** The entry below is
+  through the gate — first real one 2026-11-28 (session `4d42d6b6`,
+  settled; the gate's beat log counted its presentations). Child image
+  now `@sha256:feb83bdc…` (`67b2694`). The entry below is
   history: `sap-lighthouse` is retired — Application gone, PV
   `pvc-616c6108…` `Released` (Retain) with its key, Longhorn volume
   detached, kept.
