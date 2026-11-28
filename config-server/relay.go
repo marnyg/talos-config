@@ -245,11 +245,18 @@ func (r *relaySupervisor) handleRelayAccess(w http.ResponseWriter, req *http.Req
 	} else {
 		r.denied++
 	}
+	// Once per id, bounded (a scanner must not grow the hub): every
+	// refusal, and every non-member observe mode let through — the list
+	// that says whether enforcing would cut someone off.
+	observed := ok && strings.HasPrefix(mode, "observing")
 	_, seen := r.deniedSeen[id]
-	if !ok && !seen && len(r.deniedSeen) < 1024 { // bounded: a scanner must not grow the hub
+	if (!ok || observed) && !seen && len(r.deniedSeen) < 1024 {
 		r.deniedSeen[id] = struct{}{}
 	}
 	r.mu.Unlock()
+	if observed && !seen {
+		log.Printf("relay access: non-member %s admitted (%s) — enforce would refuse it", id, mode)
+	}
 	if !ok {
 		if !seen {
 			log.Printf("relay access: denied %s (%s)", id, mode)

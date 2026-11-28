@@ -28,6 +28,14 @@ IROH_RELAY_URL = "https://marnyg-talos-config.fly.dev"
 # tree is the fallback. A deploy is still what ships hub CODE.
 GIT_REMOTE = "https://github.com/marnyg/talos-config.git"
 GIT_REF = "main"
+# The relay's member gate (talos-config-5gz, e7f0): once warm (unsealed,
+# ≥1 witnessed member, 5 min after start) only members and the hub
+# itself may hold a relay connection. Observe-only from 2026-10-17
+# until the sovereign-actor plane had its own relay; it moved to the
+# protocol network (marnyg-sap-net, ADR-0051) 2026-11-28. Back to
+# `observe` (a deploy) if a member is ever refused — the log names
+# every refusal.
+RELAY_GATE = "enforce"
 # Mesh devices are no longer declared here (ADR-0012): enrollment is
 # wallet-signed, the device generates its keypair locally, and the
 # approver at /status decides the final name and group per enrollment.

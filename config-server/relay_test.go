@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -9,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -440,4 +442,40 @@ func testCABundle(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// TestRelayAccessLogsObserved: in observe mode a non-member is let in
+// and named in the log once — the evidence for whether enforcing would
+// cut someone off — members are not, and refusals still are.
+func TestRelayAccessLogsObserved(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	admit := func(id cert.ActorID) (bool, string) {
+		if id == testMemberID {
+			return true, "gated (1 members)"
+		}
+		return true, "observing (1 members; non-member admitted)"
+	}
+	rs := &relaySupervisor{hook: testRelayHook(admit), deniedSeen: map[cert.ActorID]struct{}{}}
+	ask := func(id cert.ActorID) int {
+		req := httptest.NewRequest(http.MethodPost, relayAccessPath, nil)
+		req.RemoteAddr = "127.0.0.1:5"
+		req.Header.Set("Authorization", "Bearer "+rs.hook.Token)
+		req.Header.Set("X-Iroh-NodeId", strings.TrimPrefix(string(id), "ed:"))
+		rec := httptest.NewRecorder()
+		rs.handleRelayAccess(rec, req)
+		return rec.Code
+	}
+	for range 3 {
+		if ask(testStranger) != http.StatusOK || ask(testMemberID) != http.StatusOK {
+			t.Fatal("observe mode refused someone")
+		}
+	}
+	if n := strings.Count(buf.String(), "non-member "+string(testStranger)+" admitted"); n != 1 {
+		t.Fatalf("stranger logged %d times, want once:\n%s", n, buf.String())
+	}
+	if strings.Contains(buf.String(), string(testMemberID)) {
+		t.Fatalf("a member was logged:\n%s", buf.String())
+	}
 }

@@ -88,11 +88,11 @@ func TestRelayAdmitObserve(t *testing.T) {
 // live hub: a sealed hub past the start window is still cold (open).
 func TestRelayHookFor(t *testing.T) {
 	hub := testHubManager(t, nil)
-	h1, err := relayHookFor(hub, 8080, time.Now().Add(-time.Hour))
+	h1, err := relayHookFor(hub, 8080, time.Now().Add(-time.Hour), true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h2, _ := relayHookFor(hub, 8080, time.Now())
+	h2, _ := relayHookFor(hub, 8080, time.Now(), false)
 	if h1.URL != "http://127.0.0.1:8080/relay/access" || len(h1.Token) != 64 || h1.Token == h2.Token || !h1.enabled() {
 		t.Fatalf("hook: %+v", h1)
 	}
@@ -103,5 +103,17 @@ func TestRelayHookFor(t *testing.T) {
 		if partial.enabled() {
 			t.Fatalf("partial hook enabled: %+v", partial)
 		}
+	}
+}
+
+// --relay-gate reaches the admitter: enforce sets gate, observe leaves
+// it off (talos-config-e7f0).
+func TestRelayAdmitterEnforceFlag(t *testing.T) {
+	hub := testHubManager(t, nil)
+	if a := newRelayAdmitter(hub, time.Now(), true); !a.gate {
+		t.Fatal("enforce=true: gate off")
+	}
+	if a := newRelayAdmitter(hub, time.Now(), false); a.gate {
+		t.Fatal("enforce=false: gate on")
 	}
 }

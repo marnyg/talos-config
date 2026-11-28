@@ -26,9 +26,13 @@ fi
 # iroh home relay (Mesh v3, ADR-0022): a keyless child of the hub,
 # plain HTTP on loopback, proxied on :8080 so 443 stays the single
 # entrypoint. Runs sealed or not. Set RELAY_DISABLE=1 to leave it off.
+#
+# RELAY_GATE (observe|enforce, default observe): the member gate once
+# the hub is warm (talos-config-5gz, e7f0) — observe admits non-members
+# and names each once in the log; enforce refuses them.
 RELAY_ARGS=""
 if [ -z "${RELAY_DISABLE:-}" ] && [ -x /usr/local/bin/iroh-relay ]; then
-    RELAY_ARGS="--relay-bin /usr/local/bin/iroh-relay"
+    RELAY_ARGS="--relay-bin /usr/local/bin/iroh-relay ${RELAY_GATE:+--relay-gate $RELAY_GATE}"
 fi
 
 # The hub proper (ADR-0024): --iroh-relay makes this process a hub —

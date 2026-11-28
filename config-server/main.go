@@ -237,7 +237,7 @@ func (s *server) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 // everyone); otherwise the hook is built from the hub's own port and
 // the process start time (relayadmit.go). Extracted from main (the
 // block had grown hook build + supervisor + signal handler).
-func runRelayChild(bin string, relayPort, hubPort int, hub *hubManager, started time.Time) *relaySupervisor {
+func runRelayChild(bin string, relayPort, hubPort int, hub *hubManager, started time.Time, enforce bool) *relaySupervisor {
 	// The iroh home relay (Mesh v3, ADR-0022) is a keyless transport
 	// component: it starts with the process and runs sealed or not, so
 	// the identity plane's remote paths survive a redeploy's seal
@@ -252,7 +252,7 @@ func runRelayChild(bin string, relayPort, hubPort int, hub *hubManager, started 
 		err  error
 	)
 	if hub != nil {
-		if hook, err = relayHookFor(hub, hubPort, started); err != nil {
+		if hook, err = relayHookFor(hub, hubPort, started, enforce); err != nil {
 			log.Fatalf("relay: %v", err)
 		}
 	}
@@ -323,6 +323,7 @@ func main() {
 		kmsPort     = flag.Int("kms-port", 8081, "dedicated plaintext-h2 gRPC listen port for the KMS service (0 = only the shared cleartext-h2 port)")
 		relayBin    = flag.String("relay-bin", "", "path to the iroh-relay binary; runs it as a child on loopback and proxies /relay, /ping, /generate_204 (empty = no iroh relay)")
 		relayPort   = flag.Int("relay-port", 3340, "loopback port the iroh-relay child binds (only reachable through the hub's proxy)")
+		relayGate   = flag.String("relay-gate", "observe", "the relay's member gate once warm (talos-config-5gz/e7f0): observe = admit non-members and log each once; enforce = refuse them")
 		irohRelay   = flag.String("iroh-relay", "", "public relay URL members dial the hub's iroh endpoint through (e.g. https://host); makes this process a HUB (sealed until an admin wallet signs at /status): the hubkey is bound on iroh, homed on the relay child when --relay-bin is set (needs a -tags iroh build)")
 		publicURL   = flag.String("public-url", "", "HTTPS base URL members and nodes reach this hub at (enrollment, /.well-known); default: --iroh-relay, since on fly one hostname carries both the web surface and the relay (ADR-0022, talos-config-53q)")
 		irohBind    = flag.String("iroh-bind", "0.0.0.0:0", "UDP socket the hub's iroh endpoint binds (relay-only on fly: nothing reaches it directly)")
@@ -405,7 +406,15 @@ func main() {
 	}
 
 	if *relayBin != "" {
-		s.relay = runRelayChild(*relayBin, *relayPort, *port, hub, s.started)
+		var enforce bool
+		switch *relayGate {
+		case "observe":
+		case "enforce":
+			enforce = true
+		default:
+			log.Fatalf("--relay-gate %q: want observe or enforce", *relayGate)
+		}
+		s.relay = runRelayChild(*relayBin, *relayPort, *port, hub, s.started, enforce)
 	}
 
 	if hub != nil {

@@ -45,7 +45,8 @@ const relayColdWindow = 5 * time.Minute
 // (talos-config-ssau). Until enforcing is switched on here
 // (talos-config-e7f0), Admit computes the verdict and admits anyway;
 // the mode on /status says `observing` when the last connect was a
-// non-member the gate would have refused. Set gate to enforce.
+// non-member the gate would have refused, and the log names each such
+// id once. --relay-gate=enforce sets gate (fly.toml RELAY_GATE).
 type relayAdmitter struct {
 	gate    bool                  // enforce the warm verdict; false ⇒ observe only
 	self    cert.ActorID          // the hub's own endpoint, always admitted
@@ -55,10 +56,12 @@ type relayAdmitter struct {
 	now     func() time.Time
 }
 
-// newRelayAdmitter wires the rule to a live hub.
-func newRelayAdmitter(hub *hubManager, started time.Time) *relayAdmitter {
+// newRelayAdmitter wires the rule to a live hub; enforce is
+// --relay-gate=enforce.
+func newRelayAdmitter(hub *hubManager, started time.Time, enforce bool) *relayAdmitter {
 	iss := hub.issuer
 	return &relayAdmitter{
+		gate: enforce,
 		self: iss.ID(),
 		members: func() []cert.ActorID {
 			entries := iss.NameMap()
@@ -98,7 +101,7 @@ func (a *relayAdmitter) Admit(id cert.ActorID) (bool, string) {
 // relayHookFor builds the supervisor's hook for a hub listening on
 // port: the loopback URL the child POSTs to, a fresh per-process
 // bearer, and the admission rule above.
-func relayHookFor(hub *hubManager, port int, started time.Time) (relayHook, error) {
+func relayHookFor(hub *hubManager, port int, started time.Time, enforce bool) (relayHook, error) {
 	token, err := newRelayToken()
 	if err != nil {
 		return relayHook{}, err
@@ -106,6 +109,6 @@ func relayHookFor(hub *hubManager, port int, started time.Time) (relayHook, erro
 	return relayHook{
 		URL:   fmt.Sprintf("http://127.0.0.1:%d%s", port, relayAccessPath),
 		Token: token,
-		Admit: newRelayAdmitter(hub, started).Admit,
+		Admit: newRelayAdmitter(hub, started, enforce).Admit,
 	}, nil
 }
