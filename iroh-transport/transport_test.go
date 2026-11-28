@@ -400,3 +400,81 @@ func TestRelayOnlineNoQADProbe(t *testing.T) {
 		t.Fatalf("Endpoints() = %v, want a %s tag first", tags, TagRelay)
 	}
 }
+
+// TestCrossRelayDial: two endpoints homed on DIFFERENT relay servers
+// meet (spike talos-config-k7sd — the protocol network's relay as its
+// own deployment beside the talos hub's). The caller's relay map holds
+// only its own home relay (RelayMode::Custom, one URL); the question is
+// whether a `iroh:relay=<other>` hint is enough for it to reach a peer
+// homed elsewhere, with no socket hint at all.
+//
+// Control first: a caller told the receiver is on the caller's OWN
+// relay — where the receiver is not homed — must not connect. Without
+// it a pass could be a loopback path iroh found by itself.
+// Needs IROH_RELAY_BIN or iroh-relay on PATH; skipped otherwise.
+func TestCrossRelayDial(t *testing.T) {
+	ctx := testCtx(t)
+	relayA := startRelay(t)
+	relayB := startRelay(t)
+
+	recv, _ := bindLoopback(t, relayA)
+	caller, _ := bindLoopback(t, relayB)
+	control, _ := bindLoopback(t, relayB)
+	for _, e := range []*Endpoint{recv, caller, control} {
+		if err := e.Online(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// iroh reports the URL it normalized (trailing slash), so prefix.
+	if tags := recv.Endpoints(); len(tags) == 0 || !strings.HasPrefix(tags[0], TagRelay+relayA) {
+		t.Fatalf("receiver Endpoints() = %v, want %s first", tags, TagRelay+relayA)
+	}
+	if tags := caller.Endpoints(); len(tags) == 0 || !strings.HasPrefix(tags[0], TagRelay+relayB) {
+		t.Fatalf("caller Endpoints() = %v, want %s first", tags, TagRelay+relayB)
+	}
+
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	if s, err := control.Dial(cctx, recv.ID(), []string{TagRelay + relayB}); err == nil {
+		_ = s.Close()
+		cancel()
+		t.Fatal("control: reached the receiver through a relay it is not homed on")
+	}
+	cancel()
+
+	srv := make(chan error, 1)
+	go func() {
+		s, peer, err := recv.Accept(ctx)
+		if err != nil {
+			srv <- err
+			return
+		}
+		defer s.Close()
+		if peer != caller.ID() {
+			srv <- fmt.Errorf("peer %s, want %s", peer, caller.ID())
+			return
+		}
+		msg, err := s.RecvMsg(ctx)
+		if err != nil {
+			srv <- err
+			return
+		}
+		srv <- s.SendMsg(ctx, append([]byte("re:"), msg...))
+	}()
+	began := time.Now()
+	s, err := caller.Dial(ctx, recv.ID(), []string{TagRelay + relayA})
+	if err != nil {
+		t.Fatalf("dial a peer homed on another relay: %v", err)
+	}
+	t.Logf("first dial across relays took %s", time.Since(began).Round(time.Millisecond))
+	defer s.Close()
+	if err := s.SendMsg(ctx, []byte("beat")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.RecvMsg(ctx)
+	if err != nil || string(got) != "re:beat" {
+		t.Fatalf("reply %q %v", got, err)
+	}
+	if err := <-srv; err != nil {
+		t.Fatal(err)
+	}
+}

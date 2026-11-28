@@ -114,13 +114,28 @@ this list is the checkable form.
    identity plane carries only the admin CLI path (`cp1.mesh.internal`
    SAN)._ Provisioning
    a replacement node still needs nothing but HTTPS + the wallet.
-5. **Single public entrypoint.** The hub is the only public surface:
-   HTTPS on 443 (the web surface and, behind the same TLS terminator,
-   the iroh relay — ADR-0022) and the KMS disk-unseal listener on
-   `:8443`. No UDP port, no second entrypoint, no home-IP pinning into
-   device configs. Every remote member path is relay-by-default
-   through this one surface (ADR-0006); LAN paths hole-punch direct
-   and are not public.
+5. **Single public entrypoint, per deployment.** The hub is the only
+   public surface **of the talos deployment**: HTTPS on 443 (the web
+   surface and, behind the same TLS terminator, the members' iroh
+   relay — ADR-0022) and the KMS disk-unseal listener on `:8443`. No
+   UDP port, no second entrypoint, no home-IP pinning into device
+   configs. Every remote member path is relay-by-default through this
+   one surface (ADR-0006); LAN paths hole-punch direct and are not
+   public.
+   _(Amended 2026-11-28, ADR-0051, spike `k7sd` — was "the hub is the
+   only public surface", unscoped.)_ **The protocol network is not
+   this deployment.** Its relay and lighthouse are a separate public
+   surface, owned by the protocol scope. Two rules keep the split
+   honest:
+   - Nothing on the talos provisioning, recovery or member path may
+     depend on the protocol network's surface.
+   - Nothing in the protocol network's surface may depend on the hub,
+     the cluster or a wallet unseal.
+
+   _Not yet true (2026-11-28):_ the protocol network's surface is not
+   built — sovereign actors still home on the hub's relay and the
+   lighthouse runs in the cluster, so the second rule is the target
+   `k7sd` builds toward, not a description of today.
    _(History: the phase-1 dual-overlay exception — wg0 51820 beside
    nebula 4242 — closed 2026-07-30; nebula's `udp/4242` itself left the
    hub 2026-09-21 with Mesh v3 Phase 4, so the surface is TCP-only.

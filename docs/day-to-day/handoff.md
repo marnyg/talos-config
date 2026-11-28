@@ -3,45 +3,42 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
-## Last session (2026-11-28): Krea 2 MAX/Mojo spike (`j1kd`)
+## Last session (2026-11-28): the protocol network as its own surface (`k7sd`)
 
-- Recreated and pinned the MAX 26.7.0 / Mojo 1.2.0 environment and added
-  reproducible setup, test and run wrappers under
-  `k8s/apps/comfyui/max-krea2/`. The Python graph frontend now has real
-  custom Mojo operations; this is no longer only a MAX built-in-kernel test.
-- Added exact FP8 dequantization, a fused scalar tiled GEMM, and a fused
-  BF16 tensor-core GEMM. At the real Krea projection shape they measure
-  about 10 ms (cuBLAS reference), 953 ms and 112 ms respectively; both
-  fused variants use a 256 MiB allocation delta versus 512 MiB for
-  dequant+cuBLAS. MAX's native dynamic-FP8 path is much slower again
-  (~2.03 s). Details: `max-krea2/README.md`.
-- The tensor-core path also runs the two-block Krea DiT with the same
-  reported cosine (0.999752) and relative L2 (0.0226) as the built-in
-  path against the same FP32 reference. Cached two-block execution is
-  112 ms versus 14 ms, so Mojo is a memory-saving experiment, not yet a
-  speed win.
+- Direction ruled by the owner: split the protocol's network
+  infrastructure (`iroh-relay` + `cmd/lighthouse`) off the talos hub
+  and off the cluster, into its own fly app; long term the hub is one
+  consumer of the protocol among many, probably from another repo.
+- Invariant 5 amended (scoped to the talos deployment, two dependency
+  rules), goal line added, **ADR-0051 Proposed** — the amendment and
+  the goal are ruled, the deployment shape is not reviewed.
+- `TestCrossRelayDial` (`iroh-transport/transport_test.go`): endpoints
+  homed on two different relays meet on a relay hint alone, with a
+  negative control. Nothing is built or deployed beyond that test.
 
 ## Loose threads
 
-- No full 28-block forward pass, sampler, text encoder, VAE or image
-  comparison exists. Fused kernels are GPU-only and require aligned
-  shapes; tensor-core M/N must be divisible by 64 and K by 32.
-- Further Mojo performance work is pipelining/register tiling and
-  removing synchronous tile copies. Do not expand this to H3 or the
-  8 GB cards unless the Krea trade-off justifies it.
-- Clean H3 desktop results landed separately in `8a7fa82`; desktop
-  `int8_convrot`, 4-step LoRA, ref-to-video and image edit still need
-  clean measurements. w1 remains firmware-limited to ~50 W.
-- Unused `longhorn-local` claims `ai/comfyui-w1` and `ai/comfyui-w2`
-  (~85 GB each) await the owner's delete/keep decision (`e6rx.8`).
-- ADR-0050 (any-port TCP) is still Proposed. Its live desktop exposure
-  includes ComfyUI on `127.0.0.1:8188` to `admins`.
+- Relay admission for the new surface is open (`qx5c`): an open relay
+  is free bandwidth for strangers.
+- The caller connects to the foreign relay, so an enforcing hub gate
+  blocks actor → member dials. No such edge exists today.
+- `boot.ViaRelay` uses the actor's own `-relay` as the lighthouse dial
+  hint; fine only while every actor shares the lighthouse's relay.
+- The cross-relay test ran on loopback dev relays, not through fly's
+  TLS proxy.
+- **The working tree holds uncommitted Krea 2 / Mojo work**
+  (`k8s/apps/comfyui/max-krea2/`, spike `j1kd`) from the session
+  before; this session did not touch or commit it. Its state is in
+  `max-krea2/README.md`.
+- Carried over: ADR-0050 (any-port TCP) is still Proposed; the unused
+  `longhorn-local` claims await the owner (`e6rx.8`).
 
 ## Suggested next steps
 
-- Decide whether the fused kernel's memory saving merits optimization.
-  If yes, profile and pipeline the tensor-core kernel before adding
-  features; if no, keep ComfyUI and close the spike with the negative
-  performance result rather than porting more models.
-- Independently of Mojo, finish full-DiT correctness before attempting
-  an end-to-end MAX Krea benchmark.
+- Rule on ADR-0051's deployment shape, then answer admission (`qx5c`)
+  before anything public is deployed.
+- Build the app: image from `actors/image.nix` with `iroh-relay`
+  added, a fly volume for the lighthouse key, deploy script, Gatus
+  check; then move the provisioner and parent `-relay` and
+  `-lighthouse` over and retire `k8s/apps/sap-lighthouse`.
+- Stop `DefaultRelay` naming the hub.

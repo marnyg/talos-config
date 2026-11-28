@@ -87,6 +87,12 @@ what remains. No goal in `goals.md` names this: it is a
 personal-projects workload riding the cluster, not a step toward the
 protocol.
 
+**Opened 2026-11-28:** the protocol network as its own public surface
+(spike `k7sd`, ADR-0051 Proposed) — `iroh-relay` + `cmd/lighthouse`
+in their own fly app, off the hub and off the cluster, so an agent can
+use the protocol with no talos anywhere. Invariant 5 amended; only the
+cross-relay dial is measured. Next: admission (`qx5c`), then build.
+
 **Toward goal:** "Sovereign-actor protocol at the center" (`goals.md`)
 — the parent is the first long-lived actor that spawns children for
 real work, and the first with a durable datastore of its own; it is
