@@ -9,8 +9,9 @@
   Built and tested the relay gate, child presentation, supervised lighthouse
   binary and fly app (`qx5c`, `gsps`, `9nkh`). **The app is deployed**:
   `marnyg-sap-net`, lighthouse `ed:0db45a…1615`, checked live through
-  fly's proxy (`TestLiveNetwork`). No actor homes there yet, so the sap
-  plane is unchanged (`technical/deployed-state.md`).
+  fly's proxy (`TestLiveNetwork`). **The sap plane moved onto it**
+  (`ssau`, `f78ce49`): provisioner and parent home there and found each
+  other; `sap-lighthouse` retired (PV kept). No child has run on it yet.
 - Krea 2 (`j1kd`) now supports mixed NVFP4: native MAX W4A4 plus a packed
   custom W4A16 kernel. The full 28-block DiT at 1024² takes **3.21 s/step**
   (FP8 was 6.41 s) and fits **with the desktop active**, retaining 5.0 GiB
@@ -36,7 +37,10 @@
 
 ## Suggested next steps
 
-- `ssau` (move the sap plane onto `marnyg-sap-net`), then `e7f0` (enforce
-  the hub's member gate).
+- Run one small task through the parent: the first child born through
+  the gate (the parent's log says `born`; the gate's `fly logs` show
+  its presentation). Then `e7f0`: flip `relayAdmitter.gate` once the
+  hub's `/status` relay row stops reporting `observing` — a hub deploy,
+  so the owner unseals afterwards.
 - Close `j1kd`: porting and the NVFP4 continuation are answered. Further
   kernel/global-scale work needs a new measured goal.

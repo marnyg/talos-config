@@ -240,7 +240,18 @@ history and, where the numbers still matter, in ADR-0006 and
   between runs. Egress only (fly relay); no Service. Image since
   2026-09-29 (`0bc.6`): `47bae97@sha256:879d6580…`, and the flag
   `-lighthouse=ed:5cad808a…`.
-- **Sovereign-actor lighthouse** _(2026-09-29, `0bc.6`)_: Deployment
+- **Moved to the protocol network** _(2026-11-28, `ssau`, commit
+  `f78ce49`)_: `sap-provisioner` and `sap-parent` run sap-actors
+  `4abc46f@sha256:a6521da7…`, home on `https://marnyg-sap-net.fly.dev`
+  and find each other at lighthouse `ed:0db45a…1615` (both logged
+  `#publish ok` / `#lookup ok` within a second of start). `sap-parent`
+  has `-relay-id` = that id, so children (sandbox-agent
+  `@sha256:c361cb27…`, also pinned in `sandbox/agent.yaml`) are born
+  through the gate. **No child has run on it yet.** The entry below is
+  history: `sap-lighthouse` is retired — Application gone, PV
+  `pvc-616c6108…` `Released` (Retain) with its key, Longhorn volume
+  detached, kept.
+- ~~**Sovereign-actor lighthouse**~~ _(2026-09-29 → 2026-11-28, `0bc.6`)_: Deployment
   `sap-lighthouse` in `sap` (same image, `command: lighthouse`, 16Mi
   RWO PVC `sap-lighthouse-state`, no SA/RBAC/Service, egress only).
   Actor id `ed:5cad808a3ed6be76…` (full id in the provisioner
@@ -392,9 +403,9 @@ public surface, independent of the hub (invariant 5 as amended).
   daily snapshots); survived the second deploy unchanged.
 - Members (fly.toml `[processes]`): the sap-provisioner, the laptop
   parent, the sap-parent — admitted to the relay delegably and
-  consented to `#publish`/`#lookup`. **No actor homes here yet**
-  (`talos-config-ssau`): the sap plane still runs on the hub's relay
-  and the in-cluster lighthouse.
+  consented to `#publish`/`#lookup`. **The sap plane homes here since
+  2026-11-28** (`ssau`, cluster section): provisioner and parent;
+  children once one is spawned.
 - Public surface, checked through fly's proxy: `/generate_204` 204,
   every other relay path 404, `POST /relay/admit` 400 on garbage,
   `/relay` 401 without an admitted claim. `TestLiveNetwork` passed

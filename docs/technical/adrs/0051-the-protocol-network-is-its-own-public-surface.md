@@ -4,8 +4,10 @@
   the goal line ("the hub is one consumer among many"), and the shape
   of the new deployment below. **Deployed 2026-11-28** as fly app
   `marnyg-sap-net` (`actors/net/`, `talos-config-9nkh`; root
-  `technical/deployed-state.md`). No actor homes there yet: moving the
-  sap plane is `talos-config-ssau`.
+  `technical/deployed-state.md`). The sap plane moved onto it the same
+  day (`talos-config-ssau`): provisioner and parent home there, the
+  in-cluster lighthouse is retired. Enforcing the hub's member gate is
+  `talos-config-e7f0`.
 - Date: 2026-11-28
 - Related: spike `talos-config-k7sd` (this), spike `talos-config-qx5c`
   (relay admission for sovereign actors — moves to the new surface),
