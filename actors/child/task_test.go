@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -763,4 +765,46 @@ func TestTaskDeadlineEndsUpload(t *testing.T) {
 	if types[len(types)-2] != "fake_eof" {
 		t.Fatalf("pi did not leave on stdin close: %v", types)
 	}
+}
+
+// TestTaskWhilePresenting: on a gated relay the child presents its kit's
+// chain right after birth — an HTTPS round trip — while the parent's
+// #task is already on its way. The task must not wait on (or lose to)
+// that presentation: the agent-events chain is in place first. (The
+// first child born through the deployed gate failed exactly so.)
+func TestTaskWhilePresenting(t *testing.T) {
+	r, p := agentRig(t, false)
+	release := make(chan struct{})
+	presenting := make(chan struct{}, 1)
+	r.drv.opts.Present = func(ctx context.Context, _ []cert.Cert) error {
+		select {
+		case presenting <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return nil
+	}
+	defer close(release)
+	_, rpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.sp.Relay = cert.NewEdSigner(rpriv).ActorID()
+	b := r.spawn(t, spawn.Spec{Image: image, Outfit: agentOutfit(r)})
+	p.peer = b.ID
+	select {
+	case <-presenting:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the child never presented")
+	}
+	// The presentation is stuck; the task goes through regardless.
+	r.pingUntilUp(t, b.ID)
+	id, err := r.task(t, b.ID, "say hi")
+	if err != nil {
+		t.Fatalf("#task while the child is presenting: %v", err)
+	}
+	waitFor(t, "child_settled", func() bool { _, ok := p.settled(id); return ok })
 }

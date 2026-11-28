@@ -206,13 +206,18 @@ func Run(ctx context.Context, a *actor.Actor, in spawn.Intro, o Options) error {
 		return fmt.Errorf("child: born: %w", err)
 	}
 	log.Info("child: born", "grants", len(kit.Grants), "locations", len(kit.Locations), "serves", serves)
-	// The birth link admits only until the window ends: swap it for the
-	// kit's own chain now.
-	present()
+	// The agent's chain FIRST: the parent sends #task the moment its
+	// #birth handler has answered, so it is already on its way. A
+	// presentation is an HTTPS round trip to the gate; made first, it
+	// let #task arrive to a child with no agent-events chain yet and
+	// fail the session (2026-11-28, the first child on the gated relay).
 	if ag != nil {
 		ag.setChain(a.Grants[actor.GrantKey{Target: in.Parent, Facet: FacetAgentEvents}], hints(a, in))
 		defer ag.shutdown()
 	}
+	// The birth link admits only until the window ends: swap it for the
+	// kit's own chain now.
+	present()
 
 	t := time.NewTicker(o.beat())
 	defer t.Stop()
