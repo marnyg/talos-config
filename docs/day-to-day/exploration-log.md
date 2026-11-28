@@ -294,3 +294,22 @@ enabled by `JSON_SECRET_KEY`) does the rest; no login form ever.
 - Tried NVFP4 dequant + cuBLAS for W4A16: 9.6–11.1 ms vs 62 ms fused and
   bit-exact in the projection benchmark, but ruled out for the full model
   because MAX materializes every bound BF16 weight at setup and OOMs.
+
+## MiniMax H3 Image on MAX/Mojo (2026-11-28, `vnb4`)
+
+- Landed on direct signed-INT8 PTX for W4A8. MAX 26.7's `TensorCore` rejects
+  INT8 operand loads and has no NVIDIA signed-INT8 `mma` lowering, but explicit
+  m16n8k32 fragment loads plus `inlined_assembly` are bit-exact against
+  Comfy's INT32 accumulators. This is a viable kernel escape hatch, not a
+  reusable MAX primitive.
+- Matched Comfy activation quantization only after reproducing both BF16 casts:
+  the stored FP32 row scale is rounded to BF16 before division, and the
+  quotient is rounded to BF16 before ties-to-even INT8 rounding. Using an FP32
+  reciprocal changes about 7% of codes.
+- Tried an FP32 rotated-workspace variant to avoid the unfused BF16 rounding
+  difference. Ruled out as the default: it was slightly less accurate than
+  BF16, while the final BF16 path reaches cosine 0.99999672 on the real
+  projection.
+- Full custom W4A8 projection is correct but 0.80 ms against Comfy's 0.183 ms.
+  Continue with fused decode+MMA (`l5km`); do not scale the current workspace
+  design to 50 blocks and call the performance gate passed.
