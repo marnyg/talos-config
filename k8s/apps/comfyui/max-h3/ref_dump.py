@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Real H3 ComfyUI references plus BF16-dequantized weights for the MAX port.
 
-Run with ComfyUI's venv. The output .npz contains both the BF16-dequantized
-and actual W4A8 forward results; the .safetensors export contains only the
-selected blocks and is consumed by parity.py.
+Run with ComfyUI's venv. Depending on --reference-mode, the .npz contains the
+BF16-dequantized and/or actual W4A8 result plus an optional PDD schedule.
+--export-mode controls whether quantized projections are also dequantized into
+the .safetensors export consumed by parity.py.
 """
 import argparse
 import json
 import os
+import statistics
 import sys
 from pathlib import Path
 
@@ -18,9 +20,15 @@ ap.add_argument("--ckpt", default=os.path.expanduser(
 ap.add_argument("--layers", type=int, default=2)
 ap.add_argument("--latent", type=int, default=32, help="latent H=W; 32 gives 256 image tokens")
 ap.add_argument("--txt", type=int, default=64)
+ap.add_argument("--ref-latent", type=int, help="add one synthetic reference image latent of this H=W")
 ap.add_argument("--sigma", type=float, default=0.75)
+ap.add_argument("--schedule", action="store_true", help="also run every PDD grid step")
+ap.add_argument("--benchmark", type=int, default=0, metavar="N", help="time N actual-W4A8 forwards")
+ap.add_argument("--reference-mode", choices=("both", "bf16", "w4a8"), default="both")
+ap.add_argument("--export-mode", choices=("all", "unquantized"), default="all")
+ap.add_argument("--debug-blocks", type=int, default=2)
 ap.add_argument("--out", required=True, help="reference .npz")
-ap.add_argument("--weights", required=True, help="BF16-dequantized .safetensors export")
+ap.add_argument("--weights", required=True, help="non-quantized/BF16 .safetensors export")
 a = ap.parse_args()
 sys.argv = sys.argv[:1]
 sys.path.insert(0, a.comfy)
@@ -74,7 +82,7 @@ quant_modules = {
     name: module for name, module in model.named_modules()
     if isinstance(getattr(module, "weight", None), QuantizedTensor)
 }
-print(f"dequantizing {len(quant_modules)} W4A8 projections")
+print(f"found {len(quant_modules)} W4A8 projections; export mode: {a.export_mode}")
 quant_aux = (".weight_s_rel", ".weight_s_channel", ".weight_codebook",
              ".weight_correction", ".comfy_quant")
 export = {}
@@ -84,12 +92,13 @@ for key, value in sd.items():
     if any(key == name + ".weight" for name in quant_modules):
         continue
     export[key] = value.cpu()
-for i, (name, module) in enumerate(quant_modules.items()):
-    export[name + ".weight"] = module.weight.dequantize().cpu()
-    if (i + 1) % 4 == 0:
-        print(f"  {i + 1}/{len(quant_modules)}")
+if a.export_mode == "all":
+    for i, (name, module) in enumerate(quant_modules.items()):
+        export[name + ".weight"] = module.weight.dequantize().cpu()
+        if (i + 1) % 4 == 0:
+            print(f"  dequantized {i + 1}/{len(quant_modules)}")
 Path(a.weights).parent.mkdir(parents=True, exist_ok=True)
-save_file(export, a.weights, metadata={"format": "h3-bf16-dequant-v1"})
+save_file(export, a.weights, metadata={"format": f"h3-{a.export_mode}-v1"})
 print(f"saved {len(export)} tensors to {a.weights}")
 del export
 
@@ -97,9 +106,21 @@ del export
 g = torch.Generator().manual_seed(0)
 x = torch.randn(1, 24, 1, a.latent, a.latent, generator=g)
 context = torch.randn(1, a.txt, 5120, generator=g) * 3.0
-layout = hm.PackedLayout(a.txt, 1, a.latent, a.latent, 0)
+ref_latent = None
+ref_blocks = []
+if a.ref_latent:
+    ref_latent = torch.randn(1, 24, 1, a.ref_latent, a.ref_latent, generator=g)
+    ref_blocks.append({
+        "kind": "image", "latent_h": a.ref_latent, "latent_w": a.ref_latent,
+        "latent": ref_latent,
+    })
+layout = hm.PackedLayout(a.txt, 1, a.latent, a.latent, 0, refs=ref_blocks)
 sample_sigmas = pdd_sigmas.copy()
-payload = {"layout": layout}
+payload = {
+    "layout": layout,
+    "refs": ref_blocks,
+    "cond_video_latents": [ref_latent] if ref_latent is not None else [],
+}
 options = {"sample_sigmas": torch.from_numpy(sample_sigmas).cuda()}
 timestep = torch.tensor([a.sigma * 1000.0], dtype=torch.float32, device="cuda")
 x_gpu, context_gpu = x.cuda().bfloat16(), context.cuda().bfloat16()
@@ -121,7 +142,7 @@ def block_post(index):
     return hook
 
 
-for i, block in enumerate(model.blocks):
+for i, block in enumerate(model.blocks[:a.debug_blocks]):
     block.register_forward_pre_hook(block_pre(i))
     block.register_forward_hook(block_post(i))
 model.token_refiner.register_forward_hook(
@@ -130,13 +151,17 @@ model.token_refiner.register_forward_hook(
     )
 )
 
-with torch.inference_mode():
-    out_bf16 = model(
-        x_gpu, timestep, context_gpu, transformer_options=options,
-        minimax_payload=payload,
-    )
-print("bf16", tuple(out_bf16.shape), out_bf16.float().mean().item(),
-      out_bf16.float().std().item())
+results = {}
+if a.reference_mode in ("both", "bf16"):
+    mode = "bf16"
+    with torch.inference_mode():
+        out_bf16 = model(
+            x_gpu, timestep, context_gpu, transformer_options=options,
+            minimax_payload=payload,
+        )
+    results["out_bf16"] = out_bf16.float().cpu().numpy()
+    print("bf16", tuple(out_bf16.shape), out_bf16.float().mean().item(),
+          out_bf16.float().std().item())
 
 # The same resident QuantizedTensors now execute Comfy's real ConvRot +
 # dynamic-INT8 activation + INT8 GEMM path.
@@ -144,13 +169,49 @@ for module in model.modules():
     if getattr(module, "quant_format", None) == "asym_w4a8_int8":
         module._full_precision_mm = False
 mode = "w4a8"
-with torch.inference_mode():
-    out_w4a8 = model(
-        x_gpu, timestep, context_gpu, transformer_options=options,
-        minimax_payload=payload,
-    )
-print("w4a8", tuple(out_w4a8.shape), out_w4a8.float().mean().item(),
-      out_w4a8.float().std().item())
+if a.reference_mode in ("both", "w4a8"):
+    with torch.inference_mode():
+        out_w4a8 = model(
+            x_gpu, timestep, context_gpu, transformer_options=options,
+            minimax_payload=payload,
+        )
+    results["out_w4a8"] = out_w4a8.float().cpu().numpy()
+    print("w4a8", tuple(out_w4a8.shape), out_w4a8.float().mean().item(),
+          out_w4a8.float().std().item())
+
+if a.schedule:
+    schedule = []
+    with torch.inference_mode():
+        for i, sigma in enumerate(sample_sigmas[:-1]):
+            step_t = torch.tensor([float(sigma) * 1000.0], device="cuda")
+            out = model(
+                x_gpu, step_t, context_gpu, transformer_options=options,
+                minimax_payload=payload,
+            )
+            schedule.append(out.float().cpu().numpy())
+            print(f"schedule {i}: sigma {float(sigma):.6f}; "
+                  f"mean {out.float().mean().item():.6g}")
+    results["schedule_sigmas"] = sample_sigmas[:-1]
+    results["schedule_out_w4a8"] = np.stack(schedule)
+
+if a.benchmark:
+    with torch.inference_mode():
+        for _ in range(2):
+            model(x_gpu, timestep, context_gpu, transformer_options=options,
+                  minimax_payload=payload)
+        torch.cuda.reset_peak_memory_stats()
+        times = []
+        for _ in range(a.benchmark):
+            start, end = torch.cuda.Event(True), torch.cuda.Event(True)
+            start.record()
+            model(x_gpu, timestep, context_gpu, transformer_options=options,
+                  minimax_payload=payload)
+            end.record()
+            end.synchronize()
+            times.append(start.elapsed_time(end))
+    print(f"Comfy W4A8 benchmark: median {statistics.median(times):.3f} ms; "
+          f"min {min(times):.3f}; max {max(times):.3f}; "
+          f"peak allocated {torch.cuda.max_memory_allocated() / 2**30:.3f} GiB")
 
 Path(a.out).parent.mkdir(parents=True, exist_ok=True)
 np.savez(
@@ -160,9 +221,9 @@ np.savez(
     sigma=np.asarray(a.sigma, dtype=np.float32),
     sample_sigmas=sample_sigmas,
     pdd_sigmas=pdd_sigmas,
-    out_bf16=out_bf16.float().cpu().numpy(),
-    out_w4a8=out_w4a8.float().cpu().numpy(),
     position_ids=layout.position_ids.numpy(),
+    **({"reference_latent": ref_latent.numpy()} if ref_latent is not None else {}),
+    **results,
     **debug,
 )
 print(f"saved reference to {a.out}")

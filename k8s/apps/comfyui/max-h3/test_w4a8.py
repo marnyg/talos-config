@@ -78,6 +78,13 @@ def fused_mma(x, w, s, cb):
     )[0]
 
 
+def fused_linear(x, xs, w, s, cb, channel):
+    return custom(
+        "h3_w4a8_linear", [x, xs, w, s, cb, channel],
+        [TensorType(BF16, [M, N], dev)],
+    )[0]
+
+
 class Projection(Module[..., Tensor]):
     def forward(self, *args):
         if a.stage == "rotate":
@@ -97,9 +104,7 @@ class Projection(Module[..., Tensor]):
         else:
             rotated = rotate(x.cast(BF16))
             xq, xs = quant(rotated)
-        acc = fused_mma(xq, w, s, cb)
-        out = acc.cast(FP32) * F.reshape(xs, [M, 1]) * channel
-        return out.cast(BF16).cast(FP32)
+        return fused_linear(xq, xs, w, s, cb, channel).cast(FP32)
 
 
 if a.stage in ("rotate", "quant"):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the MAX H3 Image DiT against ref_dump.py's real ComfyUI references."""
+"""Run the MAX H3 Image DiT against Comfy references or synthetic shapes."""
 import argparse
 import time
 from pathlib import Path
@@ -13,16 +13,20 @@ from max.graph.weights import load_weights
 import h3
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--weights", required=True, help="BF16 export written by ref_dump.py")
-ap.add_argument("--ref", required=True, help="reference .npz written by ref_dump.py")
+ap.add_argument("--weights", required=True, help="export written by ref_dump.py")
+ap.add_argument("--ref", help="optional reference .npz written by ref_dump.py")
 ap.add_argument("--layers", type=int, default=2)
 ap.add_argument("--quant", choices=("bf16", "w4a8"), default="bf16")
 ap.add_argument("--ckpt", help="original packed W4A8 checkpoint (required for --quant w4a8)")
+ap.add_argument("--latent", type=int, help="synthetic latent H=W when --ref is omitted")
+ap.add_argument("--txt", type=int, default=256, help="synthetic text rows when --ref is omitted")
+ap.add_argument("--sigma", type=float, default=0.75)
+ap.add_argument("--schedule", action="store_true", help="run every PDD sigma after the single forward")
 ap.add_argument("--runs", type=int, default=3)
 ap.add_argument("--save", help="optionally save MAX output as .npy")
 a = ap.parse_args()
 
-ref = np.load(a.ref)
+ref = np.load(a.ref) if a.ref else None
 dev = Accelerator()
 print("device", dev, dev.stats)
 
@@ -55,14 +59,35 @@ if a.quant == "w4a8":
             sd[key] = value.data()
 print(f"weights mapped: {len(sd)} tensors, {time.monotonic() - t0:.1f}s")
 
-prepared = h3.prepare_inputs(
-    ref["x"], ref["context"], float(ref["sigma"]), ref["sample_sigmas"],
-    host["adaln_t_table"], host["rope.inv_freq"],
-    host["final_layer.video_out.weight"], host["final_layer.video_out.bias"],
-)
-if not np.array_equal(prepared["position_ids"], ref["position_ids"]):
+if ref is not None:
+    x, context = ref["x"], ref["context"]
+    sigma, sample_sigmas = float(ref["sigma"]), ref["sample_sigmas"]
+else:
+    latent = a.latent or 32
+    rng = np.random.default_rng(0)
+    x = rng.standard_normal((1, 24, 1, latent, latent), dtype=np.float32)
+    context = rng.standard_normal((1, a.txt, 5120), dtype=np.float32) * 3.0
+    sigma, sample_sigmas = a.sigma, h3.PDD_SIGMAS
+
+
+reference_latents = ([ref["reference_latent"]]
+                     if ref is not None and "reference_latent" in ref else [])
+
+
+def prepare(step_sigma):
+    return h3.prepare_inputs(
+        x, context, step_sigma, sample_sigmas,
+        host["adaln_t_table"], host["rope.inv_freq"],
+        host["final_layer.video_out.weight"], host["final_layer.video_out.bias"],
+        refs=reference_latents,
+    )
+
+
+prepared = prepare(sigma)
+if ref is not None and not np.array_equal(prepared["position_ids"], ref["position_ids"]):
     raise AssertionError("MAX host packed layout differs from Comfy's PackedLayout")
-print("packed layout: exact match; time levels", prepared["unique_t"])
+print("packed layout prepared; time levels", prepared["unique_t"],
+      "sequence", prepared["mod_indices"].shape[0])
 
 t0 = time.monotonic()
 with F.lazy():
@@ -93,23 +118,57 @@ def gpu(array):
 
 input_names = ("visual", "context", "t_emb", "mod_indices", "target_indices",
                "rope_cos", "rope_sin", "pdd_weight", "pdd_bias")
-inputs = tuple(gpu(prepared[name]) for name in input_names)
-for i in range(a.runs):
+inputs = [gpu(prepared[name]) for name in input_names]
+
+
+def timed_run(step_inputs, label):
     t0 = time.monotonic()
-    rows = run(*inputs).to_numpy()
-    print(f"run {i}: {time.monotonic() - t0:.3f}s")
-out = h3.unpatchify(rows, ref["x"].shape[-2], ref["x"].shape[-1])
+    result = run(*step_inputs)
+    dev.synchronize()
+    elapsed = time.monotonic() - t0
+    print(f"{label}: {elapsed:.3f}s")
+    return result, elapsed
+
+
+result = None
+for i in range(a.runs):
+    result = None  # release the previous execution before allocating the next
+    result, _ = timed_run(inputs, f"run {i}")
+rows = result.to_numpy()
+out = h3.unpatchify(rows, x.shape[-2], x.shape[-1])
 if a.save:
     np.save(a.save, out)
 
-print("max ", out.shape, "mean", out.mean(), "std", out.std())
-for name in ("out_bf16", "out_w4a8"):
-    expected = ref[name]
-    cosine = float((out * expected).sum() /
-                   (np.linalg.norm(out) * np.linalg.norm(expected)))
-    rel_l2 = np.linalg.norm(out - expected) / np.linalg.norm(expected)
-    print(
-        f"{name}: cosine {cosine:.8f}  rel-L2 {rel_l2:.6g}  "
-        f"max|d| {np.abs(out - expected).max():.6g}; "
-        f"ref mean {expected.mean():.6g} std {expected.std():.6g}"
-    )
+
+def metrics(name, candidate, expected):
+    cosine = float((candidate * expected).sum() /
+                   (np.linalg.norm(candidate) * np.linalg.norm(expected)))
+    rel_l2 = np.linalg.norm(candidate - expected) / np.linalg.norm(expected)
+    print(f"{name}: cosine {cosine:.8f}  rel-L2 {rel_l2:.6g}  "
+          f"max|d| {np.abs(candidate - expected).max():.6g}")
+
+
+print("max ", out.shape, "mean", out.mean(), "std", out.std(), dev.stats)
+if ref is not None:
+    for name in ("out_bf16", "out_w4a8"):
+        if name in ref:
+            metrics(name, out, ref[name])
+
+if a.schedule:
+    if ref is not None and "schedule_sigmas" in ref:
+        schedule_sigmas = ref["schedule_sigmas"]
+    else:
+        schedule_sigmas = sample_sigmas[:-1]
+    for i, step_sigma in enumerate(schedule_sigmas):
+        step = prepare(float(step_sigma))
+        # Layout/RoPE/modality indices are fixed for this packed signature;
+        # only the curve coordinate and selected PDD head change per step.
+        inputs[2] = gpu(step["t_emb"])
+        inputs[7] = gpu(step["pdd_weight"])
+        inputs[8] = gpu(step["pdd_bias"])
+        result = None
+        result, _ = timed_run(inputs, f"schedule {i} sigma {float(step_sigma):.6f}")
+        if ref is not None and "schedule_out_w4a8" in ref:
+            step_rows = result.to_numpy()
+            step_out = h3.unpatchify(step_rows, x.shape[-2], x.shape[-1])
+            metrics(f"schedule {i}", step_out, ref["schedule_out_w4a8"][i])

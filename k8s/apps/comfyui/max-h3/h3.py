@@ -1,9 +1,9 @@
 """MiniMax H3 Image DiT on Modular MAX (module v3 API).
 
-This is a DiT-only port of ComfyUI's comfy/ldm/minimax/model.py. The initial
-implementation uses BF16-dequantized W4A8 weights; it does not reproduce
-Comfy's Hadamard + dynamic-INT8 activation path. Text encoding and VAE are
-outside this package.
+This is a DiT-only port of ComfyUI's comfy/ldm/minimax/model.py. It supports
+BF16-dequantized weights and packed W4A8 with custom Hadamard, dynamic-INT8
+activation and fused signed-INT8 MMA kernels. Text encoding and VAE are outside
+this package.
 
 The host owns the packed layout, AdaLN curve lookup, partial split-half RoPE
 tables and PDD head selection. The graph consumes already-patchified visual
@@ -140,13 +140,12 @@ class W4A8Linear(Module[[Tensor], Tensor]):
                 TensorType(FP32, [m], x.device),
             ],
         )
-        acc = F.custom(
-            "h3_w4a8_mma", device=x.device,
-            values=[xq, self.weight, self.weight_s_rel, self.weight_codebook],
-            out_types=[TensorType(DType.int32, [m, n], x.device)],
+        return F.custom(
+            "h3_w4a8_linear", device=x.device,
+            values=[xq, xs, self.weight, self.weight_s_rel,
+                    self.weight_codebook, self.weight_s_channel],
+            out_types=[TensorType(BF16, [m, n], x.device)],
         )[0]
-        out = acc.cast(FP32) * F.reshape(xs, [m, 1]) * self.weight_s_channel
-        return out.cast(BF16)
 
 
 def make_linear(in_dim: int, out_dim: int, quant: str) -> Module:

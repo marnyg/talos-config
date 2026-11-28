@@ -364,7 +364,11 @@ def w4a8_mma_kernel[
     w_layout: TensorLayout,
     s_layout: TensorLayout,
     cb_layout: TensorLayout,
+    xs_layout: TensorLayout,
+    sc_layout: TensorLayout,
     c_layout: TensorLayout,
+    out_dtype: DType,
+    scaled: Bool,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -376,7 +380,9 @@ def w4a8_mma_kernel[
     W: TileTensor[DType.int8, w_layout, MutAnyOrigin],
     S: TileTensor[DType.float8_e4m3fn, s_layout, MutAnyOrigin],
     CB: TileTensor[DType.float32, cb_layout, MutAnyOrigin],
-    C: TileTensor[mut=True, DType.int32, c_layout, MutAnyOrigin],
+    XS: TileTensor[DType.float32, xs_layout, MutAnyOrigin],
+    SC: TileTensor[DType.float32, sc_layout, MutAnyOrigin],
+    C: TileTensor[mut=True, out_dtype, c_layout, MutAnyOrigin],
 ):
     """Decode packed W4A8 tiles in shared memory and consume them in MMA."""
     comptime MMA_M = 16
@@ -477,7 +483,13 @@ def w4a8_mma_kernel[
     barrier()
     for flat in range(Int(thread_idx.x), BM * BN, NUM_THREADS):
         var i, j = udivmod(flat, BN)
-        C_block[i, j] = c_smem[i, j]
+        comptime if scaled:
+            var row = block_idx.y * BM + i
+            var col = block_idx.x * BN + j
+            var value = c_smem[i, j].cast[DType.float32]() * XS[row] * SC[col]
+            C_block[i, j] = value.cast[out_dtype]()
+        else:
+            C_block[i, j] = c_smem[i, j].cast[out_dtype]()
 
 
 @extensibility.register("h3_w4a8_mma")
@@ -520,12 +532,74 @@ struct H3W4A8MMA:
             type_of(weight_tt).LayoutType,
             type_of(scales_tt).LayoutType,
             type_of(codebook_tt).LayoutType,
+            type_of(codebook_tt).LayoutType,
+            type_of(codebook_tt).LayoutType,
             type_of(out_tt).LayoutType,
+            DType.int32,
+            False,
             BM, BN, BK, WM, WN, NUM_THREADS,
         ]
         var gpu_ctx = ctx
         gpu_ctx.enqueue_function[kernel](
-            x_tt, weight_tt, scales_tt, codebook_tt, out_tt,
+            x_tt, weight_tt, scales_tt, codebook_tt, codebook_tt, codebook_tt, out_tt,
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM)), block_dim=NUM_THREADS,
+        )
+
+
+@extensibility.register("h3_w4a8_linear")
+struct H3W4A8Linear:
+    """Packed W4A8 MMA with FP32 row/channel scaling and BF16 output."""
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        x: InputTensor[dtype=DType.int8, rank=2, ...],
+        x_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        weight: InputTensor[dtype=DType.int8, rank=2, ...],
+        scales: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+        codebook: InputTensor[dtype=DType.float32, rank=1, ...],
+        channel_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert target == "gpu"
+        var x_tt = x.to_tile_tensor().as_unsafe_any_origin()
+        var xs_tt = x_scales.to_tile_tensor().as_unsafe_any_origin()
+        var weight_tt = weight.to_tile_tensor().as_unsafe_any_origin()
+        var scales_tt = scales.to_tile_tensor().as_unsafe_any_origin()
+        var codebook_tt = codebook.to_tile_tensor().as_unsafe_any_origin()
+        var channel_tt = channel_scales.to_tile_tensor().as_unsafe_any_origin()
+        var out_tt = output.to_tile_tensor().as_unsafe_any_origin()
+        var M = Int(x_tt.dim[0]())
+        var N = Int(weight_tt.dim[0]())
+        var K = Int(x_tt.dim[1]())
+        if M % 64 != 0 or N % 64 != 0 or K % 256 != 0:
+            raise Error("h3_w4a8_linear requires M,N divisible by 64 and K by 256")
+        if Int(weight_tt.dim[1]()) != K // 2 or Int(scales_tt.dim[1]()) != K // 16:
+            raise Error("h3_w4a8_linear got inconsistent packed shapes")
+        comptime BM = 64
+        comptime BN = 64
+        comptime BK = 32
+        comptime WM = 64
+        comptime WN = 32
+        comptime NUM_WARPS = (BM // WM) * (BN // WN)
+        comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+        comptime kernel = w4a8_mma_kernel[
+            type_of(x_tt).LayoutType,
+            type_of(weight_tt).LayoutType,
+            type_of(scales_tt).LayoutType,
+            type_of(codebook_tt).LayoutType,
+            type_of(xs_tt).LayoutType,
+            type_of(channel_tt).LayoutType,
+            type_of(out_tt).LayoutType,
+            DType.bfloat16,
+            True,
+            BM, BN, BK, WM, WN, NUM_THREADS,
+        ]
+        var gpu_ctx = ctx
+        gpu_ctx.enqueue_function[kernel](
+            x_tt, weight_tt, scales_tt, codebook_tt, xs_tt, channel_tt, out_tt,
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)), block_dim=NUM_THREADS,
         )
 

@@ -313,3 +313,12 @@ enabled by `JSON_SECRET_KEY`) does the rest; no login form ever.
 - Full custom W4A8 projection is correct but 0.80 ms against Comfy's 0.183 ms.
   Continue with fused decode+MMA (`l5km`); do not scale the current workspace
   design to 50 blocks and call the performance gate passed.
+- `l5km` outcome: decoding packed weights directly into B registers (no decoded
+  shared/global weight tile) cut the complete projection to 0.27 ms with every
+  INT32 accumulator still bit-exact. A scaled BF16 epilogue avoids global INT32
+  outputs. This validates the kernel strategy, though Comfy remains faster.
+- `qobn` outcome: all 50 blocks and six PDD steps run at 320 tokens in 0.32 s
+  versus Comfy's 102.5 ms, with full-model cosine 0.993635 and reference-image
+  parity 0.999968. At 4352 tokens (2048² equivalent), the first forward
+  requests 18.76 GB and OOMs. Full-resolution work is therefore a new memory
+  problem (`3yur`), not a reason to merely free more desktop VRAM.
