@@ -7,18 +7,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"fmt"
 	"log/slog"
-	"math/big"
-	"net"
 	"net/http/httptest"
-	"net/url"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -111,83 +102,6 @@ func echoOnce(from, to *irohtransport.Endpoint, relayURL string, d time.Duration
 	return <-srv
 }
 
-// testCABundle writes a throwaway self-signed CA and returns its path.
-// With [access.http] the relay builds an HTTPS client at startup and
-// panics when the host has no CA bundle at all — the nix sandbox has
-// none (config-server/relay_test.go met this first). One root in
-// SSL_CERT_FILE satisfies it; the hook itself is plain HTTP.
-func testCABundle(t *testing.T) string {
-	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "relay-test-ca"},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(time.Hour),
-		IsCA:                  true,
-		KeyUsage:              x509.KeyUsageCertSign,
-		BasicConstraintsValid: true,
-	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, priv.Public(), priv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := filepath.Join(t.TempDir(), "ca.pem")
-	if err := os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
-// startRelay runs the real relay with its access hook at hookURL,
-// presenting token, and returns its loopback URL.
-func startRelay(t *testing.T, hookURL, token string) *url.URL {
-	t.Helper()
-	bin := os.Getenv("IROH_RELAY_BIN")
-	if bin == "" {
-		p, err := exec.LookPath("iroh-relay")
-		if err != nil {
-			t.Skip("iroh-relay not available (set IROH_RELAY_BIN); the gate is not tested against the relay")
-		}
-		bin = p
-	}
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
-	cfg := filepath.Join(t.TempDir(), "relay.toml")
-	if err := os.WriteFile(cfg, []byte(fmt.Sprintf(
-		"enable_relay = true\nhttp_bind_addr = \"127.0.0.1:%d\"\nenable_metrics = false\nenable_quic_addr_discovery = false\n\n[access.http]\nurl = %q\n",
-		port, hookURL)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(bin, "--dev", "--config-path", cfg)
-	cmd.Env = append(os.Environ(), "IROH_RELAY_HTTP_BEARER_TOKEN="+token, "SSL_CERT_FILE="+testCABundle(t))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start relay: %v", err)
-	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(100 * time.Millisecond) {
-		if c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond); err == nil {
-			c.Close()
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("relay did not listen on %s; its stderr:\n%s", addr, stderr.String())
-		}
-	}
-	u, _ := url.Parse("http://" + addr)
-	return u
-}
-
 // TestGateInFrontOfRelay is ADR-0012 end to end against the real relay
 // binary and real endpoints: certs in, connections out.
 func TestGateInFrontOfRelay(t *testing.T) {
@@ -210,11 +124,8 @@ func TestGateInFrontOfRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := &Server{Gate: New(relay.ActorID(), []cert.Cert{consent}), HookToken: "between-two-processes"}
-	hook := httptest.NewServer(srv.Hook())
-	t.Cleanup(hook.Close)
-	srv.Backend = startRelay(t, hook.URL, srv.HookToken)
-	public := httptest.NewServer(srv.Public())
+	svc := startService(t, New(relay.ActorID(), []cert.Cert{consent}), nil)
+	public := httptest.NewServer(svc.Handler())
 	t.Cleanup(public.Close)
 	at := public.URL // the only address an actor is given
 
@@ -404,15 +315,9 @@ func TestBornThroughTheGate(t *testing.T) {
 		return c
 	}
 	var logs syncBuf
-	srv := &Server{
-		Gate:      New(relay.ActorID(), []cert.Cert{member(parent, true), member(prov, false)}),
-		HookToken: "between-two-processes",
-		Log:       slog.New(slog.NewTextHandler(&logs, nil)),
-	}
-	hook := httptest.NewServer(srv.Hook())
-	t.Cleanup(hook.Close)
-	srv.Backend = startRelay(t, hook.URL, srv.HookToken)
-	public := httptest.NewServer(srv.Public())
+	gate := New(relay.ActorID(), []cert.Cert{member(parent, true), member(prov, false)})
+	svc := startService(t, gate, slog.New(slog.NewTextHandler(&logs, nil)))
+	public := httptest.NewServer(svc.Handler())
 	t.Cleanup(public.Close)
 	at := public.URL
 
@@ -477,7 +382,7 @@ func TestBornThroughTheGate(t *testing.T) {
 	kept := bear() // presents its kit's chain
 	cut := bear()  // never does
 	t.Logf("two children born through the gate in %s", time.Since(began).Round(100*time.Millisecond))
-	if _, ok := srv.Gate.Admitted(kept); !ok {
+	if _, ok := gate.Admitted(kept); !ok {
 		t.Fatal("a born child is not admitted")
 	}
 
@@ -488,14 +393,14 @@ func TestBornThroughTheGate(t *testing.T) {
 		t.Fatalf("a child died: %v", err)
 	default:
 	}
-	until, ok := srv.Gate.Admitted(kept)
+	until, ok := gate.Admitted(kept)
 	if !ok {
 		t.Fatal("the child that presents its chain is not admitted past the birth window")
 	}
 	if until <= now+sp.Window+3 {
 		t.Fatalf("admitted until %d: its renewed chain is not reaching the gate", until)
 	}
-	if _, ok := srv.Gate.Admitted(cut); ok {
+	if _, ok := gate.Admitted(cut); ok {
 		t.Fatal("the child that never presented its chain is still admitted past the birth window")
 	}
 	ended := func(id cert.ActorID) bool {

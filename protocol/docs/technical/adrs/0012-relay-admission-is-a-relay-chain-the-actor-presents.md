@@ -6,9 +6,12 @@
   stay open. Built: the gate (`actors/relaygate`,
   `talos-config-bal3`), the links in the intro and the kit
   (`protocol/spawn`, `talos-config-bpha`), and the child presenting
-  them plus the parents' `-relay-id` flag (`talos-config-0ken`). Not
-  built: the binary that runs gate, relay and lighthouse together;
-  nothing is deployed and no manifest sets `-relay-id`. Measured: the three chain shapes fold
+  them plus the parents' `-relay-id` flag (`talos-config-0ken`), and
+  the binary: `cmd/lighthouse -relay-bin` runs the relay as a
+  supervised child behind the gate, rooted at the lighthouse's key
+  (`relaygate.Service`, `talos-config-gsps`). Nothing is deployed, no
+  manifest sets `-relay-bin` or `-relay-id`, and the long-lived
+  actors do not yet bind with the id claim (`talos-config-ssau`). Measured: the three chain shapes fold
   in today's verifier (`TestRelayAdmissionShapes`, `protocol/cert`),
   and the gate's mechanics hold against the real relay binary
   (`TestRelayGate`, `iroh-transport`).

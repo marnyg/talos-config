@@ -48,16 +48,19 @@ func Logging() {
 // It is fixed for the endpoint's life and is not a credential — the
 // chain the actor presents is.
 func Actor(priv ed25519.PrivateKey, relay, bindAddr string, streams []string, claim bool) (*actor.Actor, *irohtransport.Endpoint, error) {
-	signer := cert.NewEdSigner(priv)
 	o := irohtransport.Options{BindAddr: bindAddr, Relay: relay, StreamALPNs: streams}
 	if claim {
-		o.RelayToken = relaygate.Claim(signer.ActorID())
+		o.RelayToken = relaygate.Claim(cert.NewEdSigner(priv).ActorID())
 	}
+	return bind(priv, o)
+}
+
+func bind(priv ed25519.PrivateKey, o irohtransport.Options) (*actor.Actor, *irohtransport.Endpoint, error) {
 	ep, err := irohtransport.Bind(priv, o)
 	if err != nil {
 		return nil, nil, err
 	}
-	a := actor.New(signer, ep)
+	a := actor.New(cert.NewEdSigner(priv), ep)
 	a.SeqBase = func() int64 { return time.Now().UnixMicro() }
 	return a, ep, nil
 }
@@ -97,11 +100,10 @@ func (p *Persisted) State() string { return *p.state }
 // Relay is the -relay URL.
 func (p *Persisted) Relay() string { return *p.relay }
 
-// Up loads (or mints) the key in -state; with -print-id it prints the
-// id and exits 0. Otherwise it binds and returns the actor, fatal on
-// any error. Call after flag.Parse, before validating the binary's own
-// flags, so -print-id works with them absent.
-func (p *Persisted) Up() (*actor.Actor, *irohtransport.Endpoint) {
+// Key loads (or mints) the key in -state; with -print-id it prints the
+// id and exits 0. Call after flag.Parse, before validating the binary's
+// own flags, so -print-id works with them absent.
+func (p *Persisted) Key() ed25519.PrivateKey {
 	if err := os.MkdirAll(*p.state, 0o700); err != nil {
 		log.Fatal(err)
 	}
@@ -113,14 +115,33 @@ func (p *Persisted) Up() (*actor.Actor, *irohtransport.Endpoint) {
 		fmt.Println(cert.NewEdSigner(priv).ActorID())
 		os.Exit(0)
 	}
+	if minted {
+		slog.Info(p.name+": key minted", "state", *p.state)
+	}
+	return priv
+}
+
+// Up is Key, then binds homed on -relay and returns the actor, fatal
+// on any error.
+func (p *Persisted) Up() (*actor.Actor, *irohtransport.Endpoint) {
 	// No claim: the long-lived actors still home on an ungated relay
 	// (talos-config-ssau moves them).
-	a, ep, err := Actor(priv, *p.relay, *p.bind, p.BindStreams, false)
+	a, ep, err := Actor(p.Key(), *p.relay, *p.bind, p.BindStreams, false)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if minted {
-		slog.Info(p.name+": key minted", "state", *p.state)
+	return a, ep
+}
+
+// UpBehind binds the actor that RUNS the relay it homes on (the
+// lighthouse with -relay-bin): homed on home, the relay's own loopback
+// listener — it must not depend on its public one, and needs no claim
+// there — while advertising -relay, the URL everyone else reaches the
+// same relay at. Fatal on any error.
+func (p *Persisted) UpBehind(priv ed25519.PrivateKey, home string) (*actor.Actor, *irohtransport.Endpoint) {
+	a, ep, err := bind(priv, irohtransport.Options{BindAddr: *p.bind, Relay: home, AdvertiseRelay: *p.relay, StreamALPNs: p.BindStreams})
+	if err != nil {
+		log.Fatal(err)
 	}
 	return a, ep
 }

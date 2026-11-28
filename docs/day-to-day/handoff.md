@@ -23,6 +23,10 @@
     intro's link before it binds and claims its id; `child.Run`
     presents the kit's chain at birth and every beat
     (`Options.Present`); `cmd/parent`, `cmd/spawn` take `-relay-id`.
+  - the binary (`gsps`): `cmd/lighthouse -relay-bin … -listen …` runs
+    `iroh-relay` as a supervised child behind the gate, rooted at the
+    lighthouse's key (`relaygate.Service`); `-relay` is then the
+    public URL, `-member` also admits to the relay (delegably).
 - Evidence: `TestBornThroughTheGate` (`actors/relaygate`, tagged) runs
   spawner → provisioner → child on the real relay behind the gate.
   `scripts/test-iroh.sh actors`; `actors-bin` runs it in the sandbox.
@@ -67,12 +71,12 @@
 
 ## Suggested next steps
 
-- `gsps`: the binary that runs gate + relay + lighthouse (relay
-  supervision; `-member` mints the relay consent, delegable for
-  parents).
-- Then `9nkh` (the fly app), `ssau` (move the sap plane: members bind
-  with the claim, manifests get `-relay-id`), `e7f0` (enforce the
-  hub's member gate).
+- `9nkh`: the fly app — image with `iroh-relay` beside the
+  lighthouse (it already ships a CA bundle, which the relay needs), a
+  fly volume for the key, deploy script, Gatus on `/generate_204`.
+- Then `ssau` (move the sap plane: members bind with the claim,
+  manifests get `-relay`, `-lighthouse`, `-relay-id`), `e7f0` (enforce
+  the hub's member gate).
 - `j1kd`: the spike has answered its question — MAX/Mojo runs the full
   Krea 2 DiT correctly but ~6.7× slower than ComfyUI and cannot offload,
   so ComfyUI stays the tool. Close it, or continue only via NVFP4 weights

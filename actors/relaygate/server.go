@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -22,6 +23,8 @@ const (
 	AdmitPath = "/relay/admit"
 	// RelayPath is the relay protocol's WebSocket upgrade.
 	RelayPath = "/relay"
+	// HookPath is where Service serves Hook, on its loopback listener.
+	HookPath = "/access"
 	// HookIDHeader carries the connecting key on the relay's access-hook
 	// request. iroh-relay 1.1.0's doc comment says X-Iroh-Endpoint-Id;
 	// the binary sends this.
@@ -82,11 +85,22 @@ func (s *Server) log() *slog.Logger {
 // else the relay binary serves is reachable.
 func (s *Server) Public() http.Handler {
 	rp := httputil.NewSingleHostReverseProxy(s.Backend)
+	// The relay is on loopback: no proxy from the environment, a short
+	// dial, and nothing that would time out a long-lived upgrade.
+	rp.Transport = &http.Transport{
+		DialContext:         (&net.Dialer{Timeout: 2 * time.Second}).DialContext,
+		MaxIdleConns:        8,
+		MaxIdleConnsPerHost: 8,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true,
+	}
+	// 503 while the relay is down (it is restarting): an iroh client
+	// then retries its home relay rather than giving it up.
 	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		if !errors.Is(err, context.Canceled) {
 			s.log().Warn("relaygate: relay unreachable", "path", r.URL.Path, "err", err)
 		}
-		w.WriteHeader(http.StatusBadGateway)
+		http.Error(w, "relay unavailable", http.StatusServiceUnavailable)
 	}
 	mux := http.NewServeMux()
 	for _, p := range probePaths {
