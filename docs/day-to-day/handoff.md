@@ -20,6 +20,20 @@
   `docs/technical/guides/comfyui.md`. Existing full-pipeline 2048² Comfy
   numbers remain separate from these DiT-only shapes.
 
+## Same day, another session: the protocol is its own repo
+
+- **github.com/marnyg/sap** (ADR-0052, superseding ADR-0020): protocol/,
+  iroh-go/, iroh-transport/, actors/ (incl. the network's fly app), the
+  images and the protocol's Quint models moved with history, tagged
+  `*/v0.1.0`. This repo consumes it: `config-server/go.mod` requires the
+  tags, the flake input `sap` supplies libiroh_ffi + iroh-relay (same
+  store paths as before). The running hub is unchanged.
+- The 18 open protocol beads moved to sap's database (`sap-*`, each
+  names its original). sap has no Forgejo repo yet (`sap-tud`).
+- Earlier the same day: the protocol network went live
+  (`marnyg-sap-net`), the sap plane moved onto it, and the hub relay's
+  member gate enforces (`e7f0`). Details: `technical/deployed-state.md`.
+
 ## Loose threads
 
 - `l5km`, `qobn` and `y85j` are ready for owner review/closure. MAX remains a
