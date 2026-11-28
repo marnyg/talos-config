@@ -1,10 +1,12 @@
 # ADR-0012: Relay admission is a `relay` chain the actor presents; a newborn presents a wildcard link from its intro
 
-- Status: Proposed 2026-11-28 (spike `talos-config-qx5c`). Nothing is
-  built. Measured: the three chain shapes fold in today's verifier
-  (`TestRelayAdmissionShapes`, `protocol/cert`), and the gate's
-  mechanics hold against the real relay binary (`TestRelayGate`,
-  `iroh-transport`). Not reviewed by the owner.
+- Status: Accepted 2026-11-28 (owner; spike `talos-config-qx5c`).
+  Ruled with it: the reversal below, and the wildcard link as a bearer
+  for the birth window (Consequences). The four "Not decided" items
+  stay open. Nothing is built. Measured: the three chain shapes fold
+  in today's verifier (`TestRelayAdmissionShapes`, `protocol/cert`),
+  and the gate's mechanics hold against the real relay binary
+  (`TestRelayGate`, `iroh-transport`).
 - Date: 2026-11-28
 - Related: root ADR-0051 (the protocol network is its own public
   surface — this answers its open admission question), spike
@@ -116,10 +118,10 @@ one cert; the kit's outfit gains one chain.
 - Bad / to watch: the wildcard link is a bearer for the birth window.
   Whoever reads an intro (the compute provider — "birth trust equals
   compute trust") can admit keys at one proof of work each until it
-  expires.
+  expires. _Accepted by the owner 2026-11-28 as the same trade._
 - Bad / to watch: every non-member must present on its beat. A child
   that renews but does not present is cut at expiry.
-- Bad / to watch: the claim in the bearer is unsigned in this sketch.
+- Not decided: the claim in the bearer is unsigned in this sketch.
   An actor that is itself admitted could claim another id and have its
   connection outlive its own credential, until it next reconnects.
   Closing it is a signature by the claimed key over `R`'s id; decide

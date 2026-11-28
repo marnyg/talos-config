@@ -93,8 +93,8 @@ taken now: it spends the first rule above.
 - Good: with no actors on it, the hub relay's member gate can enforce.
 - Bad / to watch: relay admission is not solved, it moves. An open
   relay is free bandwidth for strangers; `qx5c` is now the new
-  surface's question. _(2026-11-28: answered as a proposal in protocol
-  ADR-0012 — the actor presents a `relay` chain to a gate in front of
+  surface's question. _(2026-11-28: answered by protocol ADR-0012,
+  Accepted — the actor presents a `relay` chain to a gate in front of
   the relay; that gate, not bare `iroh-relay`, is what the new app
   runs.)_
 - Bad / to watch: **the caller, not the receiver, connects to the

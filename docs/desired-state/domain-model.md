@@ -484,7 +484,10 @@ provisioning or recovery path may depend on it.
   no grant can be presented to it — relay access is membership-implied
   (blocklist + beat cache, `5gz`), and the `relay` *verb* is reserved
   for the protocol's M3 envelope relay, a different thing _(ruled
-  2026-09-18, `359.8.5` grill-design)_. **Kind ≡ facet vocabulary**:
+  2026-09-18, `359.8.5` grill-design)_. _(2026-11-28, protocol
+  ADR-0012: this is the **hub's** relay. The protocol network's own
+  relay (ADR-0051) is gated on that `relay` verb — an actor presents
+  its chain out of band, so a grant does reach that gate.)_ **Kind ≡ facet vocabulary**:
   facet names are disjoint across kinds, so a grant's reach is scoped
   by its facet and its `cav.target` is the wildcard `"*"` — honored at
   every receiver that consented to the grant's sovereign for that

@@ -91,5 +91,5 @@ not copied:
   the intro, ADR-0008's shape). The actor presents its chain to the
   gate over HTTPS; the gate caches `id → exp`, the relay's hook admits
   the proven key, a proxy ends the connection at expiry. No new verb,
-  caveat or rule. _Proposed 2026-11-28 (spike talos-config-qx5c); not
-  reviewed._
+  caveat or rule. _Proposed and Accepted 2026-11-28 (spike
+  talos-config-qx5c); not built._

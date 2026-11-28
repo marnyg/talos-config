@@ -12,8 +12,8 @@
 - Invariant 5 amended (scoped to the talos deployment, two dependency
   rules), goal line added, **ADR-0051 Proposed** — the amendment and
   the goal are ruled, the deployment shape is not reviewed.
-- Relay admission spiked (`qx5c`): **protocol ADR-0012 Proposed, not
-  reviewed** — the actor presents a `relay` chain to a gate in front
+- Relay admission spiked (`qx5c`): **protocol ADR-0012 Accepted by
+  the owner** — the actor presents a `relay` chain to a gate in front
   of the relay; a newborn presents a wildcard link from its intro.
   No new verb, caveat or verifier rule.
 - Three tests are the evidence; nothing else is built or deployed:
@@ -24,8 +24,8 @@
 ## Loose threads
 
 - ADR-0012 reverses, for the protocol relay only, the 2026-09-18
-  ruling "relay is not a facet; no grant reaches the hook". The owner
-  has not seen that yet.
+  ruling "relay is not a facet; no grant reaches the hook" (owner
+  accepted; root domain model carries the pointer).
 - A relay bearer token cannot be replaced on a live iroh 1.1.0
   endpoint (protocol exploration log) — it carries a claim, never a
   credential.
@@ -44,8 +44,8 @@
 
 ## Suggested next steps
 
-- Owner rules on ADR-0051's deployment shape and protocol ADR-0012.
-- Then build in this order: the gate (verify + table + hook + proxy)
+- Owner rules on ADR-0051's deployment shape (still Proposed).
+- Build in this order (the first three are filed under `qx5c`): the gate (verify + table + hook + proxy)
   as a package; the relay link in `protocol/spawn`'s intro and kit;
   presentation in `actors/cmd/child`; the fly app; move the
   provisioner and parent over; enforce the hub's member gate.
