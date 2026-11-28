@@ -211,6 +211,7 @@ classDiagram
     Actor --> Network : joins (holds publish-cap)
     Network --> Lighthouse : rendezvous
     Actor ..> Relay : reaches (behind NAT)
+    Actor --> Relay : presents a relay chain (admission)
     Actor --> Provisioner : #spawn (intro opaque) / #extend on the beat
     Provisioner --> Driver : renders a lease
     Actor --> Actor : #birth {nonce} → starter kit; funds child in tranches
@@ -540,7 +541,21 @@ whose deployment-free form differs from the talos wording. Source:
   founder push live members out.
 - **Relay** — an actor selling a `#relay` facet; forwards envelopes
   blindly for actors behind NAT. Relay-by-default; direct paths are an
-  optimization.
+  optimization. _(2026-11-28, ADR-0012)_ A relay **admits a key on a
+  `relay` chain rooted at itself**, which the actor *presents* to the
+  relay's **gate** out of band — the relay is asked only "may this
+  key?" at connect and carries nothing that could answer. A member
+  presents nothing (the relay's own consent names it); a child
+  presents its parent's link from its starter kit, renewed on the
+  beat; a newborn presents the **relay birth link** from its intro.
+  The gate keeps `id → exp` as a cache of what was presented, never a
+  registry, and a connection ends when its credential does.
+- **Relay birth link** — `{iss: P, aud: "*", can: relay, cav:
+  {target: [R], facet: [#relay], postage}}`, one birth window long:
+  the birth consent's shape on the `relay` verb, minted per spawn and
+  carried in the intro, because nobody can name a key that does not
+  exist yet. A bearer for that window; the stamp is over (R, the
+  newborn's key), so it admits one key per proof of work.
 - **Frontdoor** — the default, revocable public-reachability facet an
   actor mints (`aud: "*"`, postage-caveated). The open-world default;
   going dark = not re-minting it; the **tail** is the minted `ttl`,
@@ -603,6 +618,8 @@ whose deployment-free form differs from the talos wording. Source:
   the per-spawn birth consent, and the intro nonce. Additive by
   design: a lighthouse lookup-cap may join it later as the fallback
   for a parent that moves inside the birth window (open thread).
+  _(2026-11-28, ADR-0012)_ First addition: an optional `relay` — the
+  relay birth link, when the parent's network gates its relay.
 - **`#birth` facet** — the facet a newborn knocks on. Admitted by a
   **birth consent**: an aud-`*` consent of the same shape as the
   frontdoor (`cav.target: [P]`, `cav.facet: [#birth]`, postage
@@ -621,7 +638,11 @@ whose deployment-free form differs from the talos wording. Source:
   chains name. The protocol **mandates exactly one chain**:
   `P→C invoke {target: P, facet: #renew}`; everything else (app
   facets, a network's publish-cap + lighthouse location, siblings) is
-  the parent's choice and can also arrive later on the beat. The
+  the parent's choice and can also arrive later on the beat. A parent
+  whose intro carried a relay birth link also includes
+  `P→C relay {target: R, facet: #relay}` — the child refuses a kit
+  without it, since it would be cut from the relay when the birth
+  window ends _(2026-11-28, ADR-0012)_. The
   child installs each chain under every `(target, facet)` its last
   link names. No funding field in v0 (M5). The child's first
   reach-me-at reaches the parent by the ordinary envelope piggyback,
