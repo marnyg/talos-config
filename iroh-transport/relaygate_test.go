@@ -4,8 +4,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -65,6 +69,37 @@ func (g *testGate) count(m map[cert.ActorID]int, id cert.ActorID) int {
 	return m[id]
 }
 
+// testCABundle writes a throwaway self-signed CA and returns its path.
+// With [access.http] the relay builds an HTTPS client at startup and
+// panics when the host has no CA bundle at all — the nix sandbox has
+// none (config-server/relay_test.go met this first). One root in
+// SSL_CERT_FILE satisfies it; the hook itself is plain HTTP.
+func testCABundle(t *testing.T) string {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "relay-test-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, priv.Public(), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 // startGatedRelay runs iroh-relay with its access hook pointed at g and
 // returns the URL of the proxy in front of it — the only address a
 // client is given.
@@ -115,6 +150,7 @@ func startGatedRelay(t *testing.T) (*testGate, string) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(bin, "--dev", "--config-path", cfg)
+	cmd.Env = append(os.Environ(), "SSL_CERT_FILE="+testCABundle(t))
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start relay: %v", err)
 	}
@@ -254,7 +290,10 @@ func TestRelayGate(t *testing.T) {
 	if !online(x, 10*time.Second) {
 		t.Fatal("presented credential: no home relay")
 	}
-	t.Logf("hook id header: %s", g.hookHdr)
+	g.mu.Lock()
+	hdr := g.hookHdr
+	g.mu.Unlock()
+	t.Logf("hook id header: %s", hdr)
 	thief := gated(t, relay, x.ID())
 	if online(thief, 3*time.Second) {
 		t.Fatal("another key claiming x's id: got a home relay")
