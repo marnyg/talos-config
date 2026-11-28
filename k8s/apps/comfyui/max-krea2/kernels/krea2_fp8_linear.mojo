@@ -110,18 +110,23 @@ def tensor_core_fp8_linear[
     A: TileTensor[DType.bfloat16, a_layout, MutAnyOrigin],
     W: TileTensor[DType.float8_e4m3fn, w_layout, MutAnyOrigin],
     S: TileTensor[DType.float32, s_layout, MutAnyOrigin],
-    C: TileTensor[mut=True, DType.float32, c_layout, MutAnyOrigin],
+    C: TileTensor[mut=True, DType.bfloat16, c_layout, MutAnyOrigin],
 ):
-    """FP8 weight tile -> BF16 shared tile -> BF16 tensor-core MMA."""
+    """FP8 weight tile -> BF16 shared tile -> BF16 tensor-core MMA.
+
+    The accumulator stays FP32 and is staged through a small FP32 shared
+    tile before the BF16 global write. Emitting BF16 directly halves every
+    projection's transient output, which matters at 1024^2 where the FP8
+    weights already fill the card's budget.
+    """
     comptime MMA_M = 16
     comptime MMA_N = 8
     comptime MMA_K = 16
     comptime assert WM % MMA_M == 0 and WN % MMA_N == 0 and BK % MMA_K == 0
 
     var warp_y, warp_x = udivmod(warp_id(), BN // WN)
-    var C_warp = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
-        warp_y, warp_x
-    )
+    var C_block = C.tile[BM, BN](block_idx.y, block_idx.x)
+    var C_warp = C_block.tile[WM, WN](warp_y, warp_x)
     var mma = TensorCore[
         DType.float32,
         DType.bfloat16,
@@ -140,6 +145,12 @@ def tensor_core_fp8_linear[
     var c_reg = stack_allocation[DType.float32, address_space=.LOCAL](
         row_major[WM // MMA_M, (WN * 4) // MMA_N]()
     ).fill(0)
+    # store_d requires the destination dtype to equal the accumulator dtype,
+    # so the FP32 result lands here first and is cast on the way to global.
+    var c_smem = stack_allocation[DType.float32, address_space=.SHARED](
+        row_major[BM, BN]()
+    )
+    var warp_region = c_smem.tile[WM, WN](warp_y, warp_x)
     var scalar_scale = S.load[width=1](Coord(0))[0].cast[DType.bfloat16]()
 
     for k_i in range(Int(A.dim[1]()) // BK):
@@ -173,8 +184,12 @@ def tensor_core_fp8_linear[
 
     comptime for mma_m in range(WM // MMA_M):
         comptime for mma_n in range(WN // MMA_N):
-            var C_tile = C_warp.tile[MMA_M, MMA_N](mma_m, mma_n)
-            mma.store_d(C_tile, c_reg.tile[1, 4](mma_m, mma_n))
+            var S_tile = warp_region.tile[MMA_M, MMA_N](mma_m, mma_n)
+            mma.store_d(S_tile, c_reg.tile[1, 4](mma_m, mma_n))
+    barrier()
+    for flat in range(Int(thread_idx.x), BM * BN, NUM_THREADS):
+        var i, j = udivmod(flat, BN)
+        C_block[i, j] = c_smem[i, j].cast[DType.bfloat16]()
 
 
 @extensibility.register("krea2_fp8_linear_tc")
@@ -185,7 +200,7 @@ struct Krea2FP8LinearTensorCore:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
         x: InputTensor[dtype=DType.bfloat16, rank=2, ...],
         weight: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
         scale: InputTensor[dtype=DType.float32, rank=1, ...],

@@ -170,9 +170,8 @@ class MojoTensorCoreFP8Linear(MojoFusedFP8Linear):
             "krea2_fp8_linear_tc",
             device=x.device,
             values=[x_2d, self.weight, F.reshape(self.weight_scale, [1])],
-            out_types=[TensorType(DType.float32, [m, self.weight.shape[0]], x.device)],
+            out_types=[TensorType(BF16, [m, self.weight.shape[0]], x.device)],
         )[0]
-        y = y.cast(BF16)
         return F.reshape(y, [*lead, self.weight.shape[0]])
 
 
@@ -222,14 +221,20 @@ class QKNorm(Module[..., tuple[Tensor, Tensor]]):
 
 
 def apply_rope(x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
-    """x: [B, L, H, D]; cos/sin: [L, D/2] float32. Pairs are (x[2i], x[2i+1])."""
+    """x: [B, L, H, D]; cos/sin: [L, D/2]. Pairs are (x[2i], x[2i+1]).
+
+    Computed in x's own dtype (BF16). The FP32 version doubles q/k/v's
+    transient footprint, which at 1024^2 is the difference between fitting
+    and not fitting on a 16 GB card.
+    """
     b, l, h, d = x.shape
     dtype = x.dtype
-    x = F.reshape(x.cast(DType.float32), [b, l, h, d // 2, 2])
+    x = F.reshape(x, [b, l, h, d // 2, 2])
     x0, x1 = x[..., 0], x[..., 1]
-    cos, sin = F.unsqueeze(F.unsqueeze(cos, 0), 2), F.unsqueeze(F.unsqueeze(sin, 0), 2)
+    cos = F.unsqueeze(F.unsqueeze(cos.cast(dtype), 0), 2)
+    sin = F.unsqueeze(F.unsqueeze(sin.cast(dtype), 0), 2)
     out = F.stack([cos * x0 - sin * x1, sin * x0 + cos * x1], axis=-1)
-    return F.reshape(out, [b, l, h, d]).cast(dtype)
+    return F.reshape(out, [b, l, h, d])
 
 
 class Attention(Module[..., Tensor]):

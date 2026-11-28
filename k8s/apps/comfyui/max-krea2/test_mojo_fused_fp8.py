@@ -39,8 +39,7 @@ class Linear(Module[[Tensor, Tensor, Tensor], Tensor]):
                 "krea2_fp8_linear_tc" if a.tc else "krea2_fp8_linear",
                 device=x.device,
                 values=[x, w, F.reshape(s, [1])],
-                out_types=[TensorType(DType.float32 if a.tc else DType.bfloat16,
-                                      [M, N], x.device)],
+                out_types=[TensorType(DType.bfloat16, [M, N], x.device)],
             )[0]
         else:
             w = w.cast(DType.bfloat16) * s.cast(DType.bfloat16)
