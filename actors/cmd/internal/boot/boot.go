@@ -20,8 +20,11 @@ import (
 )
 
 // DefaultRelay is the home relay every actor binary defaults to: the
-// talos hub's, reached by web-PKI HTTPS.
-const DefaultRelay = "https://marnyg-talos-config.fly.dev"
+// protocol network's own (root ADR-0051, actors/net), reached by
+// web-PKI HTTPS — not the talos hub's. It is gated (protocol ADR-0012):
+// a member is admitted by the lighthouse's consent, anyone else by the
+// chain it presents.
+const DefaultRelay = "https://marnyg-sap-net.fly.dev"
 
 // keyFile is the seed's name inside a -state dir.
 const keyFile = "key"
@@ -122,11 +125,11 @@ func (p *Persisted) Key() ed25519.PrivateKey {
 }
 
 // Up is Key, then binds homed on -relay and returns the actor, fatal
-// on any error.
+// on any error. It always claims its id: a gated relay refuses the
+// upgrade without one, and an ungated relay never reads it — the claim
+// is the actor's own public id, not a credential.
 func (p *Persisted) Up() (*actor.Actor, *irohtransport.Endpoint) {
-	// No claim: the long-lived actors still home on an ungated relay
-	// (talos-config-ssau moves them).
-	a, ep, err := Actor(p.Key(), *p.relay, *p.bind, p.BindStreams, false)
+	a, ep, err := Actor(p.Key(), *p.relay, *p.bind, p.BindStreams, true)
 	if err != nil {
 		log.Fatal(err)
 	}

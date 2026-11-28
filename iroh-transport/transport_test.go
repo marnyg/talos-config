@@ -478,3 +478,59 @@ func TestCrossRelayDial(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestRelayTokenOnAnOpenRelay: a token is harmless where nobody reads
+// it — an ungated relay (access = everyone, the hub's today) admits an
+// endpoint that presents one, and it is reachable as usual. Long-lived
+// actors always claim their id (actors/cmd/internal/boot), gated relay
+// or not.
+func TestRelayTokenOnAnOpenRelay(t *testing.T) {
+	ctx := testCtx(t)
+	relay := startRelay(t)
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := Bind(priv, Options{BindAddr: "127.0.0.1:0", Relay: relay, RelayToken: "ed:anything"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = claimed.Close() })
+	plain, _ := bindLoopback(t, relay)
+	for _, e := range []*Endpoint{claimed, plain} {
+		if err := e.Online(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if tags := claimed.Endpoints(); len(tags) == 0 || !strings.HasPrefix(tags[0], TagRelay) {
+		t.Fatalf("token-bearing endpoint has no home relay: %v", tags)
+	}
+	srv := make(chan error, 1)
+	go func() {
+		s, _, err := claimed.Accept(ctx)
+		if err != nil {
+			srv <- err
+			return
+		}
+		defer s.Close()
+		msg, err := s.RecvMsg(ctx)
+		if err == nil {
+			err = s.SendMsg(ctx, msg)
+		}
+		srv <- err
+	}()
+	s, err := plain.Dial(ctx, claimed.ID(), []string{TagRelay + relay})
+	if err != nil {
+		t.Fatalf("dial the token-bearing endpoint via the relay: %v", err)
+	}
+	defer s.Close()
+	if err := s.SendMsg(ctx, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.RecvMsg(ctx); err != nil || string(got) != "x" {
+		t.Fatalf("echo %q %v", got, err)
+	}
+	if err := <-srv; err != nil {
+		t.Fatal(err)
+	}
+}
