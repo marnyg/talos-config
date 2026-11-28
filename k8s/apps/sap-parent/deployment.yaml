@@ -102,7 +102,7 @@ spec:
             - -provisioner-id=ed:9c3ae5ecc9a7eeacc4138fb91977d0e2fe6318bdde8429a12198b814ebb41c86
             # The agent child image (k8s/apps/sandbox/build.sh), by the
             # digest the provisioner's -outfit dresses.
-            - -image=ghcr.io/marnyg/sandbox-agent@sha256:c361cb270271051158687cefbf1cf612fc35e686d9d05ca7c028f41a166efb77
+            - -image=ghcr.io/marnyg/sandbox-agent@sha256:25c3103b323131c65f261b7a0e47f9ab30862c7640f197071b823fc0fc9aeb09
             - -listen=:8080
             - -issuer=http://auth.gw.mesh.internal
             - -client-id=agents
