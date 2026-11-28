@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""One Krea 2 MLP projection (16384x6144, FP8) at 1024^2 sequence length,
-three ways: bf16 GEMM on the widened weight, MAX's native FP8 GEMM with
-dynamically quantized activations (what its Ideogram 4 port uses), and
-the memory each leaves on the card.  Run with the MAX venv."""
+"""Benchmark one Krea 2 MLP projection at the 1024^2 sequence length.
+
+Compares dequant+cuBLAS, custom Mojo fused kernels, and MAX's native FP8
+path. Run through ./run.sh so the pinned cuBLAS is visible."""
 import os
 import sys
 import time
@@ -22,8 +22,8 @@ CKPT = os.path.expanduser("~/disks/1TB-2024/ai/models/diffusion_models/krea2_tur
 KEY = "blocks.0.mlp.up"
 M, K, N = 4352, 6144, 16384  # 4096 image tokens + 256 text at 1024^2
 which = sys.argv[1] if len(sys.argv) == 2 else ""
-if which not in ("input", "bf16", "fp8", "mojo", "fused", "tc"):
-    raise SystemExit(f"usage: {sys.argv[0]} input|bf16|fp8|mojo|fused|tc")
+if which not in ("input", "bf16", "fp8", "mojo", "fused", "tc", "direct"):
+    raise SystemExit(f"usage: {sys.argv[0]} input|bf16|fp8|mojo|fused|tc|direct")
 
 
 class Wrap(Module[[Tensor], tuple[Tensor, Tensor]]):
@@ -67,6 +67,9 @@ with F.lazy():
     elif which == "tc":
         m = Wrap(krea2.MojoTensorCoreFP8Linear(K, N))
         sd = {"lin.weight": w, "lin.weight_scale": s}
+    elif which == "direct":
+        m = Wrap(krea2.MojoDirectFP8Linear(K, N))
+        sd = {"lin.weight": w, "lin.weight_scale": s}
     else:
         # Importing max.pipelines pulls in its model registry and optional
         # dependencies; only pay that cost for the native-FP8 comparison.
@@ -79,11 +82,12 @@ run = m.compile(
     TensorType(DType.float32, [M, K], dev),
     *(types if which == "input" else ()),
     weights=sd,
-    custom_extensions=[krea2.KERNELS] if which in ("mojo", "fused", "tc") else (),
+    custom_extensions=[krea2.KERNELS] if which in ("mojo", "fused", "tc", "direct") else (),
 )
 print(f"{which}: compile {time.monotonic() - t0:.1f}s, weight on card {(free0 - dev.stats['free_memory']) / 2**20:.0f} MiB"
       f" (FP8 file size {N * K / 2**20:.0f} MiB)")
 x = np.random.default_rng(0).standard_normal((M, K), dtype=np.float32)
+np.save("/tmp/krea-micro-x.npy", x)  # micro_comfy.py uses the same input.
 xt = Tensor.from_dlpack(x).to(dev)
 ts = []
 for i in range(8):

@@ -270,3 +270,11 @@ enabled by `JSON_SECRET_KEY`) does the rest; no login form ever.
   the micro-test and two-block DiT, still ~11× behind cuBLAS. Continue
   only with measured pipelining work; do not treat Python→Mojo rewriting
   alone as a speed strategy.
+- Optimization pass: `transpose_b` fragment loads and full-thread tile
+  copies cut the fused tensor-core projection from 112 ms to 36–38 ms;
+  alternative tile sizes and K=64 regressed. Direct FP8 MMA was also
+  tried and ruled out (~1.1 s; quantization itself only ~0.2 ms).
+  ComfyUI/PyTorch does the projection in 9.2–9.6 ms, and a runtime-weight
+  MAX/cuBLAS microbenchmark does it in 11–14 ms with the same 256 MiB
+  delta as custom Mojo. Full 28-block comparison is blocked by desktop
+  VRAM, not by a measured model-level slowness claim.

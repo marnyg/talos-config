@@ -23,10 +23,16 @@ ap.add_argument("--ckpt", default=os.path.expanduser(
 ap.add_argument("--layers", type=int, default=2)
 ap.add_argument(
     "--quant",
-    choices=("fp8_scaled", "fp8_mojo", "fp8_mojo_fused", "fp8_mojo_tc"),
+    choices=(
+        "fp8_scaled", "fp8_mojo", "fp8_mojo_fused", "fp8_mojo_tc",
+        "fp8_mojo_direct",
+    ),
     default="fp8_scaled",
 )
-ap.add_argument("--ref", required=True)
+ap.add_argument("--ref", help="reference .npz; omit for a synthetic-shape benchmark")
+ap.add_argument("--latent", type=int, help="latent H=W without --ref (default: 128 = 1024px)")
+ap.add_argument("--txt", type=int, help="text tokens without --ref (default: 256)")
+ap.add_argument("--save", help="optionally save the unpatchified output as .npy")
 ap.add_argument("--runs", type=int, default=3)
 a = ap.parse_args()
 
@@ -56,10 +62,18 @@ run = model.compile(
 )
 print(f"compile: {time.monotonic() - t0:.1f}s", dev.stats)
 
-ref = np.load(a.ref)
-x, ctx, t = ref["x"], ref["context"], ref["t"]
+if a.ref:
+    ref = np.load(a.ref)
+    x, ctx, t = ref["x"], ref["context"], ref["t"]
+else:
+    latent, txt_len = a.latent or 128, a.txt or 256
+    rng = np.random.default_rng(0)
+    x = rng.standard_normal((1, 16, latent, latent), dtype=np.float32)
+    ctx = rng.standard_normal((1, txt_len, 12 * 2560), dtype=np.float32) * 3.0
+    t = np.array([0.7], dtype=np.float32)
 b, _, h, w = x.shape
 txt = ctx.shape[1]
+print(f"input: latent={h}x{w}, text={txt}, image_tokens={(h // 2) * (w // 2)}")
 cos, sin = krea2.rope_tables(txt, h // 2, w // 2)
 
 
@@ -74,9 +88,12 @@ for i in range(a.runs):
     out = run(*inputs).to_numpy()
     print(f"run {i}: {time.monotonic() - t0:.3f}s")
 out = krea2.unpatchify(out, h, w)
+if a.save:
+    np.save(a.save, out)
 
-r = ref["out"]
-cosim = float((out * r).sum() / (np.linalg.norm(out) * np.linalg.norm(r)))
 print("max ", out.shape, "mean", out.mean(), "std", out.std())
-print("ref ", r.shape, "mean", r.mean(), "std", r.std())
-print(f"cosine {cosim:.6f}  rel-L2 {np.linalg.norm(out - r) / np.linalg.norm(r):.4f}  max|d| {np.abs(out - r).max():.3f}")
+if a.ref:
+    r = ref["out"]
+    cosim = float((out * r).sum() / (np.linalg.norm(out) * np.linalg.norm(r)))
+    print("ref ", r.shape, "mean", r.mean(), "std", r.std())
+    print(f"cosine {cosim:.6f}  rel-L2 {np.linalg.norm(out - r) / np.linalg.norm(r):.4f}  max|d| {np.abs(out - r).max():.3f}")

@@ -110,12 +110,14 @@ Reading it:
 
 `k8s/apps/comfyui/max-krea2/` contains a separate, partial Krea 2 DiT
 port (`j1kd`) using MAX 26.7's Python graph API and custom Mojo kernels.
-It is not a ComfyUI replacement or an end-to-end image pipeline. On one
-real Krea projection, the fused tensor-core Mojo kernel uses about half
-the allocation of dequant+cuBLAS but takes 112 ms against 10 ms; the
-two-block DiT has matching numerical error and is likewise slower.
-Setup, correctness tests, measurements and limitations are in that
-folder's `README.md`. Nothing in the deployed ComfyUI stack uses MAX.
+It is not a ComfyUI replacement or an end-to-end image pipeline. After
+an optimization pass, one real Krea projection takes 36–38 ms in fused
+tensor-core Mojo against 9.2–9.6 ms in ComfyUI/PyTorch, with about half the
+allocation of bound-weight dequant+cuBLAS. Two-block numerical error
+matches built-in MAX. A full 28-block run has not executed: model setup
+OOMed with other desktop processes holding VRAM. Setup, correctness
+tests, measurements and limitations are in `max-krea2/README.md`.
+Nothing in the deployed ComfyUI stack uses MAX.
 
 ## Known gaps
 

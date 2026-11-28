@@ -26,8 +26,25 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor, TensorType
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn.kernels import quantize_dynamic_scaled_float8
+from max.nn.quant_config import (
+    InputScaleSpec,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
+_quantize_fp8 = F.functional(quantize_dynamic_scaled_float8)
+_INPUT_SCALE_SPEC = InputScaleSpec(
+    granularity=ScaleGranularity.COLWISE,
+    origin=ScaleOrigin.DYNAMIC,
+    dtype=DType.float32,
+)
+_WEIGHT_SCALE_SPEC = WeightScaleSpec(
+    granularity=ScaleGranularity.ROWWISE,
+    dtype=DType.float32,
+)
 
 BF16 = DType.bfloat16
 KERNELS = Path(__file__).parent / "kernels"
@@ -88,6 +105,8 @@ def make_linear(in_dim: int, out_dim: int, quant: str) -> Module:
         return MojoFusedFP8Linear(in_dim, out_dim)
     if quant == "fp8_mojo_tc":
         return MojoTensorCoreFP8Linear(in_dim, out_dim)
+    if quant == "fp8_mojo_direct":
+        return MojoDirectFP8Linear(in_dim, out_dim)
     if quant == "bf16":
         return Linear(in_dim, out_dim, bias=False)
     raise NotImplementedError(quant)
@@ -155,6 +174,30 @@ class MojoTensorCoreFP8Linear(MojoFusedFP8Linear):
         )[0]
         y = y.cast(BF16)
         return F.reshape(y, [*lead, self.weight.shape[0]])
+
+
+class MojoDirectFP8Linear(MojoFusedFP8Linear):
+    """FP8 activation/weight tensor-core GEMM with dynamic token scales."""
+
+    def forward(self, x: Tensor) -> Tensor:
+        lead = list(x.shape[:-1])
+        m = functools.reduce(operator.mul, lead)
+        x_2d = F.reshape(x, [m, x.shape[-1]]).cast(BF16)
+        x_fp8, x_scales = _quantize_fp8(
+            x_2d,
+            _INPUT_SCALE_SPEC,
+            _WEIGHT_SCALE_SPEC,
+            scales_type=DType.float32,
+            out_type=DType.float8_e4m3fn,
+        )
+        y = F.custom(
+            "krea2_fp8_mma",
+            device=x.device,
+            values=[x_fp8, self.weight],
+            out_types=[TensorType(DType.float32, [m, self.weight.shape[0]], x.device)],
+        )[0]
+        y = y * F.reshape(x_scales, [m, 1]) * self.weight_scale
+        return F.reshape(y.cast(BF16), [*lead, self.weight.shape[0]])
 
 
 class SwiGLU(Module[[Tensor], Tensor]):
