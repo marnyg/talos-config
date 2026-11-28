@@ -305,3 +305,65 @@ func TestProxyKeepsConnectionAcrossRenewal(t *testing.T) {
 		t.Fatalf("past the first credential's expiry: %v", err)
 	}
 }
+
+// TestPresenter is the actor's side end to end over HTTP: a newborn
+// presents its intro's wildcard link (the stamp solved for it), then
+// its kit's chain.
+func TestPresenter(t *testing.T) {
+	s := newSite(t)
+	ctx := context.Background()
+	newborn := newKey(t).ActorID()
+	present := Presenter(nil, s.public.URL, s.relay.ActorID(), newborn)
+
+	if err := present(ctx, []cert.Cert{s.birth(10, 2)}); err != nil {
+		t.Fatalf("intro link: %v", err)
+	}
+	if until, ok := s.gate.Admitted(newborn); !ok || until != s.now+2 {
+		t.Fatalf("after the intro link: admitted %v until %d, want until the window's end %d", ok, until, s.now+2)
+	}
+	if err := present(ctx, []cert.Cert{s.toChild(newborn, 600)}); err != nil {
+		t.Fatalf("kit chain: %v", err)
+	}
+	if until, _ := s.gate.Admitted(newborn); until != s.now+600 {
+		t.Fatalf("after the kit chain: until %d, want %d", until, s.now+600)
+	}
+	// A chain for somebody else, presented as this actor: the gate's
+	// verdict comes back as ErrRefused.
+	other := newKey(t).ActorID()
+	if err := present(ctx, []cert.Cert{s.toChild(other, 600)}); !errors.Is(err, ErrRefused) {
+		t.Fatalf("another key's chain: err = %v, want ErrRefused", err)
+	}
+}
+
+func TestPresentUntil(t *testing.T) {
+	chain := []cert.Cert{{}}
+	calls := 0
+	flaky := func(context.Context, []cert.Cert) error {
+		calls++
+		if calls < 3 {
+			return errors.New("connection refused")
+		}
+		return nil
+	}
+	if err := PresentUntil(context.Background(), flaky, chain, time.Millisecond); err != nil || calls != 3 {
+		t.Fatalf("an unreachable gate: err = %v after %d calls, want nil after 3", err, calls)
+	}
+
+	// A verdict is final: the same chain cannot do better next time.
+	for _, verdict := range []error{ErrRefused, ErrBadPresentation} {
+		calls = 0
+		err := PresentUntil(context.Background(), func(context.Context, []cert.Cert) error { calls++; return verdict }, chain, time.Millisecond)
+		if !errors.Is(err, verdict) || calls != 1 {
+			t.Fatalf("%v: err = %v after %d calls, want it back after 1", verdict, err, calls)
+		}
+	}
+
+	// The birth window ends: the wait does too, and says why it waited.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	down := errors.New("gate down")
+	err := PresentUntil(ctx, func(context.Context, []cert.Cert) error { return down }, chain, 5*time.Millisecond)
+	if !errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, down) {
+		t.Fatalf("deadline: err = %v, want the deadline and the last failure", err)
+	}
+}

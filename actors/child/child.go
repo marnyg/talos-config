@@ -93,6 +93,16 @@ type Options struct {
 	// facets are served (and, with Serves nil, consented) and their
 	// handlers installed by Run.
 	Task TaskOptions
+	// Present shows the gate of the network's relay a chain that admits
+	// this actor (protocol ADR-0012; relaygate.Presenter is one).
+	// Required when the intro carries a relay birth link — the caller
+	// has then already presented that link, or the actor could not be
+	// reached at all. Run presents the kit's relay chain once born and
+	// the current one on every beat, renewed or not: the gate's table
+	// is a cache, and the beat is what refills it after the gate
+	// restarts. A failure is logged, never fatal — what was presented
+	// before admits until it expires.
+	Present func(ctx context.Context, chain []cert.Cert) error
 }
 
 func (o Options) serves() []string {
@@ -140,7 +150,8 @@ func Ping(_ context.Context, inv *actor.Invocation) ([]byte, error) {
 
 // Run is the child's life on actor a: publish a location, Born(in),
 // then beat until ctx ends (ctx.Err()) or the renewal edge lapses
-// (ErrLapsed). a.Listen must be running (the parent calls in on the
+// (ErrLapsed). With a relay birth link in the intro it also keeps the
+// relay's gate shown its current relay chain (Options.Present). a.Listen must be running (the parent calls in on the
 // served facets, and #birth's reply is not enough to be reachable);
 // Run itself is the only goroutine that touches a.Grants, as Send and
 // Born require. FacetPing's handler is installed here when served;
@@ -165,6 +176,28 @@ func Run(ctx context.Context, a *actor.Actor, in spawn.Intro, o Options) error {
 			}
 		}
 	}
+	// A gated relay (ADR-0012): where the kit's relay chain is held,
+	// and how it is shown. Born checks the link's shape; only its one
+	// target is read here.
+	present := func() {}
+	if in.Relay != nil {
+		if o.Present == nil {
+			return errors.New("child: the intro names a gated relay; Options.Present is required")
+		}
+		if len(in.Relay.Cav.Target) != 1 {
+			return fmt.Errorf("child: born: %w: relay link target %v is not one relay", spawn.ErrBadIntro, in.Relay.Cav.Target)
+		}
+		held := actor.GrantKey{Target: in.Relay.Cav.Target[0], Facet: spawn.FacetRelay}
+		present = func() {
+			chain := a.Grants[held]
+			if len(chain) == 0 || chain[len(chain)-1].Exp <= a.Now() {
+				return // nothing the gate would take; the edge is lapsing
+			}
+			if err := o.Present(ctx, chain); err != nil {
+				log.Warn("child: relay presentation failed", "relay", held.Target, "err", err)
+			}
+		}
+	}
 	if _, err := a.PublishLocation(o.locationTTL()); err != nil {
 		return fmt.Errorf("child: location: %w", err)
 	}
@@ -173,6 +206,9 @@ func Run(ctx context.Context, a *actor.Actor, in spawn.Intro, o Options) error {
 		return fmt.Errorf("child: born: %w", err)
 	}
 	log.Info("child: born", "grants", len(kit.Grants), "locations", len(kit.Locations), "serves", serves)
+	// The birth link admits only until the window ends: swap it for the
+	// kit's own chain now.
+	present()
 	if ag != nil {
 		ag.setChain(a.Grants[actor.GrantKey{Target: in.Parent, Facet: FacetAgentEvents}], hints(a, in))
 		defer ag.shutdown()
@@ -197,12 +233,15 @@ func Run(ctx context.Context, a *actor.Actor, in spawn.Intro, o Options) error {
 		n, err := Renew(ctx, a, in.Parent)
 		if err != nil {
 			log.Warn("child: renew failed", "err", err)
-			continue
+		} else {
+			log.Info("child: renewed", "certs", n)
+			if ag != nil {
+				ag.setChain(a.Grants[actor.GrantKey{Target: in.Parent, Facet: FacetAgentEvents}], hints(a, in))
+			}
 		}
-		log.Info("child: renewed", "certs", n)
-		if ag != nil {
-			ag.setChain(a.Grants[actor.GrantKey{Target: in.Parent, Facet: FacetAgentEvents}], hints(a, in))
-		}
+		// Every beat, renewed or not: a gate that restarted has
+		// forgotten this actor and only this brings it back.
+		present()
 	}
 }
 

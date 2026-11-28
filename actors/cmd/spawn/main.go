@@ -83,9 +83,10 @@ import (
 
 func main() {
 	pb := boot.Flags("parent", filepath.Join(os.Getenv("HOME"), ".sap-parent"))
-	var lhFlag, provFlag boot.ID
+	var lhFlag, provFlag, relayFlag boot.ID
 	flag.Var(&lhFlag, "lighthouse", "lighthouse actor id to #lookup the provisioner at (this id must be one of its -member); dialled on -relay")
 	flag.Var(&provFlag, "provisioner-id", "the provisioner's actor id, with -lighthouse")
+	flag.Var(&relayFlag, "relay-id", "the id the relay's gate verifies against (protocol ADR-0012), when -relay is gated: every child's intro and kit then carry a relay link naming it. That relay must hold a delegable relay consent for this actor. Empty: the relay admits without one")
 	var (
 		provFile = flag.String("provisioner", "", "the provisioner's location.json (its signed reach-me-at); the no-lighthouse path")
 		image    = flag.String("image", "", "child image by content digest (name@sha256:…)")
@@ -155,6 +156,7 @@ func main() {
 	sp.Provisioner = prov
 	sp.Window = int64(window.Seconds())
 	sp.KitTTL = int64(kitTTL.Seconds())
+	sp.Relay = relayFlag.ActorID()
 	var extends atomic.Int64
 	deaf := gate(a, sp, *renewals, &extends)
 

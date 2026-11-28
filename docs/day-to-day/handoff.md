@@ -12,16 +12,20 @@
   members), **protocol ADR-0012** (relay admission = a `relay` chain
   the actor presents; a newborn presents a wildcard link from its
   intro). `qx5c` closed, decision `9f7n`.
-- Built: **`actors/relaygate`** (`bal3`) — verify, the `id → exp`
-  table, the relay access hook, the proxy that ends a connection at
-  expiry, and the client side (`Prepare`, `Post`, `Claim`). Untagged
-  tests plus `TestGateInFrontOfRelay` against the real relay
-  (`scripts/test-iroh.sh actors`; `actors-bin` now runs it too).
-- Built: **the links** (`bpha`, `protocol/spawn`) — `Spawner.Relay`
-  puts a relay birth link in the intro and a `P→C relay` chain in the
-  kit; details in the protocol handoff.
-- `irohtransport.Options` gained `RelayToken`. Nothing is deployed and
-  no binary uses the gate or sets `Spawner.Relay` yet.
+- Built, all on `main`, tested, **not deployed and unused by any
+  manifest** (the running system is unchanged):
+  - `actors/relaygate` (`bal3`): the gate — verify, the `id → exp`
+    table, the relay's access hook, the proxy that ends a connection
+    at expiry; client side `Prepare`/`Post`/`Presenter`/`Claim`.
+  - `protocol/spawn` (`bpha`): `Spawner.Relay` puts a relay birth
+    link in the intro and a `P→C relay` chain in the kit.
+  - the child presents (`0ken`): `cmd/child` shows the gate its
+    intro's link before it binds and claims its id; `child.Run`
+    presents the kit's chain at birth and every beat
+    (`Options.Present`); `cmd/parent`, `cmd/spawn` take `-relay-id`.
+- Evidence: `TestBornThroughTheGate` (`actors/relaygate`, tagged) runs
+  spawner → provisioner → child on the real relay behind the gate.
+  `scripts/test-iroh.sh actors`; `actors-bin` runs it in the sandbox.
 
 ## Loose threads
 
@@ -44,9 +48,9 @@
 
 ## Suggested next steps
 
-- `0ken`: the child presents (intro link before bind, kit chain
-  after birth and on every beat) and the parent gets a flag for
-  `Spawner.Relay`.
-- Then `gsps` (the binary: gate + relay + lighthouse), `9nkh` (the
-  fly app), `ssau` (move the sap plane), `e7f0` (enforce the hub's
-  member gate).
+- `gsps`: the binary that runs gate + relay + lighthouse (relay
+  supervision; `-member` mints the relay consent, delegable for
+  parents).
+- Then `9nkh` (the fly app), `ssau` (move the sap plane: members bind
+  with the claim, manifests get `-relay-id`), `e7f0` (enforce the
+  hub's member gate).

@@ -9,7 +9,11 @@
 //	            parent's reach-me-at, the birth consent, the nonce
 //	SAP_RELAY   home relay URL; default: the first iroh:relay= in the
 //	            parent's reach-me-at — a child homes where its parent
-//	            is homed, so the two meet at one relay server
+//	            is homed, so the two meet at one relay server. When
+//	            the intro carries a relay birth link (protocol
+//	            ADR-0012) the same URL is where the relay's gate is:
+//	            the child presents that link there before it binds,
+//	            and its own relay chain after birth and on every beat
 //	SAP_BEAT    renewal interval (Go duration); default child.DefaultBeat
 //	SAP_LOG     iroh log level: trace|debug|info|warn (off by default)
 //	SAP_PI      the pi binary (default pi); the child serves #task,
@@ -46,6 +50,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -56,6 +61,7 @@ import (
 	"github.com/marnyg/talos-config/actors/child"
 	"github.com/marnyg/talos-config/actors/cmd/internal/boot"
 	"github.com/marnyg/talos-config/actors/driver"
+	"github.com/marnyg/talos-config/actors/relaygate"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/spawn"
@@ -87,7 +93,32 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	a, ep, err := boot.Actor(priv, relay, "", nil)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// A gated relay (ADR-0012): nothing below can reach anyone until
+	// the relay admits this key, so the intro's link is presented
+	// first — and waited on, for as long as it is valid, if the gate
+	// is briefly unreachable.
+	var present func(context.Context, []cert.Cert) error
+	if in.Relay != nil {
+		if err := spawn.CheckIntro(in, time.Now().Unix()); err != nil {
+			log.Fatal(err)
+		}
+		if relay == "" {
+			log.Fatal("the intro names a gated relay but no relay URL: set SAP_RELAY")
+		}
+		gate := in.Relay.Cav.Target[0]
+		present = relaygate.Presenter(&http.Client{Timeout: 15 * time.Second}, relay, gate, cert.NewEdSigner(priv).ActorID())
+		pctx, cancel := context.WithDeadline(ctx, time.Unix(in.Relay.Exp, 0))
+		err := relaygate.PresentUntil(pctx, present, []cert.Cert{*in.Relay}, 2*time.Second)
+		cancel()
+		if err != nil {
+			log.Fatalf("relay gate %s at %s: %v", gate, relay, err)
+		}
+		slog.Info("child: admitted to the relay on the intro's link", "gate", gate, "until", in.Relay.Exp)
+	}
+	a, ep, err := boot.Actor(priv, relay, "", nil, in.Relay != nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -95,12 +126,10 @@ func main() {
 	task := taskOptions(ep)
 	slog.Info("child: up", "id", a.ID(), "parent", in.Parent, "relay", relay, "beat", beat, "pi", task.PiBin, "workdir", task.Dir, "forge", task.Forge.URL)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	listen := make(chan error, 1)
 	go func() { listen <- a.Listen(ctx) }()
 
-	err = child.Run(ctx, a, in, child.Options{Beat: beat, Task: task})
+	err = child.Run(ctx, a, in, child.Options{Beat: beat, Task: task, Present: present})
 	stop()
 	<-listen
 	switch {

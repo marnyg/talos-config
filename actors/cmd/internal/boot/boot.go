@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/marnyg/talos-config/actors/keyfile"
+	"github.com/marnyg/talos-config/actors/relaygate"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
@@ -40,12 +41,23 @@ func Logging() {
 // returns an actor over it with its outbound seq seeded from the clock — every actors/cmd process
 // outlives none of its counterparties' high-water marks (ADR-0006,
 // actor.SeqBase). The caller closes the endpoint.
-func Actor(priv ed25519.PrivateKey, relay, bindAddr string, streams []string) (*actor.Actor, *irohtransport.Endpoint, error) {
-	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: bindAddr, Relay: relay, StreamALPNs: streams})
+//
+// claim says the relay is gated (protocol ADR-0012): the endpoint then
+// tells the gate's proxy which id its connection is for
+// (relaygate.Claim), without which a gated relay refuses the upgrade.
+// It is fixed for the endpoint's life and is not a credential — the
+// chain the actor presents is.
+func Actor(priv ed25519.PrivateKey, relay, bindAddr string, streams []string, claim bool) (*actor.Actor, *irohtransport.Endpoint, error) {
+	signer := cert.NewEdSigner(priv)
+	o := irohtransport.Options{BindAddr: bindAddr, Relay: relay, StreamALPNs: streams}
+	if claim {
+		o.RelayToken = relaygate.Claim(signer.ActorID())
+	}
+	ep, err := irohtransport.Bind(priv, o)
 	if err != nil {
 		return nil, nil, err
 	}
-	a := actor.New(cert.NewEdSigner(priv), ep)
+	a := actor.New(signer, ep)
 	a.SeqBase = func() int64 { return time.Now().UnixMicro() }
 	return a, ep, nil
 }
@@ -101,7 +113,9 @@ func (p *Persisted) Up() (*actor.Actor, *irohtransport.Endpoint) {
 		fmt.Println(cert.NewEdSigner(priv).ActorID())
 		os.Exit(0)
 	}
-	a, ep, err := Actor(priv, *p.relay, *p.bind, p.BindStreams)
+	// No claim: the long-lived actors still home on an ungated relay
+	// (talos-config-ssau moves them).
+	a, ep, err := Actor(priv, *p.relay, *p.bind, p.BindStreams, false)
 	if err != nil {
 		log.Fatal(err)
 	}

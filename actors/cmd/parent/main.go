@@ -58,9 +58,10 @@ import (
 
 func main() {
 	pb := boot.Flags("parent", "/var/lib/sap-parent")
-	var lhFlag, provFlag boot.ID
+	var lhFlag, provFlag, relayFlag boot.ID
 	flag.Var(&lhFlag, "lighthouse", "lighthouse actor id to #lookup the provisioner at (this id must be one of its -member); dialled on -relay")
 	flag.Var(&provFlag, "provisioner-id", "the provisioner's actor id")
+	flag.Var(&relayFlag, "relay-id", "the id the relay's gate verifies against (protocol ADR-0012), when -relay is gated: every child's intro and kit then carry a relay link naming it. That relay must hold a delegable relay consent for this actor. Empty: the relay admits without one")
 	var (
 		image     = flag.String("image", "", "agent child image by content digest (name@sha256:…); what every #spawn names")
 		window    = flag.Duration("window", 5*time.Minute, "birth window: how long a child has to knock (pull time included)")
@@ -102,6 +103,7 @@ func main() {
 	sp.Provisioner = prov
 	sp.Window = int64(window.Seconds())
 	sp.KitTTL = int64(kitTTL.Seconds())
+	sp.Relay = relayFlag.ActorID()
 	p := parent.New(parent.Options{Actor: a, Spawner: sp, Store: store, Image: *image, Beat: *beat, Grace: *grace, Retries: *retries, Backoff: *backoff})
 	lost, err := p.Restore()
 	if err != nil {

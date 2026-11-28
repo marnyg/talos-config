@@ -3,10 +3,12 @@
 - Status: Accepted 2026-11-28 (owner; spike `talos-config-qx5c`).
   Ruled with it: the reversal below, and the wildcard link as a bearer
   for the birth window (Consequences). The four "Not decided" items
-  stay open. Built so far: the gate (`actors/relaygate`,
-  `talos-config-bal3`) and the links in the intro and the kit
-  (`protocol/spawn`, `talos-config-bpha`) — not the child's
-  presentation, the parent's `-relay-id` wiring, or anything deployed. Measured: the three chain shapes fold
+  stay open. Built: the gate (`actors/relaygate`,
+  `talos-config-bal3`), the links in the intro and the kit
+  (`protocol/spawn`, `talos-config-bpha`), and the child presenting
+  them plus the parents' `-relay-id` flag (`talos-config-0ken`). Not
+  built: the binary that runs gate, relay and lighthouse together;
+  nothing is deployed and no manifest sets `-relay-id`. Measured: the three chain shapes fold
   in today's verifier (`TestRelayAdmissionShapes`, `protocol/cert`),
   and the gate's mechanics hold against the real relay binary
   (`TestRelayGate`, `iroh-transport`).
@@ -155,6 +157,12 @@ one cert; the kit's outfit gains one chain.
   gate with real certs, the real relay and real endpoints — member,
   stranger, child, a key claiming the child's id, newborn on a stamped
   wildcard link, expiry and renewal.
+- `TestBornThroughTheGate` (`actors/relaygate`, tagged): the whole
+  path on the real relay — a real `Spawner` with `Relay` set, a
+  provisioner, and children doing what `cmd/child` does. A child is
+  born on its intro's wildcard link and stays admitted past the birth
+  window on its kit's chain, renewed every beat; a child that never
+  presents that chain has its connection ended when the window does.
 - Found while building: the gate's clock floor (invariant 9) is its
   own consents' `iat`, not the last presentation — the verifier roots
   caller links only under an `invoke` consent, so `relay` (and

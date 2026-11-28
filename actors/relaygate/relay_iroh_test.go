@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http/httptest"
@@ -19,12 +20,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/marnyg/talos-config/actors/child"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
+	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/postage"
+	"github.com/marnyg/talos-config/protocol/provisioner"
+	"github.com/marnyg/talos-config/protocol/spawn"
 )
 
 // party is one key seen both ways: the cert signer and the iroh
@@ -293,4 +299,225 @@ func TestGateInFrontOfRelay(t *testing.T) {
 		}
 	}
 	t.Logf("expired endpoint reachable again %s after presenting its renewed chain", time.Since(began).Round(100*time.Millisecond))
+}
+
+// syncBuf is a log sink two goroutines can share.
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// container is what cmd/child does, in-process: mint a key, present
+// the intro's relay link, bind claiming that key, and live (child.Run).
+// mute is a child that never shows the gate its kit's chain.
+type containers struct {
+	ctx  context.Context
+	at   string
+	mu   sync.Mutex
+	n    int
+	errs chan error
+}
+
+func (c *containers) Start(_ context.Context, spec provisioner.StartSpec) (provisioner.Handle, error) {
+	c.mu.Lock()
+	c.n++
+	mute := c.n == 2
+	c.mu.Unlock()
+	go func() {
+		if err := c.run(spec.Params, mute); err != nil && c.ctx.Err() == nil {
+			c.errs <- err
+		}
+	}()
+	return provisioner.Handle("ctr-" + spec.Lease), nil
+}
+func (c *containers) Extend(context.Context, provisioner.Handle, int64) error { return nil }
+func (c *containers) Kill(context.Context, provisioner.Handle) error          { return nil }
+func (c *containers) List(context.Context) ([]provisioner.Running, error)     { return nil, nil }
+
+func (c *containers) run(params []byte, mute bool) error {
+	in, err := spawn.DecodeIntro(params)
+	if err != nil {
+		return err
+	}
+	if in.Relay == nil {
+		return fmt.Errorf("intro without a relay link")
+	}
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
+	signer := cert.NewEdSigner(priv)
+	present := Presenter(nil, c.at, in.Relay.Cav.Target[0], signer.ActorID())
+	if err := PresentUntil(c.ctx, present, []cert.Cert{*in.Relay}, 200*time.Millisecond); err != nil {
+		return fmt.Errorf("intro link: %w", err)
+	}
+	ep, err := irohtransport.Bind(priv, irohtransport.Options{BindAddr: "127.0.0.1:0", Relay: c.at, RelayToken: Claim(signer.ActorID())})
+	if err != nil {
+		return err
+	}
+	defer ep.Close()
+	if err := ep.Online(c.ctx); err != nil {
+		return fmt.Errorf("newborn never got a home relay: %w", err)
+	}
+	a := actor.New(signer, ep)
+	go func() { _ = a.Listen(c.ctx) }()
+	o := child.Options{Beat: time.Second, Present: present}
+	if mute {
+		o.Present = func(context.Context, []cert.Cert) error { return nil }
+	}
+	if err := child.Run(c.ctx, a, in, o); err != nil && c.ctx.Err() == nil {
+		return err
+	}
+	return nil
+}
+
+// TestBornThroughTheGate is ADR-0012 whole: a real Spawner whose
+// network gates its relay, a provisioner, and children that do what
+// cmd/child does — all on the real relay behind the gate. A child is
+// born on the wildcard link in its intro and outlives the birth window
+// on the chain from its kit; a child that never presents that chain is
+// cut off when the window ends.
+func TestBornThroughTheGate(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	relay, parent, prov := newParty(t), newParty(t), newParty(t)
+	now := time.Now().Unix()
+	member := func(p party, delegable bool) cert.Cert {
+		c, err := cert.Sign(cert.Cert{Aud: string(p.ActorID()), Can: cert.VerbRelay,
+			Cav: cert.Caveats{Target: []cert.ActorID{relay.ActorID()}, Facet: []string{Facet}, Delegable: delegable},
+			Iat: now - 1, Exp: now + 3600}, relay.EdSigner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	var logs syncBuf
+	srv := &Server{
+		Gate:      New(relay.ActorID(), []cert.Cert{member(parent, true), member(prov, false)}),
+		HookToken: "between-two-processes",
+		Log:       slog.New(slog.NewTextHandler(&logs, nil)),
+	}
+	hook := httptest.NewServer(srv.Hook())
+	t.Cleanup(hook.Close)
+	srv.Backend = startRelay(t, hook.URL, srv.HookToken)
+	public := httptest.NewServer(srv.Public())
+	t.Cleanup(public.Close)
+	at := public.URL
+
+	// The two members: bound, online, then wired, then listening.
+	up := func(p party) (*actor.Actor, *irohtransport.Endpoint) {
+		ep := p.bind(t, at, "")
+		if !online(ep, 10*time.Second) {
+			t.Fatal("member: no home relay")
+		}
+		return actor.New(p.EdSigner, ep), ep
+	}
+	pa, _ := up(parent)
+	va, _ := up(prov)
+	rent, err := cert.Sign(cert.Cert{Aud: string(parent.ActorID()), Can: cert.VerbInvoke,
+		Cav: cert.Caveats{Target: []cert.ActorID{prov.ActorID()}, Facet: []string{spawn.FacetSpawn, spawn.FacetExtend, spawn.FacetKill}},
+		Iat: now - 1, Exp: now + 3600}, prov.EdSigner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	va.Consents = []cert.Cert{rent}
+	boxes := &containers{ctx: ctx, at: at, errs: make(chan error, 4)}
+	provisioner.New(va, boxes)
+	sp := spawn.New(pa)
+	sp.Provisioner = prov.ActorID()
+	sp.Relay = relay.ActorID()
+	sp.Postage = postage.Require(8)
+	sp.Window = 5
+	sp.KitTTL = 8
+	for _, a := range []*actor.Actor{pa, va} {
+		go func() { _ = a.Listen(ctx) }()
+		if _, err := a.PublishLocation(600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := pa.UpdateLocation(va.ID(), va.CurrentLocation()); err != nil {
+		t.Fatal(err)
+	}
+
+	image := "img@sha256:" + strings.Repeat("a", 64)
+	bear := func() cert.ActorID {
+		t.Helper()
+		sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		pr, err := sp.Spawn(sctx, spawn.Spec{Image: image})
+		if err != nil {
+			t.Fatalf("spawn: %v", err)
+		}
+		done := make(chan struct{})
+		var b spawn.Birth
+		go func() { b, err = pr.Wait(sctx); close(done) }()
+		select {
+		case <-done:
+		case cerr := <-boxes.errs:
+			t.Fatalf("the child failed: %v", cerr)
+		}
+		if err != nil {
+			t.Fatalf("birth through the gated relay: %v", err)
+		}
+		return b.ID
+	}
+	began := time.Now()
+	kept := bear() // presents its kit's chain
+	cut := bear()  // never does
+	t.Logf("two children born through the gate in %s", time.Since(began).Round(100*time.Millisecond))
+	if _, ok := srv.Gate.Admitted(kept); !ok {
+		t.Fatal("a born child is not admitted")
+	}
+
+	// Past both birth windows.
+	time.Sleep(time.Duration(sp.Window+3)*time.Second - time.Since(began))
+	select {
+	case err := <-boxes.errs:
+		t.Fatalf("a child died: %v", err)
+	default:
+	}
+	until, ok := srv.Gate.Admitted(kept)
+	if !ok {
+		t.Fatal("the child that presents its chain is not admitted past the birth window")
+	}
+	if until <= now+sp.Window+3 {
+		t.Fatalf("admitted until %d: its renewed chain is not reaching the gate", until)
+	}
+	if _, ok := srv.Gate.Admitted(cut); ok {
+		t.Fatal("the child that never presented its chain is still admitted past the birth window")
+	}
+	ended := func(id cert.ActorID) bool {
+		for _, line := range strings.Split(logs.String(), "\n") {
+			if strings.Contains(line, "connection ended") && strings.Contains(line, string(id)) {
+				return true
+			}
+		}
+		return false
+	}
+	// (On loopback the silent child still reaches its parent directly
+	// and keeps renewing; what it has lost is the relay, which is what
+	// the gate's own log says.)
+	if !ended(cut) {
+		t.Fatalf("the gate did not end the silent child's connection; its log:\n%s", logs.String())
+	}
+	if ended(kept) {
+		t.Fatalf("the gate ended the connection of a child that kept presenting; its log:\n%s", logs.String())
+	}
+	pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+	defer pcancel()
+	if rep, err := pa.Send(pctx, kept, child.FacetPing, []byte(`"still here"`)); err != nil || string(rep.Payload) != `"still here"` {
+		t.Fatalf("parent → child past the birth window: %v", err)
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -297,5 +298,126 @@ func TestRenewInstallsUnderEveryKey(t *testing.T) {
 	}
 	if !child.Live(c, r.parent.ID(), t0+5+r.sp.KitTTL-1) || child.Live(c, r.parent.ID(), t0+5+r.sp.KitTTL) {
 		t.Fatal("Live does not follow the re-issued exp")
+	}
+}
+
+// shown records what a child presented to its relay's gate.
+type shown struct {
+	mu     sync.Mutex
+	chains [][]cert.Cert
+	err    error // what Present answers
+}
+
+func (s *shown) present(_ context.Context, chain []cert.Cert) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.chains = append(s.chains, append([]cert.Cert(nil), chain...))
+	return s.err
+}
+
+func (s *shown) all() [][]cert.Cert {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([][]cert.Cert(nil), s.chains...)
+}
+
+// TestRunPresentsItsRelayChain: on a network whose relay is gated
+// (protocol ADR-0012) the child shows the gate its kit's relay chain as
+// soon as it is born — the birth link it came in on dies with the
+// window — and again on every beat, with the renewed link once #renew
+// has re-issued it. A gate that cannot be reached costs the child
+// nothing else: it keeps renewing.
+func TestRunPresentsItsRelayChain(t *testing.T) {
+	gate := &shown{}
+	r := setup(t, child.Options{Beat: 20 * time.Millisecond, Present: gate.present})
+	_, rpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relay := cert.NewEdSigner(rpriv).ActorID()
+	r.sp.Relay = relay
+	b := r.spawn(t, spawn.Spec{Image: image})
+
+	waitFor(t, "the first presentation", func() bool { return len(gate.all()) > 0 })
+	first := gate.all()[0]
+	if len(first) != 1 {
+		t.Fatalf("presented %d links, want the kit's one", len(first))
+	}
+	link := first[0]
+	if link.Iss != r.parent.ID() || link.Aud != string(b.ID) || link.Can != cert.VerbRelay ||
+		len(link.Cav.Target) != 1 || link.Cav.Target[0] != relay || link.Cav.Postage != "" {
+		t.Fatalf("presented %+v, want the parent's relay link to this child (not the intro's wildcard)", link)
+	}
+	if want := t0 + r.sp.KitTTL; link.Exp != want {
+		t.Fatalf("presented link expires %d, want the kit's %d", link.Exp, want)
+	}
+
+	// Beats with nothing renewed still present: that is what brings a
+	// child back after the gate lost its table.
+	n := len(gate.all())
+	waitFor(t, "a presentation per beat", func() bool { return len(gate.all()) >= n+3 })
+
+	// The gate goes away; the clock moves; the beat renews regardless
+	// and presents the re-issued link.
+	gate.mu.Lock()
+	gate.err = errors.New("gate unreachable")
+	gate.mu.Unlock()
+	r.clock.Add(10)
+	waitFor(t, "#extend with the gate down", func() bool { return len(r.drv.extends()) > 0 })
+	waitFor(t, "the renewed link presented", func() bool {
+		all := gate.all()
+		last := all[len(all)-1]
+		return len(last) == 1 && last[0].Exp == t0+10+r.sp.KitTTL
+	})
+	select {
+	case err := <-r.drv.ended:
+		t.Fatalf("Run ended (%v) because the gate was unreachable", err)
+	default:
+	}
+}
+
+// A child handed a relay birth link and no way to present is a
+// misconfigured binary: it must say so at once, not be cut from the
+// relay when the birth window ends.
+func TestRunNeedsPresentOnAGatedRelay(t *testing.T) {
+	r := setup(t, child.Options{Beat: 20 * time.Millisecond})
+	_, rpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.sp.Relay = cert.NewEdSigner(rpriv).ActorID()
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+	if _, err := r.sp.Spawn(ctx, spawn.Spec{Image: image}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-r.drv.ended:
+		if err == nil || !strings.Contains(err.Error(), "Options.Present") {
+			t.Fatalf("Run ended with %v, want the missing-Present error", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run kept going without a way to present")
+	}
+	if r.sp.Pending() != 1 {
+		t.Fatalf("pending spawns = %d: the child knocked although it could not stay", r.sp.Pending())
+	}
+}
+
+// The swap from the birth link to the kit's chain happens at birth, not
+// at the first beat: with a beat that never comes, the gate is still
+// shown the chain.
+func TestRunPresentsAtBirth(t *testing.T) {
+	gate := &shown{}
+	r := setup(t, child.Options{Beat: time.Hour, Present: gate.present})
+	_, rpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.sp.Relay = cert.NewEdSigner(rpriv).ActorID()
+	b := r.spawn(t, spawn.Spec{Image: image})
+	waitFor(t, "the presentation at birth", func() bool { return len(gate.all()) == 1 })
+	if got := gate.all()[0]; len(got) != 1 || got[0].Aud != string(b.ID) || got[0].Can != cert.VerbRelay {
+		t.Fatalf("presented at birth: %+v", got)
 	}
 }
