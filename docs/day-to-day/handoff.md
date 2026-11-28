@@ -3,39 +3,45 @@
 <!-- "Where we left off." Overwritten at the end of each meaningful session by docs-update.
      Backward-looking. Resets each session. -->
 
-## Last session (2026-11-28): clean H3 desktop benchmarks (`e6rx.7`)
+## Last session (2026-11-28): Krea 2 MAX/Mojo spike (`j1kd`)
 
-- Verified both cluster ComfyUI pods and their APIs: ComfyUI 0.45.5,
-  torch 2.14.1+cu130, and the complete 15-file / 134 GB tier-1 model
-  set on each node's `local-nvme` volume. Started the installed desktop
-  server with `k8s/apps/comfyui/run.sh`; it is still a foreground-style
-  user process, not a login service.
-- Reran H3 Image, t2v and i2v on a quiet RTX 5070 Ti (52 GiB RAM
-  available, ~3.2 GiB VRAM initially occupied, no meaningful swap).
-  Warm totals are 6.3–6.6 s, 23.1–23.5 s and 25.8–26.6 s respectively;
-  raw runs are in `bench-results/desktop-5070ti@quiet.jsonl`, and the
-  comparison in `docs/technical/guides/comfyui.md` now uses them.
-- Desktop cold H3 runs still take 122–139 s from the SATA SSD. The
-  whole 265 GB `~/disks/1TB-2024/ai` tree cannot move to the NVMe root:
-  only 98 GiB is free there. No files were moved.
+- Recreated and pinned the MAX 26.7.0 / Mojo 1.2.0 environment and added
+  reproducible setup, test and run wrappers under
+  `k8s/apps/comfyui/max-krea2/`. The Python graph frontend now has real
+  custom Mojo operations; this is no longer only a MAX built-in-kernel test.
+- Added exact FP8 dequantization, a fused scalar tiled GEMM, and a fused
+  BF16 tensor-core GEMM. At the real Krea projection shape they measure
+  about 10 ms (cuBLAS reference), 953 ms and 112 ms respectively; both
+  fused variants use a 256 MiB allocation delta versus 512 MiB for
+  dequant+cuBLAS. MAX's native dynamic-FP8 path is much slower again
+  (~2.03 s). Details: `max-krea2/README.md`.
+- The tensor-core path also runs the two-block Krea DiT with the same
+  reported cosine (0.999752) and relative L2 (0.0226) as the built-in
+  path against the same FP32 reference. Cached two-block execution is
+  112 ms versus 14 ms, so Mojo is a memory-saving experiment, not yet a
+  speed win.
 
 ## Loose threads
 
-- The untracked `k8s/apps/comfyui/max-krea2/` tree is the separate
-  Modular MAX spike (`j1kd`); it was not touched by the benchmark work.
-- The clean desktop rerun covered default `w4a8`/`w6a8` only. Desktop
-  `int8_convrot`, the 4-step LoRA, H3 ref-to-video and image edit still
-  need clean measurements. w1 remains firmware-limited to ~50 W.
+- No full 28-block forward pass, sampler, text encoder, VAE or image
+  comparison exists. Fused kernels are GPU-only and require aligned
+  shapes; tensor-core M/N must be divisible by 64 and K by 32.
+- Further Mojo performance work is pipelining/register tiling and
+  removing synchronous tile copies. Do not expand this to H3 or the
+  8 GB cards unless the Krea trade-off justifies it.
+- Clean H3 desktop results landed separately in `8a7fa82`; desktop
+  `int8_convrot`, 4-step LoRA, ref-to-video and image edit still need
+  clean measurements. w1 remains firmware-limited to ~50 W.
 - Unused `longhorn-local` claims `ai/comfyui-w1` and `ai/comfyui-w2`
   (~85 GB each) await the owner's delete/keep decision (`e6rx.8`).
 - ADR-0050 (any-port TCP) is still Proposed. Its live desktop exposure
-  now includes this ComfyUI listener on `127.0.0.1:8188` to `admins`.
+  includes ComfyUI on `127.0.0.1:8188` to `admins`.
 
 ## Suggested next steps
 
-- Use `http://127.0.0.1:8188`, `http://comfy-w2.gw.mesh.internal`, or
-  `http://comfy-w1.gw.mesh.internal`; the stock Krea 2 / MiniMax H3
-  templates and fastest known files are named in the ComfyUI guide.
-- If desktop cold starts matter, free NVMe space or move only a bounded
-  hot-model set; do not try to move the full tree into the current 98
-  GiB free. Otherwise spend benchmark time on the unmeasured variants.
+- Decide whether the fused kernel's memory saving merits optimization.
+  If yes, profile and pipeline the tensor-core kernel before adding
+  features; if no, keep ComfyUI and close the spike with the negative
+  performance result rather than porting more models.
+- Independently of Mojo, finish full-DiT correctness before attempting
+  an end-to-end MAX Krea benchmark.

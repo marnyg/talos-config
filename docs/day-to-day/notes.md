@@ -23,19 +23,19 @@
 
 ## Read first
 
-- 2026-10-20 — **Review bounces are bounded** (`6bvk`, `b8bc661`): an
+- 2026-10-20 — **Review bounces are bounded** (`6bvk`, `b8bc661`): an <!-- stale? -->
   agent sending a task back along the same edge `Retries` times parks
   it at `needs-human` ("sent reviewing → executing by an agent for the
   3rd time"). A person's `sap move` is not counted, so re-sending after
   a park gives the agents one more bounce before it parks again. To
   stop a live run by hand: `sap abort <live session>`.
-- 2026-10-19 — **win2k25 is pinned to w2 by its GPU** (`hostDevices`):
+- 2026-10-19 — **win2k25 is pinned to w2 by its GPU** (`hostDevices`): <!-- stale? -->
   it cannot schedule on cp1/w1/nas1 any more, and a w2 shutdown takes
   the VM down with it (no live migration — it never was migratable).
   The node advertises `nvidia.com/GA104_GEFORCE_RTX_3070: 1` only
   while vfio-pci holds the card; nothing on the host can use the GPU
   meanwhile (no nvidia extension on the fleet image).
-- 2026-10-19 — **w2 was powered off and moved to another room**
+- 2026-10-19 — **w2 was powered off and moved to another room** <!-- stale? -->
   (`talosctl shutdown` ~20:40Z, back ~20:42Z) and **rejoined
   unattended** — static address, UUID-keyed unseal, p0agent beat —
   the first cold restart of a node with the hub unsealed and nothing
@@ -43,7 +43,7 @@
   (`32:0b:b1:…`) back in: a driver-generated MAC enumerating first
   would fetch a config that does not exist. Longhorn has no replicas
   on w2 yet, so nothing degrades while it is away.
-- 2026-10-16 — **HTTPS on the mesh is device-local (ADR-0033).** Each
+- 2026-10-16 — **HTTPS on the mesh is device-local (ADR-0033).** Each <!-- stale? -->
   daemon's root is `<state>/tls/ca.crt` (Mac:
   `/var/lib/talos-mesh/marius-mac.iroh/tls/`, key 0600 beside the
   member key). Trusting it is per device, once: Mac — `sudo security
@@ -61,15 +61,15 @@
   DevTools via `adb forward tcp:9222
   localabstract:chrome_devtools_remote` (`/json/list` shows service
   workers; CDP `Page.getInstallabilityErrors`). Secure windows (PIN,
-  biometric) screenshot black and need the human.
+  biometric) screenshot black and need the human. <!-- stale? -->
 - 2026-10-16 — **Mac rebuild is `sudo darwin-rebuild switch --flake
   .#mac`** in `~/git/nixos` (not `nix run .# -- switch`); it needs the
   password, so pre-build with `nix build
   .#darwinConfigurations.mac.system` and hand the switch over.
   Headless `nvim` checks lie: `image.nvim` aborts `init.lua` without a
-  terminal, so filetypes/LSP after it never load — test in a pty.
+  terminal, so filetypes/LSP after it never load — test in a pty. <!-- stale? -->
 
-- 2026-10-16 — **workouts is live** at `workouts.gw.mesh.internal`,
+- 2026-10-16 — **workouts is live** at `workouts.gw.mesh.internal`, <!-- stale? -->
   seeded. The image is scratch (no `sh`/`tar`), so `kubectl cp` and
   `exec` do not work on it: to re-seed, use a busybox pod on the PVC
   for the copy and a one-off pod from the app image for `workouts

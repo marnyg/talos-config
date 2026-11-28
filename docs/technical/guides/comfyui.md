@@ -106,6 +106,17 @@ Reading it:
   6–27 s. Moving the whole 265 GB desktop tree to its NVMe is not
   currently possible: the root filesystem has only 98 GiB free.
 
+## MAX/Mojo spike
+
+`k8s/apps/comfyui/max-krea2/` contains a separate, partial Krea 2 DiT
+port (`j1kd`) using MAX 26.7's Python graph API and custom Mojo kernels.
+It is not a ComfyUI replacement or an end-to-end image pipeline. On one
+real Krea projection, the fused tensor-core Mojo kernel uses about half
+the allocation of dequant+cuBLAS but takes 112 ms against 10 ms; the
+two-block DiT has matching numerical error and is likewise slower.
+Setup, correctness tests, measurements and limitations are in that
+folder's `README.md`. Nothing in the deployed ComfyUI stack uses MAX.
+
 ## Known gaps
 
 - `scripts/gpu-handoff.sh vm` is untested.

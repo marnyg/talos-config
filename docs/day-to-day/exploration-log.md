@@ -257,3 +257,16 @@ enabled by `JSON_SECRET_KEY`) does the rest; no login form ever.
   storage format; intercepting the token POST is one hook and no HTML.
 - **Ruled out: folding the login into `vmpower`.** Different
   volatility (login vs power); vmpower's no-deps property would go.
+
+## Krea 2 on MAX/Mojo (2026-11-28, `j1kd`)
+
+- Tried a custom Mojo FP8-dequantization elementwise op in place of
+  MAX's graph expression. Ruled out as an optimization: identical output
+  and time, slower compilation, and the same BF16 weight materialization.
+- Tried a scalar shared-memory Mojo GEMM that keeps the full weight FP8.
+  It works and halves the measured allocation, but ~953 ms against
+  cuBLAS's ~10 ms rules it out as the final kernel. Landed on BF16
+  tensor-core MMA over per-tile dequantized weights: ~112 ms, correct in
+  the micro-test and two-block DiT, still ~11× behind cuBLAS. Continue
+  only with measured pipelining work; do not treat Python→Mojo rewriting
+  alone as a speed strategy.
