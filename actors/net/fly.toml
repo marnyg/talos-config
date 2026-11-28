@@ -1,0 +1,81 @@
+# The protocol network's public surface on fly.io (root ADR-0051): one
+# process, cmd/lighthouse with -relay-bin — the rendezvous actor, the
+# relay, and the admission gate in front of it (protocol ADR-0012).
+#
+# Not the talos hub and not dependent on it: no config-server, no talos
+# tree, no wallet unseal, nothing to sign after a deploy. A deploy
+# restarts the relay and empties the gate's table; members are admitted
+# again at once (their consents are minted at start), children on their
+# next beat.
+#
+# No [build]: the image is built by nix and deployed by reference —
+#   actors/net/deploy.sh
+# A bare `fly deploy` has nothing to build and fails, on purpose.
+#
+# First time only (deploy.sh does not create anything; done 2026-11-28):
+#   fly apps create marnyg-sap-net
+#   fly volumes create sap_net_state --app marnyg-sap-net --region arn --size 1
+#   fly ips allocate-v4 --shared --app marnyg-sap-net
+#   fly ips allocate-v6 --app marnyg-sap-net
+# The ips BEFORE the first request: an app made with `apps create` gets
+# none from `fly deploy`, and a lookup of the hostname before they exist
+# is a cached NXDOMAIN for five minutes.
+app = "marnyg-sap-net"
+primary_region = "arn"
+
+# The lighthouse's flags (the image's entrypoint is the binary).
+#
+# -relay is this relay's PUBLIC url: what members dial and what the
+# lighthouse advertises. It homes on its own child over loopback.
+#
+# -member: an actor consented to #publish and #lookup, and admitted to
+# the relay — delegably, so it can admit the children it spawns (its
+# -relay-id is this lighthouse's id). Revocation is a deploy without the
+# flag. Today's three, as in k8s/apps/sap-lighthouse:
+#   ed:9c3a…1c86   the sap-provisioner
+#   ed:7954…769b   the laptop parent of the acceptance run
+#   ed:9608…c9c3   the sap-parent
+[processes]
+app = "-state=/var/lib/sap-lighthouse -relay-bin=/usr/local/bin/iroh-relay -listen=:8080 -relay=https://marnyg-sap-net.fly.dev -member=ed:9c3ae5ecc9a7eeacc4138fb91977d0e2fe6318bdde8429a12198b814ebb41c86 -member=ed:79547a961cf58b525d4a65c32dca8db46c5aa568526f56911433f7410dcd769b -member=ed:960861402cbbb8624f6735d622698b86d2db720de354670da93389fcb278c9c3"
+
+[env]
+# iroh core in the lighthouse; the relay child's own level.
+SAP_LOG = "warn"
+RELAY_LOG = "warn"
+
+# The lighthouse's key and nothing else. Its id is the network bundle
+# every member holds, so it must outlive the machine; it is minted here
+# on first start and never leaves (protocol invariant 7).
+[mounts]
+source = "sap_net_state"
+destination = "/var/lib/sap-lighthouse"
+
+# 443 → the gate on :8080: the relay's WebSocket upgrade on /relay
+# (admitted keys only), its two probes, and POST /relay/admit. Nothing
+# else is served. No QUIC address discovery (as the hub's relay,
+# ADR-0022), so no UDP and no dedicated IPv4.
+[http_service]
+internal_port = 8080
+force_https = true
+auto_stop_machines = "off"
+auto_start_machines = true
+min_machines_running = 1
+processes = ["app"]
+
+  # Every client holds one connection open for as long as it lives.
+  [http_service.concurrency]
+  type = "connections"
+  soft_limit = 800
+  hard_limit = 1000
+
+  # The relay's own probe, through the gate: 204 only when both are up.
+  [[http_service.checks]]
+  method = "GET"
+  path = "/generate_204"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "20s"
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "256mb"

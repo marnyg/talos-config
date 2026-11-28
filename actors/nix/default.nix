@@ -67,4 +67,7 @@ in
 {
   bin = mk { pkgs' = pkgs; irohGo' = irohGo; };
   static = mk { pkgs' = pkgs.pkgsStatic; irohGo' = irohGoStatic; static = true; };
+  # The relay the network's image runs behind the lighthouse's gate
+  # (actors/net/image.nix): same pin, same musl toolchain.
+  irohRelayStatic = irohGoStatic.iroh-relay;
 }

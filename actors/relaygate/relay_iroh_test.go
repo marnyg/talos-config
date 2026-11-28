@@ -7,15 +7,18 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/marnyg/talos-config/actors/child"
+	"github.com/marnyg/talos-config/actors/keyfile"
 	irohtransport "github.com/marnyg/talos-config/iroh-transport"
 	"github.com/marnyg/talos-config/protocol/actor"
 	"github.com/marnyg/talos-config/protocol/cert"
@@ -424,5 +427,84 @@ func TestBornThroughTheGate(t *testing.T) {
 	defer pcancel()
 	if rep, err := pa.Send(pctx, kept, child.FacetPing, []byte(`"still here"`)); err != nil || string(rep.Payload) != `"still here"` {
 		t.Fatalf("parent → child past the birth window: %v", err)
+	}
+}
+
+// TestLiveNetwork runs against a DEPLOYED network — through the
+// platform's TLS proxy, which no other test here crosses. Skipped
+// unless told where:
+//
+//	SAP_NET_URL         the relay's public url (https://…)
+//	SAP_NET_ID          the lighthouse's id (the gate's root)
+//	SAP_NET_MEMBER_KEY  key file (actors/keyfile) of one of its -member
+//
+// It checks what a deploy can break: the upgrade and the id claim
+// survive the proxy, the hook admits a member, POST /relay/admit takes
+// a child's chain and a newborn's stamped link, a stranger stays out,
+// and two admitted endpoints reach each other through the relay.
+func TestLiveNetwork(t *testing.T) {
+	at, root, keyPath := os.Getenv("SAP_NET_URL"), cert.ActorID(os.Getenv("SAP_NET_ID")), os.Getenv("SAP_NET_MEMBER_KEY")
+	if at == "" || root == "" || keyPath == "" {
+		t.Skip("SAP_NET_URL, SAP_NET_ID and SAP_NET_MEMBER_KEY are not all set: no live network to check")
+	}
+	priv, _, err := keyfile.Load(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := party{priv, cert.NewEdSigner(priv)}
+	ctx := context.Background()
+	sign := func(aud string, cav cert.Caveats, ttl int64) cert.Cert {
+		cav.Target, cav.Facet = []cert.ActorID{root}, []string{Facet}
+		c, err := cert.Sign(cert.Cert{Aud: aud, Can: cert.VerbRelay, Cav: cav, Iat: time.Now().Unix(), Exp: time.Now().Unix() + ttl}, member.EdSigner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+
+	m := member.bind(t, at, "")
+	if !online(m, 30*time.Second) {
+		t.Fatal("member: no home relay — is this key a -member of the deployed lighthouse?")
+	}
+	t.Logf("member online at %v", m.Endpoints()[0])
+
+	if s := newParty(t).bind(t, at, ""); online(s, 5*time.Second) {
+		t.Fatal("stranger: got a home relay")
+	} else {
+		_ = s.Close()
+	}
+
+	child := newParty(t)
+	began := time.Now()
+	if err := Presenter(nil, at, root, child.ActorID())(ctx, []cert.Cert{sign(string(child.ActorID()), cert.Caveats{}, 120)}); err != nil {
+		t.Fatalf("child presents its chain: %v", err)
+	}
+	c := child.bind(t, at, "")
+	if !online(c, 30*time.Second) {
+		t.Fatal("child after presenting: no home relay")
+	}
+	t.Logf("child presented and online in %s", time.Since(began).Round(10*time.Millisecond))
+	if err := echoOnce(c, m, at, 20*time.Second); err != nil {
+		t.Fatalf("child → member through the deployed relay: %v", err)
+	}
+
+	newborn := newParty(t)
+	if err := Presenter(nil, at, root, newborn.ActorID())(ctx, []cert.Cert{sign("*", cert.Caveats{Postage: postage.Require(12)}, 60)}); err != nil {
+		t.Fatalf("newborn presents a stamped wildcard link: %v", err)
+	}
+	n := newborn.bind(t, at, "")
+	if !online(n, 30*time.Second) {
+		t.Fatal("newborn on a wildcard link: no home relay")
+	}
+	if err := echoOnce(n, m, at, 20*time.Second); err != nil {
+		t.Fatalf("newborn → member (the #birth knock's path): %v", err)
+	}
+
+	// A chain the gate must refuse: its verdict has to come back
+	// through the proxy as a verdict.
+	other := newParty(t)
+	err = Presenter(nil, at, root, other.ActorID())(ctx, []cert.Cert{sign(string(child.ActorID()), cert.Caveats{}, 120)})
+	if !errors.Is(err, ErrRefused) {
+		t.Fatalf("another key's chain: err = %v, want ErrRefused", err)
 	}
 }

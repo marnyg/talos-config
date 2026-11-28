@@ -475,6 +475,16 @@
               nix2container = inputs'.nix2container.packages.nix2container;
               actors = actors.static;
             };
+            # nix build .#net-image — the protocol network's fly image:
+            # lighthouse + the relay behind its gate (actors/net/image.nix;
+            # driver: actors/net/deploy.sh).
+            packages.net-image = import ./actors/net/image.nix {
+              inherit pkgs lib;
+              self = inputs.self;
+              nix2container = inputs'.nix2container.packages.nix2container;
+              actors = actors.static;
+              irohRelay = actors.irohRelayStatic;
+            };
             # nix build .#sandbox-agent-image — the kata-sandboxed agent
             # harness (k8s/apps/sandbox/image.nix; driver:
             # k8s/apps/sandbox/build.sh).

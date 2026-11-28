@@ -81,6 +81,21 @@ data:
           - "[RESPONSE_TIME] < 2000"
         alerts: [{type: ntfy}]
 
+      # The protocol network's own surface (ADR-0051) — not the hub's,
+      # and nothing of the hub's or the cluster's depends on it. The
+      # relay's probe through its admission gate: 204 only when both
+      # are up (actors/net/fly.toml). No alert yet: no actor homes there
+      # until the sap plane moves (talos-config-ssau); a page for a
+      # surface nobody uses is noise.
+      - name: sap-net (relay behind its gate)
+        group: external
+        url: https://marnyg-sap-net.fly.dev/generate_204
+        interval: 60s
+        conditions:
+          - "[STATUS] == 204"
+          - "[CERTIFICATE_EXPIRATION] > 168h"
+          - "[RESPONSE_TIME] < 2000"
+
       # --- platform ---------------------------------------------------
       - name: argocd
         group: platform
