@@ -1,11 +1,9 @@
 # ADR-0051: The protocol network is its own public surface; the hub is one consumer
 
-- Status: Proposed 2026-11-28. **Ruled by the owner the same day:** the
-  amendment to invariant 5 and the goal line ("the hub is one consumer
-  among many") — both are in `desired-state/`. **Proposed, not yet
-  reviewed:** the shape of the new deployment below. Nothing is built
-  or deployed; the one thing measured is cross-relay dialing (see
-  Confirmation).
+- Status: Accepted 2026-11-28 (owner): the amendment to invariant 5,
+  the goal line ("the hub is one consumer among many"), and the shape
+  of the new deployment below. Nothing is deployed; the relay gate it
+  runs is being built (protocol ADR-0012, `talos-config-bal3`).
 - Date: 2026-11-28
 - Related: spike `talos-config-k7sd` (this), spike `talos-config-qx5c`
   (relay admission for sovereign actors — moves to the new surface),
