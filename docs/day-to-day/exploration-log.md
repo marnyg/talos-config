@@ -285,3 +285,12 @@ enabled by `JSON_SECRET_KEY`) does the rest; no login form ever.
   ruled out as the blocker: a MAX-side memory knob (none exists), weight
   paging (VMM reports reclaimable=0). Landed on: MAX has no weight offload,
   which is precisely what ComfyUI uses to fit the same checkpoint.
+- NVFP4 continuation: mixed native W4A4 + custom fused W4A16 runs all 28
+  blocks at 1024² in 3.21 s with the desktop active and 5.0 GiB left after
+  setup. Full-model cosine is 0.993576 against ComfyUI's dynamic-scale
+  reference (0.997914 against its unit-scale variant). MAX's native API
+  requires a host global scale, so Comfy's computed device scale cannot be
+  fed through it; this is a measured numerical limitation, not hidden.
+- Tried NVFP4 dequant + cuBLAS for W4A16: 9.6–11.1 ms vs 62 ms fused and
+  bit-exact in the projection benchmark, but ruled out for the full model
+  because MAX materializes every bound BF16 weight at setup and OOMs.

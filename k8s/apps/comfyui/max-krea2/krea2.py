@@ -18,12 +18,19 @@ import operator
 from pathlib import Path
 
 import numpy as np
+from max.driver import Buffer
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
+from max.experimental.nn.common_layers.quant_ops import (
+    block_scales_interleave,
+    dynamic_block_scaled_matmul,
+    quantize_dynamic_block_scaled,
+)
 from max.experimental.nn.norm.rms_norm import rms_norm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor, TensorType
+from max.graph.weights import WeightData
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
 from max.nn.kernels import quantize_dynamic_scaled_float8
@@ -96,7 +103,17 @@ class ScaledFP8Linear(Module[[Tensor], Tensor]):
         return x @ w.T
 
 
-def make_linear(in_dim: int, out_dim: int, quant: str) -> Module:
+def make_linear(in_dim: int, out_dim: int, quant: str, full_precision: bool = False) -> Module:
+    if quant == "nvfp4":
+        # Comfy's checkpoint quantizes activations for QKV and MLP gate/up,
+        # but keeps BF16 activations for attention gate/output and MLP down.
+        if full_precision:
+            # Dequant+cuBLAS is faster for one layer, but MAX materializes
+            # every bound BF16 weight during full-model setup and OOMs.
+            return MojoTensorCoreNVFP4Linear(in_dim, out_dim)
+        return NativeNVFP4Linear(in_dim, out_dim)
+    if quant == "nvfp4_mojo_tc":
+        return MojoTensorCoreNVFP4Linear(in_dim, out_dim)
     if quant == "fp8_scaled":
         return ScaledFP8Linear(in_dim, out_dim)
     if quant == "fp8_mojo":
@@ -199,13 +216,105 @@ class MojoDirectFP8Linear(MojoFusedFP8Linear):
         return F.reshape(y.cast(BF16), [*lead, self.weight.shape[0]])
 
 
+class NativeNVFP4Linear(Module[[Tensor], Tensor]):
+    """MAX's native NVFP4 W4A4 matmul with dynamic per-block input scales."""
+
+    weight: Tensor
+    weight_scale: Tensor
+    weight_scale_2: Tensor
+
+    def __init__(self, in_dim: int, out_dim: int) -> None:
+        self.weight = Tensor.zeros([out_dim, in_dim // 2], dtype=DType.uint8)
+        self.weight_scale = Tensor.zeros([out_dim, in_dim // 16], dtype=DType.float8_e4m3fn)
+        self.weight_scale_2 = Tensor.zeros([], dtype=DType.float32)
+
+    def forward(self, x: Tensor) -> Tensor:
+        lead = list(x.shape[:-1])
+        m = functools.reduce(operator.mul, lead)
+        x_2d = F.reshape(x, [m, x.shape[-1]]).cast(BF16)
+        # MAX requires tensor_sf on the host, so Comfy's dynamic global
+        # activation scale cannot be fed through this API in a device graph.
+        # A unit global scale represents the same real values before
+        # rounding, but changes both FP8 scales and FP4 codes; normalized
+        # DiT activations stay well in range. Full-model parity measures it.
+        x_fp4, x_scales = quantize_dynamic_block_scaled(
+            x_2d,
+            tensor_sf=1.0,
+            sf_vector_size=16,
+            scales_type=DType.float8_e4m3fn,
+            out_type=DType.uint8,
+        )
+        scales = block_scales_interleave(self.weight_scale, sf_vector_size=16)
+        y = dynamic_block_scaled_matmul(
+            x_fp4,
+            self.weight,
+            x_scales,
+            scales,
+            tensor_sf=1.0,
+            sf_vector_size=16,
+            out_type=BF16,
+        )
+        # Match the native epilogue's FP32 global-scale multiply, then
+        # immediately restore BF16 before downstream RMSNorms. Leaving y in
+        # FP32 both doubles its footprint and hits a MAX 26.7 dtype error.
+        y = (y.cast(DType.float32) * self.weight_scale_2).cast(BF16)
+        return F.reshape(y, [*lead, self.weight.shape[0]])
+
+
+class MojoDequantNVFP4Linear(Module[[Tensor], Tensor]):
+    """NVFP4 weight-only dequantization followed by cuBLAS BF16 GEMM."""
+
+    weight: Tensor
+    weight_scale: Tensor
+    weight_scale_2: Tensor
+
+    def __init__(self, in_dim: int, out_dim: int) -> None:
+        self.weight = Tensor.zeros([out_dim, in_dim // 2], dtype=DType.uint8)
+        self.weight_scale = Tensor.zeros([out_dim, in_dim // 16], dtype=DType.float8_e4m3fn)
+        self.weight_scale_2 = Tensor.zeros([], dtype=DType.float32)
+
+    def forward(self, x: Tensor) -> Tensor:
+        w = F.custom(
+            "krea2_nvfp4_dequant",
+            device=self.weight.device,
+            values=[self.weight, self.weight_scale, F.reshape(self.weight_scale_2, [1])],
+            out_types=[TensorType(BF16, [self.weight.shape[0], x.shape[-1]], x.device)],
+        )[0]
+        return x.cast(BF16) @ w.T
+
+
+class MojoTensorCoreNVFP4Linear(Module[[Tensor], Tensor]):
+    """Weight-only NVFP4 dequantization fused into the BF16 tensor-core GEMM."""
+
+    weight: Tensor
+    weight_scale: Tensor
+    weight_scale_2: Tensor
+
+    def __init__(self, in_dim: int, out_dim: int) -> None:
+        self.weight = Tensor.zeros([out_dim, in_dim // 2], dtype=DType.uint8)
+        self.weight_scale = Tensor.zeros([out_dim, in_dim // 16], dtype=DType.float8_e4m3fn)
+        self.weight_scale_2 = Tensor.zeros([], dtype=DType.float32)
+
+    def forward(self, x: Tensor) -> Tensor:
+        lead = list(x.shape[:-1])
+        m = functools.reduce(operator.mul, lead)
+        x_2d = F.reshape(x, [m, x.shape[-1]]).cast(BF16)
+        y = F.custom(
+            "krea2_nvfp4_linear_tc",
+            device=x.device,
+            values=[x_2d, self.weight, self.weight_scale, F.reshape(self.weight_scale_2, [1])],
+            out_types=[TensorType(BF16, [m, self.weight.shape[0]], x.device)],
+        )[0]
+        return F.reshape(y, [*lead, self.weight.shape[0]])
+
+
 class SwiGLU(Module[[Tensor], Tensor]):
     def __init__(self, dim: int, multiplier: int, quant: str, multiple: int = 128) -> None:
         mlp = int(2 * dim / 3) * multiplier
         mlp = multiple * ((mlp + multiple - 1) // multiple)
         self.gate = make_linear(dim, mlp, quant)
         self.up = make_linear(dim, mlp, quant)
-        self.down = make_linear(mlp, dim, quant)
+        self.down = make_linear(mlp, dim, quant, full_precision=True)
 
     def forward(self, x: Tensor) -> Tensor:
         return self.down(F.silu(self.gate(x)) * self.up(x))
@@ -245,9 +354,9 @@ class Attention(Module[..., Tensor]):
         self.wq = make_linear(dim, HEAD_DIM * heads, quant)
         self.wk = make_linear(dim, HEAD_DIM * kvheads, quant)
         self.wv = make_linear(dim, HEAD_DIM * kvheads, quant)
-        self.gate = make_linear(dim, dim, quant)
+        self.gate = make_linear(dim, dim, quant, full_precision=True)
         self.qknorm = QKNorm(HEAD_DIM)
-        self.wo = make_linear(dim, dim, quant)
+        self.wo = make_linear(dim, dim, quant, full_precision=True)
 
     def forward(self, x: Tensor, rope: tuple[Tensor, Tensor] | None = None) -> Tensor:
         b, l, dim = x.shape
@@ -393,6 +502,30 @@ class Krea2DiT(Module[..., Tensor]):
 
 
 # ---- host side ---------------------------------------------------------
+
+def prepare_nvfp4_weight(name: str, value: WeightData) -> WeightData:
+    """Convert Comfy's packed NVFP4 weight or scales to MAX's conventions.
+
+    Weights change from high-nibble-first to low-nibble-first. Block scales
+    change from flattened cuBLAS/TCGEN [M/128, K/64, 32, 4, 4] order to true
+    row-major [N, K/16]. No values are dequantized or widened.
+    """
+    if name.endswith(".weight") and value.dtype == DType.uint8:
+        packed = value.to_buffer().view(DType.uint8).to_numpy()
+        swapped = ((packed << np.uint8(4)) | (packed >> np.uint8(4))).astype(np.uint8)
+        return WeightData(np.ascontiguousarray(swapped), value.name, value.dtype, value.shape)
+    if not (name.endswith(".weight_scale") and value.dtype == DType.float8_e4m3fn):
+        return value
+
+    rows, cols = map(int, value.shape)
+    if rows % 128 or cols % 4:
+        raise ValueError(f"NVFP4 scale shape is not 128x4 aligned: {name}: {value.shape}")
+    buf = value.to_buffer()
+    scales = buf.view(DType.uint8).to_numpy().reshape(rows // 128, cols // 4, 32, 4, 4)
+    plain = np.ascontiguousarray(scales.transpose(0, 3, 2, 1, 4).reshape(rows, cols))
+    plain_buf = Buffer.from_numpy(plain).view(value.dtype, buf.shape)
+    return WeightData(plain_buf, value.name, value.dtype, value.shape)
+
 
 def timestep_embedding(t: np.ndarray, dim: int = 256, max_period: float = 10000.0,
                        time_factor: float = 1000.0) -> np.ndarray:

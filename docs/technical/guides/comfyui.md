@@ -115,14 +115,16 @@ optimization pass, one real Krea projection takes 36–38 ms in fused
 tensor-core Mojo against 9.2–9.6 ms in ComfyUI/PyTorch, with about half
 the allocation of bound-weight dequant+cuBLAS.
 
-**The full 28-block DiT now runs at 1024²**: 6.41 s per denoising step
-against ComfyUI's 0.95 s/it (`fp8_scaled`) and 0.64 s/it (`int8_convrot`)
-— i.e. ~6.7× slower per step. It only fits because the desktop's GPU
-footprint is under ~1 GiB: MAX's pool equals the free VRAM at startup,
-the 12.24 GiB of FP8 weights are fully resident, and MAX has no weight
-offload (only LLM KV-cache tiering). ComfyUI fits the same checkpoint by
-offloading. Setup, correctness tests, measurements and limitations are in
-`max-krea2/README.md`. Nothing in the deployed ComfyUI stack uses MAX.
+The full 28-block DiT runs at 1024² in both formats. FP8 takes 6.41 s per
+step and needs the desktop's GPU footprint under ~1 GiB: MAX's pool equals
+free VRAM at startup, its 12.24 GiB of weights are fully resident, and MAX
+has no weight offload. **Mixed NVFP4 takes 3.21 s per step and fits with the
+desktop active**, retaining 5.0 GiB of pool after setup. It combines MAX's
+native W4A4 matmuls with a packed custom W4A16 kernel; full-model cosine is
+0.993576 against ComfyUI's dynamic-scale NVFP4 reference and 0.997914 against
+its unit-scale variant. ComfyUI remains faster (0.90 s/it NVFP4, 0.64 s/it
+int8_convrot) and is the tool to use. Setup, tests, scale caveats and all
+measurements are in `max-krea2/README.md`. Nothing deployed uses MAX.
 
 ## Known gaps
 

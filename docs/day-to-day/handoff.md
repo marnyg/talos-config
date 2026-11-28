@@ -31,20 +31,18 @@
   spawner → provisioner → child on the real relay behind the gate.
   `scripts/test-iroh.sh actors`; `actors-bin` runs it in the sandbox.
 
-## Also this cycle (2026-11-28): Krea 2 MAX/Mojo — full model runs (`j1kd`)
+## Also this cycle (2026-11-28): Krea 2 MAX/Mojo — NVFP4 fits (`j1kd`)
 
-- Cut the Krea 2 DiT activation footprint ~40% with two changes that keep
-  correctness (BF16 RoPE; BF16 tensor-core output staged through an FP32
-  shared tile). The fused kernel is now **bit-exact** against its reference.
-- **The full 28-block DiT at 1024² executes**: **6.41 s per denoising step**
-  (warm, RTX 5070 Ti, `fp8_mojo_tc`). ComfyUI does the same step in
-  **0.95 s/it** (`fp8_scaled`) / **0.64 s/it** (`int8_convrot`), so the port
-  is **~6.7× slower** end to end — the spike's headline result.
-- Measured root cause of the OOM chase: **MAX's device pool equals free VRAM
-  at `Accelerator` creation**, and the 12.24 GiB of FP8 weights are **fully
-  resident** — MAX 26.7 has no weight offload (only LLM KV-cache tiering),
-  VMM `reclaimable=0`. 1024² needs the desktop's GPU footprint under ~1 GiB;
-  ComfyUI fits the same checkpoint by offloading.
+- Added mixed NVFP4: native MAX W4A4 for QKV/MLP gate+up and a packed custom
+  W4A16 kernel for attention gate/output/MLP down. The full 28-block DiT at
+  1024² takes **3.21 s/step** (FP8 was 6.41 s) and fits **with the desktop
+  active**, retaining 5.0 GiB of MAX pool after setup.
+- Added real ComfyUI NVFP4 GPU references. Full-model cosine is **0.993576**
+  against normal dynamic-scale output and **0.997914** against ComfyUI's
+  unit-scale variant; two-block parity is 0.999766. Existing FP8 tests and
+  the new multi-tile NVFP4 tests pass.
+- ComfyUI remains faster (0.90 s/it NVFP4, 0.64 s/it int8_convrot) and is the
+  tool to use. The MAX port is still DiT-only, not an image pipeline.
 
 ## Loose threads
 
@@ -59,11 +57,10 @@
 - `boot.ViaRelay` uses the actor's own `-relay` as the lighthouse dial
   hint; fine only while every actor shares the lighthouse's relay.
 - Every relay test ran on loopback, not through fly's TLS proxy.
-- Krea 2 / Mojo (`j1kd`, committed `98e39cb`): **no 28-block / 1024²
-  numerical reference** — `ref_dump.py` runs ComfyUI FP32 on CPU (hours at
-  that size); correctness rests on two-block parity (cosine 0.999753) and
-  bit-exact per-op tests. The port is the DiT only (no sampler, text encoder
-  or VAE), so 6.41 s is one step, not an image.
+- Krea 2 / Mojo (`j1kd`): MAX's native NVFP4 API requires a host global
+  activation scale, so the port cannot reproduce ComfyUI's computed device
+  scale; the full-reference difference above is measured. There is still no
+  28-block FP32/FP8 reference, and no sampler, text encoder or VAE.
 - **Desktop ComfyUI is stopped** (killed for VRAM) and is not a service;
   restart with `k8s/apps/comfyui/run.sh`.
 - Carried over: ADR-0050 (any-port TCP) is still Proposed; the unused
@@ -77,8 +74,6 @@
 - Then `ssau` (move the sap plane: members bind with the claim,
   manifests get `-relay`, `-lighthouse`, `-relay-id`), `e7f0` (enforce
   the hub's member gate).
-- `j1kd`: the spike has answered its question — MAX/Mojo runs the full
-  Krea 2 DiT correctly but ~6.7× slower than ComfyUI and cannot offload,
-  so ComfyUI stays the tool. Close it, or continue only via NVFP4 weights
-  (`krea2_turbo_nvfp4`, 7.15 GiB), the one route that removes the
-  desktop-VRAM negotiation.
+- `j1kd`: close the spike. Porting and the NVFP4 continuation are answered;
+  MAX is still slower than ComfyUI but NVFP4 removes the desktop-VRAM
+  negotiation. Further kernel/global-scale work needs a new measured goal.

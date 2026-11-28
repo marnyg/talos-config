@@ -2,14 +2,15 @@
 
 Spike `talos-config-j1kd`. This is a partial Krea 2 DiT port, not a complete
 text-to-image pipeline. `krea2.py` follows ComfyUI v0.45.5 and supports its
-`fp8_scaled` Krea checkpoint. The default path uses MAX's Python graph API;
-the optional `fp8_mojo*` paths call custom Mojo kernels in `kernels/`.
+`fp8_scaled` and mixed `nvfp4` Krea checkpoints. The default path uses MAX's
+Python graph API; the optional `fp8_mojo*` paths and NVFP4 W4A16 path call
+custom Mojo kernels in `kernels/`.
 
 ## Reproduce
 
 Requirements: `uv`, an NVIDIA GPU supported by MAX 26.7, and the Krea
-`fp8_scaled` checkpoint under `~/disks/1TB-2024/ai/models` (override with
-`--ckpt` in the correctness tests). MAX and ComfyUI use separate venvs.
+checkpoint under `~/disks/1TB-2024/ai/models` (override with `--ckpt` in the
+correctness tests). MAX and ComfyUI use separate venvs.
 
 ```sh
 ./setup.sh                 # MAX_VENV=/elsewhere is optional
@@ -17,6 +18,8 @@ Requirements: `uv`, an NVIDIA GPU supported by MAX 26.7, and the Krea
 ./run.sh test_mojo_fused_fp8.py
 ./run.sh test_mojo_fused_fp8.py --tc
 ./run.sh test_mojo_direct_fp8.py
+./run.sh test_mojo_nvfp4.py
+./run.sh test_mojo_nvfp4.py --row 1024 --k-offset 1024
 ```
 
 `run.sh` exposes the venv's pinned cuBLAS to MAX. It does not borrow
@@ -68,6 +71,40 @@ speed are effectively unchanged and both dequant paths materialize BF16
 weights. Runtime-weight inputs avoid that expansion in the microbenchmark,
 but the full model currently binds its weights at compile time.
 
+### NVFP4 projection
+
+`krea2_turbo_nvfp4` mixes W4A4 (QKV and MLP gate/up) with W4A16 (attention
+gate/output and MLP down), as marked by its `full_precision_matrix_mult`
+metadata. Run the same real MLP projection through both forms:
+
+```sh
+./run.sh micro_nvfp4.py native  # MAX native W4A4
+./run.sh micro_nvfp4.py mojo    # custom fused W4A16
+./run.sh micro_nvfp4.py dequant # custom dequant + cuBLAS W4A16
+~/disks/1TB-2024/ai/venv/bin/python micro_comfy_nvfp4.py
+```
+
+| Path | Time | Allocation delta |
+|---|---:|---:|
+| ComfyUI NVFP4 W4A4 quant + GEMM | **1.5 ms** | not measured |
+| MAX native NVFP4 W4A4 | **2.6 ms** | 256 MiB |
+| ComfyUI W4A16 BF16 GEMM | 9–10 ms | not measured |
+| MAX NVFP4 dequant + cuBLAS W4A16 | 9.6–11.1 ms | 256 MiB |
+| Mojo fused NVFP4 W4A16 | 62 ms | 256 MiB |
+
+Both MAX W4A16 outputs are bit-identical to ComfyUI. MAX native W4A4 matches
+ComfyUI's unit-global-scale result at cosine 0.999996. The checkpoint has no
+static input scales, so ComfyUI normally recomputes a global activation scale;
+MAX 26.7 requires that scale as a host scalar and cannot consume a computed
+device scalar in this graph API. The port therefore uses unit global scale,
+which changes FP8 scale and FP4 value rounding. Full-model parity below
+quantifies the effect instead of hiding it.
+
+The dequant+cuBLAS row is not used in the full model: MAX materializes every
+bound BF16 weight during setup and OOMs. The mixed full model uses native W4A4
+and the packed fused W4A16 kernel. `nvfp4_mojo_tc` uses fused W4A16 everywhere
+for isolation and debugging.
+
 The fused kernels keep the full weight packed. Direct FP8 MMA does not help:
 `profile_direct.py` puts activation quantization at ~0.2 ms and the MMA plus
 scaling at ~1.1 s. Its correctness test uses an independent quantized-BF16
@@ -100,6 +137,20 @@ On the shared reference, built-in MAX and `fp8_mojo_tc` both report cosine
 execution measured 14 ms for built-in MAX and 49 ms for optimized Mojo,
 down from 112 ms before the optimization pass.
 
+For NVFP4, `ref_dump_nvfp4.py` runs the actual quantized ComfyUI model on the
+GPU (not an FP32 CPU approximation) and preserves its quantization metadata:
+
+```sh
+~/disks/1TB-2024/ai/venv/bin/python ref_dump_nvfp4.py \
+  --layers 2 --txt 64 --out /tmp/krea2-nvfp4-ref-2.npz
+./run.sh parity.py --layers 2 --quant nvfp4 \
+  --ref /tmp/krea2-nvfp4-ref-2.npz
+```
+
+Two-block mixed NVFP4 parity is cosine 0.999766 / relative L2 0.0222 against
+ComfyUI's normal dynamic-scale output. The all-W4A16 isolation path reports
+0.999972 against a ComfyUI `--w4a16` reference.
+
 ## Full 28-block DiT at 1024²
 
 ```sh
@@ -111,14 +162,16 @@ Measured on the RTX 5070 Ti, warm, one denoising step (the DiT forward):
 
 | | per step | 8-step image |
 |---|---:|---:|
-| **MAX `fp8_mojo_tc`, 28 blocks, 1024²** | **6.41 s** | ~51 s |
+| MAX `fp8_mojo_tc`, 28 blocks, 1024² | 6.41 s | ~51 s |
+| **MAX mixed `nvfp4`, 28 blocks, 1024²** | **3.21 s** | ~26 s |
 | ComfyUI Krea 2 `fp8_scaled`, 1024², 8 steps | 0.95 s/it | 8.8 s |
+| ComfyUI Krea 2 `nvfp4`, 1024², 8 steps | 0.90 s/it | 8.1 s |
 | ComfyUI Krea 2 `int8_convrot`, 1024², 8 steps | 0.64 s/it | 6.2 s |
 
-So the MAX port runs the full model but is **~6.7× slower per step** than
-ComfyUI's `fp8_scaled` path, and ~10× slower than `int8_convrot`. That is
-the honest end-to-end result: the port is correct and complete for the DiT,
-but neither the kernel nor the runtime wins on this card.
+NVFP4 halves the MAX port's step time, but it remains ~3.6× slower than
+ComfyUI's NVFP4 path. Unlike FP8, it fits with the desktop still running:
+with ~1.7 GiB already in use, MAX starts with a 12.75 GiB pool and retains
+5.0 GiB after model setup. No desktop GPU processes need to be stopped.
 
 ### Why it only just fits
 
@@ -142,10 +195,22 @@ The two footprint optimizations (BF16 RoPE, BF16 kernel output) took the
 activation request from 2.24 GB to 1.34 GB, which is what made 1024²
 reachable at all. Anything above 768² (`--latent 96`) failed before them.
 
-### Correctness caveat
+### Full-model correctness
 
-There is still **no 28-block / 1024² numerical reference** — `ref_dump.py`
-runs ComfyUI's model in FP32 on the CPU, which at 28 blocks × 4096 tokens
-is hours. Correctness rests on the two-block parity (cosine 0.999753 vs
-ComfyUI FP32) plus the bit-exact per-op tests. Treat the full-model output
-as structurally validated, not bit-validated.
+There is still no 28-block FP8 reference: `ref_dump.py` runs ComfyUI's model
+in FP32 on the CPU, which at 28 blocks × 4096 tokens is hours. NVFP4 does
+have a real full-model ComfyUI GPU reference:
+
+```sh
+~/disks/1TB-2024/ai/venv/bin/python ref_dump_nvfp4.py \
+  --layers 28 --latent 128 --txt 256 --out /tmp/krea2-nvfp4-ref-28.npz
+./run.sh parity.py --layers 28 --quant nvfp4 \
+  --ref /tmp/krea2-nvfp4-ref-28.npz --runs 3
+```
+
+At 1024², MAX mixed NVFP4 reports cosine **0.993576** / relative L2 0.1267
+against ComfyUI's normal dynamic-scale reference. Against ComfyUI's matching
+`--unit-scale` reference it reports **0.997914** / 0.0826. This is numerical
+validation, not bit equality; the remaining difference includes the documented
+global-scale restriction and accumulation/rounding differences across 28
+blocks. The port is still DiT-only: no sampler, text encoder or VAE.

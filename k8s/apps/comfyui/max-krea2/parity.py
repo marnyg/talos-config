@@ -18,14 +18,13 @@ from max.graph.weights import load_weights
 import krea2
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--ckpt", default=os.path.expanduser(
-    "~/disks/1TB-2024/ai/models/diffusion_models/krea2_turbo_fp8_scaled.safetensors"))
+ap.add_argument("--ckpt", help="defaults to the checkpoint matching --quant")
 ap.add_argument("--layers", type=int, default=2)
 ap.add_argument(
     "--quant",
     choices=(
         "fp8_scaled", "fp8_mojo", "fp8_mojo_fused", "fp8_mojo_tc",
-        "fp8_mojo_direct",
+        "fp8_mojo_direct", "nvfp4", "nvfp4_mojo_tc",
     ),
     default="fp8_scaled",
 )
@@ -35,6 +34,9 @@ ap.add_argument("--txt", type=int, help="text tokens without --ref (default: 256
 ap.add_argument("--save", help="optionally save the unpatchified output as .npy")
 ap.add_argument("--runs", type=int, default=3)
 a = ap.parse_args()
+if not a.ckpt:
+    name = "krea2_turbo_nvfp4.safetensors" if a.quant.startswith("nvfp4") else "krea2_turbo_fp8_scaled.safetensors"
+    a.ckpt = os.path.expanduser(f"~/disks/1TB-2024/ai/models/diffusion_models/{name}")
 
 dev = Accelerator()
 print("device", dev, dev.stats)
@@ -44,7 +46,10 @@ sd = {}
 for k, w in load_weights([Path(a.ckpt)]).items():
     if k.startswith("blocks.") and int(k.split(".")[1]) >= a.layers:
         continue
-    sd[k] = w.data()
+    w = w.data()
+    if a.quant.startswith("nvfp4"):
+        w = krea2.prepare_nvfp4_weight(k, w)
+    sd[k] = w
 sd = krea2.remap_keys(sd)
 print(f"weights mapped: {len(sd)} tensors, {time.monotonic() - t0:.1f}s")
 
@@ -58,7 +63,7 @@ print("missing", sorted(missing)[:8], "extra", sorted(extra)[:8])
 run = model.compile(
     *model.input_types(dev),
     weights=sd,
-    custom_extensions=[krea2.KERNELS] if a.quant.startswith("fp8_mojo") else (),
+    custom_extensions=[krea2.KERNELS] if a.quant.startswith(("fp8_mojo", "nvfp4")) else (),
 )
 print(f"compile: {time.monotonic() - t0:.1f}s", dev.stats)
 
