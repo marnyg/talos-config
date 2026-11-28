@@ -18,7 +18,7 @@ BF16 = DType.bfloat16
 FP32 = DType.float32
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--stage", choices=("dequant", "rotate", "quant", "mma", "full", "full-fp32"), required=True)
+ap.add_argument("--stage", choices=("dequant", "rotate", "quant", "mma", "mma-fused", "full", "full-fp32"), required=True)
 ap.add_argument("--ckpt", default=os.path.expanduser(
     "~/disks/1TB-2024/ai/models/diffusion_models/minimax_h3_image_pruned_w4a8.safetensors"))
 ap.add_argument("--ref", default="/tmp/h3-w4a8-ref.npz")
@@ -71,6 +71,13 @@ def mma(x, w):
     return custom("h3_int8_mma", [x, w], [TensorType(DType.int32, [M, N], dev)])[0]
 
 
+def fused_mma(x, w, s, cb):
+    return custom(
+        "h3_w4a8_mma", [x, w, s, cb],
+        [TensorType(DType.int32, [M, N], dev)],
+    )[0]
+
+
 class Projection(Module[..., Tensor]):
     def forward(self, *args):
         if a.stage == "rotate":
@@ -81,6 +88,8 @@ class Projection(Module[..., Tensor]):
             return dequant(*args)
         if a.stage == "mma":
             return mma(*args)
+        if a.stage == "mma-fused":
+            return fused_mma(*args)
         x, w, s, cb, channel = args
         if a.stage == "full-fp32":
             rotated = rotate_fp32(x.cast(BF16))
@@ -88,8 +97,7 @@ class Projection(Module[..., Tensor]):
         else:
             rotated = rotate(x.cast(BF16))
             xq, xs = quant(rotated)
-        wq = dequant(w, s, cb)
-        acc = mma(xq, wq)
+        acc = fused_mma(xq, w, s, cb)
         out = acc.cast(FP32) * F.reshape(xs, [M, 1]) * channel
         return out.cast(BF16).cast(FP32)
 
@@ -109,6 +117,14 @@ elif a.stage == "mma":
     input_types = (
         TensorType(DType.int8, [M, K], dev),
         TensorType(DType.int8, [N, K], dev),
+    )
+elif a.stage == "mma-fused":
+    input_arrays = (ref["xq"], weight, scales, codebook)
+    input_types = (
+        TensorType(DType.int8, [M, K], dev),
+        TensorType(DType.int8, weight.shape, dev),
+        TensorType(DType.float8_e4m3fn, scales.shape, dev),
+        TensorType(FP32, [16], dev),
     )
 else:
     input_arrays = (ref["x"], weight, scales, codebook, s_channel)
@@ -142,7 +158,8 @@ got = result.to_numpy()
 
 expected = {
     "dequant": ref["wq"], "rotate": ref["rotated"], "quant": ref["xq_unfused"],
-    "mma": ref["acc"], "full": ref["out"], "full-fp32": ref["out"],
+    "mma": ref["acc"], "mma-fused": ref["acc"],
+    "full": ref["out"], "full-fp32": ref["out"],
 }[a.stage]
 print("stage", a.stage, "layer", layer, "shape", got.shape)
 if got.dtype in (np.int8, np.int32):

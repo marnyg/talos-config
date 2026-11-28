@@ -140,13 +140,9 @@ class W4A8Linear(Module[[Tensor], Tensor]):
                 TensorType(FP32, [m], x.device),
             ],
         )
-        wq = F.custom(
-            "h3_w4a8_dequant", device=x.device,
-            values=[self.weight, self.weight_s_rel, self.weight_codebook],
-            out_types=[TensorType(DType.int8, [n, k], x.device)],
-        )[0]
         acc = F.custom(
-            "h3_int8_mma", device=x.device, values=[xq, wq],
+            "h3_w4a8_mma", device=x.device,
+            values=[xq, self.weight, self.weight_s_rel, self.weight_codebook],
             out_types=[TensorType(DType.int32, [m, n], x.device)],
         )[0]
         out = acc.cast(FP32) * F.reshape(xs, [m, 1]) * self.weight_s_channel
