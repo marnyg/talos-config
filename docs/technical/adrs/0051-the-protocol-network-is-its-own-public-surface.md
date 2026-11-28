@@ -6,8 +6,8 @@
   `marnyg-sap-net` (`actors/net/`, `talos-config-9nkh`; root
   `technical/deployed-state.md`). The sap plane moved onto it the same
   day (`talos-config-ssau`): provisioner and parent home there, the
-  in-cluster lighthouse is retired. Enforcing the hub's member gate is
-  `talos-config-e7f0`.
+  in-cluster lighthouse is retired. The hub's member gate enforces since
+  the same evening (`talos-config-e7f0`, `RELAY_GATE=enforce`).
 - Date: 2026-11-28
 - Related: spike `talos-config-k7sd` (this), spike `talos-config-qx5c`
   (relay admission for sovereign actors — moves to the new surface),

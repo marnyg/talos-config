@@ -342,7 +342,7 @@ history and, where the numbers still matter, in ADR-0006 and
   `600d2d4` — harmless while it holds a kit, fails only at a *new*
   enrollment (the gateway's did, 2026-09-30, until rebuilt).
 
-## Hub on fly — _verified 2026-10-19_
+## Hub on fly — _verified 2026-10-19; relay gate 2026-11-28_
 
 - App `marnyg-talos-config`, region `arn`, one `shared-cpu-1x`/256 MB
   machine (`7817426a194968`), **image
@@ -384,8 +384,15 @@ history and, where the numbers still matter, in ADR-0006 and
   wallet fails at the age decrypt (no CA pin any more). Public age
   recipient committed at `talos/age-recipient.txt`; the SSH key remains
   a break-glass recipient. An unseal that cannot decrypt fails loudly.
-- The relay runs while the hub is sealed (it holds no key); relay
-  access gating beyond the blocklist is `5gz`.
+- The relay runs while the hub is sealed (it holds no key). **Its
+  member gate enforces since 2026-11-28** (`e7f0`, image
+  `56e1c9b-dirty` — the `-dirty` an unrelated uncommitted file;
+  `RELAY_GATE=enforce` in `fly.toml`), unsealed by the owner 18:50:35Z.
+  Once warm (unsealed, ≥ 1 witnessed member, 5 min after start) only
+  the witnessed, non-blocklisted members and the hub itself may connect;
+  open while cold. Checked live 18:55:42Z: a throwaway key was refused
+  (`relay access: denied ed:0022… (gated (11 members))`), no member was.
+  Back to `observe` is a deploy (and an unseal).
 
 ## Protocol network on fly — _verified 2026-11-28_
 
