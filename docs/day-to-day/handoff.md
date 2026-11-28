@@ -29,7 +29,8 @@
   tags, the flake input `sap` supplies libiroh_ffi + iroh-relay (same
   store paths as before). The running hub is unchanged.
 - The 18 open protocol beads moved to sap's database (`sap-*`, each
-  names its original). sap has no Forgejo repo yet (`sap-tud`).
+  names its original). sap is on Forgejo (`mar/sap`, origin) with a push
+  mirror to GitHub, made with `k8s/apps/forgejo/migrate-from-github.sh`.
 - Earlier the same day: the protocol network went live
   (`marnyg-sap-net`), the sap plane moved onto it, and the hub relay's
   member gate enforces (`e7f0`). Details: `technical/deployed-state.md`.

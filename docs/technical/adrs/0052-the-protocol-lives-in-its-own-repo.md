@@ -78,9 +78,11 @@ relative `replace`s, one flake, one CI, one beads database.
   locally.
 - Bad: two flakes, two CIs, two beads databases; an issue that spans
   both is filed where the work lands and cross-referenced.
-- Open: the Forgejo repo for sap does not exist yet (push-to-create is
-  off and the stored token cannot create repos); sap's beads ride
-  GitHub's `refs/dolt/data` until it does (`sap-tud`).
+- Hosting as ruled: `mar/sap` on Forgejo, created through the cluster
+  with `k8s/apps/forgejo/migrate-from-github.sh sap` (sysadmin from its
+  sealed secret, push mirror to GitHub with the stored mirror PAT, sync
+  on commit). sap's beads live on Forgejo's `refs/dolt/data`; the
+  mirror prunes GitHub's copy, the same known gap as `c19b` here.
 
 ### Confirmation
 
