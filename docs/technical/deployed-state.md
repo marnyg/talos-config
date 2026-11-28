@@ -374,6 +374,37 @@ history and, where the numbers still matter, in ADR-0006 and
 - The relay runs while the hub is sealed (it holds no key); relay
   access gating beyond the blocklist is `5gz`.
 
+## Protocol network on fly — _verified 2026-11-28_
+
+Root ADR-0051 / protocol ADR-0012: the sovereign-actor network's own
+public surface, independent of the hub (invariant 5 as amended).
+
+- App `marnyg-sap-net`, region `arn`, one `shared-cpu-1x`/256 MB
+  machine (`48e730eae45218`), image `registry.fly.io/marnyg-sap-net:
+  16da0e4-dirty` (nix-built `actors/net/image.nix`: static
+  `lighthouse -tags iroh` + static `iroh-relay` + cacert; the
+  `-dirty` is an unrelated uncommitted file at build time), deployed
+  with `actors/net/deploy.sh`. Nothing to sign after a deploy.
+- **Lighthouse id `ed:0db45a05d9f67676c27caaf31ce2243b52d9f7ee09b50d6e
+  8743e21ba2561615`** — the network bundle, with
+  `https://marnyg-sap-net.fly.dev` as its relay. Key on volume
+  `sap_net_state` (`vol_491p509p32k5yeor`, 1 GB, encrypted, fly's
+  daily snapshots); survived the second deploy unchanged.
+- Members (fly.toml `[processes]`): the sap-provisioner, the laptop
+  parent, the sap-parent — admitted to the relay delegably and
+  consented to `#publish`/`#lookup`. **No actor homes here yet**
+  (`talos-config-ssau`): the sap plane still runs on the hub's relay
+  and the in-cluster lighthouse.
+- Public surface, checked through fly's proxy: `/generate_204` 204,
+  every other relay path 404, `POST /relay/admit` 400 on garbage,
+  `/relay` 401 without an admitted claim. `TestLiveNetwork` passed
+  against it (member, child on a presented chain, newborn on a stamped
+  wildcard link, stranger refused, refusal comes back as a verdict).
+  Removing a `-member` and redeploying revoked it (checked with a
+  throwaway member key, since deleted).
+- IPs: shared v4 `66.241.124.230`, v6 `2a09:8280:1::22b:5d6e:0`. No
+  dedicated v4, no UDP. Gatus row `sap-net`, no alert yet.
+
 ## Disk encryption posture — _decision, closed 2026-07-24_
 
 Slot 0 is the network KMS, slot 1 a derived static passphrase stored in

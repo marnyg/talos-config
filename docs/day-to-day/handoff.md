@@ -7,8 +7,10 @@
 
 - Protocol network decisions are Accepted: ADR-0051 and protocol ADR-0012.
   Built and tested the relay gate, child presentation, supervised lighthouse
-  binary and fly app (`qx5c`, `gsps`, `9nkh`). The app is not deployed and
-  the running system is unchanged.
+  binary and fly app (`qx5c`, `gsps`, `9nkh`). **The app is deployed**:
+  `marnyg-sap-net`, lighthouse `ed:0db45a…1615`, checked live through
+  fly's proxy (`TestLiveNetwork`). No actor homes there yet, so the sap
+  plane is unchanged (`technical/deployed-state.md`).
 - Krea 2 (`j1kd`) now supports mixed NVFP4: native MAX W4A4 plus a packed
   custom W4A16 kernel. The full 28-block DiT at 1024² takes **3.21 s/step**
   (FP8 was 6.41 s) and fits **with the desktop active**, retaining 5.0 GiB
@@ -22,8 +24,8 @@
 ## Loose threads
 
 - Relay chain links do not feed the clock mark (`w0ur`); the relay bearer id
-  is unsigned. Foreign-relay dialing, per-client byte limits and fly-proxy
-  testing remain open.
+  is unsigned. Foreign-relay dialing and per-client byte limits remain
+  open.
 - Krea 2: MAX's native NVFP4 API requires a host global activation scale, so
   it cannot reproduce ComfyUI's computed device scale. There is still no
   28-block FP32/FP8 reference, sampler, text encoder or VAE.
@@ -34,7 +36,7 @@
 
 ## Suggested next steps
 
-- Deploy `9nkh`, then `ssau` (move the sap plane) and `e7f0` (enforce the
-  hub's member gate).
+- `ssau` (move the sap plane onto `marnyg-sap-net`), then `e7f0` (enforce
+  the hub's member gate).
 - Close `j1kd`: porting and the NVFP4 continuation are answered. Further
   kernel/global-scale work needs a new measured goal.

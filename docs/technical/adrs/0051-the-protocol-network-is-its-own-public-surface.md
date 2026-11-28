@@ -2,9 +2,10 @@
 
 - Status: Accepted 2026-11-28 (owner): the amendment to invariant 5,
   the goal line ("the hub is one consumer among many"), and the shape
-  of the new deployment below. Nothing is deployed. The binary it
-  runs exists: `cmd/lighthouse -relay-bin` (protocol ADR-0012,
-  `talos-config-gsps`); the fly app is `talos-config-9nkh`.
+  of the new deployment below. **Deployed 2026-11-28** as fly app
+  `marnyg-sap-net` (`actors/net/`, `talos-config-9nkh`; root
+  `technical/deployed-state.md`). No actor homes there yet: moving the
+  sap plane is `talos-config-ssau`.
 - Date: 2026-11-28
 - Related: spike `talos-config-k7sd` (this), spike `talos-config-qx5c`
   (relay admission for sovereign actors — moves to the new surface),
