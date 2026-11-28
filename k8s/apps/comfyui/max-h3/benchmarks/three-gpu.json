@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-28",
+  "stack": {
+    "max": "26.7.0",
+    "comfyui": "0.45.5",
+    "torch": "2.14.1+cu130",
+    "checkpoint": "minimax_h3_image_pruned_w4a8.safetensors"
+  },
+  "projection": {
+    "shape": {"M": 64, "K": 7168, "N": 5376},
+    "layer": "blocks.0.attn.out_proj",
+    "units": "milliseconds, synchronized median of warm runs",
+    "results": [
+      {"device": "desktop-5070ti", "max_w4a8": 0.27, "comfy_w4a8": 0.183, "comfy_bf16_gemm": 0.107, "cosine": 0.99999672},
+      {"device": "w2-3070", "max_w4a8": 0.575, "comfy_w4a8": 0.940, "comfy_bf16_gemm": 0.345, "cosine": 0.99999684},
+      {"device": "w1-3070-mobile", "max_w4a8": 1.294, "comfy_w4a8": 1.400, "comfy_bf16_gemm": 0.348, "cosine": 0.99999672}
+    ]
+  },
+  "two_block_dit": {
+    "shape": {"text_tokens": 64, "target_image_tokens": 256, "total_tokens": 320},
+    "units": "milliseconds, synchronized median of warm runs",
+    "results": [
+      {"device": "desktop-5070ti", "max_w4a8": 15.0, "comfy_w4a8": 7.519, "cosine": 0.99996823, "max_free_pool_gib_after_runs": 10.25, "comfy_peak_allocated_gib": 2.097},
+      {"device": "w2-3070", "max_w4a8": 35.0, "comfy_w4a8": 18.768, "cosine": 0.99996889, "max_free_pool_gib_after_runs": 4.50, "comfy_peak_allocated_gib": 2.149},
+      {"device": "w1-3070-mobile", "max_w4a8": 65.0, "comfy_w4a8": 30.810, "cosine": 0.99996793, "max_free_pool_gib_after_runs": 4.75, "comfy_peak_allocated_gib": 2.149}
+    ]
+  },
+  "full_50_block_dit": {
+    "shape": {"text_tokens": 64, "target_image_tokens": 256, "total_tokens": 320, "pdd_steps": 6},
+    "results": [
+      {"device": "desktop-5070ti", "max_w4a8_ms": 321.0, "comfy_w4a8_ms": 102.541, "max_free_pool_mib_after_setup": 768, "comfy_peak_allocated_gib": 13.122, "full_cosine": 0.99363536, "schedule_cosine_min": 0.99285185, "schedule_cosine_max": 0.99940270},
+      {"device": "w2-3070", "max_w4a8": "not viable: 11.69 GiB packed weights exceed 8 GB card and MAX has no weight offload", "comfy_w4a8": "runs through Comfy offload"},
+      {"device": "w1-3070-mobile", "max_w4a8": "not viable: 11.69 GiB packed weights exceed 8 GB card and MAX has no weight offload", "comfy_w4a8": "runs through Comfy offload"}
+    ],
+    "max_2048_equivalent": "4352-token graph compiles but first forward requests 18.76 GB for one allocation and OOMs"
+  },
+  "comfy_full_pipeline_2048": {
+    "shape": {"width": 2048, "height": 2048, "steps": 6},
+    "includes": "Qwen text encoding, complete sampling and image VAE decode",
+    "results": [
+      {"device": "desktop-5070ti@quiet", "total_s": 6.44, "sample_s": 4.805, "seconds_per_iteration": 0.7685, "peak_vram_gb": 15.175},
+      {"device": "w2-3070", "total_s": 15.78, "sample_s": 11.13, "seconds_per_iteration": 1.739, "peak_vram_gb": 7.36},
+      {"device": "w1-3070-mobile", "total_s": 42.67, "sample_s": 31.81, "seconds_per_iteration": 4.887, "peak_vram_gb": 7.36}
+    ],
+    "source": "k8s/apps/comfyui/bench-results/*.jsonl"
+  }
+}

@@ -126,6 +126,26 @@ its unit-scale variant. ComfyUI remains faster (0.90 s/it NVFP4, 0.64 s/it
 int8_convrot) and is the tool to use. Setup, tests, scale caveats and all
 measurements are in `max-krea2/README.md`. Nothing deployed uses MAX.
 
+### H3 Image MAX/Mojo and three-GPU comparison
+
+`max-h3/` now has a W4A8 DiT-only port with custom signed-INT8 PTX kernels.
+One projection and two blocks run on all three GPUs with matching numerical
+results; the full 50-block MAX model runs only on the 5070 Ti because its
+11.69 GiB of packed weights cannot reside on an 8 GB card. ComfyUI's offload
+still runs the full model on w1/w2.
+
+| Case | 5070 Ti MAX / Comfy | 3070 (w2) MAX / Comfy | 3070 Mobile (w1) MAX / Comfy |
+|---|---:|---:|---:|
+| One real W4A8 projection | 0.27 / 0.183 ms | 0.575 / 0.940 ms | 1.294 / 1.400 ms |
+| Two-block DiT, 320 tokens | 15 / 7.52 ms | 35 / 18.77 ms | 65 / 30.81 ms |
+| Full 50-block DiT, 320 tokens | 321 / 102.5 ms | does not fit / runs with offload | does not fit / runs with offload |
+
+The full MAX model's 2048²-equivalent graph requests an 18.76 GB allocation
+and OOMs even on the 5070 Ti. Raw numbers, memory metrics and reproduction
+notes are in `max-h3/benchmarks/three-gpu.json` and `max-h3/README.md`.
+The full-pipeline 2048² comparison remains the table above, not these
+DiT-only shapes.
+
 ## Known gaps
 
 - `scripts/gpu-handoff.sh vm` is untested.

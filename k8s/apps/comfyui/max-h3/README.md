@@ -177,6 +177,54 @@ is no full-resolution speed result. A quiet desktop alone cannot fix this;
 2048² needs graph/activation-memory redesign or a different execution/offload
 strategy.
 
+## Three-GPU comparison
+
+Measured with the same checkpoint and pinned MAX 26.7 / ComfyUI 0.45.5 /
+torch 2.14.1+cu130 stack. Raw values are in
+`benchmarks/three-gpu.json`. The Ampere RTX 3070s pass the direct-PTX fused
+MMA with bit-exact INT32 accumulators.
+
+### Real projection (`M=64, K=7168, N=5376`)
+
+| GPU | MAX W4A8 | Comfy W4A8 | Comfy BF16 GEMM |
+|---|---:|---:|---:|
+| RTX 5070 Ti | 0.27 ms | 0.183 ms | 0.107 ms |
+| RTX 3070 (w2) | 0.575 ms | 0.940 ms | 0.345 ms |
+| RTX 3070 Mobile (w1) | 1.294 ms | 1.400 ms | 0.348 ms |
+
+### Two-block DiT (320 tokens)
+
+| GPU | MAX W4A8 | Comfy W4A8 | Cosine | MAX pool free after runs |
+|---|---:|---:|---:|---:|
+| RTX 5070 Ti | 15 ms | 7.52 ms | 0.999968 | 10.25 GiB |
+| RTX 3070 (w2) | 35 ms | 18.77 ms | 0.999969 | 4.50 GiB |
+| RTX 3070 Mobile (w1) | 65 ms | 30.81 ms | 0.999968 | 4.75 GiB |
+
+### Full 50-block DiT (320 tokens)
+
+| GPU | MAX W4A8 | Comfy W4A8 | Compatibility |
+|---|---:|---:|---|
+| RTX 5070 Ti | 321 ms | 102.5 ms | Runs; six PDD steps measured |
+| RTX 3070 (w2) | **Does not fit** | Runs with offload | 11.69 GiB packed weights exceed 8 GB; MAX has no offload |
+| RTX 3070 Mobile (w1) | **Does not fit** | Runs with offload | Same resident-weight limit |
+
+### Comfy full pipeline at 2048² (different scope)
+
+These existing `bench.py` results include Qwen text encoding, sampling and VAE
+decode; they are **not** comparable to the DiT-only microbenchmarks above.
+
+| GPU | Total, 6 steps | Sampling | s/it | Peak VRAM |
+|---|---:|---:|---:|---:|
+| RTX 5070 Ti, quiet desktop | 6.44 s | 4.81 s | 0.769 | 15.18 GB |
+| RTX 3070 (w2) | 15.78 s | 11.13 s | 1.739 | 7.36 GB |
+| RTX 3070 Mobile (w1) | 42.67 s | 31.81 s | 4.887 | 7.36 GB |
+
+Cluster reproduction: copy `max-h3` into the ComfyUI pods, create a separate
+venv with `HOME=/data UV_CACHE_DIR=/data/.uv-cache`, install
+`requirements.lock`, and set `MAX_VENV=/data/max-venv`. The scripts use
+`/data/ComfyUI`, `/data/venv` and `/data/models` in the pods. No MAX component
+is deployed by the normal ComfyUI manifests.
+
 ## Remaining limitations
 
 - Current kernels require M/N divisible by 64 and K divisible by 256. There is

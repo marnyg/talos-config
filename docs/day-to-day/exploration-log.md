@@ -322,3 +322,8 @@ enabled by `JSON_SECRET_KEY`) does the rest; no login form ever.
   parity 0.999968. At 4352 tokens (2048² equivalent), the first forward
   requests 18.76 GB and OOMs. Full-resolution work is therefore a new memory
   problem (`3yur`), not a reason to merely free more desktop VRAM.
+- `y85j` verified the direct-PTX INT8 path on Ampere as well as Blackwell:
+  one projection and two blocks run on both 3070s with bit-exact accumulators.
+  The full model still cannot fit their 8 GB cards because MAX has no offload.
+  Do not extrapolate GPU timings across devices: the measured three-GPU matrix
+  lives in `max-h3/benchmarks/three-gpu.json`.
