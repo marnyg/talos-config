@@ -16,7 +16,7 @@
 # sandbox, and it reuses the dev machine's Go cache (~40 s warm vs. the
 # nix build's few minutes).
 #
-#   scripts/test-iroh.sh                  both modules, all packages
+#   scripts/test-iroh.sh                  config-server + iroh-transport
 #   scripts/test-iroh.sh config-server    one module
 #   scripts/test-iroh.sh actors           the actors module (not in the
 #                                         default set: `nix build
@@ -24,8 +24,10 @@
 #   scripts/test-iroh.sh config-server -run TestHubBeatOverIroh
 #
 # Anything after the module name is passed through to `go test`; the
-# default `-timeout 5m` (a hung tagged test otherwise holds the gate for
-# go's 10 min) can be overridden there — last flag wins.
+# defaults `-race` (the nix check runs it: a race this script missed
+# went red only in the sandbox, a80804f) and `-timeout 5m` (a hung
+# tagged test otherwise holds the gate for go's 10 min) can be
+# overridden there (`-race=false`, `-timeout 10m`) — last flag wins.
 #
 # NOTE: this is not a substitute for the pre-push vendorHash check (that
 # is .githooks/pre-push) — different failure, same trees.
@@ -57,7 +59,7 @@ export IROH_RELAY_BIN="$relay"
 rc=0
 for m in $mods; do
     echo "== $m (-tags iroh) ==" >&2
-    (cd "$m" && go test -tags iroh -count=1 -timeout 5m "$@" ./...) || rc=1
+    (cd "$m" && go test -tags iroh -race -count=1 -timeout 5m "$@" ./...) || rc=1
 done
 
 if [ "$rc" != 0 ]; then

@@ -213,7 +213,20 @@ type agent struct {
 	chain []cert.Cert
 	hints []string
 	cur   *run
+
+	// ready is closed by the first setChain: Run has finished the
+	// post-birth setup the task facets read. Until then a #task waits
+	// (readyWait at most) instead of being refused.
+	ready     chan struct{}
+	readyOnce sync.Once
 }
+
+// readyWait bounds how long a #task waits for Run's first setChain.
+// The parent sends #task as soon as its #birth handler answers, so a
+// #task can land in the instant between the child's consent being
+// installed (inside Born) and Run handing the agent its chain; it used
+// to be refused there and fail the whole session. A var for tests.
+var readyWait = 10 * time.Second
 
 // run is one task.
 type run struct {
@@ -227,7 +240,7 @@ type run struct {
 
 func newAgent(ctx context.Context, a *actor.Actor, parent cert.ActorID, o TaskOptions, log *slog.Logger) *agent {
 	base, stop := context.WithCancel(ctx)
-	return &agent{a: a, parent: parent, o: o, log: log, base: base, stop: stop}
+	return &agent{a: a, parent: parent, o: o, log: log, base: base, stop: stop, ready: make(chan struct{})}
 }
 
 func (ag *agent) install() {
@@ -244,6 +257,26 @@ func (ag *agent) setChain(chain []cert.Cert, hints []string) {
 	defer ag.mu.Unlock()
 	ag.chain = append([]cert.Cert(nil), chain...)
 	ag.hints = append([]string(nil), hints...)
+	ag.readyOnce.Do(func() { close(ag.ready) })
+}
+
+// waitReady blocks until Run's first setChain, readyWait, or ctx —
+// whichever is first. It reports whether the setup is done.
+func (ag *agent) waitReady(ctx context.Context) bool {
+	select {
+	case <-ag.ready:
+		return true
+	default:
+	}
+	t := time.NewTimer(readyWait)
+	defer t.Stop()
+	select {
+	case <-ag.ready:
+		return true
+	case <-t.C:
+	case <-ctx.Done():
+	}
+	return false
 }
 
 // shutdown ends a live run and waits (settleGrace at most) for its
@@ -271,7 +304,9 @@ func (r *run) client() *pirpc.Client {
 }
 
 // task serves FacetTask: validate, take the one slot, reply started.
-func (ag *agent) task(_ context.Context, inv *actor.Invocation) ([]byte, error) {
+// A #task that arrives before Run has set the agent up waits for it
+// (waitReady) rather than being refused.
+func (ag *agent) task(ctx context.Context, inv *actor.Invocation) ([]byte, error) {
 	var req TaskRequest
 	if err := json.Unmarshal(inv.Envelope.Payload, &req); err != nil {
 		return nil, fmt.Errorf("child: #task: payload: %w", err)
@@ -281,6 +316,9 @@ func (ag *agent) task(_ context.Context, inv *actor.Invocation) ([]byte, error) 
 	}
 	if req.Repo != "" && !ag.o.Forge.set() {
 		return nil, errors.New("child: #task: repo named but this child has no forge (outfit)")
+	}
+	if !ag.waitReady(ctx) {
+		return nil, errors.New("child: #task: not set up yet (birth still in progress); retry")
 	}
 	ag.mu.Lock()
 	defer ag.mu.Unlock()

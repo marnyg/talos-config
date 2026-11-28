@@ -8,8 +8,12 @@ Monorepo around the **sovereign-actor protocol** (decision
   `protocol/docs/` (its own `desired-state/`, ADRs from 0001, the design
   sketch `sovereign-actor-protocol.md`).
 - `actors/` — the protocol's runnable side: platform drivers
-  (`driver/k8s`, `driver/docker`), the child's beat (`child/`), and
-  the `cmd/{provisioner,child,spawn}` binaries behind build tag `iroh`. Own
+  (`driver/k8s`, `driver/docker`), the child's beat (`child/`), the
+  parent actor (`parent/`), the relay's admission gate (`relaygate/`),
+  and the `cmd/{provisioner,child,lighthouse,parent,spawn}` binaries
+  behind build tag `iroh` (`cmd/sap`, the parent's terminal client, is
+  plain net/http). `actors/net/` is the protocol network's fly app
+  (lighthouse + gated relay, root ADR-0051). Own
   Go module replacing `../protocol` + `../iroh-transport`; everything
   but `cmd/` stays C-free. `nix build .#actors-bin` is the tagged
   gate; `actors/build.sh` pushes the image (`actors/image.nix`).

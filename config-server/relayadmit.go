@@ -39,11 +39,13 @@ const relayColdWindow = 5 * time.Minute
 // (actors/cmd/child) — holds protocol keys, not member certs, and the
 // hub is relay-only by construction (ADR-0022), so a warm gate cut
 // the plane off at the first reconnect (`The relay denied our
-// authentication`). Until the protocol has an admission story for
-// those actors (spike talos-config-5gz's successor), Admit computes
-// the verdict and admits anyway; the mode on /status says `observing`
-// when the last connect was a non-member the gate would have refused.
-// Set gate to enforce.
+// authentication`). The protocol now has its own answer: those actors
+// home on the protocol network's gated relay (protocol ADR-0012, root
+// ADR-0051; spike talos-config-qx5c), moved there 2026-11-28
+// (talos-config-ssau). Until enforcing is switched on here
+// (talos-config-e7f0), Admit computes the verdict and admits anyway;
+// the mode on /status says `observing` when the last connect was a
+// non-member the gate would have refused. Set gate to enforce.
 type relayAdmitter struct {
 	gate    bool                  // enforce the warm verdict; false ⇒ observe only
 	self    cert.ActorID          // the hub's own endpoint, always admitted

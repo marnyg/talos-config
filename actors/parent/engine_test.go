@@ -197,12 +197,31 @@ func TestTaskBouncesThenParks(t *testing.T) {
 	if _, err := r.p.Transition(r.pctx, tk.ID, owner, parent.Transition{To: "pingwork", Note: "once more"}); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "pingreview", func() bool { return r.taskState(tk.ID) == "pingreview" })
-	waitFor(t, "parked again", func() bool { return r.taskState(tk.ID) == "stuck" })
+	// pingreview is passed through, not stayed in: polling for it raced
+	// the park (it failed under load in the nix sandbox). The log is
+	// the evidence that the task went through it.
+	waitFor(t, "parked again", func() bool { return r.taskState(tk.ID) == "stuck" && len(mustLog(t, r, tk.ID)) > len(log) })
+	again := mustLog(t, r, tk.ID)[len(log):]
+	path = path[:0]
+	for _, e := range again {
+		path = append(path, e.From+">"+e.To)
+	}
+	if got := strings.Join(path, " "); got != "stuck>pingwork pingwork>pingreview pingreview>stuck" {
+		t.Fatalf("log path after the person's move %s", got)
+	}
 	sessions, _ := r.store.SessionsOfTask(tk.ID)
 	if len(sessions) != 6 {
 		t.Fatalf("%d sessions, want 6", len(sessions))
 	}
+}
+
+func mustLog(t *testing.T, r *rig, id string) []parent.LogEntry {
+	t.Helper()
+	log, err := r.store.Log(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return log
 }
 
 // stuckAt sets the scene for a stuck-state exit: a captured task moved

@@ -531,7 +531,11 @@ func TestSteerAbortAndRestart(t *testing.T) {
 		t.Fatalf("adopted %+v want %+v", got, kids)
 	}
 	// The child's beat renews at the new process and the lease follows.
-	r.clock.Add(r.sp.KitTTL / 2)
+	// Half a WINDOW, not half the kit ttl: if no #extend landed before
+	// the restart the lease's deadline is still the window's end, and a
+	// clock moved onto it lets the provisioner lapse the lease before
+	// the renewal can extend it ("unknown lease" — the flake).
+	r.clock.Add(r.sp.Window / 2)
 	waitFor(t, "#extend through the restarted parent", func() bool { n, _ := r.drv.seen(); return n > before })
 	// Abort from the new process: the child settles aborted and ships.
 	if err := r.p.Abort(r.pctx, sess.ID, owner); err != nil {
