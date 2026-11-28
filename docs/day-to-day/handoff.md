@@ -19,6 +19,24 @@
   redesign spike. Reproduction and all numbers are in
   `k8s/apps/comfyui/max-h3/README.md`.
 
+## Same day, another session: the protocol network is live (`k7sd` line)
+
+- ADR-0051 and protocol ADR-0012 Accepted. Fly app `marnyg-sap-net`
+  (`actors/net/`) runs the lighthouse with the relay behind its
+  admission gate; lighthouse `ed:0db45a…1615`. The sap plane moved onto
+  it (`ssau`), `sap-lighthouse` retired (PV kept); the first child was
+  born through the gate and settled (session `4d42d6b6`).
+- The hub relay's member gate **enforces** (`e7f0`, `56e1c9b`,
+  `RELAY_GATE=enforce`, unsealed 18:50Z): a stranger key was refused
+  live, no member was. If `fly logs -a marnyg-talos-config` ever shows
+  `relay access: denied` naming a member: `observe` + deploy + unseal.
+- The `actors/parent` test edits the H3 session saw were this session's
+  flake fixes, committed in `67b2694`.
+- Loose: `w0ur` (relay/publish links do not feed the clock mark);
+  ADR-0012's undecided four (signed id claim, stranger door at the
+  relay, onward delegation, byte limit). Details:
+  `technical/deployed-state.md`.
+
 ## Loose threads
 
 - `l5km` and `qobn` are implemented and ready for owner review/closure; `vnb4`
