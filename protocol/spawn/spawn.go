@@ -35,6 +35,31 @@
 //     the spawner remembers child → lease for as long as the child
 //     holds a cert it re-issued (the born table).
 //
+// # A gated relay (ADR-0012)
+//
+// When the network's relay admits only keys that present a `relay`
+// chain rooted at it (Spawner.Relay names it), the newborn has a
+// problem birth alone does not solve: it needs the relay to knock, and
+// nobody can name a key that does not exist yet. So the same two
+// artifacts each gain one cert, both signed by P under the relay's
+// consent to P:
+//
+//   - the intro carries a RELAY BIRTH LINK {iss: P, aud: "*", can:
+//     relay, cav: {target: [R], facet: [#relay], postage}} with the
+//     birth consent's own iat and exp — the birth consent's shape on
+//     the relay verb. The child presents it to the relay's gate before
+//     it binds an endpoint; this package only carries and checks it.
+//   - the kit carries [P→C relay {target: [R], facet: [#relay]}] with
+//     the #renew chain's lifetime. It is renewed like any cert P
+//     issued the child, so the relay credential and the lease move on
+//     one beat. Born refuses a kit without it (ErrNoRelayChain) when
+//     the intro had a link: such a child would be cut off when the
+//     birth window ends.
+//
+// Neither is installed in P's Consents: they root at R, not at P.
+// With Spawner.Relay unset both artifacts are byte-for-byte what they
+// were.
+//
 // # The lease rides the beat (ADR-0009)
 //
 // The spawner decorates the actor's installed #renew handler. After
@@ -90,11 +115,15 @@ import (
 // Facets. #birth is the parent's; #spawn/#extend/#kill are the
 // provisioner's (ADR-0009) — named here because the spawner is their
 // client and the wire types below are shared with any provisioner.
+// #relay is no mailbox facet: it is the facet a `relay` cert names
+// (ADR-0012), judged by a relay's gate — named here because the
+// spawner mints those certs.
 const (
 	FacetBirth  = "#birth"
 	FacetSpawn  = "#spawn"
 	FacetExtend = "#extend"
 	FacetKill   = "#kill"
+	FacetRelay  = "#relay"
 )
 
 // DefaultWindow is the birth window in seconds when Spawner.Window is
@@ -118,6 +147,9 @@ var (
 	ErrBadKit = errors.New("spawn: invalid starter kit")
 	// ErrNoRenewChain marks a kit without the mandated #renew chain.
 	ErrNoRenewChain = errors.New("spawn: kit lacks the #renew chain to the parent")
+	// ErrNoRelayChain marks a kit without a relay chain although the
+	// intro carried a relay birth link (ADR-0012).
+	ErrNoRelayChain = errors.New("spawn: kit lacks the relay chain the intro's birth link promised")
 	// ErrUnknownChild marks a Kill of an actor this spawner did not
 	// bear (or has already forgotten).
 	ErrUnknownChild = errors.New("spawn: unknown child")
@@ -134,12 +166,15 @@ const (
 // Intro is the bootstrap artifact a parent injects into a spawn
 // (glossary "Intro"): P's id, P's current signed reach-me-at (the
 // sanctioned raw-address exception, invariant 11 — signed and expiring
-// rather than raw), the per-spawn birth consent, and the nonce.
+// rather than raw), the per-spawn birth consent, and the nonce. Relay,
+// when set, is the relay birth link (ADR-0012): what the newborn
+// presents to its network's relay before it can reach anyone.
 type Intro struct {
 	Parent   cert.ActorID
 	Location cert.Cert
 	Consent  cert.Cert
 	Nonce    string
+	Relay    *cert.Cert
 }
 
 type wireIntro struct {
@@ -147,6 +182,7 @@ type wireIntro struct {
 	Location json.RawMessage `json:"location"`
 	Consent  json.RawMessage `json:"consent"`
 	Nonce    string          `json:"nonce"`
+	Relay    json.RawMessage `json:"relay,omitempty"`
 }
 
 // EncodeIntro renders an intro as the #spawn params blob.
@@ -159,7 +195,13 @@ func EncodeIntro(in Intro) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(wireIntro{Parent: in.Parent, Location: loc, Consent: con, Nonce: in.Nonce})
+	w := wireIntro{Parent: in.Parent, Location: loc, Consent: con, Nonce: in.Nonce}
+	if in.Relay != nil {
+		if w.Relay, err = cert.Encode(*in.Relay); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(w)
 }
 
 // DecodeIntro parses an intro blob. Shape is not checked here; see
@@ -177,14 +219,24 @@ func DecodeIntro(data []byte) (Intro, error) {
 	if err != nil {
 		return Intro{}, fmt.Errorf("%w: consent: %w", ErrBadIntro, err)
 	}
-	return Intro{Parent: w.Parent, Location: loc, Consent: con, Nonce: w.Nonce}, nil
+	in := Intro{Parent: w.Parent, Location: loc, Consent: con, Nonce: w.Nonce}
+	if len(w.Relay) > 0 {
+		link, err := cert.DecodeCert(w.Relay)
+		if err != nil {
+			return Intro{}, fmt.Errorf("%w: relay: %w", ErrBadIntro, err)
+		}
+		in.Relay = &link
+	}
+	return in, nil
 }
 
 // CheckIntro is the child's rule for an intro at now: a parent id, a
 // nonce, the parent's own live reach-me-at (actor.CheckLocation), and a
 // birth consent of the required shape — issued by the parent, invoke,
 // aud "*", postage named (aud "*" without it binds nobody), target
-// [parent], facet [#birth], unexpired, signature verifies.
+// [parent], facet [#birth], unexpired, signature verifies. A relay
+// birth link, if the intro carries one, must be the same shape on the
+// relay verb (checkRelayLink).
 func CheckIntro(in Intro, now int64) error {
 	if err := in.Parent.Validate(); err != nil {
 		return fmt.Errorf("%w: parent: %w", ErrBadIntro, err)
@@ -195,7 +247,59 @@ func CheckIntro(in Intro, now int64) error {
 	if err := actor.CheckLocation(in.Parent, in.Location, now); err != nil {
 		return fmt.Errorf("%w: %w", ErrBadIntro, err)
 	}
-	return checkBirthConsent(in.Parent, in.Consent, now)
+	if err := checkBirthConsent(in.Parent, in.Consent, now); err != nil {
+		return err
+	}
+	if in.Relay != nil {
+		return checkRelayLink(in.Parent, *in.Relay, now)
+	}
+	return nil
+}
+
+// checkRelayLink is the child's rule for a relay birth link: issued by
+// the parent, relay, aud "*", postage named, facet [#relay], exactly
+// one target and that a key (the relay the link is for — whether that
+// relay has consented to the parent is the relay's to judge, not the
+// child's), unexpired, signature verifies.
+func checkRelayLink(p cert.ActorID, c cert.Cert, now int64) error {
+	switch {
+	case c.Iss != p:
+		return fmt.Errorf("%w: relay link iss %s is not %s", ErrBadIntro, c.Iss, p)
+	case c.Can != cert.VerbRelay:
+		return fmt.Errorf("%w: relay link can=%q", ErrBadIntro, c.Can)
+	case c.Aud != cert.AudAny:
+		return fmt.Errorf("%w: relay link aud %q is not %q", ErrBadIntro, c.Aud, cert.AudAny)
+	case c.Cav.Postage == "":
+		return fmt.Errorf("%w: relay link without postage", ErrBadIntro)
+	case len(c.Cav.Target) != 1 || c.Cav.Target[0].Validate() != nil:
+		return fmt.Errorf("%w: relay link target %v is not one relay", ErrBadIntro, c.Cav.Target)
+	case len(c.Cav.Facet) != 1 || c.Cav.Facet[0] != FacetRelay:
+		return fmt.Errorf("%w: relay link facet %v is not [%s]", ErrBadIntro, c.Cav.Facet, FacetRelay)
+	case c.Exp <= now:
+		return fmt.Errorf("%w: relay link expired", ErrBadIntro)
+	}
+	if err := cert.Verify(c); err != nil {
+		return fmt.Errorf("%w: relay link: %w", ErrBadIntro, err)
+	}
+	return nil
+}
+
+// RelayChain returns the kit's relay chain for relay as parent p
+// issued it to child — the chain whose last link is {iss: p, aud:
+// child, can: relay, target ∋ relay, facet ∋ #relay} — or nil. It is
+// what the child presents to the relay's gate once it holds its kit.
+func (k Kit) RelayChain(p, child, relay cert.ActorID) []cert.Cert {
+	for _, chain := range k.Grants {
+		if len(chain) == 0 {
+			continue
+		}
+		last := chain[len(chain)-1]
+		if last.Iss == p && last.Aud == string(child) && last.Can == cert.VerbRelay &&
+			slices.Contains(last.Cav.Target, relay) && slices.Contains(last.Cav.Facet, FacetRelay) {
+			return chain
+		}
+	}
+	return nil
 }
 
 func checkBirthConsent(p cert.ActorID, c cert.Cert, now int64) error {
@@ -430,6 +534,13 @@ type Spawner struct {
 	// 0 ⇒ the birth window. It is the child's first renewal beat and,
 	// through the decorator, the lease's deadline after each one.
 	KitTTL int64
+	// Relay is the relay this actor's network gates admission on
+	// (ADR-0012): the id its gate verifies `relay` chains against. Set,
+	// every intro carries a relay birth link and every kit a relay
+	// chain for the child, both naming it. They admit only if that
+	// relay holds a delegable `relay` consent to this actor — which
+	// nothing here can check. "" ⇒ neither (an ungated relay).
+	Relay cert.ActorID
 	// Log receives what is not surfaced on the wire: a failed #extend.
 	// nil ⇒ slog.Default().
 	Log *slog.Logger
@@ -610,6 +721,23 @@ func (s *Spawner) BirthConsent(window int64) (cert.Cert, error) {
 	}, s.a.Signer)
 }
 
+// relayLink signs a `relay` cert naming s.Relay — to aud, with postage
+// (the birth link) or without (the kit's link). Never installed: it
+// roots at the relay.
+func (s *Spawner) relayLink(aud, postage string, iat, exp int64) (cert.Cert, error) {
+	return cert.Sign(cert.Cert{
+		Aud: aud,
+		Can: cert.VerbRelay,
+		Cav: cert.Caveats{
+			Target:  []cert.ActorID{s.Relay},
+			Facet:   []string{FacetRelay},
+			Postage: postage,
+		},
+		Iat: iat,
+		Exp: exp,
+	}, s.a.Signer)
+}
+
 // editConsents installs add beside the actor's held roots (a cert
 // already held is not added twice) and removes the consents whose sig
 // is in drop unless a pending spawn still holds that very consent.
@@ -667,7 +795,17 @@ func (s *Spawner) Spawn(ctx context.Context, spec Spec) (*Promise, error) {
 	if err != nil {
 		return nil, err
 	}
-	params, err := EncodeIntro(Intro{Parent: s.a.ID(), Location: *loc, Consent: consent, Nonce: nonce})
+	in := Intro{Parent: s.a.ID(), Location: *loc, Consent: consent, Nonce: nonce}
+	if s.Relay != "" {
+		// One window: the link lives exactly as long as the knock it
+		// is for.
+		link, err := s.relayLink(cert.AudAny, s.postage(), consent.Iat, consent.Exp)
+		if err != nil {
+			return nil, err
+		}
+		in.Relay = &link
+	}
+	params, err := EncodeIntro(in)
 	if err != nil {
 		return nil, err
 	}
@@ -828,6 +966,16 @@ func (s *Spawner) mintKit(rec *record, child cert.ActorID, now int64) ([]byte, e
 		return nil, fmt.Errorf("birth: renew chain: %w", err)
 	}
 	kit := Kit{Grants: [][]cert.Cert{{renew}}}
+	if s.Relay != "" {
+		// Same lifetime as the #renew chain: the child renews both in
+		// one #renew, so the relay credential never outlives the lease
+		// nor lapses before it.
+		link, err := s.relayLink(string(child), "", now, renew.Exp)
+		if err != nil {
+			return nil, fmt.Errorf("birth: relay chain: %w", err)
+		}
+		kit.Grants = append(kit.Grants, []cert.Cert{link})
+	}
 	if rec.spec.Outfit != nil {
 		extra, err := rec.spec.Outfit(child, now)
 		if err != nil {
@@ -945,7 +1093,10 @@ func (s *Spawner) Kill(ctx context.Context, id cert.ActorID) error {
 // consent {iss: me, aud: P, can: invoke, cav: {target: [me], facet:
 // facets, delegable: true}} for consentTTL seconds so the parent can
 // call in with an empty chain. The kit is returned for the caller's
-// own bookkeeping (the renew loop is M4.5's).
+// own bookkeeping (the renew loop is M4.5's). An intro with a relay
+// birth link demands a kit with the matching relay chain
+// (ErrNoRelayChain); presenting either to the relay's gate is the
+// caller's, before and after this call (ADR-0012).
 func Born(ctx context.Context, a *actor.Actor, in Intro, facets []string, consentTTL int64) (Kit, error) {
 	now := a.Now()
 	if err := CheckIntro(in, now); err != nil {
@@ -969,6 +1120,9 @@ func Born(ctx context.Context, a *actor.Actor, in Intro, facets []string, consen
 	}
 	if err := CheckKit(kit, in.Parent, a.ID(), a.Now()); err != nil {
 		return Kit{}, err
+	}
+	if in.Relay != nil && kit.RelayChain(in.Parent, a.ID(), in.Relay.Cav.Target[0]) == nil {
+		return Kit{}, ErrNoRelayChain
 	}
 	Install(a, kit)
 	if len(facets) > 0 {

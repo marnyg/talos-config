@@ -907,3 +907,274 @@ func TestAdoptAfterRestart(t *testing.T) {
 		t.Fatalf("born table until %d, want %d", until, fresh[0].Exp)
 	}
 }
+
+// relayRig is setup plus a gated relay R that has consented to the
+// parent (delegable), and a driver that keeps each child's intro.
+type relayRig struct {
+	*rig
+	relay  cert.EdSigner
+	gate   cert.Receiver // R as a verifier: what a relay's gate holds
+	intros chan spawn.Intro
+}
+
+func setupRelay(t *testing.T) *relayRig {
+	t.Helper()
+	r := setup(t)
+	relay := r.w.Signer()
+	consent, err := cert.Sign(cert.Cert{
+		Aud: string(r.parent.ID()),
+		Can: cert.VerbRelay,
+		Cav: cert.Caveats{Target: []cert.ActorID{relay.ActorID()}, Facet: []string{spawn.FacetRelay}, Delegable: true},
+		Iat: t0,
+		Exp: t0 + 24*hour,
+	}, relay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := &relayRig{rig: r, relay: relay, intros: make(chan spawn.Intro, 8),
+		gate: cert.Receiver{ID: relay.ActorID(), Consents: []cert.Cert{consent}}}
+	r.drv.born = func(child *actor.Actor, in spawn.Intro) (spawn.Kit, error) {
+		rr.intros <- in
+		return spawn.Born(r.w.Ctx, child, in, r.drv.facets, hour)
+	}
+	return rr
+}
+
+// admits is the relay's gate judging a presented chain for key id.
+func (rr *relayRig) admits(chain []cert.Cert, id cert.ActorID) (cert.Cert, error) {
+	eff, _, err := cert.VerifyChain(rr.gate, cert.VerbRelay, chain, nil, id, spawn.FacetRelay, rr.w.Clock.Now())
+	return eff, err
+}
+
+// TestRelayLinks is ADR-0012's parent half: with Spawner.Relay set the
+// intro carries a relay birth link and the kit a relay chain, both of
+// which the relay's own verifier admits; the kit's chain renews on the
+// ordinary beat and the lease follows it.
+func TestRelayLinks(t *testing.T) {
+	rr := setupRelay(t)
+	r, R := rr.rig, rr.relay.ActorID()
+	r.sp.Relay = R
+
+	pr, err := r.sp.Spawn(r.w.Ctx, r.spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := r.drv.wait(t)
+	if h.err != nil {
+		t.Fatal(h.err)
+	}
+	b := r.waitPromise(t, pr)
+	in := <-rr.intros
+	child, stranger := h.a.ID(), r.w.Signer().ActorID()
+
+	// The intro's link: the birth consent's shape and window, on the
+	// relay verb, naming R.
+	if in.Relay == nil {
+		t.Fatal("intro carries no relay birth link")
+	}
+	link := *in.Relay
+	if link.Iat != in.Consent.Iat || link.Exp != in.Consent.Exp {
+		t.Fatalf("relay link window [%d, %d] differs from the birth consent's [%d, %d]", link.Iat, link.Exp, in.Consent.Iat, in.Consent.Exp)
+	}
+	eff, err := rr.admits([]cert.Cert{link}, child)
+	if err != nil {
+		t.Fatalf("the relay refuses the birth link: %v", err)
+	}
+	if eff.Cav.Postage != r.sp.Postage {
+		t.Fatalf("birth link postage %q, want the spawner's %q (a wildcard link without it binds nobody)", eff.Cav.Postage, r.sp.Postage)
+	}
+	if eff.Exp != in.Consent.Exp {
+		t.Fatalf("birth link admits until %d, want the birth window's end %d", eff.Exp, in.Consent.Exp)
+	}
+
+	// The kit's chain: bound to the child's key, no postage, the #renew
+	// chain's lifetime.
+	chain := h.kit.RelayChain(r.parent.ID(), child, R)
+	if len(chain) != 1 {
+		t.Fatalf("kit relay chain: %d links, want 1 (kit has %d chains)", len(chain), len(h.kit.Grants))
+	}
+	eff, err = rr.admits(chain, child)
+	if err != nil {
+		t.Fatalf("the relay refuses the kit's chain: %v", err)
+	}
+	renew := h.kit.Grants[0][0]
+	if eff.Cav.Postage != "" || eff.Exp != renew.Exp {
+		t.Fatalf("kit chain: postage %q, exp %d; want none and the #renew chain's %d", eff.Cav.Postage, eff.Exp, renew.Exp)
+	}
+	if _, err := rr.admits(chain, stranger); err == nil {
+		t.Fatal("the kit's chain admits a key it does not name")
+	}
+	if got := h.kit.RelayChain(r.parent.ID(), child, stranger); got != nil {
+		t.Fatal("RelayChain found a chain for a relay the kit does not name")
+	}
+	held := h.a.Grants[actor.GrantKey{Target: R, Facet: spawn.FacetRelay}]
+	if len(held) != 1 || string(held[0].Sig) != string(chain[0].Sig) {
+		t.Fatal("the child does not hold the relay chain under (relay, #relay)")
+	}
+
+	// Neither link roots at the parent, so neither is among its roots.
+	r.parent.EditConsents(func(cs []cert.Cert) []cert.Cert {
+		for _, c := range cs {
+			if c.Can == cert.VerbRelay {
+				t.Errorf("the parent installed a relay cert as its own consent: aud %s", c.Aud)
+			}
+		}
+		return cs
+	})
+
+	// The beat: #renew re-issues the relay link like any cert P issued
+	// the child, the relay admits the fresh one past the old expiry,
+	// and the lease is extended to it.
+	r.w.Clock.Advance(r.sp.Window - 60)
+	payload, _ := actor.EncodeRenewRequest([]cert.Cert{renew, chain[0]}, nil)
+	rep, err := h.a.Send(r.w.Ctx, r.parent.ID(), actor.FacetRenew, payload)
+	if err != nil {
+		t.Fatalf("beat: %v", err)
+	}
+	fresh, errs, err := actor.DecodeRenewResponse(rep.Payload)
+	if err != nil || errs[0] != nil || errs[1] != nil {
+		t.Fatalf("beat result: %v %v", err, errs)
+	}
+	if fresh[1].Can != cert.VerbRelay || fresh[1].Exp <= chain[0].Exp {
+		t.Fatalf("renewed relay link: can %q, exp %d (was %d)", fresh[1].Can, fresh[1].Exp, chain[0].Exp)
+	}
+	r.w.Clock.Advance(120) // past the first link's expiry
+	if _, err := rr.admits(chain, child); err == nil {
+		t.Fatal("the relay still admits the expired first link")
+	}
+	if _, err := rr.admits([]cert.Cert{fresh[1]}, child); err != nil {
+		t.Fatalf("the relay refuses the renewed link: %v", err)
+	}
+	if l, ok := r.drv.p.Lease(b.Lease.ID); !ok || l.Until != fresh[1].Exp {
+		t.Fatalf("lease until %d (held %v), want the renewed certs' %d", l.Until, ok, fresh[1].Exp)
+	}
+}
+
+// Without Spawner.Relay nothing changes: no link in the intro — not
+// even the key on the wire — and one chain in the kit.
+func TestNoRelayNoLinks(t *testing.T) {
+	rr := setupRelay(t)
+	r := rr.rig
+	if _, err := r.sp.Spawn(r.w.Ctx, r.spec); err != nil {
+		t.Fatal(err)
+	}
+	h := r.drv.wait(t)
+	if h.err != nil {
+		t.Fatal(h.err)
+	}
+	in := <-rr.intros
+	if in.Relay != nil {
+		t.Fatal("intro carries a relay link although the spawner names no relay")
+	}
+	raw, err := spawn.EncodeIntro(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"relay"`) {
+		t.Fatalf("intro wire form gained a relay key: %s", raw)
+	}
+	if len(h.kit.Grants) != 1 {
+		t.Fatalf("kit has %d chains, want the #renew chain alone", len(h.kit.Grants))
+	}
+}
+
+// A child handed a relay birth link refuses a kit without the relay
+// chain: it would be cut from the relay when the birth window ends,
+// and that must fail at birth, not a window later.
+func TestBornDemandsTheRelayChain(t *testing.T) {
+	rr := setupRelay(t)
+	r, R := rr.rig, rr.relay.ActorID()
+	// The parent's spawner names no relay, but the intro the child is
+	// handed carries a (well-formed) link all the same.
+	r.drv.born = func(child *actor.Actor, in spawn.Intro) (spawn.Kit, error) {
+		link, err := cert.Sign(cert.Cert{
+			Aud: cert.AudAny,
+			Can: cert.VerbRelay,
+			Cav: cert.Caveats{Target: []cert.ActorID{R}, Facet: []string{spawn.FacetRelay}, Postage: r.sp.Postage},
+			Iat: in.Consent.Iat, Exp: in.Consent.Exp,
+		}, r.parent.Signer)
+		if err != nil {
+			return spawn.Kit{}, err
+		}
+		in.Relay = &link
+		return spawn.Born(r.w.Ctx, child, in, r.drv.facets, hour)
+	}
+	if _, err := r.sp.Spawn(r.w.Ctx, r.spec); err != nil {
+		t.Fatal(err)
+	}
+	h := r.drv.wait(t)
+	if !errors.Is(h.err, spawn.ErrNoRelayChain) {
+		t.Fatalf("Born: err = %v, want ErrNoRelayChain", h.err)
+	}
+	if got := h.a.Grants[actor.GrantKey{Target: r.parent.ID(), Facet: actor.FacetRenew}]; got != nil {
+		t.Fatal("a refused kit was installed")
+	}
+}
+
+// TestCheckIntroRelayLink pins the child's shape rule for the link.
+func TestCheckIntroRelayLink(t *testing.T) {
+	rr := setupRelay(t)
+	r, p, R := rr.rig, rr.parent, rr.relay.ActorID()
+	consent, err := r.sp.BirthConsent(60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(signer cert.Signer, mut func(*cert.Cert)) *cert.Cert {
+		t.Helper()
+		c := cert.Cert{
+			Aud: cert.AudAny,
+			Can: cert.VerbRelay,
+			Cav: cert.Caveats{Target: []cert.ActorID{R}, Facet: []string{spawn.FacetRelay}, Postage: postage.Require(8)},
+			Iat: t0, Exp: t0 + 60,
+		}
+		if mut != nil {
+			mut(&c)
+		}
+		signed, err := cert.Sign(c, signer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &signed
+	}
+	in := spawn.Intro{Parent: p.ID(), Location: *p.CurrentLocation(), Consent: consent, Nonce: "n", Relay: mk(p.Signer, nil)}
+	if err := spawn.CheckIntro(in, t0); err != nil {
+		t.Fatalf("good intro with a relay link: %v", err)
+	}
+	raw, err := spawn.EncodeIntro(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := spawn.DecodeIntro(raw)
+	if err != nil || back.Relay == nil || string(back.Relay.Sig) != string(in.Relay.Sig) {
+		t.Fatalf("intro round trip lost the relay link: %v", err)
+	}
+	if err := spawn.CheckIntro(back, t0); err != nil {
+		t.Fatalf("decoded intro: %v", err)
+	}
+
+	bad := map[string]*cert.Cert{
+		"signed by another key": mk(rr.relay, nil),
+		"another verb":          mk(p.Signer, func(c *cert.Cert) { c.Can = cert.VerbInvoke }),
+		"aud names a key":       mk(p.Signer, func(c *cert.Cert) { c.Aud = string(R) }),
+		"no postage":            mk(p.Signer, func(c *cert.Cert) { c.Cav.Postage = "" }),
+		"another facet":         mk(p.Signer, func(c *cert.Cert) { c.Cav.Facet = []string{spawn.FacetBirth} }),
+		"two facets":            mk(p.Signer, func(c *cert.Cert) { c.Cav.Facet = []string{spawn.FacetRelay, spawn.FacetBirth} }),
+		"two relays":            mk(p.Signer, func(c *cert.Cert) { c.Cav.Target = []cert.ActorID{R, p.ID()} }),
+		"no relay":              mk(p.Signer, func(c *cert.Cert) { c.Cav.Target = nil }),
+		"any relay":             mk(p.Signer, func(c *cert.Cert) { c.Cav.Target = []cert.ActorID{cert.TargetAny} }),
+		"expired":               mk(p.Signer, func(c *cert.Cert) { c.Exp = t0 }),
+	}
+	tampered := *in.Relay
+	tampered.Exp += hour
+	bad["tampered after signing"] = &tampered
+	for name, link := range bad {
+		x := in
+		x.Relay = link
+		if err := spawn.CheckIntro(x, t0); !errors.Is(err, spawn.ErrBadIntro) {
+			t.Errorf("%s: err = %v, want ErrBadIntro", name, err)
+		}
+	}
+	if _, err := spawn.DecodeIntro([]byte(strings.Replace(string(raw), `"relay":`, `"relay":"x","was":`, 1))); !errors.Is(err, spawn.ErrBadIntro) {
+		t.Errorf("undecodable relay link: err = %v, want ErrBadIntro", err)
+	}
+}

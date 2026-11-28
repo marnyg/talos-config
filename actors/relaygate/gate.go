@@ -40,11 +40,13 @@ import (
 	"github.com/marnyg/talos-config/protocol/cert"
 	"github.com/marnyg/talos-config/protocol/clock"
 	"github.com/marnyg/talos-config/protocol/postage"
+	"github.com/marnyg/talos-config/protocol/spawn"
 )
 
 // Facet is the facet a `relay` cert names: the protocol's "#relay"
-// (domain model, Relay).
-const Facet = "#relay"
+// (domain model, Relay) — one definition, shared with the spawner that
+// mints the links this gate verifies.
+const Facet = spawn.FacetRelay
 
 // DefaultMaxEntries bounds the presented-credential table. Refusal,
 // never eviction (the lighthouse directory's rule, ADR-0007): a flood

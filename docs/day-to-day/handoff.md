@@ -17,8 +17,11 @@
   expiry, and the client side (`Prepare`, `Post`, `Claim`). Untagged
   tests plus `TestGateInFrontOfRelay` against the real relay
   (`scripts/test-iroh.sh actors`; `actors-bin` now runs it too).
+- Built: **the links** (`bpha`, `protocol/spawn`) — `Spawner.Relay`
+  puts a relay birth link in the intro and a `P→C relay` chain in the
+  kit; details in the protocol handoff.
 - `irohtransport.Options` gained `RelayToken`. Nothing is deployed and
-  no binary uses the gate yet.
+  no binary uses the gate or sets `Spawner.Relay` yet.
 
 ## Loose threads
 
@@ -28,15 +31,11 @@
 - The id claim in the relay bearer is unsigned (ADR-0012, not
   decided); also open there: a stranger door at the relay, a child
   delegating onward, a per-client byte limit.
-- A relay bearer token cannot be replaced on a live iroh 1.1.0
-  endpoint — it carries a claim, never a credential.
 - The caller connects to the foreign relay, so an enforcing hub gate
   blocks actor → member dials. No such edge exists today.
 - `boot.ViaRelay` uses the actor's own `-relay` as the lighthouse dial
   hint; fine only while every actor shares the lighthouse's relay.
 - Every relay test ran on loopback, not through fly's TLS proxy.
-- `iroh-transport`'s `TestRelayGate` (the spike's stub gate) now
-  overlaps `actors/relaygate`'s tagged test; ADR-0012 cites both.
 - **The working tree holds uncommitted Krea 2 / Mojo work**
   (`k8s/apps/comfyui/max-krea2/`, spike `j1kd`) from another session;
   this session did not touch or commit it.
@@ -45,8 +44,9 @@
 
 ## Suggested next steps
 
-- `bpha`: the relay link in `protocol/spawn`'s intro and kit; then
-  `0ken`: the child presents (before bind, after birth, every beat).
-- The tasks filed under `k7sd`: the binary that runs gate + relay +
-  lighthouse, the fly app, moving the provisioner and parent over,
-  then enforcing the hub's member gate.
+- `0ken`: the child presents (intro link before bind, kit chain
+  after birth and on every beat) and the parent gets a flag for
+  `Spawner.Relay`.
+- Then `gsps` (the binary: gate + relay + lighthouse), `9nkh` (the
+  fly app), `ssau` (move the sap plane), `e7f0` (enforce the hub's
+  member gate).

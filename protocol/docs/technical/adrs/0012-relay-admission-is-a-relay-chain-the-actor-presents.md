@@ -4,8 +4,9 @@
   Ruled with it: the reversal below, and the wildcard link as a bearer
   for the birth window (Consequences). The four "Not decided" items
   stay open. Built so far: the gate (`actors/relaygate`,
-  `talos-config-bal3`) — not the intro/kit link, the child's
-  presentation, or anything deployed. Measured: the three chain shapes fold
+  `talos-config-bal3`) and the links in the intro and the kit
+  (`protocol/spawn`, `talos-config-bpha`) — not the child's
+  presentation, the parent's `-relay-id` wiring, or anything deployed. Measured: the three chain shapes fold
   in today's verifier (`TestRelayAdmissionShapes`, `protocol/cert`),
   and the gate's mechanics hold against the real relay binary
   (`TestRelayGate`, `iroh-transport`).

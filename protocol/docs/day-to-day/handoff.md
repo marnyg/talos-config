@@ -5,7 +5,19 @@
 
 ## Last session
 
-2026-10-19 — **the durable pin copy (`d0o0`, talos consumer side)**:
+2026-11-28 — **relay admission (`qx5c`, ADR-0012 Accepted)**: a
+relay's gate is a receiver; member / child / newborn are three `relay`
+chains today's verifier folds (`TestRelayAdmissionShapes`,
+`protocol/cert`) — no new verb, caveat or rule. **`protocol/spawn`
+(`bpha`)**: `Spawner.Relay` names the gated relay; set, the intro
+carries a relay birth link (`Intro.Relay`, the birth consent's shape
+and window on the relay verb, checked by `CheckIntro`) and the kit a
+`P→C relay` chain with the `#renew` chain's lifetime, renewed on the
+ordinary beat; `Born` refuses a kit without it (`ErrNoRelayChain`).
+Unset, intro and kit are byte-identical to before. `FacetRelay` lives
+in `spawn`. The gate itself is `actors/relaygate` (root handoff).
+
+Before that, 2026-10-19 — **the durable pin copy (`d0o0`, talos consumer side)**:
 `talos/pins/<scheme>-<address>.json` `{address, policy0, rotations}`
 read by `config-server/policy.LoadPins` at hub construction and on
 every served git tip; `FoldRotations` is now one function for hub and
@@ -71,6 +83,12 @@ ADR-0011 Proposed)**, swarm of three (`c5705eb` ADR, `0870a68`
   fine while the hub's copy is durable, since every beat re-feeds it.
 - Still open: `kckm`, `lm2a`, `fh2y`; chain-on-connect ADR question;
   `whxz`, `e7ru`.
+- `w0ur` (2026-11-28): `rootedPrincipals` roots caller links only
+  under an `invoke` consent, so `publish` and `relay` chain links do
+  not feed the clock mark — invariant 9's letter says they should.
+  Model first (`authorize.qnt`), then `rootCerts`; sibling of `s8n`.
+- ADR-0012's undecided four: a signed id claim, a stranger door at
+  the relay, a child delegating relay access onward, a byte limit.
 
 ## Suggested next steps
 
