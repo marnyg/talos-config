@@ -5,37 +5,38 @@
 
 ## Last session (2026-11-28): the protocol network as its own surface (`k7sd`, `qx5c`)
 
-- Direction ruled by the owner: split the protocol's network
-  infrastructure (`iroh-relay` + `cmd/lighthouse`) off the talos hub
-  and off the cluster, into its own fly app; long term the hub is one
-  consumer of the protocol among many, probably from another repo.
-- Invariant 5 amended (scoped to the talos deployment, two dependency
-  rules), goal line added, **ADR-0051 Proposed** — the amendment and
-  the goal are ruled, the deployment shape is not reviewed.
-- Relay admission spiked (`qx5c`): **protocol ADR-0012 Accepted by
-  the owner** — the actor presents a `relay` chain to a gate in front
-  of the relay; a newborn presents a wildcard link from its intro.
-  No new verb, caveat or verifier rule.
-- Three tests are the evidence; nothing else is built or deployed:
-  `TestCrossRelayDial` and `TestRelayGate` (`iroh-transport`, real
-  relay binary), `TestRelayAdmissionShapes` (`protocol/cert`).
-  `irohtransport.Options` gained `RelayToken`.
+- Ruled by the owner, all Accepted: invariant 5 scoped to the talos
+  deployment (two dependency rules), the goal "the hub is one consumer
+  among many", **ADR-0051** (protocol network = its own fly app:
+  `iroh-relay` + `cmd/lighthouse`; the hub keeps its relay for
+  members), **protocol ADR-0012** (relay admission = a `relay` chain
+  the actor presents; a newborn presents a wildcard link from its
+  intro). `qx5c` closed, decision `9f7n`.
+- Built: **`actors/relaygate`** (`bal3`) — verify, the `id → exp`
+  table, the relay access hook, the proxy that ends a connection at
+  expiry, and the client side (`Prepare`, `Post`, `Claim`). Untagged
+  tests plus `TestGateInFrontOfRelay` against the real relay
+  (`scripts/test-iroh.sh actors`; `actors-bin` now runs it too).
+- `irohtransport.Options` gained `RelayToken`. Nothing is deployed and
+  no binary uses the gate yet.
 
 ## Loose threads
 
-- ADR-0012 reverses, for the protocol relay only, the 2026-09-18
-  ruling "relay is not a facet; no grant reaches the hook" (owner
-  accepted; root domain model carries the pointer).
+- The gate's rollback floor is its start, not the last presentation:
+  `relay`/`publish` chain links do not feed the clock mark (`w0ur`,
+  protocol invariant 9's letter). Affects the lighthouse too.
+- The id claim in the relay bearer is unsigned (ADR-0012, not
+  decided); also open there: a stranger door at the relay, a child
+  delegating onward, a per-client byte limit.
 - A relay bearer token cannot be replaced on a live iroh 1.1.0
-  endpoint (protocol exploration log) — it carries a claim, never a
-  credential.
-- Open in ADR-0012: signing the id claim, a stranger door at the
-  relay, onward delegation by a child, a per-client byte limit.
+  endpoint — it carries a claim, never a credential.
 - The caller connects to the foreign relay, so an enforcing hub gate
   blocks actor → member dials. No such edge exists today.
 - `boot.ViaRelay` uses the actor's own `-relay` as the lighthouse dial
   hint; fine only while every actor shares the lighthouse's relay.
 - Every relay test ran on loopback, not through fly's TLS proxy.
+- `iroh-transport`'s `TestRelayGate` (the spike's stub gate) now
+  overlaps `actors/relaygate`'s tagged test; ADR-0012 cites both.
 - **The working tree holds uncommitted Krea 2 / Mojo work**
   (`k8s/apps/comfyui/max-krea2/`, spike `j1kd`) from another session;
   this session did not touch or commit it.
@@ -44,8 +45,8 @@
 
 ## Suggested next steps
 
-- Owner rules on ADR-0051's deployment shape (still Proposed).
-- Build in this order (the first three are filed under `qx5c`): the gate (verify + table + hook + proxy)
-  as a package; the relay link in `protocol/spawn`'s intro and kit;
-  presentation in `actors/cmd/child`; the fly app; move the
-  provisioner and parent over; enforce the hub's member gate.
+- `bpha`: the relay link in `protocol/spawn`'s intro and kit; then
+  `0ken`: the child presents (before bind, after birth, every beat).
+- The tasks filed under `k7sd`: the binary that runs gate + relay +
+  lighthouse, the fly app, moving the provisioner and parent over,
+  then enforcing the hub's member gate.

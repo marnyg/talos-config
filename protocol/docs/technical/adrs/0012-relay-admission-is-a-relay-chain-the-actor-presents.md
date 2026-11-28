@@ -3,7 +3,9 @@
 - Status: Accepted 2026-11-28 (owner; spike `talos-config-qx5c`).
   Ruled with it: the reversal below, and the wildcard link as a bearer
   for the birth window (Consequences). The four "Not decided" items
-  stay open. Nothing is built. Measured: the three chain shapes fold
+  stay open. Built so far: the gate (`actors/relaygate`,
+  `talos-config-bal3`) — not the intro/kit link, the child's
+  presentation, or anything deployed. Measured: the three chain shapes fold
   in today's verifier (`TestRelayAdmissionShapes`, `protocol/cert`),
   and the gate's mechanics hold against the real relay binary
   (`TestRelayGate`, `iroh-transport`).
@@ -148,5 +150,13 @@ one cert; the kit's outfit gains one chain.
   and the client returns and is refused until renewed; a renewal in
   time keeps one uninterrupted connection. Loopback, not through fly's
   proxy.
+- `TestGateInFrontOfRelay` (`actors/relaygate`, tagged): the built
+  gate with real certs, the real relay and real endpoints — member,
+  stranger, child, a key claiming the child's id, newborn on a stamped
+  wildcard link, expiry and renewal.
+- Found while building: the gate's clock floor (invariant 9) is its
+  own consents' `iat`, not the last presentation — the verifier roots
+  caller links only under an `invoke` consent, so `relay` (and
+  `publish`) links do not feed the mark (thread `talos-config-w0ur`).
 - Wrong if: admission needs anything the actor did not present — a
   lookup at the hub, a list in git, a second kind of credential.

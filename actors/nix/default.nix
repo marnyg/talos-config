@@ -50,7 +50,11 @@ let
       };
       ldflags = [ "-s" "-w" ] ++ lib.optionals static [ "-linkmode" "external" "-extldflags" "-static" ];
       checkFlags = [ "-count=1" ] ++ lib.optionals (!static) [ "-race" ];
+      # The relay binary is a test fixture (relaygate's tagged test runs
+      # the gate in front of it); named by path, as config-server does,
+      # so it never enters the vendor FOD.
       preCheck = ''
+        export IROH_RELAY_BIN=${irohGo'.iroh-relay}/bin/iroh-relay
         export GOCACHE=$TMPDIR/gocache-check
       '';
       passthru = { inherit (irohGo') iroh-ffi-static; };

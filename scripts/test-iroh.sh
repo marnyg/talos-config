@@ -18,6 +18,9 @@
 #
 #   scripts/test-iroh.sh                  both modules, all packages
 #   scripts/test-iroh.sh config-server    one module
+#   scripts/test-iroh.sh actors           the actors module (not in the
+#                                         default set: `nix build
+#                                         .#actors-bin` is its gate)
 #   scripts/test-iroh.sh config-server -run TestHubBeatOverIroh
 #
 # Anything after the module name is passed through to `go test`; the
@@ -34,9 +37,9 @@ mod="${1:-}"
 
 case "$mod" in
     "" | all) mods="config-server iroh-transport" ;;
-    config-server | iroh-transport) mods="$mod" ;;
+    config-server | iroh-transport | actors) mods="$mod" ;;
     *)
-        echo "usage: $0 [config-server|iroh-transport|all] [go test args...]" >&2
+        echo "usage: $0 [config-server|iroh-transport|actors|all] [go test args...]" >&2
         exit 2
         ;;
 esac
