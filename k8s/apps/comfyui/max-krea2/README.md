@@ -79,6 +79,8 @@ Current limitations:
   `tc` needs M/N divisible by 64 and K divisible by 32.
 - Straightforward synchronous tile copies and BF16 MMA, not a pipelined
   kernel. No automatic offload or complete sampler/text-encoder/VAE pipeline.
+- The full-model path needs the desktop's GPU footprint under ~1 GiB (see
+  below); it is not a "just run it" configuration.
 
 ## DiT parity and full-model status
 
@@ -98,17 +100,52 @@ On the shared reference, built-in MAX and `fp8_mojo_tc` both report cosine
 execution measured 14 ms for built-in MAX and 49 ms for optimized Mojo,
 down from 112 ms before the optimization pass.
 
-A synthetic full-shape benchmark is available without a reference:
+## Full 28-block DiT at 1024²
 
 ```sh
-./run.sh parity.py --layers 28 --quant fp8_mojo_tc --runs 3
-# Smaller probe: --latent 32 --txt 64 --save /tmp/full28.npy
+./run.sh parity.py --layers 28 --quant fp8_mojo_tc \
+    --latent 128 --txt 256 --runs 3 --save /tmp/krea2-full28.npy
 ```
 
-**No full 28-block timing has been obtained.** With other desktop processes
-present, MAX saw about 11 GiB available and model initialization OOMed on a
-final 96 MiB allocation even at the small shape. The FP8 checkpoint alone
-is 13.1 GB decimal. A clean/headless desktop or explicit weight streaming
-is required before comparing a full MAX step with ComfyUI's measured
-**0.95 s/it fp8_scaled** and **0.64 s/it int8_convrot** results. Do not
-interpret the projection or two-block timings as end-to-end timings.
+Measured on the RTX 5070 Ti, warm, one denoising step (the DiT forward):
+
+| | per step | 8-step image |
+|---|---:|---:|
+| **MAX `fp8_mojo_tc`, 28 blocks, 1024²** | **6.41 s** | ~51 s |
+| ComfyUI Krea 2 `fp8_scaled`, 1024², 8 steps | 0.95 s/it | 8.8 s |
+| ComfyUI Krea 2 `int8_convrot`, 1024², 8 steps | 0.64 s/it | 6.2 s |
+
+So the MAX port runs the full model but is **~6.7× slower per step** than
+ComfyUI's `fp8_scaled` path, and ~10× slower than `int8_convrot`. That is
+the honest end-to-end result: the port is correct and complete for the DiT,
+but neither the kernel nor the runtime wins on this card.
+
+### Why it only just fits
+
+MAX's device pool equals the free VRAM at `Accelerator` creation (verified:
+a 2 GiB pre-allocation shrinks the pool 12.25 → 10.25 GiB). The FP8 weights
+are **12.24 GiB and fully resident** — there is no weight offload in MAX 26.7
+(`cpu_offload`/`weight_offload` do not exist; the only `offload` is the LLM
+KV-cache tiering), and the VMM reports `reclaimable=0`, so nothing pages to
+host. ComfyUI fits the same checkpoint by offloading layers; MAX cannot.
+
+Consequently 1024² needs the desktop's GPU footprint under ~1 GiB:
+
+```
+desktop ≤ ~1.1 GiB  →  pool ≈ 13.5 GiB
+weights                12.24 GiB
+activations             1.25 GiB   (was 2.10 GiB before the two optimizations)
+needed                ~13.49 GiB
+```
+
+The two footprint optimizations (BF16 RoPE, BF16 kernel output) took the
+activation request from 2.24 GB to 1.34 GB, which is what made 1024²
+reachable at all. Anything above 768² (`--latent 96`) failed before them.
+
+### Correctness caveat
+
+There is still **no 28-block / 1024² numerical reference** — `ref_dump.py`
+runs ComfyUI's model in FP32 on the CPU, which at 28 blocks × 4096 tokens
+is hours. Correctness rests on the two-block parity (cosine 0.999753 vs
+ComfyUI FP32) plus the bit-exact per-op tests. Treat the full-model output
+as structurally validated, not bit-validated.

@@ -108,16 +108,21 @@ Reading it:
 
 ## MAX/Mojo spike
 
-`k8s/apps/comfyui/max-krea2/` contains a separate, partial Krea 2 DiT
-port (`j1kd`) using MAX 26.7's Python graph API and custom Mojo kernels.
-It is not a ComfyUI replacement or an end-to-end image pipeline. After
-an optimization pass, one real Krea projection takes 36–38 ms in fused
-tensor-core Mojo against 9.2–9.6 ms in ComfyUI/PyTorch, with about half the
-allocation of bound-weight dequant+cuBLAS. Two-block numerical error
-matches built-in MAX. A full 28-block run has not executed: model setup
-OOMed with other desktop processes holding VRAM. Setup, correctness
-tests, measurements and limitations are in `max-krea2/README.md`.
-Nothing in the deployed ComfyUI stack uses MAX.
+`k8s/apps/comfyui/max-krea2/` contains a separate Krea 2 DiT port
+(`j1kd`) using MAX 26.7's Python graph API and custom Mojo kernels. It is
+not a ComfyUI replacement or an end-to-end image pipeline. After an
+optimization pass, one real Krea projection takes 36–38 ms in fused
+tensor-core Mojo against 9.2–9.6 ms in ComfyUI/PyTorch, with about half
+the allocation of bound-weight dequant+cuBLAS.
+
+**The full 28-block DiT now runs at 1024²**: 6.41 s per denoising step
+against ComfyUI's 0.95 s/it (`fp8_scaled`) and 0.64 s/it (`int8_convrot`)
+— i.e. ~6.7× slower per step. It only fits because the desktop's GPU
+footprint is under ~1 GiB: MAX's pool equals the free VRAM at startup,
+the 12.24 GiB of FP8 weights are fully resident, and MAX has no weight
+offload (only LLM KV-cache tiering). ComfyUI fits the same checkpoint by
+offloading. Setup, correctness tests, measurements and limitations are in
+`max-krea2/README.md`. Nothing in the deployed ComfyUI stack uses MAX.
 
 ## Known gaps
 

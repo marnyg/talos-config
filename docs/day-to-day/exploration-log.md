@@ -276,5 +276,12 @@ enabled by `JSON_SECRET_KEY`) does the rest; no login form ever.
   tried and ruled out (~1.1 s; quantization itself only ~0.2 ms).
   ComfyUI/PyTorch does the projection in 9.2–9.6 ms, and a runtime-weight
   MAX/cuBLAS microbenchmark does it in 11–14 ms with the same 256 MiB
-  delta as custom Mojo. Full 28-block comparison is blocked by desktop
-  VRAM, not by a measured model-level slowness claim.
+  delta as custom Mojo.
+- Full 28-block DiT at 1024² reached after cutting the activation request
+  ~40% (BF16 RoPE, BF16 kernel output): 6.41 s per step vs ComfyUI's
+  0.95 s/it, so ~6.7× slower end to end. Landing it required the desktop's
+  GPU footprint under ~1 GiB, because MAX's pool equals free VRAM at
+  startup and the 12.24 GiB of FP8 weights are fully resident. Tried and
+  ruled out as the blocker: a MAX-side memory knob (none exists), weight
+  paging (VMM reports reclaimable=0). Landed on: MAX has no weight offload,
+  which is precisely what ComfyUI uses to fit the same checkpoint.

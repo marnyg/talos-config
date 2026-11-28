@@ -27,6 +27,21 @@
   spawner → provisioner → child on the real relay behind the gate.
   `scripts/test-iroh.sh actors`; `actors-bin` runs it in the sandbox.
 
+## Also this cycle (2026-11-28): Krea 2 MAX/Mojo — full model runs (`j1kd`)
+
+- Cut the Krea 2 DiT activation footprint ~40% with two changes that keep
+  correctness (BF16 RoPE; BF16 tensor-core output staged through an FP32
+  shared tile). The fused kernel is now **bit-exact** against its reference.
+- **The full 28-block DiT at 1024² executes**: **6.41 s per denoising step**
+  (warm, RTX 5070 Ti, `fp8_mojo_tc`). ComfyUI does the same step in
+  **0.95 s/it** (`fp8_scaled`) / **0.64 s/it** (`int8_convrot`), so the port
+  is **~6.7× slower** end to end — the spike's headline result.
+- Measured root cause of the OOM chase: **MAX's device pool equals free VRAM
+  at `Accelerator` creation**, and the 12.24 GiB of FP8 weights are **fully
+  resident** — MAX 26.7 has no weight offload (only LLM KV-cache tiering),
+  VMM `reclaimable=0`. 1024² needs the desktop's GPU footprint under ~1 GiB;
+  ComfyUI fits the same checkpoint by offloading.
+
 ## Loose threads
 
 - The gate's rollback floor is its start, not the last presentation:
@@ -40,9 +55,13 @@
 - `boot.ViaRelay` uses the actor's own `-relay` as the lighthouse dial
   hint; fine only while every actor shares the lighthouse's relay.
 - Every relay test ran on loopback, not through fly's TLS proxy.
-- **The working tree holds uncommitted Krea 2 / Mojo work**
-  (`k8s/apps/comfyui/max-krea2/`, spike `j1kd`) from another session;
-  this session did not touch or commit it.
+- Krea 2 / Mojo (`j1kd`, committed `98e39cb`): **no 28-block / 1024²
+  numerical reference** — `ref_dump.py` runs ComfyUI FP32 on CPU (hours at
+  that size); correctness rests on two-block parity (cosine 0.999753) and
+  bit-exact per-op tests. The port is the DiT only (no sampler, text encoder
+  or VAE), so 6.41 s is one step, not an image.
+- **Desktop ComfyUI is stopped** (killed for VRAM) and is not a service;
+  restart with `k8s/apps/comfyui/run.sh`.
 - Carried over: ADR-0050 (any-port TCP) is still Proposed; the unused
   `longhorn-local` claims await the owner (`e6rx.8`).
 
@@ -54,3 +73,8 @@
 - Then `9nkh` (the fly app), `ssau` (move the sap plane: members bind
   with the claim, manifests get `-relay-id`), `e7f0` (enforce the
   hub's member gate).
+- `j1kd`: the spike has answered its question — MAX/Mojo runs the full
+  Krea 2 DiT correctly but ~6.7× slower than ComfyUI and cannot offload,
+  so ComfyUI stays the tool. Close it, or continue only via NVFP4 weights
+  (`krea2_turbo_nvfp4`, 7.15 GiB), the one route that removes the
+  desktop-VRAM negotiation.
